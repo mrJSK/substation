@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../screens/admin/admin_hierarchy_screen.dart';
+import '../../screens/admin/master_equipment_management_screen.dart'; // NEW: Import the MasterEquipmentScreen
 // Import other admin management screens as they are created
 // import 'package:substation/screens/admin/admin_user_management_screen.dart';
-// import 'package:substation/screens/admin/master_equipment_management_screen.dart';
 // import 'package:substation/screens/admin/export_data_screen.dart'; // For exporting data
 
 class AdminDashboardScreen extends StatelessWidget {
@@ -35,9 +35,8 @@ class AdminDashboardScreen extends StatelessWidget {
         'title': 'Master Equipment',
         'subtitle': 'Define equipment templates',
         'icon': Icons.construction,
-        'screen': const Center(
-          child: Text('Master Equipment Management (Coming Soon!)'),
-        ), // Placeholder
+        'screen':
+            const MasterEquipmentScreen(), // UPDATED: Navigate to MasterEquipmentScreen
         'color': Theme.of(context).colorScheme.tertiary, // Yellow
       },
       {
