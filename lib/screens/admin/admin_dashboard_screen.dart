@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../screens/admin/admin_hierarchy_screen.dart';
-import '../../screens/admin/master_equipment_management_screen.dart'; // NEW: Import the MasterEquipmentScreen
-// Import other admin management screens as they are created
-// import 'package:substation/screens/admin/admin_user_management_screen.dart';
-// import 'package:substation/screens/admin/export_data_screen.dart'; // For exporting data
+import '../../screens/admin/master_equipment_management_screen.dart';
+import '../../screens/substation_detail_screen.dart';
+import '../../screens/equipment_hierarchy_selection_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   final AppUser adminUser;
@@ -13,14 +12,36 @@ class AdminDashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Define dashboard items (cards)
     final List<Map<String, dynamic>> dashboardItems = [
       {
         'title': 'Manage Hierarchy',
         'subtitle': 'Zones, Circles, Divisions, Substations',
         'icon': Icons.location_on,
         'screen': const AdminHierarchyScreen(),
-        'color': Theme.of(context).colorScheme.primary, // Blue
+        'color': Theme.of(context).colorScheme.primary,
+      },
+      {
+        'title': 'Master Equipment',
+        'subtitle': 'Define equipment templates',
+        'icon': Icons.construction,
+        'screen': const MasterEquipmentScreen(),
+        'color': Theme.of(context).colorScheme.tertiary,
+      },
+      // REMOVED: The "Create New Bay" card directly from Admin Dashboard
+      // This is now handled through the "Manage Substations & Equipment" flow
+      // {
+      //   'title': 'Create New Bay',
+      //   'subtitle': 'Add a new bay to a substation',
+      //   'icon': Icons.add_box,
+      //   'screen': BayCreationScreen(currentUser: adminUser),
+      //   'color': Theme.of(context).colorScheme.secondary,
+      // },
+      {
+        'title': 'Manage Substations & Equipment',
+        'subtitle': 'Browse substations and manage bays/equipment',
+        'icon': Icons.electrical_services,
+        'screen': EquipmentHierarchySelectionScreen(currentUser: adminUser),
+        'color': Colors.indigo,
       },
       {
         'title': 'User Management',
@@ -28,16 +49,8 @@ class AdminDashboardScreen extends StatelessWidget {
         'icon': Icons.people,
         'screen': const Center(
           child: Text('User Management Screen (Coming Soon!)'),
-        ), // Placeholder
-        'color': Theme.of(context).colorScheme.secondary, // Green
-      },
-      {
-        'title': 'Master Equipment',
-        'subtitle': 'Define equipment templates',
-        'icon': Icons.construction,
-        'screen':
-            const MasterEquipmentScreen(), // UPDATED: Navigate to MasterEquipmentScreen
-        'color': Theme.of(context).colorScheme.tertiary, // Yellow
+        ),
+        'color': Theme.of(context).colorScheme.secondary,
       },
       {
         'title': 'Export Data',
@@ -45,23 +58,20 @@ class AdminDashboardScreen extends StatelessWidget {
         'icon': Icons.download,
         'screen': const Center(
           child: Text('Export Data Screen (Coming Soon!)'),
-        ), // Placeholder
-        'color': Colors
-            .redAccent
-            .shade700, // A distinct red for export/critical actions
+        ),
+        'color': Colors.redAccent.shade700,
       },
-      // Add more admin functions here as needed
     ];
 
     return Scaffold(
+      appBar: AppBar(title: const Text('Admin Dashboard'), centerTitle: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Welcome Card for Admin
             Card(
-              elevation: 6, // Slightly higher elevation for the welcome card
+              elevation: 6,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
               ),
@@ -71,7 +81,7 @@ class AdminDashboardScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Hello, ${adminUser.email.split('@').first.toUpperCase()}!', // Display part of email as name
+                      'Hello, ${adminUser.email.split('@').first.toUpperCase()}!',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
@@ -87,7 +97,7 @@ class AdminDashboardScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     LinearProgressIndicator(
-                      value: 0.8, // Example value
+                      value: 0.8,
                       backgroundColor: Theme.of(
                         context,
                       ).colorScheme.primary.withOpacity(0.2),
@@ -100,7 +110,7 @@ class AdminDashboardScreen extends StatelessWidget {
                     Align(
                       alignment: Alignment.bottomRight,
                       child: Text(
-                        'System Health: Good (80%)', // Example text
+                        'System Health: Good (80%)',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey.shade600,
                         ),
@@ -111,25 +121,17 @@ class AdminDashboardScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-
-            // Stacked full-width Admin Functions Cards
             Text(
               'Admin Functions',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
             Column(
-              // Changed from GridView.builder to Column for stacking
               children: dashboardItems.map((item) {
                 return Padding(
-                  padding: const EdgeInsets.only(
-                    bottom: 16.0,
-                  ), // Spacing between cards
+                  padding: const EdgeInsets.only(bottom: 16.0),
                   child: SizedBox(
-                    // Use SizedBox to force full width with padding
-                    width: MediaQuery.of(
-                      context,
-                    ).size.width, // Set width to screen width
+                    width: MediaQuery.of(context).size.width,
                     child: DashboardCard(
                       title: item['title'],
                       subtitle: item['subtitle'],
@@ -148,27 +150,24 @@ class AdminDashboardScreen extends StatelessWidget {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 8), // Adjusted spacing after stacked cards
-            // Example Quick Stats Section (can be populated with real data later)
+            const SizedBox(height: 8),
             Text('Quick Stats', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
-                  // Use Expanded to ensure each stat card takes available width
                   child: StatCard(
                     label: 'Total Zones',
-                    value: '10', // Placeholder
+                    value: '10',
                     icon: Icons.public,
                     iconColor: Colors.blue.shade700,
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  // Use Expanded
                   child: StatCard(
                     label: 'Pending Approvals',
-                    value: '3', // Placeholder
+                    value: '3',
                     icon: Icons.pending_actions,
                     iconColor: Theme.of(context).colorScheme.secondary,
                   ),
@@ -179,20 +178,18 @@ class AdminDashboardScreen extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  // Use Expanded
                   child: StatCard(
                     label: 'Total Substations',
-                    value: '150', // Placeholder
+                    value: '150',
                     icon: Icons.electrical_services,
                     iconColor: Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  // Use Expanded
                   child: StatCard(
                     label: 'Active Users',
-                    value: '45', // Placeholder
+                    value: '45',
                     icon: Icons.person_add_alt_1,
                     iconColor: Theme.of(context).colorScheme.tertiary,
                   ),
@@ -207,7 +204,6 @@ class AdminDashboardScreen extends StatelessWidget {
   }
 }
 
-// Reusable Widget for Dashboard Cards
 class DashboardCard extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -237,22 +233,18 @@ class DashboardCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            mainAxisSize: MainAxisSize
-                .min, // crucial for preventing unbounded height issues
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 40, color: cardColor),
               const SizedBox(height: 12),
-              // Changed from Flexible to a fixed number of lines if a simple Text widget
-              // is not inside a Flexible, it will naturally wrap.
               Text(
                 title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
-                maxLines: 2, // Allow title to wrap over two lines
-                overflow: TextOverflow
-                    .ellipsis, // Truncate with ellipsis if it exceeds 2 lines
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
@@ -260,8 +252,8 @@ class DashboardCard extends StatelessWidget {
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
-                maxLines: 2, // Allow subtitle to wrap over two lines
-                overflow: TextOverflow.ellipsis, // Truncate with ellipsis
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -271,7 +263,6 @@ class DashboardCard extends StatelessWidget {
   }
 }
 
-// Reusable Widget for Quick Stat Cards
 class StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -295,40 +286,34 @@ class StatCard extends StatelessWidget {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize
-              .min, // crucial for preventing unbounded height issues
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
                 Icon(icon, color: iconColor, size: 28),
                 const SizedBox(width: 8),
                 Expanded(
-                  // Label is inside a Row, so Expanded here is appropriate for horizontal flex
                   child: Text(
                     label,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.grey.shade700,
                       fontWeight: FontWeight.w500,
                     ),
-                    maxLines: 1, // Keep label on single line
-                    overflow: TextOverflow.ellipsis, // Truncate if too long
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            // The value is also within a Column, so it should not be Expanded
-            // directly unless the Column itself is constrained or has MainAxisSize.min.
-            // Since we added MainAxisSize.min to the parent Column, a simple Text
-            // will try to fit, and we can add maxLines/overflow.
             Text(
               value,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.bold,
               ),
-              maxLines: 1, // Keep value on single line
-              overflow: TextOverflow.ellipsis, // Truncate if too long
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

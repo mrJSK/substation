@@ -8,6 +8,7 @@ class IsolatorIconPainter extends EquipmentPainter {
     required super.color,
     super.strokeWidth,
     required super.equipmentSize,
+    required Size symbolSize,
   });
 
   @override

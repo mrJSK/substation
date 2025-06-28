@@ -366,6 +366,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
         return IsolatorIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
+          symbolSize: equipmentDrawingSize,
         );
       case 'Relay':
       case 'Capacitor Bank':
