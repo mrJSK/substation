@@ -147,6 +147,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
         'hasUnits': false,
         'units': '',
         'options': [],
+        'description_remarks': '', // Initialize for boolean
       });
     });
   }
@@ -631,6 +632,10 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
                             field['hasUnits'] = false;
                             field['units'] = '';
                           }
+                          // Clear description for boolean if data type changes from boolean
+                          if (value != 'boolean') {
+                            field['description_remarks'] = '';
+                          }
                         });
                       },
                     ),
@@ -691,7 +696,20 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
                           },
                         ),
                     ],
-
+                    // NEW: Description / Remarks for boolean fields
+                    if (field['dataType'] == 'boolean') ...[
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        initialValue: field['description_remarks'] as String?,
+                        decoration: const InputDecoration(
+                          labelText: 'Description / Remarks (Optional)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) =>
+                            field['description_remarks'] = value,
+                        maxLines: 2,
+                      ),
+                    ],
                     CheckboxListTile(
                       title: const Text('Mandatory'),
                       value: field['isMandatory'] as bool,

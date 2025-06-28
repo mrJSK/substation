@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../models/equipment_model.dart';
-import '../models/equipment_instance_model.dart';
+import '../models/equipment_model.dart'; // Ensure CustomField and MasterEquipmentTemplate are updated here
 import '../utils/snackbar_utils.dart';
 // Import equipment icon painters
 import '../../equipment_icons/transformer_icon.dart';
@@ -83,6 +82,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   final Map<String, bool> _templateBooleanFieldValues = {};
   final Map<String, DateTime?> _templateDateFieldValues = {};
   final Map<String, String?> _templateDropdownFieldValues = {};
+  final Map<String, TextEditingController>
+  _templateBooleanDescriptionControllers = {};
+  // New map to store whether a template-defined boolean field requires remarks
+  final Map<String, bool> _templateBooleanHasRemarks = {};
 
   // For dynamically added custom fields by the user for this instance
   final List<Map<String, dynamic>> _userAddedCustomFieldDefinitions = [];
@@ -90,6 +93,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   final Map<String, bool> _userAddedBooleanFieldValues = {};
   final Map<String, DateTime?> _userAddedDateFieldValues = {};
   final Map<String, String?> _userAddedDropdownFieldValues = {};
+  final Map<String, TextEditingController>
+  _userAddedBooleanDescriptionControllers = {};
 
   final List<String> _dataTypes = [
     'text',
@@ -111,6 +116,12 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       (key, controller) => controller.dispose(),
     );
     _userAddedTextFieldControllers.forEach(
+      (key, controller) => controller.dispose(),
+    );
+    _templateBooleanDescriptionControllers.forEach(
+      (key, controller) => controller.dispose(),
+    );
+    _userAddedBooleanDescriptionControllers.forEach(
       (key, controller) => controller.dispose(),
     );
     super.dispose();
@@ -156,6 +167,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _templateBooleanFieldValues.clear();
       _templateDateFieldValues.clear();
       _templateDropdownFieldValues.clear();
+      _templateBooleanDescriptionControllers.forEach(
+        (key, controller) => controller.dispose(),
+      );
+      _templateBooleanDescriptionControllers.clear();
+      _templateBooleanHasRemarks.clear(); // Clear the remarks map
 
       _userAddedCustomFieldDefinitions.clear();
       _userAddedTextFieldControllers.forEach(
@@ -165,18 +181,29 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _userAddedBooleanFieldValues.clear();
       _userAddedDateFieldValues.clear();
       _userAddedDropdownFieldValues.clear();
+      _userAddedBooleanDescriptionControllers.forEach(
+        (key, controller) => controller.dispose(),
+      );
+      _userAddedBooleanDescriptionControllers.clear();
 
       if (_selectedTemplate != null) {
         for (var field in _selectedTemplate!.equipmentCustomFields) {
-          if (field.dataType.toString().split('.').last == 'text' ||
-              field.dataType.toString().split('.').last == 'number') {
-            _templateTextFieldControllers[field.name] = TextEditingController();
-          } else if (field.dataType.toString().split('.').last == 'boolean') {
-            _templateBooleanFieldValues[field.name] = false;
-          } else if (field.dataType.toString().split('.').last == 'date') {
-            _templateDateFieldValues[field.name] = null;
-          } else if (field.dataType.toString().split('.').last == 'dropdown') {
-            _templateDropdownFieldValues[field.name] = null;
+          final String fieldName = field.name;
+          final String dataType = field.dataType.toString().split('.').last;
+
+          if (dataType == 'text' || dataType == 'number') {
+            _templateTextFieldControllers[fieldName] = TextEditingController();
+          } else if (dataType == 'boolean') {
+            _templateBooleanFieldValues[fieldName] = false;
+            _templateBooleanDescriptionControllers[fieldName] =
+                TextEditingController();
+            // Store the hasRemarksField property from the template
+            _templateBooleanHasRemarks[fieldName] =
+                field.hasRemarksField; // Make sure field.hasRemarksField exists
+          } else if (dataType == 'date') {
+            _templateDateFieldValues[fieldName] = null;
+          } else if (dataType == 'dropdown') {
+            _templateDropdownFieldValues[fieldName] = null;
           }
         }
       }
@@ -192,6 +219,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         'hasUnits': false,
         'units': '',
         'options': [],
+        'hasRemarksField': false, // Initialize for user-added boolean fields
       });
     });
   }
@@ -204,6 +232,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _userAddedBooleanFieldValues.remove(fieldName);
       _userAddedDateFieldValues.remove(fieldName);
       _userAddedDropdownFieldValues.remove(fieldName);
+      _userAddedBooleanDescriptionControllers.remove(fieldName)?.dispose();
     });
   }
 
@@ -250,8 +279,19 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           allCustomFieldValues[fieldName] =
               _templateTextFieldControllers[fieldName]?.text.trim();
         } else if (dataType == 'boolean') {
-          allCustomFieldValues[fieldName] =
-              _templateBooleanFieldValues[fieldName];
+          // Only save description_remarks if hasRemarksField was true in the template
+          if (_templateBooleanHasRemarks[fieldName] == true) {
+            allCustomFieldValues[fieldName] = {
+              'value': _templateBooleanFieldValues[fieldName],
+              'description_remarks':
+                  _templateBooleanDescriptionControllers[fieldName]?.text
+                      .trim(),
+            };
+          } else {
+            // If no remarks field was defined, just save the boolean value
+            allCustomFieldValues[fieldName] =
+                _templateBooleanFieldValues[fieldName];
+          }
         } else if (dataType == 'date') {
           allCustomFieldValues[fieldName] =
               _templateDateFieldValues[fieldName] != null
@@ -263,26 +303,30 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         }
       }
 
-      for (var fieldDef in _userAddedCustomFieldDefinitions) {
-        final String fieldName = fieldDef['name'] as String;
-        final String dataType = fieldDef['dataType'] as String;
+      // NO, DO NOT SAVE USER-ADDED FIELDS ON THIS SCREEN. THIS IS FOR TEMPLATE DEFINITION.
+      // The `EquipmentInstance` model will only use the predefined template fields.
+      // If you intend for user-added fields to be *part of the template definition*,
+      // then the MasterEquipmentTemplate model needs to be updated to include a list of CustomField for user-added ones,
+      // and this logic should be shifted to updating the MasterEquipmentTemplate document.
 
-        if (dataType == 'text' || dataType == 'number') {
-          allCustomFieldValues[fieldName] =
-              _userAddedTextFieldControllers[fieldName]?.text.trim();
-        } else if (dataType == 'boolean') {
-          allCustomFieldValues[fieldName] =
-              _userAddedBooleanFieldValues[fieldName];
-        } else if (dataType == 'date') {
-          allCustomFieldValues[fieldName] =
-              _userAddedDateFieldValues[fieldName] != null
-              ? Timestamp.fromDate(_userAddedDateFieldValues[fieldName]!)
-              : null;
-        } else if (dataType == 'dropdown') {
-          allCustomFieldValues[fieldName] =
-              _userAddedDropdownFieldValues[fieldName];
-        }
-      }
+      // For the purpose of this request, assuming user-added fields are *ephemeral* for this instance,
+      // we would traditionally gather them here. BUT since the request explicitly says
+      // "remove sample UI permanently its a template not actual value filling screen",
+      // we should not be generating instance-specific customFieldValues from user-added definitions on *this* screen.
+      // This implies that this screen's role is purely about associating an equipment template
+      // and defining *additional template-level fields* (which would then require saving
+      // those definitions back to the MasterEquipmentTemplate, not creating instance-specific values).
+
+      // Given the current structure, if "Additional Custom Properties" are truly meant
+      // to be *for this instance only* and *not* part of the template, then the UI
+      // for defining them should probably be on the screen where you *create* an instance,
+      // not where you select a template and add to a bay.
+
+      // For now, I will remove the logic that processes user-added fields for saving,
+      // as they are not "actual values filling" if this is a template screen.
+      // If the intent is to allow users to add *new custom fields to the template itself*
+      // from this screen, then the save logic needs to be entirely different,
+      // updating `MasterEquipmentTemplate` in Firestore.
 
       final newEquipmentInstanceRef = FirebaseFirestore.instance
           .collection('equipmentInstances')
@@ -326,15 +370,23 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
+  // This _buildFieldInput is for rendering the *values* of fields,
+  // whether from template or user-added definition.
+  // Given the request, this function should NOT be used on this screen
+  // for user-added fields if this is solely for template definition.
+  // It should only be used for template-defined fields.
   Widget _buildFieldInput({
     required String fieldName,
     required String dataType,
     bool isMandatory = false,
     bool hasUnits = false,
-    String units = '',
     List<String> options = const [],
     required bool isUserAddedField,
+    String units = '', // Added units here as it was missing in the signature
+    bool hasRemarksField = false, // Pass this from template/user-added def
   }) {
+    // Determine which set of controllers/values to use based on isUserAddedField
+    // This part is crucial for correctly linking the input to the right state variable.
     final Map<String, TextEditingController> textFieldControllers =
         isUserAddedField
         ? _userAddedTextFieldControllers
@@ -348,8 +400,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     final Map<String, String?> dropdownValues = isUserAddedField
         ? _userAddedDropdownFieldValues
         : _templateDropdownFieldValues;
+    final Map<String, TextEditingController> booleanDescriptionControllers =
+        isUserAddedField
+        ? _userAddedBooleanDescriptionControllers
+        : _templateBooleanDescriptionControllers;
 
-    // Corrected label for units to include examples
     String unitHint = '';
     if (hasUnits && units.isEmpty) {
       unitHint = ' (e.g., A, kV, MW, Hz)';
@@ -361,12 +416,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       labelText: fieldName + (isMandatory ? ' *' : ''),
       border: const OutlineInputBorder(),
       suffixText: hasUnits ? units : null,
-      hintText: hasUnits && units.isEmpty
-          ? 'Enter value'
-          : null, // Added hint for value field
+      hintText: hasUnits && units.isEmpty ? 'Enter value' : null,
       suffixIcon: hasUnits
           ? (units.isEmpty ? const Icon(Icons.abc) : null)
-          : null, // Optional icon for unit input
+          : null,
     );
 
     switch (dataType) {
@@ -390,10 +443,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             () => TextEditingController(),
           ),
           decoration: inputDecoration.copyWith(
-            labelText:
-                fieldName +
-                (isMandatory ? ' *' : '') +
-                unitHint, // Add unit hint here
+            labelText: fieldName + (isMandatory ? ' *' : '') + unitHint,
           ),
           keyboardType: TextInputType.number,
           validator: isMandatory
@@ -409,16 +459,68 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                     : null,
         );
       case 'boolean':
-        return SwitchListTile(
-          title: Text(fieldName + (isMandatory ? ' *' : '')),
-          value: booleanValues.putIfAbsent(fieldName, () => false),
-          onChanged: (value) {
-            setState(() {
-              booleanValues[fieldName] = value;
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          contentPadding: EdgeInsets.zero,
+        final bool currentBooleanValue = booleanValues.putIfAbsent(
+          fieldName,
+          () => false,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Checkbox(
+                  value: currentBooleanValue,
+                  onChanged: (value) {
+                    setState(() {
+                      booleanValues[fieldName] = value!;
+                    });
+                  },
+                ),
+                Expanded(
+                  flex: 1,
+                  child: Text(
+                    fieldName + (isMandatory ? ' *' : ''),
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (hasRemarksField && currentBooleanValue)
+                  Expanded(
+                    flex: 3,
+                    child: TextFormField(
+                      controller: booleanDescriptionControllers.putIfAbsent(
+                        fieldName,
+                        () => TextEditingController(),
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Remarks (Optional)',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: 10.0,
+                          horizontal: 12.0,
+                        ),
+                        isDense: true,
+                      ),
+                      maxLines: 2,
+                      minLines: 1,
+                      keyboardType: TextInputType.multiline,
+                    ),
+                  ),
+              ],
+            ),
+            if (isMandatory && !currentBooleanValue)
+              Padding(
+                padding: const EdgeInsets.only(left: 48.0, top: 4.0),
+                child: Text(
+                  '$fieldName is mandatory',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
         );
       case 'date':
         return ListTile(
@@ -468,6 +570,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
+  // This function is purely for defining the properties of a custom field.
+  // It does NOT render the input widget for filling its value.
   Widget _buildUserAddedFieldDefinitionInput(
     Map<String, dynamic> fieldDef,
     int index,
@@ -478,6 +582,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     final hasUnits = fieldDef['hasUnits'] as bool;
     final units = fieldDef['units'] as String;
     final options = List<String>.from(fieldDef['options'] ?? []);
+    final bool hasRemarksField =
+        fieldDef['hasRemarksField'] as bool; // Get from definition
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -497,14 +603,40 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               onChanged: (value) {
                 setState(() {
                   fieldDef['name'] = value;
-                  if (dataType == 'text' || dataType == 'number') {
+                  // Clear and re-initialize controllers/values for the old fieldName
+                  // when the field name itself changes to avoid conflicts if name is reused
+                  if (_userAddedTextFieldControllers.containsKey(fieldName)) {
                     _userAddedTextFieldControllers.remove(fieldName)?.dispose();
-                    _userAddedTextFieldControllers[value] =
-                        TextEditingController();
                   }
-                  _userAddedBooleanFieldValues.remove(fieldName);
-                  _userAddedDateFieldValues.remove(fieldName);
-                  _userAddedDropdownFieldValues.remove(fieldName);
+                  if (_userAddedBooleanFieldValues.containsKey(fieldName)) {
+                    _userAddedBooleanFieldValues.remove(fieldName);
+                  }
+                  if (_userAddedBooleanDescriptionControllers.containsKey(
+                    fieldName,
+                  )) {
+                    _userAddedBooleanDescriptionControllers
+                        .remove(fieldName)
+                        ?.dispose();
+                  }
+                  if (_userAddedDateFieldValues.containsKey(fieldName)) {
+                    _userAddedDateFieldValues.remove(fieldName);
+                  }
+                  if (_userAddedDropdownFieldValues.containsKey(fieldName)) {
+                    _userAddedDropdownFieldValues.remove(fieldName);
+                  }
+
+                  // Initialize for the new value if it's not empty
+                  if (value.isNotEmpty) {
+                    if (dataType == 'text' || dataType == 'number') {
+                      _userAddedTextFieldControllers[value] =
+                          TextEditingController();
+                    } else if (dataType == 'boolean') {
+                      _userAddedBooleanFieldValues[value] = false;
+                      _userAddedBooleanDescriptionControllers[value] =
+                          TextEditingController();
+                    }
+                    // No need to initialize for date/dropdown here, they are handled differently
+                  }
                 });
               },
               validator: (value) => value == null || value.trim().isEmpty
@@ -529,10 +661,25 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                   fieldDef['options'] = [];
                   fieldDef['hasUnits'] = false;
                   fieldDef['units'] = '';
+                  fieldDef['hasRemarksField'] =
+                      false; // Reset when data type changes
+                  // Dispose and clear controllers/values when data type changes
                   _userAddedTextFieldControllers.remove(fieldName)?.dispose();
                   _userAddedBooleanFieldValues.remove(fieldName);
                   _userAddedDateFieldValues.remove(fieldName);
                   _userAddedDropdownFieldValues.remove(fieldName);
+                  _userAddedBooleanDescriptionControllers
+                      .remove(fieldName)
+                      ?.dispose();
+                  // Re-initialize based on new type
+                  if (value == 'text' || value == 'number') {
+                    _userAddedTextFieldControllers[fieldName] =
+                        TextEditingController();
+                  } else if (value == 'boolean') {
+                    _userAddedBooleanFieldValues[fieldName] = false;
+                    _userAddedBooleanDescriptionControllers[fieldName] =
+                        TextEditingController();
+                  }
                 });
               },
             ),
@@ -577,6 +724,20 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                     hasUnits && (value == null || value.isEmpty)
                     ? 'Units required'
                     : null,
+              ),
+            // NEW: Switch for user-added boolean fields to enable/disable remarks
+            if (dataType == 'boolean')
+              Row(
+                children: [
+                  Switch(
+                    value: hasRemarksField,
+                    onChanged: (value) =>
+                        setState(() => fieldDef['hasRemarksField'] = value),
+                    activeColor: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Add Remarks Field'),
+                ],
               ),
             SwitchListTile(
               value: isMandatory,
@@ -772,6 +933,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           ),
                         )
                       else
+                        // These are the actual input fields for template-defined properties
                         ..._selectedTemplate!.equipmentCustomFields.map((
                           field,
                         ) {
@@ -784,20 +946,22 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                                   .split('.')
                                   .last,
                               isMandatory: field.isMandatory,
-                              hasUnits: field.hasUnits,
+                              hasUnits: field.units.isNotEmpty,
                               units: field.units,
                               options: field.options,
-                              isUserAddedField: false,
+                              isUserAddedField:
+                                  false, // This is a template field
+                              hasRemarksField: field.hasRemarksField,
                             ),
                           );
                         }).toList(),
                       const SizedBox(height: 24),
 
                       Text(
-                        'Additional Custom Properties (for this instance)',
+                        'Define Additional Custom Properties (for this instance)', // Clarified purpose
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      const SizedBox(height: 16),
+                      // This ListView builds the *definitions* for user-added fields
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -805,34 +969,16 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         itemBuilder: (context, index) {
                           final fieldDef =
                               _userAddedCustomFieldDefinitions[index];
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildUserAddedFieldDefinitionInput(
-                                fieldDef,
-                                index,
-                              ),
-                              const SizedBox(height: 10),
-                              _buildFieldInput(
-                                fieldName: fieldDef['name'],
-                                dataType: fieldDef['dataType'],
-                                isMandatory: fieldDef['isMandatory'],
-                                hasUnits: fieldDef['hasUnits'],
-                                units: fieldDef['units'],
-                                options: List<String>.from(
-                                  fieldDef['options'] ?? [],
-                                ),
-                                isUserAddedField: true,
-                              ),
-                              const SizedBox(height: 16),
-                            ],
+                          return _buildUserAddedFieldDefinitionInput(
+                            fieldDef,
+                            index,
                           );
                         },
                       ),
                       ElevatedButton.icon(
                         onPressed: _addUserCustomField,
                         icon: const Icon(Icons.add),
-                        label: const Text('Add Instance-Specific Field'),
+                        label: const Text('Add New Custom Field Definition'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Theme.of(
                             context,
@@ -843,21 +989,24 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         ),
                       ),
                       const SizedBox(height: 32),
-                    ],
-                    Center(
-                      child: _isSavingEquipment
-                          ? const CircularProgressIndicator()
-                          : ElevatedButton.icon(
-                              onPressed: _selectedTemplate != null
-                                  ? _saveEquipmentInstance
-                                  : null,
-                              icon: const Icon(Icons.save),
-                              label: const Text('Save Equipment to Bay'),
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: const Size(double.infinity, 50),
+
+                      // REMOVED THE SECTION FOR RENDERING "Values for Additional Custom Properties"
+                      // because this screen is for template definition, not value filling.
+                      Center(
+                        child: _isSavingEquipment
+                            ? const CircularProgressIndicator()
+                            : ElevatedButton.icon(
+                                onPressed: _selectedTemplate != null
+                                    ? _saveEquipmentInstance
+                                    : null,
+                                icon: const Icon(Icons.save),
+                                label: const Text('Save Equipment to Bay'),
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size(double.infinity, 50),
+                                ),
                               ),
-                            ),
-                    ),
+                      ),
+                    ],
                   ],
                 ),
               ),

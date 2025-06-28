@@ -1,7 +1,7 @@
 // lib/screens/bay_equipment_management_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/equipment_instance_model.dart'; // For EquipmentInstance
+import 'package:substation_manager/models/equipment_model.dart';
 import '../utils/snackbar_utils.dart';
 import 'equipment_assignment_screen.dart'; // For adding new equipment
 
