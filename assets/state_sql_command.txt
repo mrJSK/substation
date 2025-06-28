@@ -1,0 +1,266 @@
+﻿/* Showing results for state.xlsx */
+
+/* CREATE TABLE */
+CREATE TABLE core_state(
+id DOUBLE,
+name VARCHAR(100)
+);
+
+/* INSERT QUERY NO: 1 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+1, 'Andaman Nicobar'
+);
+
+/* INSERT QUERY NO: 2 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+2, 'Andhra Pradesh'
+);
+
+/* INSERT QUERY NO: 3 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+3, 'Arunachal Pradesh'
+);
+
+/* INSERT QUERY NO: 4 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+4, 'Assam'
+);
+
+/* INSERT QUERY NO: 5 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+5, 'Bihar'
+);
+
+/* INSERT QUERY NO: 6 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+6, 'Chandigarh'
+);
+
+/* INSERT QUERY NO: 7 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+7, 'Chhattisgarh'
+);
+
+/* INSERT QUERY NO: 8 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+8, 'DadraNagarHaveli and DamanDiu'
+);
+
+/* INSERT QUERY NO: 9 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+9, 'Delhi'
+);
+
+/* INSERT QUERY NO: 10 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+10, 'Goa'
+);
+
+/* INSERT QUERY NO: 11 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+11, 'Gujarat'
+);
+
+/* INSERT QUERY NO: 12 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+12, 'Haryana'
+);
+
+/* INSERT QUERY NO: 13 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+13, 'Himachal Pradesh'
+);
+
+/* INSERT QUERY NO: 14 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+14, 'Jammu Kashmir'
+);
+
+/* INSERT QUERY NO: 15 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+15, 'Jharkhand'
+);
+
+/* INSERT QUERY NO: 16 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+16, 'Karnataka'
+);
+
+/* INSERT QUERY NO: 17 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+17, 'Kerala'
+);
+
+/* INSERT QUERY NO: 18 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+18, 'Ladakh'
+);
+
+/* INSERT QUERY NO: 19 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+19, 'Lakshadweep'
+);
+
+/* INSERT QUERY NO: 20 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+20, 'Madhya Pradesh'
+);
+
+/* INSERT QUERY NO: 21 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+21, 'Maharashtra'
+);
+
+/* INSERT QUERY NO: 22 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+22, 'Manipur'
+);
+
+/* INSERT QUERY NO: 23 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+23, 'Meghalaya'
+);
+
+/* INSERT QUERY NO: 24 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+24, 'Mizoram'
+);
+
+/* INSERT QUERY NO: 25 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+25, 'Nagaland'
+);
+
+/* INSERT QUERY NO: 26 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+26, 'Odisha'
+);
+
+/* INSERT QUERY NO: 27 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+27, 'Puducherry'
+);
+
+/* INSERT QUERY NO: 28 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+28, 'Punjab'
+);
+
+/* INSERT QUERY NO: 29 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+29, 'Rajasthan'
+);
+
+/* INSERT QUERY NO: 30 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+30, 'Sikkim'
+);
+
+/* INSERT QUERY NO: 31 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+31, 'Tamil Nadu'
+);
+
+/* INSERT QUERY NO: 32 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+32, 'Telangana'
+);
+
+/* INSERT QUERY NO: 33 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+33, 'Tripura'
+);
+
+/* INSERT QUERY NO: 34 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+34, 'Uttar Pradesh'
+);
+
+/* INSERT QUERY NO: 35 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+35, 'Uttarakhand'
+);
+
+/* INSERT QUERY NO: 36 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+36, 'West Bengal'
+);
+
+/* INSERT QUERY NO: 37 */
+INSERT INTO core_state(id, name)
+VALUES
+(
+0, ''
+);
