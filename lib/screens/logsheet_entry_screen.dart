@@ -17,9 +17,6 @@ class LogsheetEntryScreen extends StatefulWidget {
   final String frequency; // 'hourly', 'daily', etc.
   final int? readingHour; // Only for hourly readings
   final AppUser currentUser;
-  // This parameter is used by SubstationUserDashboardScreen but not required by BayReadingsOverviewScreen
-  // Making it optional allows calls without it to compile.
-  final String initialFrequencyFilter;
 
   const LogsheetEntryScreen({
     super.key,
@@ -30,7 +27,6 @@ class LogsheetEntryScreen extends StatefulWidget {
     required this.frequency,
     this.readingHour,
     required this.currentUser,
-    this.initialFrequencyFilter = 'hourly', // Default value, making it optional
   });
 
   @override
@@ -353,6 +349,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         frequency: widget.frequency, // Save frequency with the logsheet entry
         readingHour: widget
             .readingHour, // Save hour with the logsheet entry if applicable
+        substationId: widget.substationId, // NEW: Pass substationId here
       );
 
       if (_existingLogsheetEntry == null) {

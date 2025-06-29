@@ -217,6 +217,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
         values: {},
         frequency: '',
         readingHour: null,
+        substationId: '', // Added dummy substationId
       ),
     );
 
@@ -228,7 +229,8 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
     // Check if all mandatory fields in this logsheet entry have non-empty values
     return mandatoryFields.every((field) {
       final value = relevantLogsheet.values[field.name];
-      if (field.dataType == ReadingFieldDataType.boolean &&
+      if (field.dataType ==
+              ReadingFieldDataType.boolean.toString().split('.').last &&
           value is Map &&
           value.containsKey('value')) {
         return value['value'] !=

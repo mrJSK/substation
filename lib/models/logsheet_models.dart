@@ -11,8 +11,9 @@ class LogsheetEntry {
   final Timestamp recordedAt; // When this logsheet entry was saved/submitted
   final Map<String, dynamic>
   values; // Key: ReadingField.name, Value: recorded data
-  final String frequency; // NEW: To store the frequency (hourly, daily, etc.)
-  final int? readingHour; // NEW: To store the specific hour for hourly readings
+  final String frequency; // To store the frequency (hourly, daily, etc.)
+  final int? readingHour; // To store the specific hour for hourly readings
+  final String substationId; // NEW: Added substationId to the model
 
   LogsheetEntry({
     this.id,
@@ -25,6 +26,7 @@ class LogsheetEntry {
     required this.values,
     required this.frequency,
     this.readingHour,
+    required this.substationId, // NEW: Make substationId required in constructor
   });
 
   // Create a LogsheetEntry from a Firestore DocumentSnapshot
@@ -41,6 +43,7 @@ class LogsheetEntry {
       values: data['values'] as Map<String, dynamic>,
       frequency: data['frequency'] as String,
       readingHour: data['readingHour'] as int?,
+      substationId: data['substationId'] as String, // NEW: Read substationId
     );
   }
 
@@ -56,6 +59,7 @@ class LogsheetEntry {
       'values': values,
       'frequency': frequency,
       'readingHour': readingHour,
+      'substationId': substationId, // NEW: Write substationId
     };
   }
 }
