@@ -6,7 +6,8 @@ import 'package:dropdown_search/dropdown_search.dart';
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart'; // For Substation model
 import '../../utils/snackbar_utils.dart';
-import 'bay_readings_overview_screen.dart'; // Make sure this file contains: class BayReadingsOverviewScreen extends StatelessWidget
+import 'bay_readings_overview_screen.dart'; // Correct import for BayReadingsOverviewScreen
+import 'tripping_shutdown_overview_screen.dart'; // Import TrippingShutdownOverviewScreen
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -188,24 +189,26 @@ class _SubstationUserDashboardScreenState
                   children: [
                     // Operations (Hourly) Tab
                     BayReadingsOverviewScreen(
+                      // Use BayReadingsOverviewScreen here
                       substationId: _selectedSubstationForLogsheet!.id,
                       substationName: _selectedSubstationForLogsheet!.name,
                       currentUser: widget.currentUser,
-                      frequencyType: 'hourly',
+                      frequencyType: 'hourly', // Pre-filter for hourly
                     ),
                     // Energy (Daily) Tab
                     BayReadingsOverviewScreen(
+                      // Use BayReadingsOverviewScreen here
                       substationId: _selectedSubstationForLogsheet!.id,
                       substationName: _selectedSubstationForLogsheet!.name,
                       currentUser: widget.currentUser,
-                      frequencyType: 'daily',
+                      frequencyType: 'daily', // Pre-filter for daily
                     ),
-                    Center(
-                      child: Text(
-                        'Tripping & Shutdown features coming soon!',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontStyle: FontStyle.italic),
-                      ),
+                    // Tripping & Shutdown Tab
+                    TrippingShutdownOverviewScreen(
+                      // NEW: Tripping & Shutdown Screen
+                      substationId: _selectedSubstationForLogsheet!.id,
+                      substationName: _selectedSubstationForLogsheet!.name,
+                      currentUser: widget.currentUser,
                     ),
                   ],
                 ),
