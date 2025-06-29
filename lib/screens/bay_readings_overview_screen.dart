@@ -256,7 +256,7 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
         DateFormat('yyyy-MM-dd').format(_selectedDate),
       ); // Single key for the whole day
     }
-    return keys;
+    return keys.reversed.toList(); // NEW: Reverse the list before returning
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -288,13 +288,20 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: ListTile(
-                  title: Text(
-                    'Readings Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () => _selectDate(context),
+                child: Row(
+                  // Changed from ListTile to Row
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Readings Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    IconButton(
+                      // Calendar icon for date selection
+                      icon: const Icon(Icons.calendar_today),
+                      onPressed: () => _selectDate(context),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
