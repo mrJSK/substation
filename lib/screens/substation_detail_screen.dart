@@ -9,6 +9,7 @@ import '../models/hierarchy_models.dart';
 import '../models/app_state_data.dart';
 import '../utils/snackbar_utils.dart';
 import '../screens/bay_equipment_management_screen.dart';
+import '../screens/bay_reading_assignment_screen.dart'; // Import the new screen
 
 enum BayDetailViewMode { list, add, edit }
 
@@ -546,21 +547,22 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           .where('substationId', isEqualTo: widget.substationId)
           .orderBy('voltageLevel', descending: true) // Order by voltage level
           .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
+      builder: (context, baysSnapshot) {
+        // Renamed snapshot to baysSnapshot
+        if (baysSnapshot.hasError) {
           return Center(
             child: Text(
-              'Error: ${snapshot.error}',
+              'Error: ${baysSnapshot.error}',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           );
         }
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (baysSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+        if (!baysSnapshot.hasData || baysSnapshot.data!.docs.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -576,85 +578,156 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           );
         }
 
-        final bays = snapshot.data!.docs
+        final bays = baysSnapshot.data!.docs
             .map((doc) => Bay.fromFirestore(doc))
             .toList();
 
-        // Group bays by voltage level
-        final Map<String, List<Bay>> groupedBays = {};
-        for (var bay in bays) {
-          groupedBays.putIfAbsent(bay.voltageLevel, () => []).add(bay);
+        // Now, stream bayReadingAssignments for these bays
+        final List<String> bayIds = bays.map((bay) => bay.id).toList();
+
+        if (bayIds.isEmpty) {
+          // If no bays, then no assignments to check. Just return the existing bay list rendering.
+          return _buildBayListWithAssignments(bays, {});
         }
 
-        // Sort voltage levels (e.g., 765kV, 400kV, ...)
-        final List<String> sortedVoltageLevels = _voltageLevels
-            .where((level) => groupedBays.containsKey(level))
-            .toList();
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16.0),
-          itemCount: sortedVoltageLevels.length,
-          itemBuilder: (context, levelIndex) {
-            final voltageLevel = sortedVoltageLevels[levelIndex];
-            final baysInLevel = groupedBays[voltageLevel]!;
-
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 8.0),
-              elevation: 3,
-              child: ExpansionTile(
-                initiallyExpanded: true, // Expand all groups by default
-                title: Text(
-                  '$voltageLevel Bays',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('bayReadingAssignments')
+              .where('bayId', whereIn: bayIds)
+              .snapshots(),
+          builder: (context, assignmentsSnapshot) {
+            // New StreamBuilder for assignments
+            if (assignmentsSnapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Error loading assignments: ${assignmentsSnapshot.error}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
-                leading: Icon(
-                  Icons.flash_on,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                children: baysInLevel.map((bay) {
-                  return ListTile(
-                    title: Text(bay.name),
-                    subtitle: Text('Type: ${bay.bayType}'),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => BayEquipmentManagementScreen(
-                            bayId: bay.id,
-                            bayName: bay.name,
-                            substationId: bay.substationId,
-                          ),
-                        ),
-                      );
-                    },
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit),
-                          color: Theme.of(context).colorScheme.tertiary,
-                          onPressed: () {
-                            _initializeFormAndHierarchyForViewMode(
-                              BayDetailViewMode.edit,
-                              bay: bay,
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          color: Theme.of(context).colorScheme.error,
-                          onPressed: () =>
-                              _confirmDeleteBay(context, bay, bay.name),
-                        ),
-                      ],
+              );
+            }
+            if (assignmentsSnapshot.connectionState ==
+                ConnectionState.waiting) {
+              // Still show bays, but maybe with a subtle loading for assignments
+              return _buildBayListWithAssignments(
+                bays,
+                {},
+              ); // Empty map for assignments during loading
+            }
+
+            final Set<String> baysWithAssignments = {};
+            for (var doc in assignmentsSnapshot.data!.docs) {
+              baysWithAssignments.add(doc['bayId'] as String);
+            }
+
+            return _buildBayListWithAssignments(bays, baysWithAssignments);
+          },
+        );
+      },
+    );
+  }
+
+  // Helper method to build the actual list once all data is available
+  Widget _buildBayListWithAssignments(
+    List<Bay> bays,
+    Set<String> baysWithAssignments,
+  ) {
+    // Group bays by voltage level
+    final Map<String, List<Bay>> groupedBays = {};
+    for (var bay in bays) {
+      groupedBays.putIfAbsent(bay.voltageLevel, () => []).add(bay);
+    }
+
+    // Sort voltage levels (e.g., 765kV, 400kV, ...)
+    final List<String> sortedVoltageLevels = _voltageLevels
+        .where((level) => groupedBays.containsKey(level))
+        .toList();
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16.0),
+      itemCount: sortedVoltageLevels.length,
+      itemBuilder: (context, levelIndex) {
+        final voltageLevel = sortedVoltageLevels[levelIndex];
+        final baysInLevel = groupedBays[voltageLevel]!;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8.0),
+          elevation: 3,
+          child: ExpansionTile(
+            initiallyExpanded: true, // Expand all groups by default
+            title: Text(
+              '$voltageLevel Bays',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            leading: Icon(
+              Icons.flash_on,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            children: baysInLevel.map((bay) {
+              final hasReadingAssignment = baysWithAssignments.contains(bay.id);
+              return ListTile(
+                title: Text(bay.name),
+                subtitle: Text('Type: ${bay.bayType}'),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => BayEquipmentManagementScreen(
+                        bayId: bay.id,
+                        bayName: bay.name,
+                        substationId: bay.substationId,
+                      ),
                     ),
                   );
-                }).toList(),
-              ),
-            );
-          },
+                },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Button to assign reading templates
+                    if (widget.currentUser.role == UserRole.admin ||
+                        widget.currentUser.role == UserRole.subdivisionManager)
+                      IconButton(
+                        icon: Icon(Icons.menu_book),
+                        tooltip: hasReadingAssignment
+                            ? 'Reading Template Assigned'
+                            : 'Assign Reading Template',
+                        color: hasReadingAssignment
+                            ? Colors.green
+                            : Theme.of(context).colorScheme.tertiary,
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => BayReadingAssignmentScreen(
+                                bayId: bay.id,
+                                bayName: bay.name,
+                                currentUser: widget.currentUser,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      color: Theme.of(context).colorScheme.tertiary,
+                      onPressed: () {
+                        _initializeFormAndHierarchyForViewMode(
+                          BayDetailViewMode.edit,
+                          bay: bay,
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      color: Theme.of(context).colorScheme.error,
+                      onPressed: () =>
+                          _confirmDeleteBay(context, bay, bay.name),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
         );
       },
     );

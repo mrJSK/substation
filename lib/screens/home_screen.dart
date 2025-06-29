@@ -13,6 +13,7 @@ import '../screens/admin/admin_dashboard_screen.dart';
 // import '../screens/bay_creation_screen.dart'; // REMOVED
 import '../screens/equipment_hierarchy_selection_screen.dart';
 import '../screens/substation_detail_screen.dart';
+import '../screens/admin/reading_template_management_screen.dart'; // Import the new screen
 
 class HomeScreen extends StatefulWidget {
   final AppUser appUser;
@@ -377,6 +378,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+            // NEW: Add "Manage Reading Templates" for admin
+            if (widget.appUser.role == UserRole.admin)
+              ListTile(
+                leading: const Icon(Icons.menu_book),
+                title: const Text('Manage Reading Templates'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const ReadingTemplateManagementScreen(),
+                    ),
+                  );
+                },
+              ),
             const Divider(),
             if (widget.appUser.role == UserRole.admin)
               ListTile(
