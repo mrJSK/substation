@@ -13,12 +13,14 @@ class LogsheetEntryScreen extends StatefulWidget {
   final String substationId;
   final String substationName;
   final AppUser currentUser;
+  final String initialFrequencyFilter; // NEW: Added to receive initial tab
 
   const LogsheetEntryScreen({
     super.key,
     required this.substationId,
     required this.substationName,
     required this.currentUser,
+    this.initialFrequencyFilter = 'hourly', // Default value
   });
 
   @override
@@ -36,10 +38,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   _bayReadingAssignmentDoc; // The actual Firestore document for the assignment
 
   List<ReadingField> _filteredReadingFields = [];
-  String _selectedFrequencyFilter = ReadingFrequency.hourly
-      .toString()
-      .split('.')
-      .last; // Default to hourly
+  late String
+  _selectedFrequencyFilter; // Will be initialized from widget.initialFrequencyFilter
   DateTime _readingDate = DateTime.now(); // Date for daily/monthly readings
 
   // Controllers/Values for the dynamic reading fields
@@ -53,6 +53,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedFrequencyFilter =
+        widget.initialFrequencyFilter; // Initialize with passed filter
     _initializeScreenData();
   }
 
@@ -87,6 +89,14 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         // Automatically select the first bay or try to keep a previously selected one
         _selectedBay = _baysInSubstation.first;
         await _fetchBayReadingAssignment(_selectedBay!.id);
+      } else {
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'No bays found for this substation.',
+            isError: true,
+          );
+        }
       }
     } catch (e) {
       print("Error loading logsheet screen data: $e");
@@ -182,17 +192,24 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           )
           .toList();
       // Ensure existing controllers are disposed and new ones are initialized
-      _readingTextFieldControllers.clear();
-      _readingBooleanFieldValues.clear();
-      _readingDateFieldValues.clear();
-      _readingDropdownFieldValues.clear();
-      _readingBooleanDescriptionControllers.clear();
-
+      // (This part is handled by _initializeReadingFieldControllers now)
       _initializeReadingFieldControllers(_filteredReadingFields);
     });
   }
 
   void _initializeReadingFieldControllers(List<ReadingField> fields) {
+    _readingTextFieldControllers.forEach(
+      (key, controller) => controller.dispose(),
+    ); // Dispose old ones
+    _readingBooleanDescriptionControllers.forEach(
+      (key, controller) => controller.dispose(),
+    ); // Dispose old ones
+    _readingTextFieldControllers.clear();
+    _readingBooleanFieldValues.clear();
+    _readingDateFieldValues.clear();
+    _readingDropdownFieldValues.clear();
+    _readingBooleanDescriptionControllers.clear();
+
     for (var field in fields) {
       final String fieldName = field.name;
       final String dataType = field.dataType.toString().split('.').last;
@@ -480,7 +497,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Logsheet for ${widget.substationName}')),
+      // Removed AppBar from here
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -490,6 +507,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Logsheet for ${widget.substationName}', // Retained substation context
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 16),
                     DropdownButtonFormField<Bay>(
                       value: _selectedBay,
                       decoration: const InputDecoration(
@@ -535,49 +557,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                     const SizedBox(height: 24),
                     if (_selectedBay != null &&
                         _bayReadingAssignmentDoc != null) ...[
-                      Text(
-                        'Select Frequency',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 10),
-                      SegmentedButton<String>(
-                        segments: ReadingFrequency.values.map((freq) {
-                          final String freqName = freq
-                              .toString()
-                              .split('.')
-                              .last;
-                          return ButtonSegment<String>(
-                            value: freqName,
-                            label: Text(freqName.capitalize()),
-                          );
-                        }).toList(),
-                        selected: {_selectedFrequencyFilter},
-                        onSelectionChanged: (Set<String> newSelection) {
-                          setState(() {
-                            _selectedFrequencyFilter = newSelection.first;
-                            final assignedFieldsData =
-                                (_bayReadingAssignmentDoc!.data()
-                                        as Map<
-                                          String,
-                                          dynamic
-                                        >)['assignedFields']
-                                    as List<dynamic>;
-                            final List<ReadingField> allAssignedReadingFields =
-                                assignedFieldsData
-                                    .map(
-                                      (fieldMap) => ReadingField.fromMap(
-                                        fieldMap as Map<String, dynamic>,
-                                      ),
-                                    )
-                                    .toList();
-                            _filterReadingFieldsByFrequency(
-                              allAssignedReadingFields,
-                              _selectedFrequencyFilter,
-                            );
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 24),
+                      // The SegmentedButton for frequency is no longer needed here,
+                      // as the frequency is now determined by the tab from the parent dashboard.
                       Text(
                         'Enter Readings for ${_selectedFrequencyFilter.capitalize()}',
                         style: Theme.of(context).textTheme.titleLarge,
@@ -631,6 +612,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
 // Extension to capitalize first letter
 extension StringExtension on String {
   String capitalize() {
+    if (isEmpty) {
+      return this;
+    }
     return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

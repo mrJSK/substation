@@ -4,6 +4,7 @@ import '../../screens/admin/admin_hierarchy_screen.dart';
 import '../../screens/admin/master_equipment_management_screen.dart';
 import '../../screens/substation_detail_screen.dart';
 import '../../screens/equipment_hierarchy_selection_screen.dart';
+import '../../screens/admin/user_management_screen.dart'; // Import the UserManagementScreen
 
 class AdminDashboardScreen extends StatelessWidget {
   final AppUser adminUser;
@@ -47,9 +48,8 @@ class AdminDashboardScreen extends StatelessWidget {
         'title': 'User Management',
         'subtitle': 'Approve users, assign roles',
         'icon': Icons.people,
-        'screen': const Center(
-          child: Text('User Management Screen (Coming Soon!)'),
-        ),
+        'screen':
+            const UserManagementScreen(), // Direct to UserManagementScreen
         'color': Theme.of(context).colorScheme.secondary,
       },
       {
@@ -64,6 +64,7 @@ class AdminDashboardScreen extends StatelessWidget {
     ];
 
     return Scaffold(
+      appBar: AppBar(title: const Text('Admin Dashboard'), centerTitle: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -289,8 +290,6 @@ class StatCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, color: iconColor, size: 28),
-                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     label,

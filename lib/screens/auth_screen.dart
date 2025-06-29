@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../screens/home_screen.dart';
+import '../utils/snackbar_utils.dart'; // Ensure this is imported for Snackbars
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -25,6 +26,7 @@ class _AuthScreenState extends State<AuthScreen> {
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
+        // User cancelled the sign-in flow
         setState(() {
           _isLoading = false;
         });
@@ -49,31 +51,86 @@ class _AuthScreenState extends State<AuthScreen> {
             .doc(firebaseUser.uid);
         final userDoc = await userDocRef.get();
 
+        AppUser appUser;
         if (!userDoc.exists) {
-          final newUser = AppUser(
+          // New user: Create a pending user document
+          appUser = AppUser(
             uid: firebaseUser.uid,
             email: firebaseUser.email ?? 'no-email@example.com',
             role: UserRole.pending,
             approved: false,
           );
-          await userDocRef.set(newUser.toFirestore());
+          await userDocRef.set(appUser.toFirestore());
           print('New user document created for ${firebaseUser.email}');
         } else {
+          // Existing user: Load their data
+          appUser = AppUser.fromFirestore(userDoc);
           print('Existing user signed in: ${firebaseUser.email}');
+        }
+
+        // --- Navigation based on approval status ---
+        if (mounted) {
+          if (appUser.approved) {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => HomeScreen(appUser: appUser),
+              ),
+              (Route<dynamic> route) => false,
+            );
+          } else {
+            // User is not yet approved
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => const Scaffold(
+                  body: Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.hourglass_empty,
+                            size: 80,
+                            color: Colors.blue,
+                          ),
+                          SizedBox(height: 20),
+                          Text(
+                            'Your account is pending approval by an admin.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 18, color: Colors.grey),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            'Please wait while an administrator reviews your registration.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 14, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              (Route<dynamic> route) => false,
+            );
+          }
         }
       }
     } catch (e) {
       print('Error during Google Sign-In: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to sign in with Google: ${e.toString()}'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to sign in with Google: ${e.toString()}',
+          isError: true,
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -100,17 +157,14 @@ class _AuthScreenState extends State<AuthScreen> {
                   : ElevatedButton.icon(
                       onPressed: _signInWithGoogle,
                       icon: Image.asset(
-                        'assets/google_logo.webp', // --- FIXED: Changed to .webp ---
+                        'assets/google_logo.webp',
                         height: 24,
                         width: 24,
                       ),
-                      label: const Expanded(
-                        // --- FIXED: Wrapped Text with Expanded ---
-                        child: Text(
-                          'Sign In with Google',
-                          overflow:
-                              TextOverflow.ellipsis, // Add overflow handling
-                        ),
+                      // FIX: Removed Expanded from label
+                      label: const Text(
+                        'Sign In with Google',
+                        overflow: TextOverflow.ellipsis,
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
