@@ -6,7 +6,7 @@ import 'package:dropdown_search/dropdown_search.dart';
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart'; // For Substation model
 import '../../utils/snackbar_utils.dart';
-import 'logsheet_entry_screen.dart'; // For LogsheetEntryScreen
+import 'bay_readings_overview_screen.dart'; // Make sure this file contains: class BayReadingsOverviewScreen extends StatelessWidget
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -187,20 +187,19 @@ class _SubstationUserDashboardScreenState
                 child: TabBarView(
                   children: [
                     // Operations (Hourly) Tab
-                    LogsheetEntryScreen(
+                    BayReadingsOverviewScreen(
                       substationId: _selectedSubstationForLogsheet!.id,
                       substationName: _selectedSubstationForLogsheet!.name,
                       currentUser: widget.currentUser,
-                      initialFrequencyFilter: 'hourly', // Pre-filter for hourly
+                      frequencyType: 'hourly',
                     ),
                     // Energy (Daily) Tab
-                    LogsheetEntryScreen(
+                    BayReadingsOverviewScreen(
                       substationId: _selectedSubstationForLogsheet!.id,
                       substationName: _selectedSubstationForLogsheet!.name,
                       currentUser: widget.currentUser,
-                      initialFrequencyFilter: 'daily', // Pre-filter for daily
+                      frequencyType: 'daily',
                     ),
-                    // Tripping & Shutdown Tab (Placeholder)
                     Center(
                       child: Text(
                         'Tripping & Shutdown features coming soon!',
