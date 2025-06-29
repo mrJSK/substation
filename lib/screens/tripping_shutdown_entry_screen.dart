@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:dropdown_search/dropdown_search.dart';
+import 'package:dropdown_search/dropdown_search.dart'; // Ensure dropdown_search is correctly imported
 
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart'; // To fetch bay details
@@ -40,7 +40,7 @@ class _TrippingShutdownEntryScreenState
       false; // True if in closing mode (editing existing OPEN entry)
 
   // Form Fields
-  Bay? _selectedBay;
+  List<Bay> _selectedBays = []; // CHANGED: Now a list for multi-selection
   List<Bay> _baysInSubstation = [];
   String? _selectedEventType; // 'Tripping' or 'Shutdown'
   final TextEditingController _flagsCauseController = TextEditingController();
@@ -103,9 +103,10 @@ class _TrippingShutdownEntryScreenState
       if (_isClosingEvent) {
         // Populate form for existing entry (for closing or view-only)
         final entry = widget.entryToEdit!;
-        _selectedBay = _baysInSubstation.firstWhere(
-          (bay) => bay.id == entry.bayId,
-        );
+        // For closing/viewing, _selectedBays will only contain the specific bay of the entry
+        _selectedBays = [
+          _baysInSubstation.firstWhere((bay) => bay.id == entry.bayId),
+        ];
         _selectedEventType = entry.eventType;
         _flagsCauseController.text = entry.flagsCause;
         _startDate = entry.startTime.toDate();
@@ -114,17 +115,18 @@ class _TrippingShutdownEntryScreenState
         _selectedPhaseFaults = entry.phaseFaults ?? [];
         _distanceController.text = entry.distance ?? '';
 
-        // Only set end date/time if event is already closed
+        // Only set end date/time if event is already closed (for view-only)
         if (entry.status == 'CLOSED') {
           _endDate = entry.endTime!.toDate();
           _endTime = TimeOfDay.fromDateTime(entry.endTime!.toDate());
         } else {
-          _endDate = DateTime.now(); // Default end time to now for closing
+          // Default end time to now for closing mode (not view-only)
+          _endDate = DateTime.now();
           _endTime = TimeOfDay.now();
         }
 
-        // Update conditional visibility based on the loaded bay
-        _updateConditionalFields(_selectedBay);
+        // Update conditional visibility based on the loaded bay(s)
+        _updateConditionalFields(_selectedBays);
       } else {
         // Default values for new entry
         _startDate = DateTime.now();
@@ -148,29 +150,28 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  void _updateConditionalFields(Bay? bay) {
+  // CHANGED: Accepts a list of bays
+  void _updateConditionalFields(List<Bay>? bays) {
     setState(() {
       _showAutoReclose = false;
       _showPhaseFaults = false;
       _showDistance = false;
 
-      if (bay != null) {
-        // Auto-reclose for 220kV or above
-        final voltageLevel =
-            int.tryParse(bay.voltageLevel.replaceAll('kV', '')) ?? 0;
-        if (voltageLevel >= 220) {
-          _showAutoReclose = true;
-        }
+      if (bays != null && bays.isNotEmpty) {
+        // Show Auto-reclose if ANY selected bay is 220kV or above
+        _showAutoReclose = bays.any((bay) {
+          final voltageLevel =
+              int.tryParse(bay.voltageLevel.replaceAll('kV', '')) ?? 0;
+          return voltageLevel >= 220;
+        });
 
-        // Phase Faults only for Tripping events
+        // Show Phase Faults only for Tripping events
         if (_selectedEventType == 'Tripping') {
           _showPhaseFaults = true;
         }
 
-        // Distance only for Line bay type
-        if (bay.bayType == 'Line') {
-          _showDistance = true;
-        }
+        // Show Distance if ANY selected bay is 'Line' type
+        _showDistance = bays.any((bay) => bay.bayType == 'Line');
       }
     });
   }
@@ -220,10 +221,11 @@ class _TrippingShutdownEntryScreenState
       return;
     }
 
-    if (_selectedBay == null) {
+    if (_selectedBays.isEmpty) {
+      // CHANGED: Validate if any bay is selected
       SnackBarUtils.showSnackBar(
         context,
-        'Please select a Bay.',
+        'Please select at least one Bay.',
         isError: true,
       );
       return;
@@ -255,28 +257,31 @@ class _TrippingShutdownEntryScreenState
 
       if (!widget.isViewOnly && widget.entryToEdit == null) {
         // Create New Event Mode
-        final newEntry = TrippingShutdownEntry(
-          substationId: widget.substationId,
-          bayId: _selectedBay!.id,
-          bayName: _selectedBay!.name,
-          eventType: _selectedEventType!,
-          startTime: startTimestamp,
-          endTime: null, // Always null for new OPEN events
-          status: 'OPEN',
-          flagsCause: _flagsCauseController.text.trim(),
-          hasAutoReclose: _showAutoReclose ? _hasAutoReclose : null,
-          phaseFaults: _showPhaseFaults ? _selectedPhaseFaults : null,
-          distance: _showDistance ? _distanceController.text.trim() : null,
-          createdBy: currentUserId,
-          createdAt: Timestamp.now(),
-        );
-        await FirebaseFirestore.instance
-            .collection('trippingShutdownEntries')
-            .add(newEntry.toFirestore());
+        // CHANGED: Iterate over selected bays to create multiple entries
+        for (Bay bay in _selectedBays) {
+          final newEntry = TrippingShutdownEntry(
+            substationId: widget.substationId,
+            bayId: bay.id, // Specific bay ID
+            bayName: bay.name, // Specific bay name
+            eventType: _selectedEventType!,
+            startTime: startTimestamp,
+            endTime: null, // Always null for new OPEN events
+            status: 'OPEN',
+            flagsCause: _flagsCauseController.text.trim(),
+            hasAutoReclose: _showAutoReclose ? _hasAutoReclose : null,
+            phaseFaults: _showPhaseFaults ? _selectedPhaseFaults : null,
+            distance: _showDistance ? _distanceController.text.trim() : null,
+            createdBy: currentUserId,
+            createdAt: Timestamp.now(),
+          );
+          await FirebaseFirestore.instance
+              .collection('trippingShutdownEntries')
+              .add(newEntry.toFirestore());
+        }
         if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
-            'New ${newEntry.eventType} event created successfully!',
+            'New ${_selectedEventType} event(s) created successfully!',
           );
           Navigator.of(context).pop();
         }
@@ -374,8 +379,9 @@ class _TrippingShutdownEntryScreenState
                     // Bay Selector (Read-only if viewOnly or closing event)
                     AbsorbPointer(
                       absorbing: widget.isViewOnly || _isClosingEvent,
-                      child: DropdownSearch<Bay>(
-                        popupProps: PopupProps.menu(
+                      child: DropdownSearch<Bay>.multiSelection(
+                        // CHANGED: Multi-select
+                        popupProps: PopupPropsMultiSelection.menu(
                           showSearchBox: true,
                           menuProps: MenuProps(
                             borderRadius: BorderRadius.circular(10),
@@ -392,8 +398,9 @@ class _TrippingShutdownEntryScreenState
                         ),
                         dropdownDecoratorProps: DropDownDecoratorProps(
                           dropdownSearchDecoration: InputDecoration(
-                            labelText: 'Select Bay',
-                            hintText: 'Choose a bay',
+                            labelText:
+                                'Select Bay(s)', // CHANGED: Label for multi-select
+                            hintText: 'Choose bay(s) for the event',
                             prefixIcon: const Icon(Icons.grid_on),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -408,18 +415,21 @@ class _TrippingShutdownEntryScreenState
                         ),
                         itemAsString: (Bay b) =>
                             '${b.name} (${b.voltageLevel})',
-                        selectedItem: _selectedBay,
+                        selectedItems:
+                            _selectedBays, // CHANGED: Use selectedItems
                         items: _baysInSubstation,
-                        onChanged: (Bay? newValue) {
+                        onChanged: (List<Bay> newValues) {
+                          // CHANGED: Accepts list of Bays
                           setState(() {
-                            _selectedBay = newValue;
+                            _selectedBays = newValues;
                             _updateConditionalFields(
-                              _selectedBay,
-                            ); // Update conditional fields on bay change
+                              _selectedBays,
+                            ); // Update conditional fields
                           });
                         },
-                        validator: (value) =>
-                            value == null ? 'Please select a Bay' : null,
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'Please select at least one Bay'
+                            : null, // CHANGED: Validation for list
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -455,7 +465,7 @@ class _TrippingShutdownEntryScreenState
                           setState(() {
                             _selectedEventType = newValue;
                             _updateConditionalFields(
-                              _selectedBay,
+                              _selectedBays,
                             ); // Update conditional fields on event type change
                           });
                         },
@@ -607,8 +617,9 @@ class _TrippingShutdownEntryScreenState
                       AbsorbPointer(
                         absorbing:
                             widget.isViewOnly ||
-                            widget.entryToEdit!.status ==
-                                'CLOSED', // Absorb if view only or already closed
+                            (widget.entryToEdit != null &&
+                                widget.entryToEdit!.status ==
+                                    'CLOSED'), // Absorb if view only or already closed
                         child: Column(
                           children: [
                             ListTile(
