@@ -4,19 +4,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
-// import 'package:dropdown_search/dropdown_search.dart'; // No longer needed here
 
 import '../models/user_model.dart';
-import '../models/hierarchy_models.dart'; // Still needed for general hierarchy screens
+import '../models/hierarchy_models.dart';
 import '../models/app_state_data.dart';
 import '../screens/auth_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/equipment_hierarchy_selection_screen.dart';
 import '../screens/substation_detail_screen.dart';
 import '../screens/admin/reading_template_management_screen.dart';
-// import '../screens/logsheet_entry_screen.dart'; // No longer directly instantiated here
 
-import 'substation_user_dashboard_screen.dart'; // NEW: Import the new substation user dashboard
+import 'substation_user_dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AppUser appUser;
@@ -28,22 +26,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // These state variables are primarily for hierarchy selection in admin dashboard
-  // and might not be directly used for non-admin user's dashboard view.
   String? _selectedScreenStateName;
   String? _selectedScreenZoneId;
   String? _selectedScreenCircleId;
   String? _selectedScreenDivisionId;
   String? _selectedScreenSubdivisionId;
 
-  // The state variables related to substation selection for logsheet dashboard
-  // are now moved to SubstationUserDashboardScreen.
-
   @override
   void initState() {
     super.initState();
-    // No specific loading for non-admin users here anymore,
-    // as it's handled by SubstationUserDashboardScreen.
   }
 
   Widget _buildHierarchyExpansionTile<T extends HierarchyItem>({
@@ -63,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
         margin: const EdgeInsets.symmetric(vertical: 8.0),
         child: ListTile(
           leading: Icon(icon, color: Colors.grey),
-          title: Text(
+          title: const Text(
             'Select a higher level first',
             style: TextStyle(color: Colors.grey),
           ),
@@ -99,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListTile(
               title: Text(
                 'Error: ${snapshot.error}',
-                style: TextStyle(color: Colors.red),
+                style: const TextStyle(color: Colors.red),
               ),
             ),
           );
@@ -118,12 +109,15 @@ class _HomeScreenState extends State<HomeScreen> {
             .map((doc) {
               if (collectionName == 'zones') return Zone.fromFirestore(doc);
               if (collectionName == 'circles') return Circle.fromFirestore(doc);
-              if (collectionName == 'divisions')
+              if (collectionName == 'divisions') {
                 return Division.fromFirestore(doc);
-              if (collectionName == 'subdivisions')
+              }
+              if (collectionName == 'subdivisions') {
                 return Subdivision.fromFirestore(doc);
-              if (collectionName == 'substations')
+              }
+              if (collectionName == 'substations') {
                 return Substation.fromFirestore(doc);
+              }
               return null;
             })
             .whereType<T>()
@@ -182,23 +176,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     Widget bodyContent;
     String appBarTitle;
-    List<BottomNavigationBarItem> bottomNavItems =
-        []; // This list is now functionally used only for Admin's conceptual bottom nav.
+    List<BottomNavigationBarItem> bottomNavItems = [];
     int selectedIndex = 0;
 
     if (widget.appUser.role == UserRole.admin) {
       appBarTitle = 'Admin Dashboard';
       bodyContent = AdminDashboardScreen(adminUser: widget.appUser);
-      // Admin dashboard might have its own bottom nav items, but for now, it's not explicitly used.
-      // bottomNavItems is empty for admin, so bottomNavigationBar will be null.
     } else {
       appBarTitle = 'User Dashboard';
-      // NEW: Directly use SubstationUserDashboardScreen for non-admin users
       bodyContent = SubstationUserDashboardScreen(currentUser: widget.appUser);
-
-      // For non-admin users, their bottom navigation is now handled by the TabBar
-      // inside SubstationUserDashboardScreen, so this BottomNavigationBar should be null.
-      bottomNavItems = []; // Ensure it's empty for non-admin users
+      bottomNavItems = [];
     }
 
     return Scaffold(
@@ -216,13 +203,70 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        // Removed logout button from AppBar actions
-        actions: [],
+        actions: const [],
+      ),
+      // ADD THIS DRAWER WIDGET
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: <Widget>[
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Substation Manager Pro',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.appUser.email,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ),
+                  Text(
+                    'Role: ${widget.appUser.role.toString().split('.').last}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onPrimary.withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Example Drawer item for logging out
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Logout'),
+              onTap: () async {
+                Navigator.of(context).pop(); // Close the drawer
+                await FirebaseAuth.instance.signOut();
+                await GoogleSignIn()
+                    .signOut(); // Also sign out from Google if used
+                if (mounted) {
+                  // Navigate back to AuthScreen and remove all previous routes
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const AuthScreen()),
+                    (Route<dynamic> route) => false,
+                  );
+                }
+              },
+            ),
+            // You can add more ListTile widgets here for other navigation options
+            // based on the user's role if needed.
+          ],
+        ),
       ),
       body: bodyContent,
       bottomNavigationBar:
-          (widget.appUser.role == UserRole.admin &&
-              bottomNavItems.isNotEmpty) // Only show if admin AND has items
+          (widget.appUser.role == UserRole.admin && bottomNavItems.isNotEmpty)
           ? BottomNavigationBar(
               items: bottomNavItems,
               currentIndex: selectedIndex,
@@ -231,7 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 context,
               ).colorScheme.onSurface.withOpacity(0.6),
             )
-          : null, // Set to null for non-admin roles (and if admin but no items)
+          : null,
     );
   }
 }

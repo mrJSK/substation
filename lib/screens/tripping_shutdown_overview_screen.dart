@@ -4,10 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/user_model.dart';
-import '../../models/tripping_shutdown_model.dart'; // Import the new model
-import '../../models/bay_model.dart'; // Import Bay model to get bay type
+import '../../models/tripping_shutdown_model.dart';
+import '../../models/bay_model.dart';
 import '../../utils/snackbar_utils.dart';
-import 'tripping_shutdown_entry_screen.dart'; // Screen 2: Entry form
+import 'tripping_shutdown_entry_screen.dart';
 
 class TrippingShutdownOverviewScreen extends StatefulWidget {
   final String substationId;
@@ -29,11 +29,9 @@ class TrippingShutdownOverviewScreen extends StatefulWidget {
 class _TrippingShutdownOverviewScreenState
     extends State<TrippingShutdownOverviewScreen> {
   bool _isLoading = true;
-  // Group events by bay type
   Map<String, List<TrippingShutdownEntry>> _groupedEntriesByBayType = {};
-  List<String> _sortedBayTypes = []; // To maintain order of groups
+  List<String> _sortedBayTypes = [];
 
-  // Cache bay data for quick lookup of bayType by bayId
   Map<String, Bay> _baysMap = {};
 
   @override
@@ -50,7 +48,6 @@ class _TrippingShutdownOverviewScreenState
       _baysMap.clear();
     });
     try {
-      // 1. Fetch all bays for this substation to get their types
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
@@ -61,35 +58,54 @@ class _TrippingShutdownOverviewScreenState
         _baysMap[bay.id] = bay;
       }
 
-      // 2. Fetch all tripping/shutdown entries for this substation
       final entriesSnapshot = await FirebaseFirestore.instance
           .collection('trippingShutdownEntries')
           .where('substationId', isEqualTo: widget.substationId)
-          .orderBy(
-            'startTime',
-            descending: true,
-          ) // Order by latest events first
+          .orderBy('startTime', descending: true)
           .get();
 
-      final List<TrippingShutdownEntry> fetchedEntries = entriesSnapshot.docs
+      List<TrippingShutdownEntry> fetchedEntries = entriesSnapshot.docs
           .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
           .toList();
 
-      // 3. Group entries by bay type
+      final bool isDivisionOrHigher = [
+        UserRole.admin,
+        UserRole.zoneManager,
+        UserRole.circleManager,
+        UserRole.divisionManager,
+      ].contains(widget.currentUser.role);
+
+      final bool isSubdivisionManager =
+          widget.currentUser.role == UserRole.subdivisionManager;
+      final bool isSubstationUser =
+          widget.currentUser.role == UserRole.substationUser;
+
+      // Apply filtering based on user role and event status/reason
+      fetchedEntries = fetchedEntries.where((entry) {
+        if (isDivisionOrHigher) {
+          // Division Manager and higher only see CLOSED events
+          return entry.status == 'CLOSED';
+        } else if (isSubdivisionManager || isSubstationUser) {
+          // Subdivision Managers and Substation Users see all events for their assigned substation
+          // For non-feeder bays, they might see OPEN events even without a reason,
+          // as the reason becomes mandatory only upon closing.
+          return true; // No additional filtering for these roles (already filtered by substationId)
+        }
+        return false; // Default: hide
+      }).toList();
+
       for (var entry in fetchedEntries) {
         final Bay? bay = _baysMap[entry.bayId];
         if (bay != null) {
           final String bayType = bay.bayType;
           _groupedEntriesByBayType.putIfAbsent(bayType, () => []).add(entry);
         } else {
-          // Handle entries without a matching bay (e.g., bay deleted)
           _groupedEntriesByBayType
               .putIfAbsent('Unknown Bay Type', () => [])
               .add(entry);
         }
       }
 
-      // 4. Sort bay types (groups) for consistent display
       _sortedBayTypes = _groupedEntriesByBayType.keys.toList()..sort();
     } catch (e) {
       print("Error fetching tripping/shutdown entries: $e");
@@ -149,7 +165,7 @@ class _TrippingShutdownOverviewScreenState
             '$eventType event deleted successfully!',
           );
         }
-        _fetchTrippingShutdownEntries(); // Refresh list
+        _fetchTrippingShutdownEntries();
       } catch (e) {
         print("Error deleting event: $e");
         if (mounted) {
@@ -194,7 +210,7 @@ class _TrippingShutdownOverviewScreenState
                   margin: const EdgeInsets.symmetric(vertical: 8.0),
                   elevation: 3,
                   child: ExpansionTile(
-                    initiallyExpanded: true, // Expand all groups by default
+                    initiallyExpanded: true,
                     title: Text(
                       '$bayType Events (${entriesForType.length})',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -215,7 +231,6 @@ class _TrippingShutdownOverviewScreenState
                             ).format(entry.endTime!.toDate())
                           : 'N/A';
 
-                      // Determine event status icon and color
                       IconData statusIcon;
                       Color statusColor;
                       String statusText;
@@ -238,7 +253,6 @@ class _TrippingShutdownOverviewScreenState
                         child: Column(
                           children: [
                             ListTile(
-                              // Main display for the event summary
                               leading: Icon(statusIcon, color: statusColor),
                               title: Text(
                                 '${entry.eventType} - ${entry.bayName}',
@@ -248,15 +262,15 @@ class _TrippingShutdownOverviewScreenState
                                 children: [
                                   Text('Start: $startTimeFormatted'),
                                   Text('Status: $statusText'),
+                                  if (entry.reasonForNonFeeder != null &&
+                                      entry.reasonForNonFeeder!.isNotEmpty)
+                                    Text('Reason: ${entry.reasonForNonFeeder}'),
                                   if (entry.status == 'CLOSED')
                                     Text('End: $endTimeFormatted'),
                                 ],
                               ),
-                              trailing: const Icon(
-                                Icons.arrow_forward_ios,
-                              ), // Keep arrow for expansion
+                              trailing: const Icon(Icons.arrow_forward_ios),
                               onTap: () {
-                                // NEW: onTap navigates to view-only details
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
                                     builder: (context) =>
@@ -264,14 +278,12 @@ class _TrippingShutdownOverviewScreenState
                                           substationId: widget.substationId,
                                           currentUser: widget.currentUser,
                                           entryToEdit: entry,
-                                          isViewOnly:
-                                              true, // Always view-only for this tap
+                                          isViewOnly: true,
                                         ),
                                   ),
                                 );
                               },
                             ),
-                            // Action buttons moved below the ListTile for better layout
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16.0,
@@ -280,7 +292,6 @@ class _TrippingShutdownOverviewScreenState
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
-                                  // Close Event Button (visible only if OPEN and user has permission)
                                   if (entry.status == 'OPEN' &&
                                       (widget.currentUser.role ==
                                               UserRole.substationUser ||
@@ -299,28 +310,23 @@ class _TrippingShutdownOverviewScreenState
                                                           widget.substationId,
                                                       currentUser:
                                                           widget.currentUser,
-                                                      entryToEdit:
-                                                          entry, // Pass the existing entry to close
-                                                      isViewOnly:
-                                                          false, // It's an edit/close operation
+                                                      entryToEdit: entry,
+                                                      isViewOnly: false,
                                                     ),
                                               ),
                                             )
                                             .then(
                                               (_) =>
                                                   _fetchTrippingShutdownEntries(),
-                                            ); // Refresh on return
+                                            );
                                       },
                                       icon: const Icon(Icons.flash_on),
-                                      label: const Text(
-                                        'Close Event',
-                                      ), // Changed label for clarity
+                                      label: const Text('Close Event'),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.green,
                                       ),
                                     ),
                                   const SizedBox(width: 8),
-                                  // Delete Button (only for Admin)
                                   if (widget.currentUser.role == UserRole.admin)
                                     Padding(
                                       padding: const EdgeInsets.only(left: 8.0),
@@ -340,9 +346,7 @@ class _TrippingShutdownOverviewScreenState
                                 ],
                               ),
                             ),
-                            const Divider(
-                              height: 1,
-                            ), // Separator between entries
+                            const Divider(height: 1),
                           ],
                         ),
                       );
@@ -359,14 +363,11 @@ class _TrippingShutdownOverviewScreenState
                   builder: (context) => TrippingShutdownEntryScreen(
                     substationId: widget.substationId,
                     currentUser: widget.currentUser,
-                    isViewOnly: false, // New creation is not view-only
-                    // No entryToEdit for new creation
+                    isViewOnly: false,
                   ),
                 ),
               )
-              .then(
-                (_) => _fetchTrippingShutdownEntries(),
-              ); // Refresh on return
+              .then((_) => _fetchTrippingShutdownEntries());
         },
         label: const Text('Add New Event'),
         icon: const Icon(Icons.add),

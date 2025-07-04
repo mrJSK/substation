@@ -3,19 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:dropdown_search/dropdown_search.dart'; // Ensure dropdown_search is correctly imported
+import 'package:dropdown_search/dropdown_search.dart';
 
 import '../../models/user_model.dart';
-import '../../models/bay_model.dart'; // To fetch bay details
+import '../../models/bay_model.dart';
 import '../../models/tripping_shutdown_model.dart';
 import '../../utils/snackbar_utils.dart';
 
 class TrippingShutdownEntryScreen extends StatefulWidget {
   final String substationId;
   final AppUser currentUser;
-  final TrippingShutdownEntry?
-  entryToEdit; // Null for new, populated for closing
-  final bool isViewOnly; // This is the parameter that must be present!
+  final TrippingShutdownEntry? entryToEdit;
+  final bool isViewOnly; // This parameter determines view-only mode
 
   const TrippingShutdownEntryScreen({
     super.key,
@@ -23,7 +22,7 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
     required this.currentUser,
     this.entryToEdit,
     this.isViewOnly =
-        false, // It has a default value, making it optional to pass
+        false, // Default to false, allowing editing unless explicitly set true
   });
 
   @override
@@ -37,13 +36,15 @@ class _TrippingShutdownEntryScreenState
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isClosingEvent =
-      false; // True if in closing mode (editing existing OPEN entry)
+      false; // True if editing an existing OPEN entry to close it
 
   // Form Fields
-  List<Bay> _selectedBays = []; // CHANGED: Now a list for multi-selection
-  List<Bay> _baysInSubstation = [];
+  List<Bay> _selectedBays = []; // Now a list for multi-selection
+  List<Bay> _baysInSubstation = []; // All bays available for selection
   String? _selectedEventType; // 'Tripping' or 'Shutdown'
   final TextEditingController _flagsCauseController = TextEditingController();
+  final TextEditingController _reasonForNonFeederController =
+      TextEditingController(); // Controller for the reason field
   DateTime? _startDate;
   TimeOfDay? _startTime;
   bool _hasAutoReclose = false;
@@ -58,21 +59,15 @@ class _TrippingShutdownEntryScreenState
   bool _showAutoReclose = false;
   bool _showPhaseFaults = false;
   bool _showDistance = false;
+  bool _showReasonForNonFeeder = false; // Flag for reason field visibility
 
   // Phase fault options
-  final List<String> _phaseFaultOptions = [
-    'Rph',
-    'Yph',
-    'Bph',
-    'R-Y',
-    'Y-B',
-    'R-B',
-    'RYB',
-  ];
+  final List<String> _phaseFaultOptions = ['Rph', 'Yph', 'Bph'];
 
   @override
   void initState() {
     super.initState();
+    // Determine if we are in "closing an existing event" mode
     _isClosingEvent = widget.entryToEdit != null;
     _initializeForm();
   }
@@ -80,6 +75,7 @@ class _TrippingShutdownEntryScreenState
   @override
   void dispose() {
     _flagsCauseController.dispose();
+    _reasonForNonFeederController.dispose();
     _distanceController.dispose();
     super.dispose();
   }
@@ -109,6 +105,8 @@ class _TrippingShutdownEntryScreenState
         ];
         _selectedEventType = entry.eventType;
         _flagsCauseController.text = entry.flagsCause;
+        _reasonForNonFeederController.text =
+            entry.reasonForNonFeeder ?? ''; // Populate reason if it exists
         _startDate = entry.startTime.toDate();
         _startTime = TimeOfDay.fromDateTime(entry.startTime.toDate());
         _hasAutoReclose = entry.hasAutoReclose ?? false;
@@ -141,7 +139,7 @@ class _TrippingShutdownEntryScreenState
           'Failed to load form data: $e',
           isError: true,
         );
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(); // Go back if data fails to load
       }
     } finally {
       setState(() {
@@ -150,29 +148,30 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // CHANGED: Accepts a list of bays
+  // UPDATED: Logic for _showReasonForNonFeeder has changed here
   void _updateConditionalFields(List<Bay>? bays) {
     setState(() {
       _showAutoReclose = false;
       _showPhaseFaults = false;
       _showDistance = false;
+      // _showReasonForNonFeeder will be determined by !widget.isViewOnly below
 
       if (bays != null && bays.isNotEmpty) {
-        // Show Auto-reclose if ANY selected bay is 220kV or above
         _showAutoReclose = bays.any((bay) {
           final voltageLevel =
               int.tryParse(bay.voltageLevel.replaceAll('kV', '')) ?? 0;
           return voltageLevel >= 220;
         });
 
-        // Show Phase Faults only for Tripping events
         if (_selectedEventType == 'Tripping') {
           _showPhaseFaults = true;
         }
 
-        // Show Distance if ANY selected bay is 'Line' type
         _showDistance = bays.any((bay) => bay.bayType == 'Line');
       }
+
+      // **CRITICAL CHANGE HERE:** Make the "Reason" field visible whenever the screen is not in view-only mode.
+      _showReasonForNonFeeder = !widget.isViewOnly;
     });
   }
 
@@ -222,7 +221,6 @@ class _TrippingShutdownEntryScreenState
     }
 
     if (_selectedBays.isEmpty) {
-      // CHANGED: Validate if any bay is selected
       SnackBarUtils.showSnackBar(
         context,
         'Please select at least one Bay.',
@@ -257,8 +255,19 @@ class _TrippingShutdownEntryScreenState
 
       if (!widget.isViewOnly && widget.entryToEdit == null) {
         // Create New Event Mode
-        // CHANGED: Iterate over selected bays to create multiple entries
         for (Bay bay in _selectedBays) {
+          // Reason is now generally mandatory if the field is visible/editable.
+          if (_showReasonForNonFeeder &&
+              _reasonForNonFeederController.text.trim().isEmpty) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Reason is mandatory.', // Simplified message
+              isError: true,
+            );
+            setState(() => _isSaving = false);
+            return;
+          }
+
           final newEntry = TrippingShutdownEntry(
             substationId: widget.substationId,
             bayId: bay.id, // Specific bay ID
@@ -268,6 +277,12 @@ class _TrippingShutdownEntryScreenState
             endTime: null, // Always null for new OPEN events
             status: 'OPEN',
             flagsCause: _flagsCauseController.text.trim(),
+            // Save reason if field is visible (i.e., not view-only)
+            reasonForNonFeeder:
+                _showReasonForNonFeeder &&
+                    _reasonForNonFeederController.text.trim().isNotEmpty
+                ? _reasonForNonFeederController.text.trim()
+                : null,
             hasAutoReclose: _showAutoReclose ? _hasAutoReclose : null,
             phaseFaults: _showPhaseFaults ? _selectedPhaseFaults : null,
             distance: _showDistance ? _distanceController.text.trim() : null,
@@ -316,11 +331,29 @@ class _TrippingShutdownEntryScreenState
           return;
         }
 
+        // Reason is now generally mandatory if the field is visible/editable.
+        if (_showReasonForNonFeeder &&
+            _reasonForNonFeederController.text.trim().isEmpty) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Reason is mandatory.', // Simplified message
+            isError: true,
+          );
+          setState(() => _isSaving = false);
+          return;
+        }
+
         final updatedEntry = widget.entryToEdit!.copyWith(
           endTime: endTimestamp,
           status: 'CLOSED',
           closedBy: currentUserId,
           closedAt: Timestamp.now(),
+          // Save reason if field is visible (i.e., not view-only)
+          reasonForNonFeeder:
+              _showReasonForNonFeeder &&
+                  _reasonForNonFeederController.text.trim().isNotEmpty
+              ? _reasonForNonFeederController.text.trim()
+              : null,
         );
         await FirebaseFirestore.instance
             .collection('trippingShutdownEntries')
@@ -334,8 +367,7 @@ class _TrippingShutdownEntryScreenState
           Navigator.of(context).pop();
         }
       } else if (widget.isViewOnly && widget.entryToEdit != null) {
-        // View Only Mode
-        // No save operation in view only mode. Just pop.
+        // View Only Mode (no save operation)
         if (mounted) {
           Navigator.of(context).pop();
         }
@@ -380,7 +412,6 @@ class _TrippingShutdownEntryScreenState
                     AbsorbPointer(
                       absorbing: widget.isViewOnly || _isClosingEvent,
                       child: DropdownSearch<Bay>.multiSelection(
-                        // CHANGED: Multi-select
                         popupProps: PopupPropsMultiSelection.menu(
                           showSearchBox: true,
                           menuProps: MenuProps(
@@ -398,8 +429,7 @@ class _TrippingShutdownEntryScreenState
                         ),
                         dropdownDecoratorProps: DropDownDecoratorProps(
                           dropdownSearchDecoration: InputDecoration(
-                            labelText:
-                                'Select Bay(s)', // CHANGED: Label for multi-select
+                            labelText: 'Select Bay(s)',
                             hintText: 'Choose bay(s) for the event',
                             prefixIcon: const Icon(Icons.grid_on),
                             border: OutlineInputBorder(
@@ -415,21 +445,17 @@ class _TrippingShutdownEntryScreenState
                         ),
                         itemAsString: (Bay b) =>
                             '${b.name} (${b.voltageLevel})',
-                        selectedItems:
-                            _selectedBays, // CHANGED: Use selectedItems
+                        selectedItems: _selectedBays,
                         items: _baysInSubstation,
                         onChanged: (List<Bay> newValues) {
-                          // CHANGED: Accepts list of Bays
                           setState(() {
                             _selectedBays = newValues;
-                            _updateConditionalFields(
-                              _selectedBays,
-                            ); // Update conditional fields
+                            _updateConditionalFields(_selectedBays);
                           });
                         },
                         validator: (value) => value == null || value.isEmpty
                             ? 'Please select at least one Bay'
-                            : null, // CHANGED: Validation for list
+                            : null,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -464,9 +490,7 @@ class _TrippingShutdownEntryScreenState
                         onChanged: (newValue) {
                           setState(() {
                             _selectedEventType = newValue;
-                            _updateConditionalFields(
-                              _selectedBays,
-                            ); // Update conditional fields on event type change
+                            _updateConditionalFields(_selectedBays);
                           });
                         },
                         validator: (value) => value == null
@@ -522,9 +546,7 @@ class _TrippingShutdownEntryScreenState
                             : Theme.of(context).inputDecorationTheme.fillColor,
                       ),
                       maxLines: 3,
-                      readOnly:
-                          widget.isViewOnly ||
-                          _isClosingEvent, // Read-only if viewOnly or closing event
+                      readOnly: widget.isViewOnly || _isClosingEvent,
                       validator: (value) =>
                           value == null || value.trim().isEmpty
                           ? 'Flags/Cause is mandatory'
@@ -532,7 +554,7 @@ class _TrippingShutdownEntryScreenState
                     ),
                     const SizedBox(height: 16),
 
-                    // Conditional fields
+                    // Conditional fields (Auto-reclose, Phase Faults, Distance)
                     if (_showAutoReclose)
                       AbsorbPointer(
                         absorbing: widget.isViewOnly || _isClosingEvent,
@@ -600,9 +622,7 @@ class _TrippingShutdownEntryScreenState
                                 ).inputDecorationTheme.fillColor,
                         ),
                         keyboardType: TextInputType.number,
-                        readOnly:
-                            widget.isViewOnly ||
-                            _isClosingEvent, // Read-only if viewOnly or closing event
+                        readOnly: widget.isViewOnly || _isClosingEvent,
                       ),
                     const SizedBox(height: 32),
 
@@ -647,6 +667,55 @@ class _TrippingShutdownEntryScreenState
                           ],
                         ),
                       ),
+                      const SizedBox(height: 16), // Added spacing
+                      // **MOVED & UPDATED:** Reason for Tripping/Shutdown Text Field - New position
+                      if (_showReasonForNonFeeder) // This will now be true if not in view-only mode
+                        Padding(
+                          // Add padding around the field if needed for spacing
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: TextFormField(
+                            controller: _reasonForNonFeederController,
+                            decoration: InputDecoration(
+                              labelText: 'Reason for Tripping/Shutdown',
+                              hintText: 'Enter reason for the event',
+                              prefixIcon: const Icon(Icons.info_outline),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              // Field will be filled and read-only if in view-only mode or event is already CLOSED
+                              filled:
+                                  widget.isViewOnly ||
+                                  (widget.entryToEdit != null &&
+                                      widget.entryToEdit!.status == 'CLOSED'),
+                              fillColor:
+                                  (widget.isViewOnly ||
+                                      (widget.entryToEdit != null &&
+                                          widget.entryToEdit!.status ==
+                                              'CLOSED'))
+                                  ? Colors.grey.shade100
+                                  : Theme.of(
+                                      context,
+                                    ).inputDecorationTheme.fillColor,
+                            ),
+                            maxLines: 3,
+                            // Field will be read-only if in view-only mode or event is already CLOSED
+                            readOnly:
+                                widget.isViewOnly ||
+                                (widget.entryToEdit != null &&
+                                    widget.entryToEdit!.status == 'CLOSED'),
+                            validator: (value) {
+                              // Validator runs ONLY if the field is NOT read-only
+                              if (!(widget.isViewOnly ||
+                                      (widget.entryToEdit != null &&
+                                          widget.entryToEdit!.status ==
+                                              'CLOSED')) &&
+                                  (value == null || value.trim().isEmpty)) {
+                                return 'Reason is mandatory.'; // Simplified message for all cases
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
                       const SizedBox(height: 32),
                     ],
 

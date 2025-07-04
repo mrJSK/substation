@@ -11,6 +11,8 @@ class TrippingShutdownEntry {
   final Timestamp? endTime; // Null if status is 'OPEN'
   final String status; // 'OPEN' or 'CLOSED'
   final String flagsCause; // Text area for flags/cause
+  final String?
+  reasonForNonFeeder; // NEW FIELD: Reason for non-feeder bay types
   final bool? hasAutoReclose; // Optional, only for 220kV+ bays
   final List<String>?
   phaseFaults; // e.g., ['Rph', 'Yph', 'RYB'], only for Tripping
@@ -30,6 +32,7 @@ class TrippingShutdownEntry {
     this.endTime,
     required this.status,
     required this.flagsCause,
+    this.reasonForNonFeeder, // NEW: Add to constructor
     this.hasAutoReclose,
     this.phaseFaults,
     this.distance,
@@ -51,6 +54,8 @@ class TrippingShutdownEntry {
       endTime: data['endTime'],
       status: data['status'] ?? 'OPEN',
       flagsCause: data['flagsCause'] ?? '',
+      reasonForNonFeeder:
+          data['reasonForNonFeeder'], // NEW: Read from Firestore
       hasAutoReclose: data['hasAutoReclose'],
       phaseFaults: (data['phaseFaults'] as List<dynamic>?)
           ?.map((e) => e.toString())
@@ -73,6 +78,7 @@ class TrippingShutdownEntry {
       'endTime': endTime,
       'status': status,
       'flagsCause': flagsCause,
+      'reasonForNonFeeder': reasonForNonFeeder, // NEW: Write to Firestore
       'hasAutoReclose': hasAutoReclose,
       'phaseFaults': phaseFaults,
       'distance': distance,
@@ -93,6 +99,7 @@ class TrippingShutdownEntry {
     Timestamp? endTime,
     String? status,
     String? flagsCause,
+    String? reasonForNonFeeder, // NEW: Add to copyWith
     bool? hasAutoReclose,
     List<String>? phaseFaults,
     String? distance,
@@ -111,6 +118,8 @@ class TrippingShutdownEntry {
       endTime: endTime ?? this.endTime,
       status: status ?? this.status,
       flagsCause: flagsCause ?? this.flagsCause,
+      reasonForNonFeeder:
+          reasonForNonFeeder ?? this.reasonForNonFeeder, // NEW: Use in copyWith
       hasAutoReclose: hasAutoReclose ?? this.hasAutoReclose,
       phaseFaults: phaseFaults ?? this.phaseFaults,
       distance: distance ?? this.distance,
