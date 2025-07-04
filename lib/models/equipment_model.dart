@@ -1,19 +1,47 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum CustomFieldDataType { text, number, boolean, date, dropdown }
+/// Defines the possible data types for custom fields associated with equipment templates.
+enum CustomFieldDataType {
+  text,
+  number,
+  boolean,
+  date,
+  dropdown,
+  group, // Represents a nested list of custom fields (e.g., for repetitive items like phases)
+}
 
+/// Represents a single custom field definition within a MasterEquipmentTemplate.
+/// These fields define the additional properties that can be recorded for an equipment.
 class CustomField {
+  /// The display name of the custom field (e.g., 'Voltage', 'Manufacturer').
   String name;
-  CustomFieldDataType dataType;
-  bool isMandatory;
-  bool hasUnits;
-  String units;
-  List<String> options; // Used for dropdown type
-  bool
-  hasRemarksField; // Indicates if this boolean field should have an associated remarks text area
-  String
-  templateRemarkText; // Stores the custom label/hint for the remarks text area in the template
 
+  /// The data type of the field, defined by [CustomFieldDataType].
+  CustomFieldDataType dataType;
+
+  /// Indicates if this field is mandatory for data entry.
+  bool isMandatory;
+
+  /// Indicates if this field (typically 'number' type) has associated units.
+  bool hasUnits;
+
+  /// The unit of measurement for number fields (e.g., 'V', 'A', 'kW').
+  String units;
+
+  /// Options for 'dropdown' type fields.
+  List<String> options;
+
+  /// Indicates if a boolean field should have an associated text area for remarks/description.
+  bool hasRemarksField;
+
+  /// Stores the custom label/hint for the remarks text area associated with a boolean field.
+  String templateRemarkText;
+
+  /// For 'group' type fields, this defines the structure of items within the group.
+  /// Each item in the group will conform to the structure defined by these nested CustomFields.
+  List<CustomField>? nestedFields;
+
+  /// Creates a [CustomField] instance.
   CustomField({
     required this.name,
     required this.dataType,
@@ -21,16 +49,22 @@ class CustomField {
     this.hasUnits = false,
     this.units = '',
     this.options = const [],
-    this.hasRemarksField = false, // Default to false
-    this.templateRemarkText = '', // Default to empty string
+    this.hasRemarksField = false,
+    this.templateRemarkText = '',
+    this.nestedFields,
   });
 
+  /// Creates a [CustomField] instance from a Firestore map.
   factory CustomField.fromMap(Map<String, dynamic> map) {
     return CustomField(
       name: map['name'] ?? '',
       dataType: CustomFieldDataType.values.firstWhere(
-        (e) => e.toString().split('.').last == map['dataType'],
-        orElse: () => CustomFieldDataType.text, // Provide a fallback
+        // Check for 'group' in map, fallback if 'list' still exists in old data
+        (e) =>
+            e.toString().split('.').last == map['dataType'] ||
+            (map['dataType'] == 'list' && e == CustomFieldDataType.group),
+        orElse: () => CustomFieldDataType
+            .text, // Fallback to text if data type is unknown
       ),
       isMandatory: map['isMandatory'] ?? false,
       hasUnits: map['hasUnits'] ?? false,
@@ -40,15 +74,24 @@ class CustomField {
               ?.map((e) => e.toString())
               .toList() ??
           [],
-      hasRemarksField: map['hasRemarksField'] ?? false, // Read from map
-      templateRemarkText: map['templateRemarkText'] ?? '', // Read from map
+      hasRemarksField: map['hasRemarksField'] ?? false,
+      templateRemarkText: map['templateRemarkText'] ?? '',
+      nestedFields: (map['nestedFields'] as List<dynamic>?)
+          ?.map(
+            (fieldMap) => CustomField.fromMap(fieldMap as Map<String, dynamic>),
+          )
+          .toList(),
     );
   }
 
+  /// Converts this [CustomField] instance to a Firestore-compatible map.
   Map<String, dynamic> toMap() {
     final Map<String, dynamic> map = {
       'name': name,
-      'dataType': dataType.toString().split('.').last, // Store as string
+      'dataType': dataType
+          .toString()
+          .split('.')
+          .last, // Store enum name as string
       'isMandatory': isMandatory,
       'hasUnits': hasUnits,
       'units': units,
@@ -57,30 +100,80 @@ class CustomField {
     if (hasRemarksField) {
       map['hasRemarksField'] = hasRemarksField;
       if (templateRemarkText.isNotEmpty) {
-        // Only save remark text if it's not empty
         map['templateRemarkText'] = templateRemarkText;
       }
     }
+    if (nestedFields != null) {
+      map['nestedFields'] = nestedFields!
+          .map((field) => field.toMap())
+          .toList();
+    }
     return map;
+  }
+
+  /// Creates a copy of this [CustomField] but with the given fields replaced with the new values.
+  CustomField copyWith({
+    String? name,
+    CustomFieldDataType? dataType,
+    bool? isMandatory,
+    bool? hasUnits,
+    String? units,
+    List<String>? options,
+    bool? hasRemarksField,
+    String? templateRemarkText,
+    List<CustomField>? nestedFields,
+  }) {
+    return CustomField(
+      name: name ?? this.name,
+      dataType: dataType ?? this.dataType,
+      isMandatory: isMandatory ?? this.isMandatory,
+      hasUnits: hasUnits ?? this.hasUnits,
+      units: units ?? this.units,
+      options: options ?? this.options,
+      hasRemarksField: hasRemarksField ?? this.hasRemarksField,
+      templateRemarkText: templateRemarkText ?? this.templateRemarkText,
+      nestedFields: nestedFields ?? this.nestedFields,
+    );
   }
 }
 
+/// Defines the structure for a master equipment template, used to standardize
+/// equipment types and their properties across the system.
 class MasterEquipmentTemplate {
-  final String? id; // Null for new templates before they are saved
+  /// The unique identifier for the template (null for new templates before saving).
+  final String? id;
+
+  /// The name of the equipment type (e.g., 'Power Transformer', 'Circuit Breaker').
   final String equipmentType;
-  final String symbolKey; // e.g., "Transformer", "Breaker"
+
+  /// A key referencing the symbolic representation for this equipment type.
+  final String symbolKey;
+
+  /// A list of custom fields that further define the properties of this equipment type.
   final List<CustomField> equipmentCustomFields;
+
+  /// The user ID of the creator.
   final String createdBy;
+
+  /// The timestamp when the template was created.
   final Timestamp createdAt;
+
+  /// Default width for the equipment symbol in diagrams (optional).
   final double defaultWidth;
+
+  /// Default height for the equipment symbol in diagrams (optional).
   final double defaultHeight;
 
-  // NEW fields for Basic Details
-  final String? make; // Make: text (optional)
-  final Timestamp? dateOfManufacture; // Date of Manufacture: date (optional)
-  final Timestamp?
-  dateOfCommissioning; // Date of Commissioning: date (optional)
+  /// Make/manufacturer of the equipment (optional basic detail).
+  final String? make;
 
+  /// Date of manufacture of the equipment (optional basic detail).
+  final Timestamp? dateOfManufacture;
+
+  /// Date when the equipment was commissioned (optional basic detail).
+  final Timestamp? dateOfCommissioning;
+
+  /// Creates a [MasterEquipmentTemplate] instance.
   MasterEquipmentTemplate({
     this.id,
     required this.equipmentType,
@@ -88,20 +181,20 @@ class MasterEquipmentTemplate {
     required this.equipmentCustomFields,
     required this.createdBy,
     required this.createdAt,
-    this.defaultWidth = 60.0, // Default value if not provided
-    this.defaultHeight = 60.0, // Default value if not provided
-    // Initialize new fields
+    this.defaultWidth = 60.0,
+    this.defaultHeight = 60.0,
     this.make,
     this.dateOfManufacture,
     this.dateOfCommissioning,
   });
 
+  /// Creates a [MasterEquipmentTemplate] instance from a Firestore [DocumentSnapshot].
   factory MasterEquipmentTemplate.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return MasterEquipmentTemplate(
       id: doc.id,
       equipmentType: data['equipmentType'] ?? '',
-      symbolKey: data['symbolKey'] ?? 'Other', // Provide a default symbol
+      symbolKey: data['symbolKey'] ?? 'Other',
       equipmentCustomFields:
           (data['equipmentCustomFields'] as List<dynamic>?)
               ?.map((fieldMap) => CustomField.fromMap(fieldMap))
@@ -111,13 +204,13 @@ class MasterEquipmentTemplate {
       createdAt: data['createdAt'] ?? Timestamp.now(),
       defaultWidth: (data['defaultWidth'] as num?)?.toDouble() ?? 60.0,
       defaultHeight: (data['defaultHeight'] as num?)?.toDouble() ?? 60.0,
-      // Read new fields
       make: data['make'] as String?,
       dateOfManufacture: data['dateOfManufacture'] as Timestamp?,
       dateOfCommissioning: data['dateOfCommissioning'] as Timestamp?,
     );
   }
 
+  /// Converts this [MasterEquipmentTemplate] instance to a Firestore-compatible map.
   Map<String, dynamic> toFirestore() {
     return {
       'equipmentType': equipmentType,
@@ -129,13 +222,13 @@ class MasterEquipmentTemplate {
       'createdAt': createdAt,
       'defaultWidth': defaultWidth,
       'defaultHeight': defaultHeight,
-      // Write new fields
       'make': make,
       'dateOfManufacture': dateOfManufacture,
       'dateOfCommissioning': dateOfCommissioning,
     };
   }
 
+  /// Creates a copy of this [MasterEquipmentTemplate] but with the given fields replaced with the new values.
   MasterEquipmentTemplate copyWith({
     String? id,
     String? equipmentType,
@@ -145,7 +238,6 @@ class MasterEquipmentTemplate {
     Timestamp? createdAt,
     double? defaultWidth,
     double? defaultHeight,
-    // CopyWith new fields
     String? make,
     Timestamp? dateOfManufacture,
     Timestamp? dateOfCommissioning,
@@ -160,7 +252,6 @@ class MasterEquipmentTemplate {
       createdAt: createdAt ?? this.createdAt,
       defaultWidth: defaultWidth ?? this.defaultWidth,
       defaultHeight: defaultHeight ?? this.defaultHeight,
-      // Use new fields in copyWith
       make: make ?? this.make,
       dateOfManufacture: dateOfManufacture ?? this.dateOfManufacture,
       dateOfCommissioning: dateOfCommissioning ?? this.dateOfCommissioning,
@@ -168,28 +259,50 @@ class MasterEquipmentTemplate {
   }
 }
 
-// EquipmentInstance class (no changes needed here for this request)
+/// Represents an actual instance of an equipment deployed in a bay,
+/// referencing a [MasterEquipmentTemplate] and storing its specific values.
 class EquipmentInstance {
+  /// The unique identifier for this equipment instance.
   final String id;
+
+  /// The ID of the bay where this equipment is installed.
   final String bayId;
+
+  /// The ID of the [MasterEquipmentTemplate] this instance is based on.
   final String templateId;
+
+  /// The type name from the associated template (e.g., 'Power Transformer').
   final String equipmentTypeName;
+
+  /// The symbol key from the associated template (e.g., 'Transformer').
   final String symbolKey;
+
+  /// The user ID of the creator.
   final String createdBy;
+
+  /// The timestamp when this equipment instance record was created.
   final Timestamp createdAt;
+
+  /// A map storing the actual values for the custom fields defined in the template.
+  /// Key: CustomField.name, Value: recorded data.
   final Map<String, dynamic> customFieldValues;
 
-  // NEW fields for Equipment History
-  final String status; // e.g., 'active', 'replaced', 'decommissioned'
-  final String?
-  previousEquipmentInstanceId; // ID of the equipment this one replaced
-  final String?
-  replacementEquipmentInstanceId; // ID of the equipment that replaced this one
-  final Timestamp?
-  decommissionedAt; // When this equipment was replaced/decommissioned
-  final String?
-  reasonForChange; // Reason for changing status (e.g., 'fault', 'upgrade')
+  /// The operational status of this equipment instance (e.g., 'active', 'replaced', 'decommissioned').
+  final String status;
 
+  /// The ID of the equipment instance that this one replaced (for history tracking).
+  final String? previousEquipmentInstanceId;
+
+  /// The ID of the equipment instance that replaced this one (for history tracking).
+  final String? replacementEquipmentInstanceId;
+
+  /// The timestamp when this equipment instance was decommissioned or replaced.
+  final Timestamp? decommissionedAt;
+
+  /// The reason for changing the status (e.g., 'fault', 'upgrade', 'maintenance').
+  final String? reasonForChange;
+
+  /// Creates an [EquipmentInstance] instance.
   EquipmentInstance({
     required this.id,
     required this.bayId,
@@ -199,13 +312,14 @@ class EquipmentInstance {
     required this.createdBy,
     required this.createdAt,
     required this.customFieldValues,
-    this.status = 'active', // Default status
+    this.status = 'active', // Default status is 'active'
     this.previousEquipmentInstanceId,
     this.replacementEquipmentInstanceId,
     this.decommissionedAt,
     this.reasonForChange,
   });
 
+  /// Creates an [EquipmentInstance] instance from a Firestore [DocumentSnapshot].
   factory EquipmentInstance.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return EquipmentInstance(
@@ -218,17 +332,17 @@ class EquipmentInstance {
       createdAt: data['createdAt'] as Timestamp,
       customFieldValues:
           data['customFieldValues'] as Map<String, dynamic>? ?? {},
-      status: data['status'] ?? 'active', // Read new field
+      status: data['status'] ?? 'active',
       previousEquipmentInstanceId:
-          data['previousEquipmentInstanceId'], // Read new field
+          data['previousEquipmentInstanceId'] as String?,
       replacementEquipmentInstanceId:
-          data['replacementEquipmentInstanceId'], // Read new field
-      decommissionedAt:
-          data['decommissionedAt'] as Timestamp?, // Read new field
-      reasonForChange: data['reasonForChange'], // Read new field
+          data['replacementEquipmentInstanceId'] as String?,
+      decommissionedAt: data['decommissionedAt'] as Timestamp?,
+      reasonForChange: data['reasonForChange'] as String?,
     );
   }
 
+  /// Converts this [EquipmentInstance] instance to a Firestore-compatible map.
   Map<String, dynamic> toFirestore() {
     return {
       'bayId': bayId,
@@ -238,16 +352,15 @@ class EquipmentInstance {
       'createdBy': createdBy,
       'createdAt': createdAt,
       'customFieldValues': customFieldValues,
-      'status': status, // Write new field
-      'previousEquipmentInstanceId':
-          previousEquipmentInstanceId, // Write new field
-      'replacementEquipmentInstanceId':
-          replacementEquipmentInstanceId, // Write new field
-      'decommissionedAt': decommissionedAt, // Write new field
-      'reasonForChange': reasonForChange, // Write new field
+      'status': status,
+      'previousEquipmentInstanceId': previousEquipmentInstanceId,
+      'replacementEquipmentInstanceId': replacementEquipmentInstanceId,
+      'decommissionedAt': decommissionedAt,
+      'reasonForChange': reasonForChange,
     };
   }
 
+  /// Creates a copy of this [EquipmentInstance] but with the given fields replaced with the new values.
   EquipmentInstance copyWith({
     String? id,
     String? bayId,
@@ -257,11 +370,11 @@ class EquipmentInstance {
     String? createdBy,
     Timestamp? createdAt,
     Map<String, dynamic>? customFieldValues,
-    String? status, // CopyWith new field
-    String? previousEquipmentInstanceId, // CopyWith new field
-    String? replacementEquipmentInstanceId, // CopyWith new field
-    Timestamp? decommissionedAt, // CopyWith new field
-    String? reasonForChange, // CopyWith new field
+    String? status,
+    String? previousEquipmentInstanceId,
+    String? replacementEquipmentInstanceId,
+    Timestamp? decommissionedAt,
+    String? reasonForChange,
   }) {
     return EquipmentInstance(
       id: id ?? this.id,
@@ -272,16 +385,13 @@ class EquipmentInstance {
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       customFieldValues: customFieldValues ?? this.customFieldValues,
-      status: status ?? this.status, // Use new field
+      status: status ?? this.status,
       previousEquipmentInstanceId:
-          previousEquipmentInstanceId ??
-          this.previousEquipmentInstanceId, // Use new field
+          previousEquipmentInstanceId ?? this.previousEquipmentInstanceId,
       replacementEquipmentInstanceId:
-          replacementEquipmentInstanceId ??
-          this.replacementEquipmentInstanceId, // Use new field
-      decommissionedAt:
-          decommissionedAt ?? this.decommissionedAt, // Use new field
-      reasonForChange: reasonForChange ?? this.reasonForChange, // Use new field
+          replacementEquipmentInstanceId ?? this.replacementEquipmentInstanceId,
+      decommissionedAt: decommissionedAt ?? this.decommissionedAt,
+      reasonForChange: reasonForChange ?? this.reasonForChange,
     );
   }
 }

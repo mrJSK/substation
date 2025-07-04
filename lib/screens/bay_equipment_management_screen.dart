@@ -72,6 +72,135 @@ class BayEquipmentManagementScreen extends StatelessWidget {
     }
   }
 
+  // NEW: Helper method to recursively build the display for custom fields
+  Widget _buildCustomFieldsDisplay(
+    BuildContext context,
+    Map<String, dynamic> customFieldValues, {
+    int level = 0,
+  }) {
+    if (customFieldValues.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.only(left: level * 8.0),
+        child: Text(
+          'No custom values defined.',
+          style: TextStyle(
+            fontStyle: FontStyle.italic,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      );
+    }
+
+    // Add indentation for nested levels
+    final double indentation = level * 16.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: customFieldValues.entries.map((entry) {
+        final key = entry.key;
+        final value = entry.value;
+
+        if (value is Map<String, dynamic> &&
+            value.containsKey('value') &&
+            value.containsKey('description_remarks')) {
+          // This might be a boolean field with remarks
+          return Padding(
+            padding: EdgeInsets.only(left: indentation),
+            child: Text(
+              '$key: ${value['value'] == true ? 'Yes' : 'No'}${value['description_remarks'] != null && value['description_remarks'].isNotEmpty ? ' (${value['description_remarks']})' : ''}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          );
+        } else if (value is Map<String, dynamic>) {
+          // This is a nested group/section field
+          return Padding(
+            padding: EdgeInsets.only(left: indentation),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$key (Group):',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                _buildCustomFieldsDisplay(context, value, level: level + 1),
+              ],
+            ),
+          );
+        } else if (value is List<dynamic>) {
+          // This is a list of items (e.g., from a 'group' field with multiple entries)
+          return Padding(
+            padding: EdgeInsets.only(left: indentation),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$key (List - ${value.length} items):',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                if (value.isEmpty)
+                  Padding(
+                    padding: EdgeInsets.only(left: 8.0),
+                    child: Text(
+                      'No items in this list.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ...value.asMap().entries.map((itemEntry) {
+                  final itemIndex = itemEntry.key;
+                  final itemMap = itemEntry
+                      .value; // This should be a Map<String, dynamic> for each item
+                  if (itemMap is Map<String, dynamic>) {
+                    return Padding(
+                      padding: EdgeInsets.only(left: 8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Item ${itemIndex + 1}:',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          _buildCustomFieldsDisplay(
+                            context,
+                            itemMap,
+                            level: level + 2,
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    return Padding(
+                      padding: EdgeInsets.only(left: 8.0),
+                      child: Text(
+                        'Item ${itemIndex + 1}: $itemMap',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    );
+                  }
+                }).toList(),
+              ],
+            ),
+          );
+        } else {
+          // Standard key-value pair
+          return Padding(
+            padding: EdgeInsets.only(left: indentation),
+            child: Text(
+              '$key: ${value ?? 'N/A'}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          );
+        }
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,29 +284,11 @@ class BayEquipmentManagementScreen extends StatelessWidget {
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                          if (equipment.customFieldValues.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4.0),
-                              child: Text(
-                                'No custom values defined.',
-                                style: TextStyle(
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            )
-                          else
-                            ...equipment.customFieldValues.entries.map((entry) {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 2.0,
-                                ),
-                                child: Text(
-                                  '${entry.key}: ${entry.value}',
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              );
-                            }).toList(),
+                          // NEW: Use the recursive helper to display custom field values
+                          _buildCustomFieldsDisplay(
+                            context,
+                            equipment.customFieldValues,
+                          ),
                           const SizedBox(height: 16),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,

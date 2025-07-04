@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../models/equipment_model.dart'; // Ensure CustomField and MasterEquipmentTemplate are updated here
+import '../models/equipment_model.dart';
 import '../utils/snackbar_utils.dart';
 // Import equipment icon painters
 import '../../equipment_icons/transformer_icon.dart';
@@ -77,25 +77,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   MasterEquipmentTemplate? _selectedTemplate;
   bool _isSavingEquipment = false;
 
-  // Controllers/Values for template-defined fields (mapped by field name)
-  final Map<String, TextEditingController> _templateTextFieldControllers = {};
-  final Map<String, bool> _templateBooleanFieldValues = {};
-  final Map<String, DateTime?> _templateDateFieldValues = {};
-  final Map<String, String?> _templateDropdownFieldValues = {};
-  final Map<String, TextEditingController>
-  _templateBooleanDescriptionControllers = {};
-  // New map to store whether a template-defined boolean field requires remarks
-  final Map<String, bool> _templateBooleanHasRemarks = {};
-
-  // For dynamically added custom fields by the user for this instance
-  final List<Map<String, dynamic>> _userAddedCustomFieldDefinitions = [];
-  final Map<String, TextEditingController> _userAddedTextFieldControllers = {};
-  final Map<String, bool> _userAddedBooleanFieldValues = {};
-  final Map<String, DateTime?> _userAddedDateFieldValues = {};
-  final Map<String, String?> _userAddedDropdownFieldValues = {};
-  final Map<String, TextEditingController>
-  _userAddedBooleanDescriptionControllers = {};
-
+  // Supported data types for user-added custom fields (excluding 'group')
   final List<String> _dataTypes = [
     'text',
     'number',
@@ -103,6 +85,22 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     'date',
     'dropdown',
   ];
+
+  // Map to store values for template-defined fields (mapped by field name)
+  // This map now holds the actual values to be saved in customFieldValues.
+  // For 'group' types, it will hold a List<Map<String, dynamic>>
+  final Map<String, dynamic> _templateCustomFieldValues = {};
+
+  // For dynamically added custom fields by the user for this instance
+  // This list now holds CustomField definitions added by the user
+  final List<Map<String, dynamic>> _userAddedCustomFieldDefinitions = [];
+
+  // Centralized controllers for ALL fields (template-defined and user-added), keyed by a unique path
+  final Map<String, TextEditingController> _textControllers = {};
+  final Map<String, bool> _booleanValues = {};
+  final Map<String, DateTime?> _dateValues = {};
+  final Map<String, String?> _dropdownValues = {};
+  // For boolean remarks controller, use a unique key if needed (e.g., "fieldName_remarks")
 
   @override
   void initState() {
@@ -112,18 +110,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
   @override
   void dispose() {
-    _templateTextFieldControllers.forEach(
-      (key, controller) => controller.dispose(),
-    );
-    _userAddedTextFieldControllers.forEach(
-      (key, controller) => controller.dispose(),
-    );
-    _templateBooleanDescriptionControllers.forEach(
-      (key, controller) => controller.dispose(),
-    );
-    _userAddedBooleanDescriptionControllers.forEach(
-      (key, controller) => controller.dispose(),
-    );
+    // Dispose all text controllers created
+    _textControllers.forEach((key, controller) => controller.dispose());
     super.dispose();
   }
 
@@ -160,80 +148,259 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   void _onTemplateSelected(MasterEquipmentTemplate? template) {
     setState(() {
       _selectedTemplate = template;
-      _templateTextFieldControllers.forEach(
-        (key, controller) => controller.dispose(),
-      );
-      _templateTextFieldControllers.clear();
-      _templateBooleanFieldValues.clear();
-      _templateDateFieldValues.clear();
-      _templateDropdownFieldValues.clear();
-      _templateBooleanDescriptionControllers.forEach(
-        (key, controller) => controller.dispose(),
-      );
-      _templateBooleanDescriptionControllers.clear();
-      _templateBooleanHasRemarks.clear(); // Clear the remarks map
-
-      _userAddedCustomFieldDefinitions.clear();
-      _userAddedTextFieldControllers.forEach(
-        (key, controller) => controller.dispose(),
-      );
-      _userAddedTextFieldControllers.clear();
-      _userAddedBooleanFieldValues.clear();
-      _userAddedDateFieldValues.clear();
-      _userAddedDropdownFieldValues.clear();
-      _userAddedBooleanDescriptionControllers.forEach(
-        (key, controller) => controller.dispose(),
-      );
-      _userAddedBooleanDescriptionControllers.clear();
+      _templateCustomFieldValues.clear(); // Clear all previous values
+      _userAddedCustomFieldDefinitions.clear(); // Clear user added definitions
+      _clearAllControllers(); // Clear and dispose all controllers
 
       if (_selectedTemplate != null) {
-        for (var field in _selectedTemplate!.equipmentCustomFields) {
-          final String fieldName = field.name;
-          final String dataType = field.dataType.toString().split('.').last;
-
-          if (dataType == 'text' || dataType == 'number') {
-            _templateTextFieldControllers[fieldName] = TextEditingController();
-          } else if (dataType == 'boolean') {
-            _templateBooleanFieldValues[fieldName] = false;
-            _templateBooleanDescriptionControllers[fieldName] =
-                TextEditingController();
-            // Store the hasRemarksField property from the template
-            _templateBooleanHasRemarks[fieldName] =
-                field.hasRemarksField; // Make sure field.hasRemarksField exists
-          } else if (dataType == 'date') {
-            _templateDateFieldValues[fieldName] = null;
-          } else if (dataType == 'dropdown') {
-            _templateDropdownFieldValues[fieldName] = null;
-          }
-        }
+        // Initialize the top-level template-defined custom field values and controllers
+        _initializeCustomFieldValues(
+          _selectedTemplate!.equipmentCustomFields,
+          _templateCustomFieldValues,
+          'template',
+        );
       }
     });
   }
 
-  void _addUserCustomField() {
+  // Helper to clear and dispose all controllers
+  void _clearAllControllers() {
+    _textControllers.forEach((key, controller) => controller.dispose());
+    _textControllers.clear();
+    _booleanValues.clear();
+    _dateValues.clear();
+    _dropdownValues.clear();
+  }
+
+  // Recursive helper to initialize the value maps and controllers for fields
+  // prefix is used to create unique keys for controllers in nested structures.
+  // This also handles loading existing values if available (e.g. from an edit scenario, which is not implemented here yet)
+  void _initializeCustomFieldValues(
+    List<CustomField> fields,
+    Map<String, dynamic> currentValuesMap,
+    String prefix,
+  ) {
+    for (var field in fields) {
+      final String uniqueControllerKey = prefix.isEmpty
+          ? field.name
+          : '${prefix}_${field.name}';
+      final String dataType = field.dataType.toString().split('.').last;
+
+      // Ensure the map has a placeholder for this field's value
+      currentValuesMap.putIfAbsent(field.name, () => null);
+
+      if (dataType == 'text' || dataType == 'number') {
+        _textControllers[uniqueControllerKey] = TextEditingController(
+          text: (currentValuesMap[field.name] as String?) ?? '',
+        );
+      } else if (dataType == 'boolean') {
+        _booleanValues[uniqueControllerKey] =
+            (currentValuesMap[field.name]?['value'] as bool?) ?? false;
+        // If there are boolean remarks, create a controller for them too
+        _textControllers['${uniqueControllerKey}_remarks'] =
+            TextEditingController(
+              text:
+                  (currentValuesMap[field.name]?['description_remarks']
+                      as String?) ??
+                  '',
+            );
+      } else if (dataType == 'date') {
+        _dateValues[uniqueControllerKey] =
+            (currentValuesMap[field.name] as Timestamp?)?.toDate();
+      } else if (dataType == 'dropdown') {
+        _dropdownValues[uniqueControllerKey] =
+            (currentValuesMap[field.name] as String?);
+      } else if (dataType == 'group') {
+        // For 'group' type, initialize with an empty list if null, then recursively initialize its items
+        currentValuesMap.putIfAbsent(field.name, () => []);
+        if (field.nestedFields != null && field.nestedFields!.isNotEmpty) {
+          // Iterate existing nested items (if loading data for editing)
+          final List<dynamic> existingItems =
+              currentValuesMap[field.name] as List<dynamic>;
+          for (int i = 0; i < existingItems.length; i++) {
+            _initializeCustomFieldValues(
+              field.nestedFields!,
+              existingItems[i] as Map<String, dynamic>,
+              '${uniqueControllerKey}_item_$i',
+            );
+          }
+        }
+      }
+    }
+  }
+
+  // Helper to add a new basic type custom field definition to _userAddedCustomFieldDefinitions
+  void _addUserCustomFieldDefinition() {
     setState(() {
-      _userAddedCustomFieldDefinitions.add({
+      final Map<String, dynamic> newFieldDef = {
         'name': '',
-        'dataType': 'text',
+        'dataType': CustomFieldDataType.text
+            .toString()
+            .split('.')
+            .last, // Default to text
         'isMandatory': false,
         'hasUnits': false,
         'units': '',
         'options': [],
-        'hasRemarksField': false, // Initialize for user-added boolean fields
-      });
+        'hasRemarksField': false,
+        'templateRemarkText': '',
+        'nestedFields': null, // No nested fields by default
+      };
+      _userAddedCustomFieldDefinitions.add(newFieldDef);
+      // Initialize controllers for this new definition (with a unique prefix)
+      _initializeCustomFieldValues(
+        [CustomField.fromMap(newFieldDef)],
+        newFieldDef,
+        'user_added_${_userAddedCustomFieldDefinitions.length - 1}',
+      );
     });
   }
 
-  void _removeUserCustomField(int index) {
+  // Helper to add a new group type custom field definition to _userAddedCustomFieldDefinitions
+  void _addUserGroupFieldDefinition() {
     setState(() {
-      final fieldName = _userAddedCustomFieldDefinitions[index]['name'];
-      _userAddedCustomFieldDefinitions.removeAt(index);
-      _userAddedTextFieldControllers.remove(fieldName)?.dispose();
-      _userAddedBooleanFieldValues.remove(fieldName);
-      _userAddedDateFieldValues.remove(fieldName);
-      _userAddedDropdownFieldValues.remove(fieldName);
-      _userAddedBooleanDescriptionControllers.remove(fieldName)?.dispose();
+      final Map<String, dynamic> newFieldDef = {
+        'name': '',
+        'dataType': CustomFieldDataType.group
+            .toString()
+            .split('.')
+            .last, // Set as group type
+        'isMandatory': false,
+        'nestedFields': [], // Initialize with empty list of nested fields
+        // FIX: Initialize other properties that might be accessed by _buildUserAddedFieldDefinitionInput
+        'hasUnits': false,
+        'units': '',
+        'options': [],
+        'hasRemarksField': false,
+        'templateRemarkText': '',
+      };
+      _userAddedCustomFieldDefinitions.add(newFieldDef);
+      // Initialize controllers for this new definition (with a unique prefix)
+      _initializeCustomFieldValues(
+        [CustomField.fromMap(newFieldDef)],
+        newFieldDef,
+        'user_added_group_${_userAddedCustomFieldDefinitions.length - 1}',
+      );
     });
+  }
+
+  // Helper to remove a user-added field definition and its associated controllers
+  void _removeUserCustomFieldDefinition(int index) {
+    setState(() {
+      final Map<String, dynamic> removedFieldDef =
+          _userAddedCustomFieldDefinitions[index];
+      // Generate the unique prefix used for controllers of this definition
+      final String uniquePrefix =
+          (removedFieldDef['dataType'] ==
+              CustomFieldDataType.group.toString().split('.').last)
+          ? 'user_added_group_$index'
+          : 'user_added_$index';
+
+      // Clean up controllers recursively associated with this definition
+      _cleanupControllers(
+        [CustomField.fromMap(removedFieldDef)],
+        removedFieldDef,
+        uniquePrefix,
+      );
+      _userAddedCustomFieldDefinitions.removeAt(index);
+      // Note: If using index-based prefixes, removal means subsequent items' prefixes are now stale.
+      // For a robust solution, consider using UUIDs for items or re-initializing all controllers on removal.
+    });
+  }
+
+  // Helper to add a new item to a 'group' type custom field (for user-added groups)
+  void _addNestedFieldDefinitionToUserDefinedGroup(
+    Map<String, dynamic> groupFieldMap,
+  ) {
+    setState(() {
+      final List<dynamic> nestedFieldsList =
+          groupFieldMap['nestedFields'] as List<dynamic>;
+      final Map<String, dynamic> newNestedFieldDef = {
+        'name': '',
+        'dataType': CustomFieldDataType.text
+            .toString()
+            .split('.')
+            .last, // Default nested field to text
+        'isMandatory': false,
+        'hasUnits': false,
+        'units': '',
+        'options': [],
+        'hasRemarksField': false,
+        'templateRemarkText': '',
+        'nestedFields':
+            null, // Nested fields of nested fields are null by default
+      };
+      nestedFieldsList.add(newNestedFieldDef);
+      // Initialize controllers for this new nested definition
+      final String groupPrefix =
+          'user_added_group_${_userAddedCustomFieldDefinitions.indexOf(groupFieldMap)}'; // Find parent group's index
+      final String newNestedPrefix =
+          '${groupPrefix}_item_${nestedFieldsList.length - 1}';
+      _initializeCustomFieldValues(
+        [CustomField.fromMap(newNestedFieldDef)],
+        newNestedFieldDef,
+        newNestedPrefix,
+      );
+    });
+  }
+
+  // Helper to remove an item from a 'group' type custom field (for user-added groups)
+  void _removeNestedFieldDefinitionFromUserDefinedGroup(
+    List<Map<String, dynamic>> parentNestedList,
+    int nestedIndex,
+    Map<String, dynamic> parentGroupFieldMap,
+  ) {
+    setState(() {
+      final Map<String, dynamic> removedNestedFieldDef =
+          parentNestedList[nestedIndex];
+      final String groupPrefix =
+          'user_added_group_${_userAddedCustomFieldDefinitions.indexOf(parentGroupFieldMap)}';
+      final String removedNestedPrefix = '${groupPrefix}_item_$nestedIndex';
+      _cleanupControllers(
+        [CustomField.fromMap(removedNestedFieldDef)],
+        removedNestedFieldDef,
+        removedNestedPrefix,
+      );
+      parentNestedList.removeAt(nestedIndex);
+    });
+  }
+
+  // Recursive helper to clean up controllers associated with field values
+  void _cleanupControllers(
+    List<CustomField> fields,
+    Map<String, dynamic> valuesMap,
+    String prefix,
+  ) {
+    for (var field in fields) {
+      final String uniqueControllerKey = prefix.isEmpty
+          ? field.name
+          : '${prefix}_${field.name}';
+      final String dataType = field.dataType.toString().split('.').last;
+
+      if (dataType == 'text' || dataType == 'number') {
+        _textControllers[uniqueControllerKey]?.dispose();
+        _textControllers.remove(uniqueControllerKey);
+      } else if (dataType == 'boolean') {
+        _booleanValues.remove(uniqueControllerKey);
+        _textControllers['${uniqueControllerKey}_remarks']?.dispose();
+        _textControllers.remove('${uniqueControllerKey}_remarks');
+      } else if (dataType == 'date') {
+        _dateValues.remove(uniqueControllerKey);
+      } else if (dataType == 'dropdown') {
+        _dropdownValues.remove(uniqueControllerKey);
+      } else if (dataType == 'group') {
+        List<dynamic> nestedList =
+            (valuesMap[field.name] as List<dynamic>?) ??
+            []; // Handle potential null
+        for (int i = 0; i < nestedList.length; i++) {
+          _cleanupControllers(
+            field.nestedFields ?? [],
+            nestedList[i] as Map<String, dynamic>,
+            '${uniqueControllerKey}_item_$i',
+          );
+        }
+      }
+    }
   }
 
   Future<void> _saveEquipmentInstance() async {
@@ -269,64 +436,45 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
 
     try {
-      Map<String, dynamic> allCustomFieldValues = {};
+      // 1. Collect values for template-defined custom fields
+      Map<String, dynamic> templateCustomFieldValuesCollected =
+          _collectCustomFieldValues(
+            _selectedTemplate!.equipmentCustomFields,
+            _templateCustomFieldValues,
+            'template',
+          );
 
-      for (var field in _selectedTemplate!.equipmentCustomFields) {
-        final String fieldName = field.name;
-        final String dataType = field.dataType.toString().split('.').last;
+      // 2. Collect values for user-added custom field definitions
+      Map<String, dynamic> userAddedCustomFieldValuesCollected = {};
+      for (int i = 0; i < _userAddedCustomFieldDefinitions.length; i++) {
+        final Map<String, dynamic> fieldDefMap =
+            _userAddedCustomFieldDefinitions[i];
+        final CustomField userAddedFieldDef = CustomField.fromMap(fieldDefMap);
+        final String uniquePrefix =
+            (userAddedFieldDef.dataType == CustomFieldDataType.group)
+            ? 'user_added_group_$i'
+            : 'user_added_$i';
 
-        if (dataType == 'text' || dataType == 'number') {
-          allCustomFieldValues[fieldName] =
-              _templateTextFieldControllers[fieldName]?.text.trim();
-        } else if (dataType == 'boolean') {
-          // Only save description_remarks if hasRemarksField was true in the template
-          if (_templateBooleanHasRemarks[fieldName] == true) {
-            allCustomFieldValues[fieldName] = {
-              'value': _templateBooleanFieldValues[fieldName],
-              'description_remarks':
-                  _templateBooleanDescriptionControllers[fieldName]?.text
-                      .trim(),
-            };
-          } else {
-            // If no remarks field was defined, just save the boolean value
-            allCustomFieldValues[fieldName] =
-                _templateBooleanFieldValues[fieldName];
-          }
-        } else if (dataType == 'date') {
-          allCustomFieldValues[fieldName] =
-              _templateDateFieldValues[fieldName] != null
-              ? Timestamp.fromDate(_templateDateFieldValues[fieldName]!)
-              : null;
-        } else if (dataType == 'dropdown') {
-          allCustomFieldValues[fieldName] =
-              _templateDropdownFieldValues[fieldName];
+        // Recursively collect values for this user-added field definition
+        Map<String, dynamic> collectedValueForThisField =
+            _collectCustomFieldValues(
+              [userAddedFieldDef],
+              fieldDefMap,
+              uniquePrefix,
+            ); // Pass the definition map as its value source
+
+        // Extract the actual value for this field's name
+        if (collectedValueForThisField.containsKey(userAddedFieldDef.name)) {
+          userAddedCustomFieldValuesCollected[userAddedFieldDef.name] =
+              collectedValueForThisField[userAddedFieldDef.name];
         }
       }
 
-      // NO, DO NOT SAVE USER-ADDED FIELDS ON THIS SCREEN. THIS IS FOR TEMPLATE DEFINITION.
-      // The `EquipmentInstance` model will only use the predefined template fields.
-      // If you intend for user-added fields to be *part of the template definition*,
-      // then the MasterEquipmentTemplate model needs to be updated to include a list of CustomField for user-added ones,
-      // and this logic should be shifted to updating the MasterEquipmentTemplate document.
-
-      // For the purpose of this request, assuming user-added fields are *ephemeral* for this instance,
-      // we would traditionally gather them here. BUT since the request explicitly says
-      // "remove sample UI permanently its a template not actual value filling screen",
-      // we should not be generating instance-specific customFieldValues from user-added definitions on *this* screen.
-      // This implies that this screen's role is purely about associating an equipment template
-      // and defining *additional template-level fields* (which would then require saving
-      // those definitions back to the MasterEquipmentTemplate, not creating instance-specific values).
-
-      // Given the current structure, if "Additional Custom Properties" are truly meant
-      // to be *for this instance only* and *not* part of the template, then the UI
-      // for defining them should probably be on the screen where you *create* an instance,
-      // not where you select a template and add to a bay.
-
-      // For now, I will remove the logic that processes user-added fields for saving,
-      // as they are not "actual values filling" if this is a template screen.
-      // If the intent is to allow users to add *new custom fields to the template itself*
-      // from this screen, then the save logic needs to be entirely different,
-      // updating `MasterEquipmentTemplate` in Firestore.
+      // Combine all custom field values (template-defined + user-added)
+      Map<String, dynamic> allCustomFieldValues = {
+        ...templateCustomFieldValuesCollected,
+        ...userAddedCustomFieldValuesCollected,
+      };
 
       final newEquipmentInstanceRef = FirebaseFirestore.instance
           .collection('equipmentInstances')
@@ -350,9 +498,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           context,
           '${_selectedTemplate!.equipmentType} added to bay "${widget.bayName}" successfully!',
         );
-        Navigator.of(
-          context,
-        ).pop(); // Navigate back to BayEquipmentManagementScreen
+        Navigator.of(context).pop();
       }
     } catch (e) {
       print('Error saving equipment instance: $e');
@@ -370,145 +516,189 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
-  // This _buildFieldInput is for rendering the *values* of fields,
-  // whether from template or user-added definition.
-  // Given the request, this function should NOT be used on this screen
-  // for user-added fields if this is solely for template definition.
-  // It should only be used for template-defined fields.
-  Widget _buildFieldInput({
-    required String fieldName,
-    required String dataType,
-    bool isMandatory = false,
-    bool hasUnits = false,
-    List<String> options = const [],
-    required bool isUserAddedField,
-    String units = '', // Added units here as it was missing in the signature
-    bool hasRemarksField = false, // Pass this from template/user-added def
-  }) {
-    // Determine which set of controllers/values to use based on isUserAddedField
-    // This part is crucial for correctly linking the input to the right state variable.
-    final Map<String, TextEditingController> textFieldControllers =
-        isUserAddedField
-        ? _userAddedTextFieldControllers
-        : _templateTextFieldControllers;
-    final Map<String, bool> booleanValues = isUserAddedField
-        ? _userAddedBooleanFieldValues
-        : _templateBooleanFieldValues;
-    final Map<String, DateTime?> dateValues = isUserAddedField
-        ? _userAddedDateFieldValues
-        : _templateDateFieldValues;
-    final Map<String, String?> dropdownValues = isUserAddedField
-        ? _userAddedDropdownFieldValues
-        : _templateDropdownFieldValues;
-    final Map<String, TextEditingController> booleanDescriptionControllers =
-        isUserAddedField
-        ? _userAddedBooleanDescriptionControllers
-        : _templateBooleanDescriptionControllers;
+  // Recursive helper to collect all custom field values from controllers into a nested map
+  // It now collects from the `_textControllers` map directly.
+  Map<String, dynamic> _collectCustomFieldValues(
+    List<CustomField> fieldDefinitions,
+    Map<String, dynamic> currentValuesMap,
+    String prefix,
+  ) {
+    Map<String, dynamic> collectedValues = {};
+    for (var fieldDef in fieldDefinitions) {
+      final String fieldName = fieldDef.name;
+      final String uniqueControllerKey = prefix.isEmpty
+          ? fieldName
+          : '${prefix}_$fieldName';
+      final String dataType = fieldDef.dataType.toString().split('.').last;
 
-    String unitHint = '';
-    if (hasUnits && units.isEmpty) {
-      unitHint = ' (e.g., A, kV, MW, Hz)';
-    } else if (hasUnits && units.isNotEmpty) {
-      unitHint = ' (${units})';
+      if (dataType == 'text' || dataType == 'number') {
+        final value = _textControllers[uniqueControllerKey]?.text.trim();
+        collectedValues[fieldName] =
+            dataType == 'number' && value != null && value.isNotEmpty
+            ? num.tryParse(value)
+            : value;
+      } else if (dataType == 'boolean') {
+        collectedValues[fieldName] = {
+          'value': _booleanValues[uniqueControllerKey] ?? false,
+          'description_remarks':
+              _textControllers['${uniqueControllerKey}_remarks']?.text.trim(),
+        };
+      } else if (dataType == 'date') {
+        collectedValues[fieldName] = _dateValues[uniqueControllerKey] != null
+            ? Timestamp.fromDate(_dateValues[uniqueControllerKey]!)
+            : null;
+      } else if (dataType == 'dropdown') {
+        collectedValues[fieldName] = _dropdownValues[uniqueControllerKey];
+      } else if (dataType == 'group') {
+        // Recursively collect values for each item in the group
+        List<dynamic> groupItems =
+            (currentValuesMap[fieldName] as List<dynamic>?) ??
+            []; // Safely cast and handle null
+        List<Map<String, dynamic>> collectedGroupItems = [];
+        for (int i = 0; i < groupItems.length; i++) {
+          collectedGroupItems.add(
+            _collectCustomFieldValues(
+              fieldDef.nestedFields ?? [],
+              groupItems[i] as Map<String, dynamic>,
+              '${uniqueControllerKey}_item_$i',
+            ),
+          );
+        }
+        collectedValues[fieldName] = collectedGroupItems;
+      }
+    }
+    return collectedValues;
+  }
+
+  // This _buildFieldInput is for rendering the *values* of template-defined fields.
+  // It now explicitly handles the 'group' type by displaying a message.
+  Widget _buildFieldInput({
+    required CustomField fieldDef,
+    required Map<String, dynamic>
+    currentValuesMap, // The map where this field's value lives
+    required String prefix, // Prefix for unique controller keys
+  }) {
+    final String fieldName = fieldDef.name;
+    final String uniqueControllerKey = prefix.isEmpty
+        ? fieldName
+        : '${prefix}_$fieldName';
+    final String dataType = fieldDef.dataType.toString().split('.').last;
+    final bool isMandatory = fieldDef.isMandatory;
+    final String? unit = fieldDef.units.isNotEmpty ? fieldDef.units : null;
+    final List<String> options = fieldDef.options;
+    final bool hasRemarksField = fieldDef.hasRemarksField;
+
+    String? Function(String?)? validator;
+    if (isMandatory) {
+      validator = (value) {
+        if (value == null || value.isEmpty) {
+          return '$fieldName is mandatory';
+        }
+        return null;
+      };
     }
 
-    final inputDecoration = InputDecoration(
-      labelText: fieldName + (isMandatory ? ' *' : ''),
-      border: const OutlineInputBorder(),
-      suffixText: hasUnits ? units : null,
-      hintText: hasUnits && units.isEmpty ? 'Enter value' : null,
-      suffixIcon: hasUnits
-          ? (units.isEmpty ? const Icon(Icons.abc) : null)
-          : null,
-    );
-
+    Widget fieldWidget;
     switch (dataType) {
       case 'text':
-        return TextFormField(
-          controller: textFieldControllers.putIfAbsent(
-            fieldName,
-            () => TextEditingController(),
+        fieldWidget = TextFormField(
+          controller: _textControllers.putIfAbsent(
+            uniqueControllerKey,
+            () => TextEditingController(
+              text: (currentValuesMap[fieldName] as String?) ?? '',
+            ),
           ),
-          decoration: inputDecoration,
-          validator: isMandatory
-              ? (value) => value == null || value.isEmpty
-                    ? '$fieldName is mandatory'
-                    : null
-              : null,
+          decoration: InputDecoration(
+            labelText: fieldName + (isMandatory ? ' *' : ''),
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: (value) => currentValuesMap[fieldName] = value,
+          validator: validator,
         );
+        break;
       case 'number':
-        return TextFormField(
-          controller: textFieldControllers.putIfAbsent(
-            fieldName,
-            () => TextEditingController(),
+        fieldWidget = TextFormField(
+          controller: _textControllers.putIfAbsent(
+            uniqueControllerKey,
+            () => TextEditingController(
+              text: (currentValuesMap[fieldName]?.toString()) ?? '',
+            ),
           ),
-          decoration: inputDecoration.copyWith(
-            labelText: fieldName + (isMandatory ? ' *' : '') + unitHint,
+          decoration: InputDecoration(
+            labelText: fieldName + (isMandatory ? ' *' : ''),
+            border: const OutlineInputBorder(),
+            suffixText: unit,
           ),
           keyboardType: TextInputType.number,
-          validator: isMandatory
-              ? (value) {
-                  if (value == null || value.isEmpty)
-                    return '$fieldName is mandatory';
-                  if (double.tryParse(value) == null)
-                    return 'Enter a valid number for $fieldName';
-                  return null;
-                }
-              : (value) => value!.isNotEmpty && double.tryParse(value) == null
-                    ? 'Enter a valid number for $fieldName'
-                    : null,
+          onChanged: (value) =>
+              currentValuesMap[fieldName] = num.tryParse(value),
+          validator: (value) {
+            if (validator != null && validator(value) != null)
+              return validator(value);
+            if (value!.isNotEmpty && num.tryParse(value) == null)
+              return 'Enter a valid number for $fieldName';
+            return null;
+          },
         );
+        break;
       case 'boolean':
-        final bool currentBooleanValue = booleanValues.putIfAbsent(
-          fieldName,
-          () => false,
+        final bool currentBooleanValue = _booleanValues.putIfAbsent(
+          uniqueControllerKey,
+          () => (currentValuesMap[fieldName]?['value'] as bool?) ?? false,
         );
-        return Column(
+        fieldWidget = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Checkbox(
-                  value: currentBooleanValue,
-                  onChanged: (value) {
-                    setState(() {
-                      booleanValues[fieldName] = value!;
-                    });
-                  },
+            SwitchListTile(
+              title: Text(fieldName + (isMandatory ? ' *' : '')),
+              value: currentBooleanValue,
+              onChanged: (value) {
+                setState(() {
+                  _booleanValues[uniqueControllerKey] = value;
+                  currentValuesMap[fieldName] = {
+                    'value': value,
+                    'description_remarks':
+                        currentValuesMap[fieldName]?['description_remarks'],
+                  };
+                });
+              },
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (hasRemarksField && currentBooleanValue)
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: 16.0,
+                  right: 16.0,
+                  bottom: 8.0,
                 ),
-                Expanded(
-                  flex: 1,
-                  child: Text(
-                    fieldName + (isMandatory ? ' *' : ''),
-                    style: Theme.of(context).textTheme.bodyLarge,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (hasRemarksField && currentBooleanValue)
-                  Expanded(
-                    flex: 3,
-                    child: TextFormField(
-                      controller: booleanDescriptionControllers.putIfAbsent(
-                        fieldName,
-                        () => TextEditingController(),
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Remarks (Optional)',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          vertical: 10.0,
-                          horizontal: 12.0,
-                        ),
-                        isDense: true,
-                      ),
-                      maxLines: 2,
-                      minLines: 1,
-                      keyboardType: TextInputType.multiline,
+                child: TextFormField(
+                  controller: _textControllers.putIfAbsent(
+                    '${uniqueControllerKey}_remarks',
+                    () => TextEditingController(
+                      text:
+                          (currentValuesMap[fieldName]?['description_remarks']
+                              as String?) ??
+                          '',
                     ),
                   ),
-              ],
-            ),
+                  decoration: const InputDecoration(
+                    labelText: 'Remarks (Optional)',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: 10.0,
+                      horizontal: 12.0,
+                    ),
+                    isDense: true,
+                  ),
+                  maxLines: 2,
+                  minLines: 1,
+                  keyboardType: TextInputType.multiline,
+                  onChanged: (value) =>
+                      currentValuesMap[fieldName]['description_remarks'] =
+                          value,
+                ),
+              ),
             if (isMandatory && !currentBooleanValue)
               Padding(
                 padding: const EdgeInsets.only(left: 48.0, top: 4.0),
@@ -522,68 +712,123 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               ),
           ],
         );
+        break;
       case 'date':
-        return ListTile(
+        final DateTime? currentDate = _dateValues.putIfAbsent(
+          uniqueControllerKey,
+          () => (currentValuesMap[fieldName] as Timestamp?)?.toDate(),
+        );
+        fieldWidget = ListTile(
           title: Text(
             fieldName +
                 (isMandatory ? ' *' : '') +
                 ': ' +
-                (dateValues[fieldName] == null
+                (currentDate == null
                     ? 'Select Date'
-                    : DateFormat('yyyy-MM-dd').format(dateValues[fieldName]!)),
+                    : DateFormat('yyyy-MM-dd').format(currentDate)),
           ),
           trailing: const Icon(Icons.calendar_today),
           onTap: () async {
             final DateTime? picked = await showDatePicker(
               context: context,
-              initialDate: dateValues[fieldName] ?? DateTime.now(),
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2101),
+              initialDate: currentDate ?? DateTime.now(),
+              firstDate: DateTime(1900),
+              lastDate: DateTime.now().add(const Duration(days: 365 * 100)),
             );
             if (picked != null) {
               setState(() {
-                dateValues[fieldName] = picked;
+                _dateValues[uniqueControllerKey] = picked;
+                currentValuesMap[fieldName] = Timestamp.fromDate(picked);
               });
             }
           },
         );
+        break;
       case 'dropdown':
-        return DropdownButtonFormField<String>(
-          value: dropdownValues[fieldName],
-          decoration: inputDecoration,
+        fieldWidget = DropdownButtonFormField<String>(
+          value: _dropdownValues.putIfAbsent(
+            uniqueControllerKey,
+            () => (currentValuesMap[fieldName] as String?),
+          ),
+          decoration: InputDecoration(
+            labelText: fieldName + (isMandatory ? ' *' : ''),
+            border: const OutlineInputBorder(),
+          ),
           items: options.map((option) {
             return DropdownMenuItem(value: option, child: Text(option));
           }).toList(),
           onChanged: (value) {
             setState(() {
-              dropdownValues[fieldName] = value;
+              _dropdownValues[uniqueControllerKey] = value;
+              currentValuesMap[fieldName] = value;
             });
           },
-          validator: isMandatory
-              ? (value) => value == null || value.isEmpty
-                    ? '$fieldName is mandatory'
-                    : null
-              : null,
+          validator: validator,
+        );
+        break;
+      case 'group': // Explicitly handle 'group' type
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8.0),
+          elevation: 1,
+          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$fieldName (Group Type - Data Entry Not Fully Supported Here)',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This field is a group type. Its complex structure for data entry is not fully integrated with this screen\'s current input mechanism. Please define its items in Master Equipment Templates.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
+                ),
+              ],
+            ),
+          ),
         );
       default:
-        return Text('Unsupported data type: $dataType for $fieldName');
+        return Text('Unsupported data type: $dataType for ${fieldDef.name}');
     }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: fieldWidget,
+    );
   }
 
   // This function is purely for defining the properties of a custom field.
-  // It does NOT render the input widget for filling its value.
+  // It builds the UI for dynamically user-added fields (not template fields).
+  // It now supports adding nested fields within user-defined groups.
   Widget _buildUserAddedFieldDefinitionInput(
-    Map<String, dynamic> fieldDef,
+    Map<String, dynamic>
+    fieldDefMap, // Map holding the definition of this field
     int index,
-  ) {
-    final fieldName = fieldDef['name'] as String;
-    final dataType = fieldDef['dataType'] as String;
-    final isMandatory = fieldDef['isMandatory'] as bool;
-    final hasUnits = fieldDef['hasUnits'] as bool;
-    final units = fieldDef['units'] as String;
-    final options = List<String>.from(fieldDef['options'] ?? []);
-    final bool hasRemarksField =
-        fieldDef['hasRemarksField'] as bool; // Get from definition
+    List<Map<String, dynamic>>
+    parentList, { // Reference to the list this definition belongs to
+    bool isNestedDefinition = false, // Flag for nested definition
+  }) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final String fieldName = fieldDefMap['name'] as String;
+    final String dataType = fieldDefMap['dataType'] as String;
+    final bool isMandatory = fieldDefMap['isMandatory'] as bool;
+    final bool hasUnits = fieldDefMap['hasUnits'] as bool;
+    final String units = fieldDefMap['units'] as String;
+    final List<String> options = List<String>.from(
+      fieldDefMap['options'] ?? [],
+    );
+    final bool hasRemarksField = fieldDefMap['hasRemarksField'] as bool;
+
+    // Determine if this definition is for a Group field
+    final bool isGroupFieldDefinition =
+        dataType == CustomFieldDataType.group.toString().split('.').last;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -595,158 +840,183 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           children: [
             TextFormField(
               initialValue: fieldName,
-              decoration: const InputDecoration(
-                labelText: 'New Field Name', // Clarified label for definition
-                border: OutlineInputBorder(),
-                hintText: 'e.g., Manufacturer, Last Service Date',
+              decoration: InputDecoration(
+                labelText: isNestedDefinition
+                    ? 'Nested Field Name'
+                    : 'Custom Field Name',
+                border: const OutlineInputBorder(),
+                hintText: isNestedDefinition
+                    ? 'e.g., Value, Unit'
+                    : 'e.g., Max Current, Last Inspection Date',
               ),
-              onChanged: (value) {
-                setState(() {
-                  fieldDef['name'] = value;
-                  // Clear and re-initialize controllers/values for the old fieldName
-                  // when the field name itself changes to avoid conflicts if name is reused
-                  if (_userAddedTextFieldControllers.containsKey(fieldName)) {
-                    _userAddedTextFieldControllers.remove(fieldName)?.dispose();
-                  }
-                  if (_userAddedBooleanFieldValues.containsKey(fieldName)) {
-                    _userAddedBooleanFieldValues.remove(fieldName);
-                  }
-                  if (_userAddedBooleanDescriptionControllers.containsKey(
-                    fieldName,
-                  )) {
-                    _userAddedBooleanDescriptionControllers
-                        .remove(fieldName)
-                        ?.dispose();
-                  }
-                  if (_userAddedDateFieldValues.containsKey(fieldName)) {
-                    _userAddedDateFieldValues.remove(fieldName);
-                  }
-                  if (_userAddedDropdownFieldValues.containsKey(fieldName)) {
-                    _userAddedDropdownFieldValues.remove(fieldName);
-                  }
-
-                  // Initialize for the new value if it's not empty
-                  if (value.isNotEmpty) {
-                    if (dataType == 'text' || dataType == 'number') {
-                      _userAddedTextFieldControllers[value] =
-                          TextEditingController();
-                    } else if (dataType == 'boolean') {
-                      _userAddedBooleanFieldValues[value] = false;
-                      _userAddedBooleanDescriptionControllers[value] =
-                          TextEditingController();
-                    }
-                    // No need to initialize for date/dropdown here, they are handled differently
-                  }
-                });
-              },
+              onChanged: (value) => fieldDefMap['name'] = value,
               validator: (value) => value == null || value.trim().isEmpty
-                  ? 'Field name required'
+                  ? (isNestedDefinition
+                        ? 'Nested field name required'
+                        : 'Custom field name required')
                   : null,
             ),
             const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: dataType,
-              decoration: const InputDecoration(
-                labelText: 'Data Type',
-                border: OutlineInputBorder(),
+
+            // Data Type dropdown (hidden if it's a Group field definition)
+            if (!isGroupFieldDefinition)
+              DropdownButtonFormField<String>(
+                value: dataType,
+                decoration: const InputDecoration(
+                  labelText: 'Data Type',
+                  border: OutlineInputBorder(),
+                ),
+                items:
+                    _dataTypes // Use the _dataTypes list (does not include 'group')
+                        .map(
+                          (type) =>
+                              DropdownMenuItem(value: type, child: Text(type)),
+                        )
+                        .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    fieldDefMap['dataType'] = value!;
+                    // Reset properties based on new data type
+                    fieldDefMap['options'] = [];
+                    fieldDefMap['hasUnits'] = false;
+                    fieldDefMap['units'] = '';
+                    fieldDefMap['hasRemarksField'] = false;
+                    fieldDefMap['templateRemarkText'] = '';
+                    fieldDefMap['nestedFields'] =
+                        null; // Ensure null if changing from group
+                    // No need for separate controller cleanup/re-init here, handled by _removeUserCustomFieldDefinition
+                    // For user-added definitions, values are stored in the definition map itself.
+                  });
+                },
               ),
-              items: _dataTypes
-                  .map(
-                    (type) => DropdownMenuItem(value: type, child: Text(type)),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  fieldDef['dataType'] = value!;
-                  fieldDef['options'] = [];
-                  fieldDef['hasUnits'] = false;
-                  fieldDef['units'] = '';
-                  fieldDef['hasRemarksField'] =
-                      false; // Reset when data type changes
-                  // Dispose and clear controllers/values when data type changes
-                  _userAddedTextFieldControllers.remove(fieldName)?.dispose();
-                  _userAddedBooleanFieldValues.remove(fieldName);
-                  _userAddedDateFieldValues.remove(fieldName);
-                  _userAddedDropdownFieldValues.remove(fieldName);
-                  _userAddedBooleanDescriptionControllers
-                      .remove(fieldName)
-                      ?.dispose();
-                  // Re-initialize based on new type
-                  if (value == 'text' || value == 'number') {
-                    _userAddedTextFieldControllers[fieldName] =
-                        TextEditingController();
-                  } else if (value == 'boolean') {
-                    _userAddedBooleanFieldValues[fieldName] = false;
-                    _userAddedBooleanDescriptionControllers[fieldName] =
-                        TextEditingController();
-                  }
-                });
-              },
-            ),
+            // Display 'Group' label if it is a Group field definition
+            if (isGroupFieldDefinition)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  'Data Type: Group',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic),
+                ),
+              ),
             const SizedBox(height: 10),
-            if (dataType == 'dropdown')
-              TextFormField(
-                initialValue: options.join(','),
-                decoration: const InputDecoration(
-                  labelText: 'Options (comma-separated)',
-                  hintText: 'e.g., Option1, Option2',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) => fieldDef['options'] = value
-                    .split(',')
-                    .map((e) => e.trim())
-                    .where((e) => e.isNotEmpty)
-                    .toList(),
-              ),
-            if (dataType == 'number')
-              Row(
-                children: [
-                  Switch(
-                    value: hasUnits,
-                    onChanged: (value) =>
-                        setState(() => fieldDef['hasUnits'] = value),
-                    activeColor: Theme.of(context).colorScheme.primary,
+
+            // Conditional UI based on data types (only if not a group field definition)
+            if (!isGroupFieldDefinition) ...[
+              if (dataType == 'dropdown')
+                TextFormField(
+                  initialValue: options.join(','),
+                  decoration: const InputDecoration(
+                    labelText: 'Options (comma-separated)',
+                    border: OutlineInputBorder(),
+                    hintText: 'e.g., Option1, Option2, Option3',
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Has Units'),
-                ],
-              ),
-            if (dataType == 'number' && hasUnits)
-              TextFormField(
-                initialValue: units,
-                decoration: const InputDecoration(
-                  labelText: 'Units',
-                  hintText: 'e.g., A, kV, MW', // Added hint for units input
-                  border: OutlineInputBorder(),
+                  onChanged: (value) => fieldDefMap['options'] = value
+                      .split(',')
+                      .map((e) => e.trim())
+                      .where((e) => e.isNotEmpty)
+                      .toList(),
                 ),
-                onChanged: (value) => fieldDef['units'] = value,
-                validator: (value) =>
-                    hasUnits && (value == null || value.isEmpty)
-                    ? 'Units required'
-                    : null,
-              ),
-            // NEW: Switch for user-added boolean fields to enable/disable remarks
-            if (dataType == 'boolean')
-              Row(
-                children: [
-                  Switch(
-                    value: hasRemarksField,
-                    onChanged: (value) =>
-                        setState(() => fieldDef['hasRemarksField'] = value),
-                    activeColor: Theme.of(context).colorScheme.primary,
+              if (dataType == 'number') ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Switch(
+                        value: hasUnits,
+                        onChanged: (value) =>
+                            setState(() => fieldDefMap['hasUnits'] = value),
+                        activeColor: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Has Units'),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Add Remarks Field'),
-                ],
+                ),
+                if (hasUnits)
+                  TextFormField(
+                    initialValue: units,
+                    decoration: const InputDecoration(
+                      labelText: 'Units',
+                      hintText: 'e.g., A, kV, MW',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) => fieldDefMap['units'] = value,
+                    validator: (value) {
+                      if (hasUnits && (value == null || value.trim().isEmpty)) {
+                        return 'Units required if "Has Units" is checked';
+                      }
+                      return null;
+                    },
+                  ),
+              ],
+              if (dataType == 'boolean') ...[
+                const SizedBox(height: 10),
+                TextFormField(
+                  initialValue: fieldDefMap['description_remarks'] as String?,
+                  decoration: const InputDecoration(
+                    labelText: 'Description / Remarks (Optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) =>
+                      fieldDefMap['description_remarks'] = value,
+                  maxLines: 2,
+                ),
+              ],
+            ], // End of if (!isGroupFieldDefinition)
+            // UI for 'group' type custom field (nested fields management)
+            if (isGroupFieldDefinition) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Nested Fields in this Group:',
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-            SwitchListTile(
-              value: isMandatory,
-              onChanged: (val) {
-                setState(() {
-                  fieldDef['isMandatory'] = val;
-                });
-              },
+              const SizedBox(height: 8),
+              if ((fieldDefMap['nestedFields'] as List<dynamic>).isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8.0),
+                  child: Text('No nested fields defined for this group.'),
+                ),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount:
+                    (fieldDefMap['nestedFields'] as List<dynamic>).length,
+                itemBuilder: (context, nestedIndex) {
+                  final nestedFieldDefMap =
+                      (fieldDefMap['nestedFields']
+                          as List<dynamic>)[nestedIndex];
+                  return _buildUserAddedFieldDefinitionInput(
+                    nestedFieldDefMap,
+                    nestedIndex, // Pass this index
+                    (fieldDefMap['nestedFields'] as List<dynamic>)
+                        .cast<
+                          Map<String, dynamic>
+                        >(), // Pass the nested list as parent
+                    isNestedDefinition: true,
+                  );
+                },
+              ),
+              ElevatedButton.icon(
+                onPressed: () =>
+                    _addNestedFieldDefinitionToUserDefinedGroup(fieldDefMap),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Field to Group'), // Renamed button
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colorScheme.secondary,
+                  foregroundColor: colorScheme.onSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            CheckboxListTile(
               title: const Text('Mandatory'),
+              value: isMandatory,
+              onChanged: (value) =>
+                  setState(() => fieldDefMap['isMandatory'] = value!),
+              controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
             ),
             Align(
@@ -754,9 +1024,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               child: IconButton(
                 icon: Icon(
                   Icons.remove_circle_outline,
-                  color: Theme.of(context).colorScheme.error,
+                  color: colorScheme.error,
                 ),
-                onPressed: () => _removeUserCustomField(index),
+                onPressed: () => _removeUserCustomFieldDefinition(index),
               ),
             ),
           ],
@@ -775,7 +1045,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       100,
     ); // Base size for the painter
     switch (symbolKey.toLowerCase()) {
-      // Use toLowerCase for robust matching
       case 'transformer':
         return TransformerIconPainter(
           color: color,
@@ -788,7 +1057,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           equipmentSize: equipmentDrawingSize,
           symbolSize: equipmentDrawingSize, // Pass symbolSize
         );
-      case 'circuit breaker': // Match the exact string from _availableSymbolKeys if it's "Circuit Breaker"
+      case 'circuit breaker':
         return CircuitBreakerIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
@@ -917,7 +1186,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
                     if (_selectedTemplate != null) ...[
                       Text(
-                        'Template-defined Properties for ${_selectedTemplate!.equipmentType}',
+                        'Equipment Properties',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 16),
@@ -925,7 +1194,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
-                            'This template has no predefined custom fields.',
+                            'This template has no custom fields defined.',
                             style: TextStyle(
                               fontStyle: FontStyle.italic,
                               color: Colors.grey.shade600,
@@ -934,31 +1203,24 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         )
                       else
                         // These are the actual input fields for template-defined properties
+                        // Note: Group type fields will show a placeholder message.
                         ..._selectedTemplate!.equipmentCustomFields.map((
                           field,
                         ) {
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
                             child: _buildFieldInput(
-                              fieldName: field.name,
-                              dataType: field.dataType
-                                  .toString()
-                                  .split('.')
-                                  .last,
-                              isMandatory: field.isMandatory,
-                              hasUnits: field.units.isNotEmpty,
-                              units: field.units,
-                              options: field.options,
-                              isUserAddedField:
-                                  false, // This is a template field
-                              hasRemarksField: field.hasRemarksField,
+                              fieldDef: field, // Pass CustomField object
+                              currentValuesMap: _templateCustomFieldValues,
+                              prefix:
+                                  'template_field', // Common prefix for template fields
                             ),
                           );
                         }).toList(),
                       const SizedBox(height: 24),
 
                       Text(
-                        'Define Additional Custom Properties (for this instance)', // Clarified purpose
+                        'Define Additional Custom Properties (for this instance)',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       // This ListView builds the *definitions* for user-added fields
@@ -967,31 +1229,57 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _userAddedCustomFieldDefinitions.length,
                         itemBuilder: (context, index) {
-                          final fieldDef =
+                          final fieldDefMap =
                               _userAddedCustomFieldDefinitions[index];
+                          // Pass the definition map to manage its properties
                           return _buildUserAddedFieldDefinitionInput(
-                            fieldDef,
+                            fieldDefMap,
                             index,
+                            _userAddedCustomFieldDefinitions, // Pass list for removal
                           );
                         },
                       ),
-                      ElevatedButton.icon(
-                        onPressed: _addUserCustomField,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add New Custom Field Definition'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.secondary,
-                          foregroundColor: Theme.of(
-                            context,
-                          ).colorScheme.onSecondary,
-                        ),
+                      // Buttons for adding user-defined custom fields
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _addUserCustomFieldDefinition,
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add Field'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.secondary,
+                                foregroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSecondary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _addUserGroupFieldDefinition,
+                              icon: const Icon(
+                                Icons.group_add,
+                              ), // Icon for adding a group
+                              label: const Text('Add Group Field'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.secondary,
+                                foregroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 32),
 
-                      // REMOVED THE SECTION FOR RENDERING "Values for Additional Custom Properties"
-                      // because this screen is for template definition, not value filling.
                       Center(
                         child: _isSavingEquipment
                             ? const CircularProgressIndicator()

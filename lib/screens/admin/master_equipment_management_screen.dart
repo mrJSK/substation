@@ -3,18 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/equipment_model.dart';
-import '../../utils/snackbar_utils.dart'; // Ensure you have this utility
-import 'package:intl/intl.dart'; // Import for date formatting
+import '../../utils/snackbar_utils.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter/widgets.dart'; // <-- Add this import for CustomPainter
 
 // Import all your equipment icon painters here
-import '../../equipment_icons/transformer_icon.dart'; // Example: TransformerIconPainter
-import '../../equipment_icons/busbar_icon.dart'; // Assuming you have this
-import '../../equipment_icons/circuit_breaker_icon.dart'; // Assuming you have this
-import '../../equipment_icons/ct_icon.dart'; // Assuming you have this
-import '../../equipment_icons/disconnector_icon.dart'; // Assuming you have this
-import '../../equipment_icons/ground_icon.dart'; // Assuming you have this
-import '../../equipment_icons/isolator_icon.dart'; // Assuming you have this
-import '../../equipment_icons/pt_icon.dart'; // Assuming you have this
+import '../../equipment_icons/transformer_icon.dart';
+import '../../equipment_icons/busbar_icon.dart';
+import '../../equipment_icons/circuit_breaker_icon.dart';
+import '../../equipment_icons/ct_icon.dart';
+import '../../equipment_icons/disconnector_icon.dart';
+import '../../equipment_icons/ground_icon.dart';
+import '../../equipment_icons/isolator_icon.dart';
+import '../../equipment_icons/pt_icon.dart';
 
 enum MasterEquipmentViewMode { list, form }
 
@@ -30,7 +31,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _equipmentTypeController =
       TextEditingController();
-  // NEW: Controllers for Basic Details fields
   final TextEditingController _makeController = TextEditingController();
   DateTime? _dateOfManufacture;
   DateTime? _dateOfCommissioning;
@@ -42,7 +42,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
 
-  // Pre-defined list of data types for custom fields
+  // UPDATED: Pre-defined list of data types for custom fields (does NOT include 'group')
   final List<String> _dataTypes = [
     'text',
     'number',
@@ -51,7 +51,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     'dropdown',
   ];
 
-  // Pre-defined symbol keys (you can expand this as needed)
+  // Pre-defined symbol keys
   final List<String> _availableSymbolKeys = [
     'Transformer',
     'Circuit Breaker',
@@ -78,7 +78,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   @override
   void dispose() {
     _equipmentTypeController.dispose();
-    _makeController.dispose(); // Dispose new controller
+    _makeController.dispose();
     super.dispose();
   }
 
@@ -117,13 +117,13 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       _viewMode = MasterEquipmentViewMode.list;
       _templateToEdit = null;
       _equipmentTypeController.clear();
-      _makeController.clear(); // Clear new controller
-      _dateOfManufacture = null; // Clear new date
-      _dateOfCommissioning = null; // Clear new date
+      _makeController.clear();
+      _dateOfManufacture = null;
+      _dateOfCommissioning = null;
       _selectedSymbolKey = null;
       _equipmentCustomFields = [];
     });
-    _fetchEquipmentTemplates(); // Refresh list after returning
+    _fetchEquipmentTemplates();
   }
 
   void _showFormForNew() {
@@ -131,10 +131,10 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       _viewMode = MasterEquipmentViewMode.form;
       _templateToEdit = null;
       _equipmentTypeController.clear();
-      _makeController.clear(); // Clear new controller
-      _dateOfManufacture = null; // Clear new date
-      _dateOfCommissioning = null; // Clear new date
-      _selectedSymbolKey = _availableSymbolKeys.first; // Default symbol
+      _makeController.clear();
+      _dateOfManufacture = null;
+      _dateOfCommissioning = null;
+      _selectedSymbolKey = _availableSymbolKeys.first;
       _equipmentCustomFields = [];
     });
   }
@@ -144,7 +144,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       _viewMode = MasterEquipmentViewMode.form;
       _templateToEdit = template;
       _equipmentTypeController.text = template.equipmentType;
-      // Populate new fields
       _makeController.text = template.make ?? '';
       _dateOfManufacture = template.dateOfManufacture?.toDate();
       _dateOfCommissioning = template.dateOfCommissioning?.toDate();
@@ -156,16 +155,62 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     });
   }
 
+  // Modified _addCustomField to default to 'text' for new fields
   void _addCustomField(List<Map<String, dynamic>> targetList) {
     setState(() {
       targetList.add({
         'name': '',
-        'dataType': CustomFieldDataType.text.toString().split('.').last,
+        'dataType': CustomFieldDataType.text
+            .toString()
+            .split('.')
+            .last, // Default to text
         'isMandatory': false,
         'hasUnits': false,
         'units': '',
         'options': [],
-        'description_remarks': '', // Initialize for boolean
+        'hasRemarksField': false,
+        'templateRemarkText': '',
+        'nestedFields': null, // Explicitly null for non-group types
+      });
+    });
+  }
+
+  // Add a new group (list) custom field
+  void _addListCustomField(List<Map<String, dynamic>> targetList) {
+    setState(() {
+      targetList.add({
+        'name': '',
+        'dataType': CustomFieldDataType.group
+            .toString()
+            .split('.')
+            .last, // Use 'group' as data type
+        'isMandatory': false,
+        'hasUnits': false,
+        'units': '',
+        'options': [],
+        'hasRemarksField': false,
+        'templateRemarkText': '',
+        'nestedFields':
+            <Map<String, dynamic>>[], // Start with empty nested fields
+      });
+    });
+  }
+
+  // This helper is for adding a nested field *within* a group field
+  void _addNestedField(Map<String, dynamic> groupField) {
+    setState(() {
+      (groupField['nestedFields'] as List<dynamic>).add({
+        'name': '',
+        'dataType': CustomFieldDataType.text
+            .toString()
+            .split('.')
+            .last, // Default nested field to text
+        'isMandatory': false,
+        'hasUnits': false,
+        'units': '',
+        'options': [],
+        'hasRemarksField': false,
+        'templateRemarkText': '',
       });
     });
   }
@@ -176,7 +221,13 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     });
   }
 
-  // NEW: Date picker helper function
+  // Helper to remove a nested field from a group field
+  void _removeNestedField(Map<String, dynamic> groupField, int nestedIndex) {
+    setState(() {
+      (groupField['nestedFields'] as List<dynamic>).removeAt(nestedIndex);
+    });
+  }
+
   Future<void> _selectDate(
     BuildContext context,
     DateTime? initialDate,
@@ -186,9 +237,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       context: context,
       initialDate: initialDate ?? DateTime.now(),
       firstDate: DateTime(1900),
-      lastDate: DateTime.now().add(
-        const Duration(days: 365 * 10),
-      ), // Allow up to 10 years in future for commissioning
+      lastDate: DateTime.now().add(const Duration(days: 365 * 10)),
     );
     if (picked != null && picked != initialDate) {
       setState(() {
@@ -232,7 +281,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
         equipmentCustomFields: customFields,
         createdBy: currentUser.uid,
         createdAt: Timestamp.now(),
-        // Save new fields
         make: _makeController.text.trim().isEmpty
             ? null
             : _makeController.text.trim(),
@@ -245,7 +293,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       );
 
       if (_templateToEdit == null) {
-        // Add new template
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
             .add(newTemplate.toFirestore());
@@ -256,7 +303,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
           );
         }
       } else {
-        // Update existing template
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
             .doc(_templateToEdit!.id)
@@ -268,7 +314,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
           );
         }
       }
-      _showListView(); // Go back to list view and refresh
+      _showListView();
     } catch (e) {
       print("Error saving template: $e");
       if (mounted) {
@@ -325,7 +371,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
             'Equipment template deleted successfully!',
           );
         }
-        _fetchEquipmentTemplates(); // Refresh list
+        _fetchEquipmentTemplates();
       } catch (e) {
         print("Error deleting template: $e");
         if (mounted) {
@@ -339,89 +385,63 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     }
   }
 
-  // Helper to provide a simple preview of the selected symbol (for demonstration)
   Size _getSymbolPreviewSize(String symbolKey) {
-    switch (symbolKey) {
-      case 'Transformer':
-        return const Size(30, 30);
-      case 'Circuit Breaker':
-        return const Size(25, 25);
-      case 'Busbar':
-        return const Size(35, 15);
-      case 'Disconnector':
-        return const Size(25, 25);
-      case 'Current Transformer':
-      case 'Voltage Transformer':
-        return const Size(25, 25);
-      case 'Ground':
-        return const Size(20, 20);
-      case 'Isolator':
-        return const Size(25, 25);
-      default:
-        return const Size(20, 20);
-    }
+    return const Size(32, 32);
   }
 
-  // Dynamically get the correct CustomPainter based on the symbolKey
   CustomPainter _getSymbolPreviewPainter(String symbolKey, Color color) {
-    // Use a fixed default size for drawing the symbol within the preview
     const Size equipmentDrawingSize = Size(100, 100);
-
-    switch (symbolKey) {
-      case 'Transformer':
+    switch (symbolKey.toLowerCase()) {
+      case 'transformer':
         return TransformerIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
           symbolSize: equipmentDrawingSize,
         );
-      case 'Circuit Breaker':
-        return CircuitBreakerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'Disconnector':
-        return DisconnectorIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'Current Transformer':
-        return CurrentTransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'Voltage Transformer':
-        return PotentialTransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'Busbar':
+      case 'busbar':
         return BusbarIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
           symbolSize: equipmentDrawingSize,
         );
-      case 'Ground':
+      case 'circuit breaker':
+        return CircuitBreakerIconPainter(
+          color: color,
+          equipmentSize: equipmentDrawingSize,
+          symbolSize: equipmentDrawingSize,
+        );
+      case 'current transformer':
+      case 'ct':
+        return CurrentTransformerIconPainter(
+          color: color,
+          equipmentSize: equipmentDrawingSize,
+          symbolSize: equipmentDrawingSize,
+        );
+      case 'disconnector':
+        return DisconnectorIconPainter(
+          color: color,
+          equipmentSize: equipmentDrawingSize,
+          symbolSize: equipmentDrawingSize,
+        );
+      case 'ground':
         return GroundIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
           symbolSize: equipmentDrawingSize,
         );
-      case 'Isolator':
+      case 'isolator':
         return IsolatorIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
           symbolSize: const Size(32, 32),
         );
-      case 'Relay':
-      case 'Capacitor Bank':
-      case 'Reactor':
-      case 'Surge Arrester':
-      case 'Energy Meter':
-      case 'Other':
+      case 'voltage transformer':
+      case 'pt':
+        return PotentialTransformerIconPainter(
+          color: color,
+          equipmentSize: equipmentDrawingSize,
+          symbolSize: equipmentDrawingSize,
+        );
       default:
         return _GenericIconPainter(color: color);
     }
@@ -577,7 +597,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
             ),
             const SizedBox(height: 20),
 
-            // NEW: Basic Details Section
+            // Basic Details Section
             Text(
               'Basic Details',
               style: Theme.of(
@@ -673,162 +693,261 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
           itemCount: fieldsList.length,
           itemBuilder: (context, index) {
             final field = fieldsList[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 8.0),
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextFormField(
-                      initialValue: field['name'] as String,
-                      decoration: const InputDecoration(
-                        labelText: 'Field Name',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (value) => field['name'] = value,
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Field name required'
-                          : null,
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: field['dataType'] as String,
-                      decoration: const InputDecoration(
-                        labelText: 'Data Type',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _dataTypes
-                          .map(
-                            (type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          field['dataType'] = value!;
-                          // Reset options/units when data type changes
-                          if (value != 'dropdown') {
-                            field['options'] = [];
-                          }
-                          if (value != 'number') {
-                            field['hasUnits'] = false;
-                            field['units'] = '';
-                          }
-                          // Clear description for boolean if data type changes from boolean
-                          if (value != 'boolean') {
-                            field['description_remarks'] = '';
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    if (field['dataType'] == 'dropdown')
-                      TextFormField(
-                        initialValue: (field['options'] as List<dynamic>?)
-                            ?.join(','),
-                        decoration: const InputDecoration(
-                          labelText: 'Options (comma-separated)',
-                          border: OutlineInputBorder(),
-                          hintText: 'e.g., Option1, Option2, Option3',
-                        ),
-                        onChanged: (value) => field['options'] = value
-                            .split(',')
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList(),
-                      ),
-                    if (field['dataType'] == 'number') ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: Row(
-                          children: [
-                            Switch(
-                              value: field['hasUnits'] as bool,
-                              onChanged: (value) =>
-                                  setState(() => field['hasUnits'] = value),
-                              activeColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Has Units',
-                              style: Theme.of(context).textTheme.bodyLarge,
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (field['hasUnits'] as bool)
-                        TextFormField(
-                          initialValue: field['units'] as String,
-                          decoration: const InputDecoration(
-                            labelText: 'Units (e.g., V, A, kW, Hz)',
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (value) => field['units'] = value,
-                          validator: (value) {
-                            if (field['hasUnits'] as bool &&
-                                (value == null || value.trim().isEmpty)) {
-                              return 'Units required if "Has Units" is checked';
-                            }
-                            return null;
-                          },
-                        ),
-                    ],
-                    // NEW: Description / Remarks for boolean fields
-                    if (field['dataType'] == 'boolean') ...[
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        initialValue: field['description_remarks'] as String?,
-                        decoration: const InputDecoration(
-                          labelText: 'Description / Remarks (Optional)',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) =>
-                            field['description_remarks'] = value,
-                        maxLines: 2,
-                      ),
-                    ],
-                    CheckboxListTile(
-                      title: const Text('Mandatory'),
-                      value: field['isMandatory'] as bool,
-                      onChanged: (value) =>
-                          setState(() => field['isMandatory'] = value!),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.remove_circle_outline,
-                          color: colorScheme.error,
-                        ),
-                        onPressed: () => _removeCustomField(fieldsList, index),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            return _buildCustomFieldDefinitionInput(
+              field,
+              index,
+              fieldsList,
+              colorScheme,
             );
           },
         ),
-        ElevatedButton.icon(
-          onPressed: () => _addCustomField(fieldsList),
-          icon: const Icon(Icons.add),
-          label: const Text('Add Field'),
+        // Row for "Add Field" and "Add List Field" buttons
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _addCustomField(fieldsList),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Field'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _addListCustomField(
+                  fieldsList,
+                ), // NEW: Button for adding list type
+                icon: const Icon(Icons.playlist_add), // A list-like icon
+                label: const Text('Grouped Field'), // Renamed label
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colorScheme.secondary,
+                  foregroundColor: colorScheme.onSecondary,
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
+
+  // Helper to build a single custom field definition input (including 'group' type details)
+  Widget _buildCustomFieldDefinitionInput(
+    Map<String, dynamic> fieldDef,
+    int index,
+    List<Map<String, dynamic>> parentList,
+    ColorScheme colorScheme, {
+    bool isNested = false,
+  }) {
+    final fieldName = fieldDef['name'] as String;
+    final dataType =
+        fieldDef['dataType'] as String; // This is the string representation
+    final isMandatory = fieldDef['isMandatory'] as bool;
+    final hasUnits = fieldDef['hasUnits'] as bool;
+    final units = fieldDef['units'] as String;
+    final options = List<String>.from(fieldDef['options'] ?? []);
+    final bool hasRemarksField = fieldDef['hasRemarksField'] as bool;
+
+    // Determine if this field is a Group field
+    final bool isGroupField =
+        dataType == CustomFieldDataType.group.toString().split('.').last;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              initialValue: fieldName,
+              decoration: InputDecoration(
+                labelText: isNested ? 'Item Name' : 'Field Name',
+                border: const OutlineInputBorder(),
+                hintText: isNested
+                    ? 'e.g., Phase A Current'
+                    : 'e.g., Manufacturer, Last Service Date',
+              ),
+              onChanged: (value) => fieldDef['name'] = value,
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? (isNested ? 'Item name required' : 'Field name required')
+                  : null,
+            ),
+            const SizedBox(height: 10),
+
+            // Data Type dropdown (hidden if it's a Group field)
+            if (!isGroupField)
+              DropdownButtonFormField<String>(
+                value: dataType,
+                decoration: const InputDecoration(
+                  labelText: 'Data Type',
+                  border: OutlineInputBorder(),
+                ),
+                items: _dataTypes
+                    .map(
+                      (type) =>
+                          DropdownMenuItem(value: type, child: Text(type)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    fieldDef['dataType'] = value!;
+                    // Reset properties based on new data type
+                    fieldDef['options'] = [];
+                    fieldDef['hasUnits'] = false;
+                    fieldDef['units'] = '';
+                    fieldDef['hasRemarksField'] = false;
+                    fieldDef['templateRemarkText'] = '';
+                    fieldDef['nestedFields'] =
+                        null; // Ensure null if changing from group
+                  });
+                },
+              ),
+            // Display 'Group' label if it is a Group field
+            if (isGroupField)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  'Data Type: Group',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic),
+                ),
+              ),
+            const SizedBox(height: 10),
+
+            // Conditional UI based on data types (only if not a group field)
+            if (!isGroupField) ...[
+              if (dataType == 'dropdown')
+                TextFormField(
+                  initialValue: (fieldDef['options'] as List<dynamic>?)?.join(
+                    ',',
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Options (comma-separated)',
+                    border: OutlineInputBorder(),
+                    hintText: 'e.g., Option1, Option2, Option3',
+                  ),
+                  onChanged: (value) => fieldDef['options'] = value
+                      .split(',')
+                      .map((e) => e.trim())
+                      .where((e) => e.isNotEmpty)
+                      .toList(),
+                ),
+              if (dataType == 'number') ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Switch(
+                        value: hasUnits,
+                        onChanged: (value) =>
+                            setState(() => fieldDef['hasUnits'] = value),
+                        activeColor: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Has Units'),
+                    ],
+                  ),
+                ),
+                if (hasUnits)
+                  TextFormField(
+                    initialValue: units,
+                    decoration: const InputDecoration(
+                      labelText: 'Units (e.g., V, A, kW, Hz)',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) => fieldDef['units'] = value,
+                    validator: (value) {
+                      if (hasUnits && (value == null || value.trim().isEmpty)) {
+                        return 'Units required if "Has Units" is checked';
+                      }
+                      return null;
+                    },
+                  ),
+              ],
+              if (dataType == 'boolean') ...[
+                const SizedBox(height: 10),
+                TextFormField(
+                  initialValue: fieldDef['description_remarks'] as String?,
+                  decoration: const InputDecoration(
+                    labelText: 'Description / Remarks (Optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) => fieldDef['description_remarks'] = value,
+                  maxLines: 2,
+                ),
+              ],
+            ], // End of if (!isGroupField)
+            // UI for 'group' type custom field (nested fields management)
+            if (isGroupField) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Fields in this Group:',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              if ((fieldDef['nestedFields'] as List<dynamic>).isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8.0),
+                  child: Text('No fields defined for this group.'),
+                ),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: (fieldDef['nestedFields'] as List<dynamic>).length,
+                itemBuilder: (context, nestedIndex) {
+                  final nestedField =
+                      (fieldDef['nestedFields'] as List<dynamic>)[nestedIndex];
+                  return _buildCustomFieldDefinitionInput(
+                    nestedField,
+                    nestedIndex,
+                    (fieldDef['nestedFields'] as List<dynamic>)
+                        .cast<Map<String, dynamic>>(),
+                    colorScheme,
+                    isNested: true,
+                  );
+                },
+              ),
+              ElevatedButton.icon(
+                onPressed: () => _addNestedField(fieldDef),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Field to Group'), // Renamed button
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colorScheme.secondary,
+                  foregroundColor: colorScheme.onSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            CheckboxListTile(
+              title: const Text('Mandatory'),
+              value: isMandatory,
+              onChanged: (value) =>
+                  setState(() => fieldDef['isMandatory'] = value!),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                icon: Icon(
+                  Icons.remove_circle_outline,
+                  color: colorScheme.error,
+                ),
+                onPressed: () => _removeCustomField(parentList, index),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-// A generic painter for symbols that don't have a specific CustomPainter
 class _GenericIconPainter extends CustomPainter {
   final Color color;
 
@@ -846,7 +965,6 @@ class _GenericIconPainter extends CustomPainter {
     final double halfWidth = size.width / 3;
     final double halfHeight = size.height / 3;
 
-    // Draw a simple rectangle with a cross to represent a generic component
     canvas.drawRect(
       Rect.fromCenter(
         center: Offset(centerX, centerY),
