@@ -10,8 +10,8 @@ import '../../utils/snackbar_utils.dart';
 import 'tripping_shutdown_entry_screen.dart';
 
 class TrippingShutdownOverviewScreen extends StatefulWidget {
-  final String substationId;
-  final String substationName;
+  final String substationId; // Now can be empty
+  final String substationName; // Now can be "N/A"
   final AppUser currentUser;
 
   const TrippingShutdownOverviewScreen({
@@ -37,7 +37,30 @@ class _TrippingShutdownOverviewScreenState
   @override
   void initState() {
     super.initState();
-    _fetchTrippingShutdownEntries();
+    // Only load data if substationId is provided
+    if (widget.substationId.isNotEmpty) {
+      _fetchTrippingShutdownEntries();
+    } else {
+      _isLoading = false; // Set loading to false if no substation is selected
+    }
+  }
+
+  // Reload data if substationId changes
+  @override
+  void didUpdateWidget(covariant TrippingShutdownOverviewScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.substationId != oldWidget.substationId) {
+      if (widget.substationId.isNotEmpty) {
+        _fetchTrippingShutdownEntries();
+      } else {
+        setState(() {
+          _isLoading = false;
+          _groupedEntriesByBayType.clear();
+          _sortedBayTypes.clear();
+          _baysMap.clear();
+        });
+      }
+    }
   }
 
   Future<void> _fetchTrippingShutdownEntries() async {
@@ -48,6 +71,7 @@ class _TrippingShutdownOverviewScreenState
       _baysMap.clear();
     });
     try {
+      // 1. Fetch all bays for this substation to get their types
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
@@ -58,6 +82,7 @@ class _TrippingShutdownOverviewScreenState
         _baysMap[bay.id] = bay;
       }
 
+      // 2. Fetch all tripping/shutdown entries for this substation
       final entriesSnapshot = await FirebaseFirestore.instance
           .collection('trippingShutdownEntries')
           .where('substationId', isEqualTo: widget.substationId)
@@ -181,6 +206,20 @@ class _TrippingShutdownOverviewScreenState
 
   @override
   Widget build(BuildContext context) {
+    // If no substation is selected, display a message
+    if (widget.substationId.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            'Please select a substation from the dropdown above to view tripping & shutdown events.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -357,6 +396,15 @@ class _TrippingShutdownOverviewScreenState
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
+          // Only allow adding a new event if a substation is selected
+          if (widget.substationId.isEmpty) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Please select a substation first.',
+              isError: true,
+            );
+            return;
+          }
           Navigator.of(context)
               .push(
                 MaterialPageRoute(

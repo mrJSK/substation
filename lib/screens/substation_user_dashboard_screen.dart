@@ -8,6 +8,7 @@ import '../../models/hierarchy_models.dart'; // For Substation model
 import '../../utils/snackbar_utils.dart';
 import 'bay_readings_overview_screen.dart'; // Correct import for BayReadingsOverviewScreen
 import 'tripping_shutdown_overview_screen.dart'; // Import TrippingShutdownOverviewScreen
+import 'subdivision_asset_management_screen.dart'; // Import the new asset management screen
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -20,15 +21,43 @@ class SubstationUserDashboardScreen extends StatefulWidget {
 }
 
 class _SubstationUserDashboardScreenState
-    extends State<SubstationUserDashboardScreen> {
+    extends State<SubstationUserDashboardScreen>
+    with SingleTickerProviderStateMixin {
+  // Added SingleTickerProviderStateMixin
+
   Substation? _selectedSubstationForLogsheet;
   List<Substation> _accessibleSubstations = [];
   bool _isLoadingSubstations = true;
+
+  late TabController _tabController; // Declare TabController
+  int _currentTabIndex = 0; // Track current tab index
 
   @override
   void initState() {
     super.initState();
     _loadAccessibleSubstations();
+
+    // Initialize TabController
+    final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
+        ? 4
+        : 3;
+    _tabController = TabController(length: tabCount, vsync: this);
+    _tabController.addListener(_handleTabSelection);
+  }
+
+  @override
+  void dispose() {
+    _tabController.removeListener(_handleTabSelection);
+    _tabController.dispose(); // Dispose the controller
+    super.dispose();
+  }
+
+  void _handleTabSelection() {
+    if (_tabController.indexIsChanging) {
+      setState(() {
+        _currentTabIndex = _tabController.index;
+      });
+    }
   }
 
   Future<void> _loadAccessibleSubstations() async {
@@ -67,7 +96,9 @@ class _SubstationUserDashboardScreenState
             .map((doc) => Substation.fromFirestore(doc))
             .toList();
         // Automatically select the substation if it's a SubstationUser with one assigned
-        if (widget.currentUser.role == UserRole.substationUser &&
+        // OR if it's a Subdivision Manager with only one substation in their subdivision
+        if ((widget.currentUser.role == UserRole.substationUser ||
+                widget.currentUser.role == UserRole.subdivisionManager) &&
             _accessibleSubstations.length == 1) {
           _selectedSubstationForLogsheet = _accessibleSubstations.first;
         }
@@ -92,7 +123,8 @@ class _SubstationUserDashboardScreenState
   Widget build(BuildContext context) {
     if (_isLoadingSubstations) {
       return const Center(child: CircularProgressIndicator());
-    } else if (_accessibleSubstations.isEmpty) {
+    } else if (_accessibleSubstations.isEmpty && !_isLoadingSubstations) {
+      // Only show message if loading is done and no substations
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -133,16 +165,26 @@ class _SubstationUserDashboardScreenState
       );
     } else {
       // Determine if substation dropdown should be shown
-      final bool showSubstationDropdown =
-          !(widget.currentUser.role == UserRole.substationUser &&
-              _accessibleSubstations.length == 1);
+      // It should be shown if:
+      // 1. We are NOT on the "Assets" tab (index 3 for Subdivision Managers)
+      // 2. There's more than one accessible substation
+      // 3. Or if no substation has been selected yet (forcing selection for main tabs)
+      final bool shouldShowGlobalSubstationDropdown =
+          (_currentTabIndex < 3) && // Hide for Assets tab (index 3)
+          (_accessibleSubstations.length > 1 ||
+              _selectedSubstationForLogsheet == null);
+
+      // Define the number of tabs conditionally
+      final int tabCount =
+          widget.currentUser.role == UserRole.subdivisionManager ? 4 : 3;
 
       return DefaultTabController(
-        // DefaultTabController now wraps the entire content
-        length: 3, // Operations, Energy, Tripping/Shutdown
+        // DefaultTabController is fine, just access its controller
+        length: tabCount,
         child: Column(
           children: [
-            if (showSubstationDropdown)
+            // Substation Dropdown (conditionally shown based on tab and selection)
+            if (shouldShowGlobalSubstationDropdown)
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: DropdownSearch<Substation>(
@@ -164,7 +206,7 @@ class _SubstationUserDashboardScreenState
                   dropdownDecoratorProps: DropDownDecoratorProps(
                     dropdownSearchDecoration: InputDecoration(
                       labelText: 'Select Substation',
-                      hintText: 'Choose a substation to view logsheets',
+                      hintText: 'Choose a substation to view details',
                       prefixIcon: const Icon(Icons.electrical_services),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -183,54 +225,73 @@ class _SubstationUserDashboardScreenState
                       value == null ? 'Please select a Substation' : null,
                 ),
               ),
-            if (_selectedSubstationForLogsheet != null)
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    // Operations (Hourly) Tab
-                    BayReadingsOverviewScreen(
-                      // Use BayReadingsOverviewScreen here
-                      substationId: _selectedSubstationForLogsheet!.id,
-                      substationName: _selectedSubstationForLogsheet!.name,
+            // TabBarView is now always rendered
+            Expanded(
+              child: TabBarView(
+                controller: _tabController, // Assign the controller
+                children: [
+                  // Operations (Hourly) Tab
+                  BayReadingsOverviewScreen(
+                    substationId:
+                        _selectedSubstationForLogsheet?.id ??
+                        '', // Pass ID, handle null in screen
+                    substationName:
+                        _selectedSubstationForLogsheet?.name ??
+                        'N/A', // Pass name, handle null
+                    currentUser: widget.currentUser,
+                    frequencyType: 'hourly',
+                  ),
+                  // Energy (Daily) Tab
+                  BayReadingsOverviewScreen(
+                    substationId: _selectedSubstationForLogsheet?.id ?? '',
+                    substationName:
+                        _selectedSubstationForLogsheet?.name ?? 'N/A',
+                    currentUser: widget.currentUser,
+                    frequencyType: 'daily',
+                  ),
+                  // Tripping & Shutdown Tab
+                  TrippingShutdownOverviewScreen(
+                    substationId: _selectedSubstationForLogsheet?.id ?? '',
+                    substationName:
+                        _selectedSubstationForLogsheet?.name ?? 'N/A',
+                    currentUser: widget.currentUser,
+                  ),
+                  // NEW: Subdivision Manager's Asset Management Tab
+                  if (widget.currentUser.role == UserRole.subdivisionManager)
+                    SubdivisionAssetManagementScreen(
+                      // Actual screen instance now
+                      subdivisionId:
+                          widget.currentUser.assignedLevels!['subdivisionId']!,
                       currentUser: widget.currentUser,
-                      frequencyType: 'hourly', // Pre-filter for hourly
+                      // selectedSubstationId is NOT passed here anymore
                     ),
-                    // Energy (Daily) Tab
-                    BayReadingsOverviewScreen(
-                      // Use BayReadingsOverviewScreen here
-                      substationId: _selectedSubstationForLogsheet!.id,
-                      substationName: _selectedSubstationForLogsheet!.name,
-                      currentUser: widget.currentUser,
-                      frequencyType: 'daily', // Pre-filter for daily
-                    ),
-                    // Tripping & Shutdown Tab
-                    TrippingShutdownOverviewScreen(
-                      // NEW: Tripping & Shutdown Screen
-                      substationId: _selectedSubstationForLogsheet!.id,
-                      substationName: _selectedSubstationForLogsheet!.name,
-                      currentUser: widget.currentUser,
-                    ),
-                  ],
-                ),
+                ],
               ),
-            // NEW: TabBar at the bottom
-            if (_selectedSubstationForLogsheet != null)
-              Padding(
-                padding: EdgeInsets.zero, // No extra padding for the TabBar
-                child: TabBar(
-                  labelColor: Theme.of(context).colorScheme.primary,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: Theme.of(context).colorScheme.primary,
-                  tabs: const [
-                    Tab(
-                      text: 'Operations',
-                      icon: Icon(Icons.access_time_filled),
-                    ),
-                    Tab(text: 'Energy', icon: Icon(Icons.electric_meter)),
-                    Tab(text: 'Tripping & Shutdown', icon: Icon(Icons.warning)),
-                  ],
-                ),
+            ),
+            // TabBar is now always rendered
+            Padding(
+              padding: EdgeInsets.zero, // No extra padding for the TabBar
+              child: TabBar(
+                controller: _tabController, // Assign the controller
+                labelColor: Theme.of(context).colorScheme.primary,
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: Theme.of(context).colorScheme.primary,
+                tabs: [
+                  const Tab(
+                    text: 'Operations',
+                    icon: Icon(Icons.access_time_filled),
+                  ),
+                  const Tab(text: 'Energy', icon: Icon(Icons.electric_meter)),
+                  const Tab(
+                    text: 'Tripping & Shutdown',
+                    icon: Icon(Icons.warning),
+                  ),
+                  // Add the new tab only for subdivision managers
+                  if (widget.currentUser.role == UserRole.subdivisionManager)
+                    const Tab(text: 'Assets', icon: Icon(Icons.construction)),
+                ],
               ),
+            ),
           ],
         ),
       );

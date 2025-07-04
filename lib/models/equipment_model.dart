@@ -12,7 +12,7 @@ class CustomField {
   bool
   hasRemarksField; // Indicates if this boolean field should have an associated remarks text area
   String
-  templateRemarkText; // NEW: Stores the custom label/hint for the remarks text area in the template
+  templateRemarkText; // Stores the custom label/hint for the remarks text area in the template
 
   CustomField({
     required this.name,
@@ -35,7 +35,11 @@ class CustomField {
       isMandatory: map['isMandatory'] ?? false,
       hasUnits: map['hasUnits'] ?? false,
       units: map['units'] ?? '',
-      options: List<String>.from(map['options'] ?? []),
+      options:
+          (map['options'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
       hasRemarksField: map['hasRemarksField'] ?? false, // Read from map
       templateRemarkText: map['templateRemarkText'] ?? '', // Read from map
     );
@@ -68,8 +72,14 @@ class MasterEquipmentTemplate {
   final List<CustomField> equipmentCustomFields;
   final String createdBy;
   final Timestamp createdAt;
-  final double defaultWidth; // Assuming these are part of your template
-  final double defaultHeight; // Assuming these are part of your template
+  final double defaultWidth;
+  final double defaultHeight;
+
+  // NEW fields for Basic Details
+  final String? make; // Make: text (optional)
+  final Timestamp? dateOfManufacture; // Date of Manufacture: date (optional)
+  final Timestamp?
+  dateOfCommissioning; // Date of Commissioning: date (optional)
 
   MasterEquipmentTemplate({
     this.id,
@@ -80,6 +90,10 @@ class MasterEquipmentTemplate {
     required this.createdAt,
     this.defaultWidth = 60.0, // Default value if not provided
     this.defaultHeight = 60.0, // Default value if not provided
+    // Initialize new fields
+    this.make,
+    this.dateOfManufacture,
+    this.dateOfCommissioning,
   });
 
   factory MasterEquipmentTemplate.fromFirestore(DocumentSnapshot doc) {
@@ -97,6 +111,10 @@ class MasterEquipmentTemplate {
       createdAt: data['createdAt'] ?? Timestamp.now(),
       defaultWidth: (data['defaultWidth'] as num?)?.toDouble() ?? 60.0,
       defaultHeight: (data['defaultHeight'] as num?)?.toDouble() ?? 60.0,
+      // Read new fields
+      make: data['make'] as String?,
+      dateOfManufacture: data['dateOfManufacture'] as Timestamp?,
+      dateOfCommissioning: data['dateOfCommissioning'] as Timestamp?,
     );
   }
 
@@ -111,6 +129,10 @@ class MasterEquipmentTemplate {
       'createdAt': createdAt,
       'defaultWidth': defaultWidth,
       'defaultHeight': defaultHeight,
+      // Write new fields
+      'make': make,
+      'dateOfManufacture': dateOfManufacture,
+      'dateOfCommissioning': dateOfCommissioning,
     };
   }
 
@@ -123,6 +145,10 @@ class MasterEquipmentTemplate {
     Timestamp? createdAt,
     double? defaultWidth,
     double? defaultHeight,
+    // CopyWith new fields
+    String? make,
+    Timestamp? dateOfManufacture,
+    Timestamp? dateOfCommissioning,
   }) {
     return MasterEquipmentTemplate(
       id: id ?? this.id,
@@ -134,13 +160,15 @@ class MasterEquipmentTemplate {
       createdAt: createdAt ?? this.createdAt,
       defaultWidth: defaultWidth ?? this.defaultWidth,
       defaultHeight: defaultHeight ?? this.defaultHeight,
+      // Use new fields in copyWith
+      make: make ?? this.make,
+      dateOfManufacture: dateOfManufacture ?? this.dateOfManufacture,
+      dateOfCommissioning: dateOfCommissioning ?? this.dateOfCommissioning,
     );
   }
 }
 
-// Ensure you have this in equipment_instance_model.dart or within this file
-// if it's a single file structure. I'll include it here for completeness,
-// assuming it's usually in equipment_instance_model.dart.
+// EquipmentInstance class (no changes needed here for this request)
 class EquipmentInstance {
   final String id;
   final String bayId;
@@ -151,6 +179,17 @@ class EquipmentInstance {
   final Timestamp createdAt;
   final Map<String, dynamic> customFieldValues;
 
+  // NEW fields for Equipment History
+  final String status; // e.g., 'active', 'replaced', 'decommissioned'
+  final String?
+  previousEquipmentInstanceId; // ID of the equipment this one replaced
+  final String?
+  replacementEquipmentInstanceId; // ID of the equipment that replaced this one
+  final Timestamp?
+  decommissionedAt; // When this equipment was replaced/decommissioned
+  final String?
+  reasonForChange; // Reason for changing status (e.g., 'fault', 'upgrade')
+
   EquipmentInstance({
     required this.id,
     required this.bayId,
@@ -160,6 +199,11 @@ class EquipmentInstance {
     required this.createdBy,
     required this.createdAt,
     required this.customFieldValues,
+    this.status = 'active', // Default status
+    this.previousEquipmentInstanceId,
+    this.replacementEquipmentInstanceId,
+    this.decommissionedAt,
+    this.reasonForChange,
   });
 
   factory EquipmentInstance.fromFirestore(DocumentSnapshot doc) {
@@ -174,6 +218,14 @@ class EquipmentInstance {
       createdAt: data['createdAt'] as Timestamp,
       customFieldValues:
           data['customFieldValues'] as Map<String, dynamic>? ?? {},
+      status: data['status'] ?? 'active', // Read new field
+      previousEquipmentInstanceId:
+          data['previousEquipmentInstanceId'], // Read new field
+      replacementEquipmentInstanceId:
+          data['replacementEquipmentInstanceId'], // Read new field
+      decommissionedAt:
+          data['decommissionedAt'] as Timestamp?, // Read new field
+      reasonForChange: data['reasonForChange'], // Read new field
     );
   }
 
@@ -186,6 +238,50 @@ class EquipmentInstance {
       'createdBy': createdBy,
       'createdAt': createdAt,
       'customFieldValues': customFieldValues,
+      'status': status, // Write new field
+      'previousEquipmentInstanceId':
+          previousEquipmentInstanceId, // Write new field
+      'replacementEquipmentInstanceId':
+          replacementEquipmentInstanceId, // Write new field
+      'decommissionedAt': decommissionedAt, // Write new field
+      'reasonForChange': reasonForChange, // Write new field
     };
+  }
+
+  EquipmentInstance copyWith({
+    String? id,
+    String? bayId,
+    String? templateId,
+    String? equipmentTypeName,
+    String? symbolKey,
+    String? createdBy,
+    Timestamp? createdAt,
+    Map<String, dynamic>? customFieldValues,
+    String? status, // CopyWith new field
+    String? previousEquipmentInstanceId, // CopyWith new field
+    String? replacementEquipmentInstanceId, // CopyWith new field
+    Timestamp? decommissionedAt, // CopyWith new field
+    String? reasonForChange, // CopyWith new field
+  }) {
+    return EquipmentInstance(
+      id: id ?? this.id,
+      bayId: bayId ?? this.bayId,
+      templateId: templateId ?? this.templateId,
+      equipmentTypeName: equipmentTypeName ?? this.equipmentTypeName,
+      symbolKey: symbolKey ?? this.symbolKey,
+      createdBy: createdBy ?? this.createdBy,
+      createdAt: createdAt ?? this.createdAt,
+      customFieldValues: customFieldValues ?? this.customFieldValues,
+      status: status ?? this.status, // Use new field
+      previousEquipmentInstanceId:
+          previousEquipmentInstanceId ??
+          this.previousEquipmentInstanceId, // Use new field
+      replacementEquipmentInstanceId:
+          replacementEquipmentInstanceId ??
+          this.replacementEquipmentInstanceId, // Use new field
+      decommissionedAt:
+          decommissionedAt ?? this.decommissionedAt, // Use new field
+      reasonForChange: reasonForChange ?? this.reasonForChange, // Use new field
+    );
   }
 }

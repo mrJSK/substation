@@ -14,7 +14,7 @@ import '../screens/equipment_hierarchy_selection_screen.dart';
 import '../screens/substation_detail_screen.dart';
 import '../screens/admin/reading_template_management_screen.dart';
 
-import 'substation_user_dashboard_screen.dart';
+import 'substation_user_dashboard_screen.dart'; // NEW: Import the new substation user dashboard
 
 class HomeScreen extends StatefulWidget {
   final AppUser appUser;
@@ -26,15 +26,22 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // These state variables are primarily for hierarchy selection in admin dashboard
+  // and might not be directly used for non-admin user's dashboard view.
   String? _selectedScreenStateName;
   String? _selectedScreenZoneId;
   String? _selectedScreenCircleId;
   String? _selectedScreenDivisionId;
   String? _selectedScreenSubdivisionId;
 
+  // The state variables related to substation selection for logsheet dashboard
+  // are now moved to SubstationUserDashboardScreen.
+
   @override
   void initState() {
     super.initState();
+    // No specific loading for non-admin users here anymore,
+    // as it's handled by SubstationUserDashboardScreen.
   }
 
   Widget _buildHierarchyExpansionTile<T extends HierarchyItem>({
@@ -109,15 +116,12 @@ class _HomeScreenState extends State<HomeScreen> {
             .map((doc) {
               if (collectionName == 'zones') return Zone.fromFirestore(doc);
               if (collectionName == 'circles') return Circle.fromFirestore(doc);
-              if (collectionName == 'divisions') {
+              if (collectionName == 'divisions')
                 return Division.fromFirestore(doc);
-              }
-              if (collectionName == 'subdivisions') {
+              if (collectionName == 'subdivisions')
                 return Subdivision.fromFirestore(doc);
-              }
-              if (collectionName == 'substations') {
+              if (collectionName == 'substations')
                 return Substation.fromFirestore(doc);
-              }
               return null;
             })
             .whereType<T>()
@@ -176,16 +180,23 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     Widget bodyContent;
     String appBarTitle;
-    List<BottomNavigationBarItem> bottomNavItems = [];
+    List<BottomNavigationBarItem> bottomNavItems =
+        []; // This list is now functionally used only for Admin's conceptual bottom nav.
     int selectedIndex = 0;
 
     if (widget.appUser.role == UserRole.admin) {
       appBarTitle = 'Admin Dashboard';
       bodyContent = AdminDashboardScreen(adminUser: widget.appUser);
+      // Admin dashboard might have its own bottom nav items, but for now, it's not explicitly used.
+      // bottomNavItems is empty for admin, so bottomNavigationBar will be null.
     } else {
       appBarTitle = 'User Dashboard';
+      // NEW: Directly use SubstationUserDashboardScreen for non-admin users
       bodyContent = SubstationUserDashboardScreen(currentUser: widget.appUser);
-      bottomNavItems = [];
+
+      // For non-admin users, their bottom navigation is now handled by the TabBar
+      // inside SubstationUserDashboardScreen, so this BottomNavigationBar should be null.
+      bottomNavItems = []; // Ensure it's empty for non-admin users
     }
 
     return Scaffold(
@@ -203,7 +214,8 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        actions: const [],
+        // Removed logout button from AppBar actions
+        actions: [],
       ),
       // ADD THIS DRAWER WIDGET
       drawer: Drawer(
@@ -266,7 +278,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: bodyContent,
       bottomNavigationBar:
-          (widget.appUser.role == UserRole.admin && bottomNavItems.isNotEmpty)
+          (widget.appUser.role == UserRole.admin &&
+              bottomNavItems.isNotEmpty) // Only show if admin AND has items
           ? BottomNavigationBar(
               items: bottomNavItems,
               currentIndex: selectedIndex,
@@ -275,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 context,
               ).colorScheme.onSurface.withOpacity(0.6),
             )
-          : null,
+          : null, // Set to null for non-admin roles (and if admin but no items)
     );
   }
 }

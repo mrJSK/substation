@@ -11,9 +11,8 @@ import '../../utils/snackbar_utils.dart';
 import 'bay_readings_status_screen.dart'; // Screen 2: List of bays for a slot
 
 class BayReadingsOverviewScreen extends StatefulWidget {
-  // Renamed internally for clarity, but file remains BayReadingsOverviewScreen.dart
-  final String substationId;
-  final String substationName;
+  final String substationId; // Now can be empty if no substation selected
+  final String substationName; // Now can be "N/A"
   final AppUser currentUser;
   final String frequencyType; // 'hourly' or 'daily'
 
@@ -47,7 +46,31 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAllDataAndCalculateStatuses();
+    // Only load data if substationId is provided
+    if (widget.substationId.isNotEmpty) {
+      _loadAllDataAndCalculateStatuses();
+    } else {
+      _isLoading = false; // Set loading to false if no substation is selected
+    }
+  }
+
+  // Reload data if substationId changes (e.g., user selects a new substation)
+  @override
+  void didUpdateWidget(covariant BayReadingsOverviewScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.substationId != oldWidget.substationId) {
+      if (widget.substationId.isNotEmpty) {
+        _loadAllDataAndCalculateStatuses();
+      } else {
+        setState(() {
+          _isLoading = false;
+          _allBaysInSubstation.clear();
+          _bayMandatoryFields.clear();
+          _logsheetEntriesForDate.clear();
+          _overallSlotCompletionStatus.clear();
+        });
+      }
+    }
   }
 
   Future<void> _loadAllDataAndCalculateStatuses() async {
@@ -256,7 +279,7 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
         DateFormat('yyyy-MM-dd').format(_selectedDate),
       ); // Single key for the whole day
     }
-    return keys.reversed.toList(); // NEW: Reverse the list before returning
+    return keys.reversed.toList();
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -276,6 +299,20 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // If no substation is selected, display a message
+    if (widget.substationId.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            'Please select a substation from the dropdown above to view operational data.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
     // Check for the "Daily reading available after 08:00" message condition
     bool showDailyReadingMessage =
         widget.frequencyType == 'daily' &&

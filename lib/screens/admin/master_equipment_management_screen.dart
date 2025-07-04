@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/equipment_model.dart';
 import '../../utils/snackbar_utils.dart'; // Ensure you have this utility
+import 'package:intl/intl.dart'; // Import for date formatting
 
 // Import all your equipment icon painters here
 import '../../equipment_icons/transformer_icon.dart'; // Example: TransformerIconPainter
@@ -29,6 +30,11 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _equipmentTypeController =
       TextEditingController();
+  // NEW: Controllers for Basic Details fields
+  final TextEditingController _makeController = TextEditingController();
+  DateTime? _dateOfManufacture;
+  DateTime? _dateOfCommissioning;
+
   String? _selectedSymbolKey;
   MasterEquipmentTemplate? _templateToEdit;
   List<MasterEquipmentTemplate> _templates = [];
@@ -52,14 +58,14 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     'Disconnector',
     'Current Transformer',
     'Voltage Transformer',
-    'Relay', // No specific painter provided, will use generic
-    'Capacitor Bank', // No specific painter provided, will use generic
-    'Reactor', // No specific painter provided, will use generic
-    'Surge Arrester', // No specific painter provided, will use generic
-    'Energy Meter', // No specific painter provided, will use generic
-    'Ground', // Assuming ground_icon.dart
-    'Busbar', // Assuming busbar_icon.dart
-    'Isolator', // Assuming isolator_icon.dart
+    'Relay',
+    'Capacitor Bank',
+    'Reactor',
+    'Surge Arrester',
+    'Energy Meter',
+    'Ground',
+    'Busbar',
+    'Isolator',
     'Other',
   ];
 
@@ -72,6 +78,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   @override
   void dispose() {
     _equipmentTypeController.dispose();
+    _makeController.dispose(); // Dispose new controller
     super.dispose();
   }
 
@@ -110,6 +117,9 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       _viewMode = MasterEquipmentViewMode.list;
       _templateToEdit = null;
       _equipmentTypeController.clear();
+      _makeController.clear(); // Clear new controller
+      _dateOfManufacture = null; // Clear new date
+      _dateOfCommissioning = null; // Clear new date
       _selectedSymbolKey = null;
       _equipmentCustomFields = [];
     });
@@ -121,6 +131,9 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       _viewMode = MasterEquipmentViewMode.form;
       _templateToEdit = null;
       _equipmentTypeController.clear();
+      _makeController.clear(); // Clear new controller
+      _dateOfManufacture = null; // Clear new date
+      _dateOfCommissioning = null; // Clear new date
       _selectedSymbolKey = _availableSymbolKeys.first; // Default symbol
       _equipmentCustomFields = [];
     });
@@ -131,6 +144,11 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       _viewMode = MasterEquipmentViewMode.form;
       _templateToEdit = template;
       _equipmentTypeController.text = template.equipmentType;
+      // Populate new fields
+      _makeController.text = template.make ?? '';
+      _dateOfManufacture = template.dateOfManufacture?.toDate();
+      _dateOfCommissioning = template.dateOfCommissioning?.toDate();
+
       _selectedSymbolKey = template.symbolKey;
       _equipmentCustomFields = template.equipmentCustomFields
           .map((field) => field.toMap())
@@ -156,6 +174,27 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     setState(() {
       targetList.removeAt(index);
     });
+  }
+
+  // NEW: Date picker helper function
+  Future<void> _selectDate(
+    BuildContext context,
+    DateTime? initialDate,
+    Function(DateTime?) onSelect,
+  ) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate ?? DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now().add(
+        const Duration(days: 365 * 10),
+      ), // Allow up to 10 years in future for commissioning
+    );
+    if (picked != null && picked != initialDate) {
+      setState(() {
+        onSelect(picked);
+      });
+    }
   }
 
   Future<void> _saveTemplate() async {
@@ -193,6 +232,16 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
         equipmentCustomFields: customFields,
         createdBy: currentUser.uid,
         createdAt: Timestamp.now(),
+        // Save new fields
+        make: _makeController.text.trim().isEmpty
+            ? null
+            : _makeController.text.trim(),
+        dateOfManufacture: _dateOfManufacture != null
+            ? Timestamp.fromDate(_dateOfManufacture!)
+            : null,
+        dateOfCommissioning: _dateOfCommissioning != null
+            ? Timestamp.fromDate(_dateOfCommissioning!)
+            : null,
       );
 
       if (_templateToEdit == null) {
@@ -292,14 +341,13 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
 
   // Helper to provide a simple preview of the selected symbol (for demonstration)
   Size _getSymbolPreviewSize(String symbolKey) {
-    // You'd implement actual drawing logic or image loading here
     switch (symbolKey) {
       case 'Transformer':
         return const Size(30, 30);
       case 'Circuit Breaker':
         return const Size(25, 25);
       case 'Busbar':
-        return const Size(35, 15); // Example size for a horizontal busbar
+        return const Size(35, 15);
       case 'Disconnector':
         return const Size(25, 25);
       case 'Current Transformer':
@@ -310,7 +358,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       case 'Isolator':
         return const Size(25, 25);
       default:
-        return const Size(20, 20); // Default size for generic icons
+        return const Size(20, 20);
     }
   }
 
@@ -324,8 +372,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
         return TransformerIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize:
-              equipmentDrawingSize, // Assuming symbolSize is also needed by the painter
+          symbolSize: equipmentDrawingSize,
         );
       case 'Circuit Breaker':
         return CircuitBreakerIconPainter(
@@ -367,7 +414,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
         return IsolatorIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
+          symbolSize: const Size(32, 32),
         );
       case 'Relay':
       case 'Capacitor Bank':
@@ -431,7 +478,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
                 child: ListTile(
                   title: Text(template.equipmentType),
                   subtitle: Text(
-                    'Symbol: ${template.symbolKey}\n${template.equipmentCustomFields.length} custom fields', // Removed default size display
+                    'Symbol: ${template.symbolKey}\nMake: ${template.make ?? 'N/A'}\nCommissioned: ${template.dateOfCommissioning != null ? DateFormat('yyyy-MM-dd').format(template.dateOfCommissioning!.toDate()) : 'N/A'}\n${template.equipmentCustomFields.length} custom fields',
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (String result) {
@@ -507,7 +554,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
                   value: key,
                   child: Row(
                     children: [
-                      // Render the actual custom painter for the symbol preview
                       SizedBox(
                         width: _getSymbolPreviewSize(key).width,
                         height: _getSymbolPreviewSize(key).height,
@@ -531,7 +577,48 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Removed Default Width and Default Height TextFormFields
+            // NEW: Basic Details Section
+            Text(
+              'Basic Details',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(color: colorScheme.primary),
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _makeController,
+              decoration: InputDecoration(
+                labelText: 'Make (Optional)',
+                prefixIcon: Icon(Icons.business, color: colorScheme.primary),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              title: Text(
+                _dateOfManufacture == null
+                    ? 'Select Date of Manufacture (Optional)'
+                    : 'Date of Manufacture: ${DateFormat('yyyy-MM-dd').format(_dateOfManufacture!)}',
+              ),
+              trailing: const Icon(Icons.calendar_today),
+              onTap: () => _selectDate(context, _dateOfManufacture, (date) {
+                _dateOfManufacture = date;
+              }),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              title: Text(
+                _dateOfCommissioning == null
+                    ? 'Select Date of Commissioning (Optional)'
+                    : 'Date of Commissioning: ${DateFormat('yyyy-MM-dd').format(_dateOfCommissioning!)}',
+              ),
+              trailing: const Icon(Icons.calendar_today),
+              onTap: () => _selectDate(context, _dateOfCommissioning, (date) {
+                _dateOfCommissioning = date;
+              }),
+            ),
+            const SizedBox(height: 20),
+
             _buildCustomFieldsSection(
               'Custom Fields',
               _equipmentCustomFields,
@@ -656,7 +743,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
                             .toList(),
                       ),
                     if (field['dataType'] == 'number') ...[
-                      // Changed to Switch and moved to left
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Row(
@@ -669,9 +755,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
                                 context,
                               ).colorScheme.primary,
                             ),
-                            const SizedBox(
-                              width: 8,
-                            ), // Spacing between switch and text
+                            const SizedBox(width: 8),
                             Text(
                               'Has Units',
                               style: Theme.of(context).textTheme.bodyLarge,

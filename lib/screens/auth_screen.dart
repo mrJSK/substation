@@ -4,7 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../screens/home_screen.dart';
-import '../utils/snackbar_utils.dart'; // Ensure this is imported for Snackbars
+import '../utils/snackbar_utils.dart';
+
+// The GoogleSignIn instance
+final GoogleSignIn _googleSignIn = GoogleSignIn();
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -16,26 +19,21 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   bool _isLoading = false;
 
-  Future<void> _signInWithGoogle() async {
-    setState(() {
-      _isLoading = true;
-    });
+  // New method to handle actual sign-in after user interaction
+  Future<void> _handleGoogleSignInProcess(
+    GoogleSignInAccount? googleUser,
+  ) async {
+    if (googleUser == null) {
+      // User cancelled the sign-in flow
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
 
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-
-      if (googleUser == null) {
-        // User cancelled the sign-in flow
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
-
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
@@ -53,7 +51,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
         AppUser appUser;
         if (!userDoc.exists) {
-          // New user: Create a pending user document
           appUser = AppUser(
             uid: firebaseUser.uid,
             email: firebaseUser.email ?? 'no-email@example.com',
@@ -63,12 +60,10 @@ class _AuthScreenState extends State<AuthScreen> {
           await userDocRef.set(appUser.toFirestore());
           print('New user document created for ${firebaseUser.email}');
         } else {
-          // Existing user: Load their data
           appUser = AppUser.fromFirestore(userDoc);
           print('Existing user signed in: ${firebaseUser.email}');
         }
 
-        // --- Navigation based on approval status ---
         if (mounted) {
           if (appUser.approved) {
             Navigator.of(context).pushAndRemoveUntil(
@@ -78,7 +73,6 @@ class _AuthScreenState extends State<AuthScreen> {
               (Route<dynamic> route) => false,
             );
           } else {
-            // User is not yet approved
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(
                 builder: (context) => const Scaffold(
@@ -154,25 +148,19 @@ class _AuthScreenState extends State<AuthScreen> {
                   ? const CircularProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
                     )
-                  : ElevatedButton.icon(
-                      onPressed: _signInWithGoogle,
-                      icon: Image.asset(
-                        'assets/google_logo.webp',
-                        height: 24,
-                        width: 24,
-                      ),
-                      // FIX: Removed Expanded from label
-                      label: const Text(
-                        'Sign In with Google',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        side: BorderSide(color: Colors.grey.shade300),
-                        elevation: 3,
-                        minimumSize: const Size(250, 50),
-                      ),
+                  :
+                    // Use GoogleSignInButton to integrate with new GIS
+                    GoogleSignInButton(
+                      onPressed: () async {
+                        setState(() {
+                          _isLoading = true;
+                        });
+                        await _handleGoogleSignInProcess(
+                          await _googleSignIn.signIn(),
+                        );
+                      },
+                      darkMode: Theme.of(context).brightness == Brightness.dark,
+                      text: 'Sign In with Google',
                     ),
               const SizedBox(height: 20),
               Text(
@@ -185,6 +173,43 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// You will need to add a simple GoogleSignInButton widget to your project
+// or use a package that provides one, as `google_sign_in` does not directly
+// expose a Flutter widget for the new `renderButton` API.
+// This is a basic example of such a button:
+class GoogleSignInButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  final bool darkMode;
+  final String text;
+
+  const GoogleSignInButton({
+    super.key,
+    required this.onPressed,
+    this.darkMode = false,
+    this.text = 'Sign In with Google',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Image.asset(
+        'assets/google_logo.webp', // Ensure this asset is correct
+        height: 24,
+        width: 24,
+      ),
+      label: Text(text, overflow: TextOverflow.ellipsis),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        side: BorderSide(color: Colors.grey.shade300),
+        elevation: 3,
+        minimumSize: const Size(250, 50),
       ),
     );
   }
