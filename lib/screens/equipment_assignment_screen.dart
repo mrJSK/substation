@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart'; // Import Uuid for generating unique keys
-import '../models/equipment_model.dart'; // Ensure CustomField and MasterEquipmentTemplate are updated here
+import '../models/equipment_model.dart'; // Ensure this model is updated with the new fields
 import '../utils/snackbar_utils.dart';
 // Import equipment icon painters
 import '../../equipment_icons/transformer_icon.dart';
@@ -78,9 +78,12 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   MasterEquipmentTemplate? _selectedTemplate;
   bool _isSavingEquipment = false;
 
-  final Map<String, dynamic> _templateCustomFieldValues = {};
+  // ✅ State variables for basic details
+  final TextEditingController _makeController = TextEditingController();
+  DateTime? _dateOfManufacturing;
+  DateTime? _dateOfCommissioning;
 
-  // This list holds the definitions AND values for user-added fields
+  final Map<String, dynamic> _templateCustomFieldValues = {};
   final List<Map<String, dynamic>> _userAddedCustomFields = [];
 
   final Map<String, TextEditingController> _textControllers = {};
@@ -106,6 +109,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
   @override
   void dispose() {
+    // ✅ Dispose new controller
+    _makeController.dispose();
     _textControllers.forEach((key, controller) => controller.dispose());
     super.dispose();
   }
@@ -272,7 +277,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       final nestedFieldToRemove =
           (groupField['definition']['nestedFields'] as List)[nestedIndex];
 
-      // Also remove its value from the group's value map using its uuid
       final groupValues = groupField['value'] as Map<String, dynamic>;
       final fieldUuid = nestedFieldToRemove['uuid'] as String?;
       if (fieldUuid != null) {
@@ -331,8 +335,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         if (fieldName.trim().isNotEmpty) {
           dynamic fieldValue = userField['value'];
 
-          // ✅ FIX: If the field is a group, transform its value map
-          // from using UUIDs as keys to using field names as keys.
           if (definition['dataType'] == 'group') {
             final groupValueMap = fieldValue as Map<String, dynamic>;
             final transformedGroupValues = <String, dynamic>{};
@@ -378,6 +380,14 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         createdBy: firebaseUser.uid,
         createdAt: Timestamp.now(),
         customFieldValues: allCustomFieldValues,
+        // ✅ Add new fields to instance
+        make: _makeController.text.trim(),
+        dateOfManufacturing: _dateOfManufacturing != null
+            ? Timestamp.fromDate(_dateOfManufacturing!)
+            : null,
+        dateOfCommissioning: _dateOfCommissioning != null
+            ? Timestamp.fromDate(_dateOfCommissioning!)
+            : null,
       );
 
       await newEquipmentInstanceRef.set(newEquipmentInstance.toFirestore());
@@ -710,7 +720,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     );
   }
 
-  // WIDGET to build UI for a user-added field (simple or group)
   Widget _buildUserAddedFieldInput(int index) {
     final fieldData = _userAddedCustomFields[index];
     final definition = fieldData['definition'] as Map<String, dynamic>;
@@ -720,7 +729,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       return _buildUserAddedGroupInput(index);
     }
 
-    // For simple fields, the valueKey is always 'value'
     final valueKey = fieldData['uuid'] as String;
 
     return Card(
@@ -778,7 +786,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     );
   }
 
-  // WIDGET specifically for user-added group fields
   Widget _buildUserAddedGroupInput(int index) {
     final groupData = _userAddedCustomFields[index];
     final definition = groupData['definition'] as Map<String, dynamic>;
@@ -846,7 +853,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     );
   }
 
-  // WIDGET for a single nested field inside a user-added group
   Widget _buildNestedFieldInput(
     int groupIndex,
     int nestedIndex,
@@ -917,12 +923,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             },
           ),
           const SizedBox(height: 12),
-          // ✅ FIX: The value input is now always visible.
           _buildValueInputForUserAddedField(
             dataType: nestedFieldDef['dataType'] as String? ?? 'text',
             fieldData: {'definition': nestedFieldDef},
             groupValues: groupValues,
-            valueKey: fieldUuid, // Use the unique ID as the key
+            valueKey: fieldUuid,
           ),
           const Divider(height: 24, thickness: 1),
         ],
@@ -943,7 +948,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       case 'text':
       case 'number':
         return TextFormField(
-          key: ValueKey(valueKey), // Use key to ensure controller is updated
+          key: ValueKey(valueKey),
           initialValue: valuesMap[valueKey] as String?,
           decoration: const InputDecoration(
             labelText: 'Value',
@@ -1088,6 +1093,38 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
+  // ✅ New helper widget for date pickers to reduce code duplication
+  Widget _buildDatePickerTile({
+    required String title,
+    required DateTime? selectedDate,
+    required void Function(DateTime) onDateSelected,
+  }) {
+    return ListTile(
+      title: Text(
+        '$title: ${selectedDate == null ? '' : DateFormat('yyyy-MM-dd').format(selectedDate)}',
+      ),
+      trailing: const Icon(
+        Icons.calendar_today,
+        color: Color.fromARGB(255, 11, 35, 179),
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.grey.shade400),
+      ),
+      onTap: () async {
+        final DateTime? picked = await showDatePicker(
+          context: context,
+          initialDate: selectedDate ?? DateTime.now(),
+          firstDate: DateTime(1950),
+          lastDate: DateTime.now().add(const Duration(days: 365 * 20)),
+        );
+        if (picked != null && picked != selectedDate) {
+          onDateSelected(picked);
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1169,11 +1206,66 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                       ),
                     const SizedBox(height: 24),
                     if (_selectedTemplate != null) ...[
+                      // ✅ UI for Basic Details
                       Text(
-                        'Equipment Properties (from Template)',
+                        'Equipment Properties',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 16.0),
+                      Card(
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextFormField(
+                                controller: _makeController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Make *',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Make is required';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16.0),
+                              _buildDatePickerTile(
+                                title: 'Date of Manufacturing',
+                                selectedDate: _dateOfManufacturing,
+                                onDateSelected: (date) {
+                                  setState(() {
+                                    _dateOfManufacturing = date;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 12.0),
+                              _buildDatePickerTile(
+                                title: 'Date of Commissioning',
+                                selectedDate: _dateOfCommissioning,
+                                onDateSelected: (date) {
+                                  setState(() {
+                                    _dateOfCommissioning = date;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Custom Properties (from Template)',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
                       if (_selectedTemplate!.equipmentCustomFields.isEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -1233,8 +1325,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed:
-                                  _addUserGroupField, // This is now enabled
+                              onPressed: _addUserGroupField,
                               icon: const Icon(Icons.add_box_outlined),
                               label: const Text('Add Group'),
                               style: ElevatedButton.styleFrom(
