@@ -155,9 +155,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     _dateOfManufacturing = equipment.dateOfManufacturing?.toDate();
     _dateOfCommissioning = equipment.dateOfCommissioning?.toDate();
 
+    _templateCustomFieldValues.addAll(equipment.customFieldValues);
     _initializeCustomFieldValues(
       _selectedTemplate!.equipmentCustomFields,
-      equipment.customFieldValues,
+      _templateCustomFieldValues,
       'template_field',
     );
   }
