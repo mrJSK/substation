@@ -80,7 +80,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
   final Map<String, dynamic> _templateCustomFieldValues = {};
 
-  // MODIFIED: This now holds the definitions AND values for user-added fields
+  // This list holds the definitions AND values for user-added fields
   final List<Map<String, dynamic>> _userAddedCustomFields = [];
 
   final Map<String, TextEditingController> _textControllers = {};
@@ -219,18 +219,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
-  // MODIFIED: Methods to manage user-added fields for the instance
   void _addUserCustomField() {
     setState(() {
       final newField = {
         'uuid': _uuid.v4(),
-        'definition': {
-          'name': '',
-          'dataType': 'text',
-          'isMandatory': false,
-          'options': [],
-          'units': '',
-        },
+        'definition': {'name': '', 'dataType': 'text'},
         'value': null,
       };
       _userAddedCustomFields.add(newField);
@@ -241,13 +234,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     setState(() {
       final newField = {
         'uuid': _uuid.v4(),
-        'definition': {
-          'name': '',
-          'dataType': 'group',
-          'isMandatory': false,
-          'nestedFields': [],
-        },
-        'value': {},
+        'definition': {'name': '', 'dataType': 'group', 'nestedFields': []},
+        'value': <String, dynamic>{},
       };
       _userAddedCustomFields.add(newField);
     });
@@ -256,16 +244,42 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   void _removeUserCustomField(int index) {
     setState(() {
       final removedField = _userAddedCustomFields[index];
-      // Cleanup controllers associated with this field
       final prefix = 'user_added_${removedField['uuid']}';
-      // This is a simplified cleanup. A more robust solution would recursively
-      // clean up controllers for nested fields in a group.
       _textControllers.removeWhere((key, value) => key.startsWith(prefix));
       _booleanValues.removeWhere((key, value) => key.startsWith(prefix));
       _dateValues.removeWhere((key, value) => key.startsWith(prefix));
       _dropdownValues.removeWhere((key, value) => key.startsWith(prefix));
 
       _userAddedCustomFields.removeAt(index);
+    });
+  }
+
+  void _addNestedFieldToUserAddedGroup(int groupIndex) {
+    setState(() {
+      final groupField = _userAddedCustomFields[groupIndex];
+      final nestedFields = groupField['definition']['nestedFields'] as List;
+      nestedFields.add(<String, dynamic>{
+        'name': '',
+        'dataType': 'text',
+        'uuid': _uuid.v4(),
+      });
+    });
+  }
+
+  void _removeNestedFieldFromGroup(int groupIndex, int nestedIndex) {
+    setState(() {
+      final groupField = _userAddedCustomFields[groupIndex];
+      final nestedFieldToRemove =
+          (groupField['definition']['nestedFields'] as List)[nestedIndex];
+
+      // Also remove its value from the group's value map using its uuid
+      final groupValues = groupField['value'] as Map<String, dynamic>;
+      final fieldUuid = nestedFieldToRemove['uuid'] as String?;
+      if (fieldUuid != null) {
+        groupValues.remove(fieldUuid);
+      }
+
+      (groupField['definition']['nestedFields'] as List).removeAt(nestedIndex);
     });
   }
 
@@ -302,7 +316,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
 
     try {
-      // 1. Collect values for template-defined fields
       Map<String, dynamic> templateCustomFieldValuesCollected =
           _collectCustomFieldValues(
             _selectedTemplate!.equipmentCustomFields,
@@ -310,25 +323,43 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             'template',
           );
 
-      // 2. Collect user-added custom fields (definitions and values)
       Map<String, dynamic> userAddedFieldsToSave = {};
       for (var userField in _userAddedCustomFields) {
         final definition = userField['definition'] as Map<String, dynamic>;
         final fieldName = definition['name'] as String;
+
         if (fieldName.trim().isNotEmpty) {
-          // Here, we save both the definition and the value.
-          // The structure in Firestore will be slightly different for these.
-          // For simplicity, we'll store the value directly under its name,
-          // assuming the app can later infer the type if needed, or we store definition alongside.
-          // Let's store a map containing both.
+          dynamic fieldValue = userField['value'];
+
+          // ✅ FIX: If the field is a group, transform its value map
+          // from using UUIDs as keys to using field names as keys.
+          if (definition['dataType'] == 'group') {
+            final groupValueMap = fieldValue as Map<String, dynamic>;
+            final transformedGroupValues = <String, dynamic>{};
+            final nestedFieldDefs = (definition['nestedFields'] as List)
+                .cast<Map<String, dynamic>>();
+
+            for (var nestedDef in nestedFieldDefs) {
+              final nestedFieldName = nestedDef['name'] as String?;
+              final nestedFieldUuid = nestedDef['uuid'] as String?;
+              if (nestedFieldName != null &&
+                  nestedFieldName.isNotEmpty &&
+                  nestedFieldUuid != null &&
+                  groupValueMap.containsKey(nestedFieldUuid)) {
+                transformedGroupValues[nestedFieldName] =
+                    groupValueMap[nestedFieldUuid];
+              }
+            }
+            fieldValue = transformedGroupValues;
+          }
+
           userAddedFieldsToSave[fieldName] = {
             'definition': definition,
-            'value': userField['value'], // The value entered by the user.
+            'value': fieldValue,
           };
         }
       }
 
-      // Combine all custom field values
       Map<String, dynamic> allCustomFieldValues = {
         ...templateCustomFieldValuesCollected,
         ...userAddedFieldsToSave,
@@ -408,7 +439,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       } else if (dataType == 'dropdown') {
         collectedValues[fieldName] = _dropdownValues[uniqueControllerKey];
       } else if (dataType == 'group') {
-        // MODIFIED for single instance group
         Map<String, dynamic> groupItemMap =
             (currentValuesMap[fieldName] as Map<String, dynamic>?) ?? {};
         collectedValues[fieldName] = _collectCustomFieldValues(
@@ -421,14 +451,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     return collectedValues;
   }
 
-  // This widget builds the UI for template-defined fields.
   Widget _buildFieldInput({
     required CustomField fieldDef,
     required Map<String, dynamic> currentValuesMap,
     required String prefix,
   }) {
-    // ... (This function remains mostly the same as the previous version, handling group as a single object)
-    // No changes needed here from the last version you approved.
     final String fieldName = fieldDef.name;
     final String itemIdentifier =
         currentValuesMap['uuid'] as String? ?? fieldName;
@@ -487,10 +514,12 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           onChanged: (value) =>
               currentValuesMap[fieldName] = num.tryParse(value),
           validator: (value) {
-            if (validator != null && validator(value) != null)
+            if (validator != null && validator(value) != null) {
               return validator(value);
-            if (value!.isNotEmpty && num.tryParse(value) == null)
+            }
+            if (value!.isNotEmpty && num.tryParse(value) == null) {
               return 'Enter a valid number for $fieldName';
+            }
             return null;
           },
         );
@@ -681,17 +710,21 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     );
   }
 
-  // UPDATED WIDGET: Builds the UI for a user-added custom field with a vertical layout.
+  // WIDGET to build UI for a user-added field (simple or group)
   Widget _buildUserAddedFieldInput(int index) {
     final fieldData = _userAddedCustomFields[index];
     final definition = fieldData['definition'] as Map<String, dynamic>;
-    final uuid = fieldData['uuid'] as String;
+    final dataType = definition['dataType'] as String;
 
-    final String dataType = definition['dataType'];
-    final String uniquePrefix = 'user_added_$uuid';
+    if (dataType == 'group') {
+      return _buildUserAddedGroupInput(index);
+    }
+
+    // For simple fields, the valueKey is always 'value'
+    final valueKey = fieldData['uuid'] as String;
 
     return Card(
-      key: ValueKey(uuid),
+      key: ValueKey(fieldData['uuid']),
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       elevation: 2,
       child: Padding(
@@ -699,45 +732,36 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Field Name Input
             TextFormField(
               initialValue: definition['name'],
-              decoration: const InputDecoration(
-                labelText: 'Field Name',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Field Name'),
               onChanged: (value) => definition['name'] = value,
               validator: (value) => value == null || value.trim().isEmpty
                   ? 'Field name is required'
                   : null,
             ),
             const SizedBox(height: 12),
-            // Data Type Dropdown
             DropdownButtonFormField<String>(
               value: dataType,
-              decoration: const InputDecoration(
-                labelText: 'Data Type',
-                border: OutlineInputBorder(),
-              ),
-              items: _dataTypes.map((type) {
-                return DropdownMenuItem(value: type, child: Text(type));
-              }).toList(),
+              decoration: const InputDecoration(labelText: 'Data Type'),
+              items: _dataTypes
+                  .map(
+                    (type) => DropdownMenuItem(value: type, child: Text(type)),
+                  )
+                  .toList(),
               onChanged: (value) {
                 setState(() {
                   definition['dataType'] = value!;
-                  fieldData['value'] = null; // Reset value on type change
+                  fieldData['value'] = null;
                 });
               },
             ),
             const SizedBox(height: 12),
-            // Input for the field's value
             _buildValueInputForUserAddedField(
-              uniquePrefix,
-              dataType,
-              fieldData,
+              dataType: dataType,
+              fieldData: fieldData,
+              valueKey: 'value',
             ),
-            const SizedBox(height: 10),
-            // Remove button
             Align(
               alignment: Alignment.centerRight,
               child: IconButton(
@@ -754,74 +778,220 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     );
   }
 
-  // Helper to build the value input part for a user-added field
-  Widget _buildValueInputForUserAddedField(
-    String prefix,
-    String dataType,
-    Map<String, dynamic> fieldData,
+  // WIDGET specifically for user-added group fields
+  Widget _buildUserAddedGroupInput(int index) {
+    final groupData = _userAddedCustomFields[index];
+    final definition = groupData['definition'] as Map<String, dynamic>;
+    final nestedFields = definition['nestedFields'] as List;
+
+    return Card(
+      key: ValueKey(groupData['uuid']),
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              initialValue: definition['name'],
+              decoration: const InputDecoration(labelText: 'Group Name'),
+              onChanged: (value) => definition['name'] = value,
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Group name is required'
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text(
+                'Fields in this Group',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: nestedFields.length,
+              itemBuilder: (context, nestedIndex) {
+                final nestedFieldDef =
+                    nestedFields[nestedIndex] as Map<String, dynamic>;
+                return _buildNestedFieldInput(
+                  index,
+                  nestedIndex,
+                  nestedFieldDef,
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              onPressed: () => _addNestedFieldToUserAddedGroup(index),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Field to Group'),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                icon: Icon(
+                  Icons.remove_circle_outline,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                onPressed: () => _removeUserCustomField(index),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // WIDGET for a single nested field inside a user-added group
+  Widget _buildNestedFieldInput(
+    int groupIndex,
+    int nestedIndex,
+    Map<String, dynamic> nestedFieldDef,
   ) {
+    final groupData = _userAddedCustomFields[groupIndex];
+
+    if (groupData['value'] is! Map<String, dynamic>) {
+      groupData['value'] = Map<String, dynamic>.from(groupData['value'] as Map);
+    }
+    final groupValues = groupData['value'] as Map<String, dynamic>;
+    final fieldName = nestedFieldDef['name'] as String? ?? '';
+    final fieldUuid = nestedFieldDef['uuid'] as String;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextFormField(
+                  initialValue: fieldName,
+                  decoration: const InputDecoration(
+                    labelText: 'Nested Field Name',
+                    isDense: true,
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      nestedFieldDef['name'] = value;
+                    });
+                  },
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Name is required'
+                      : null,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline, size: 22),
+                color: Theme.of(context).colorScheme.error,
+                padding: const EdgeInsets.all(12),
+                constraints: const BoxConstraints(),
+                splashRadius: 24,
+                onPressed: () =>
+                    _removeNestedFieldFromGroup(groupIndex, nestedIndex),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: nestedFieldDef['dataType'] as String? ?? 'text',
+            decoration: const InputDecoration(
+              labelText: 'Data Type',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            items: _dataTypes
+                .where((type) => type != 'group')
+                .map((type) => DropdownMenuItem(value: type, child: Text(type)))
+                .toList(),
+            onChanged: (value) {
+              setState(() {
+                groupValues.remove(fieldUuid);
+                nestedFieldDef['dataType'] = value!;
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          // ✅ FIX: The value input is now always visible.
+          _buildValueInputForUserAddedField(
+            dataType: nestedFieldDef['dataType'] as String? ?? 'text',
+            fieldData: {'definition': nestedFieldDef},
+            groupValues: groupValues,
+            valueKey: fieldUuid, // Use the unique ID as the key
+          ),
+          const Divider(height: 24, thickness: 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildValueInputForUserAddedField({
+    required String dataType,
+    required Map<String, dynamic> fieldData,
+    required String valueKey,
+    Map<String, dynamic>? groupValues,
+  }) {
+    final definition = fieldData['definition'] as Map<String, dynamic>;
+    final valuesMap = groupValues ?? fieldData;
+
     switch (dataType) {
       case 'text':
       case 'number':
         return TextFormField(
-          decoration: InputDecoration(
+          key: ValueKey(valueKey), // Use key to ensure controller is updated
+          initialValue: valuesMap[valueKey] as String?,
+          decoration: const InputDecoration(
             labelText: 'Value',
-            border: const OutlineInputBorder(),
+            border: OutlineInputBorder(),
           ),
           keyboardType: dataType == 'number'
               ? TextInputType.number
               : TextInputType.text,
-          onChanged: (value) => fieldData['value'] = value,
-          validator: (value) {
-            if (dataType == 'number' &&
-                value != null &&
-                value.isNotEmpty &&
-                num.tryParse(value) == null) {
-              return 'Please enter a valid number.';
-            }
-            return null;
-          },
+          onChanged: (value) => valuesMap[valueKey] = value,
         );
       case 'boolean':
         return SwitchListTile(
           title: const Text('Value'),
-          value: fieldData['value'] as bool? ?? false,
+          value: valuesMap[valueKey] as bool? ?? false,
           onChanged: (newValue) {
             setState(() {
-              fieldData['value'] = newValue;
+              valuesMap[valueKey] = newValue;
             });
           },
         );
       case 'date':
         return ListTile(
           title: Text(
-            fieldData['value'] == null
+            valuesMap[valueKey] == null
                 ? 'Select Date'
-                : 'Date: ${DateFormat('yyyy-MM-dd').format(fieldData['value'] as DateTime)}',
+                : 'Date: ${DateFormat('yyyy-MM-dd').format(valuesMap[valueKey] as DateTime)}',
           ),
           trailing: const Icon(Icons.calendar_today),
           onTap: () async {
             final DateTime? picked = await showDatePicker(
               context: context,
-              initialDate: (fieldData['value'] as DateTime?) ?? DateTime.now(),
+              initialDate: (valuesMap[valueKey] as DateTime?) ?? DateTime.now(),
               firstDate: DateTime(1900),
               lastDate: DateTime.now().add(const Duration(days: 36500)),
             );
             if (picked != null) {
               setState(() {
-                fieldData['value'] = picked;
+                valuesMap[valueKey] = picked;
               });
             }
           },
         );
       case 'dropdown':
-        final definition = fieldData['definition'] as Map<String, dynamic>;
         return Column(
           children: [
             TextFormField(
               decoration: const InputDecoration(
                 labelText: 'Dropdown Options (comma-separated)',
-                border: OutlineInputBorder(),
               ),
               onChanged: (value) {
                 setState(() {
@@ -834,10 +1004,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                labelText: 'Select Value',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Select Value'),
               items:
                   (definition['options'] as List<dynamic>?)
                       ?.map(
@@ -849,7 +1016,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                       .toList() ??
                   [],
               onChanged: (value) {
-                fieldData['value'] = value;
+                valuesMap[valueKey] = value;
               },
             ),
           ],
@@ -1001,7 +1168,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                             : null,
                       ),
                     const SizedBox(height: 24),
-
                     if (_selectedTemplate != null) ...[
                       Text(
                         'Equipment Properties (from Template)',
@@ -1033,8 +1199,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           );
                         }).toList(),
                       const SizedBox(height: 24),
-
-                      // NEW SECTION: User-added custom fields
                       Text(
                         'Additional Custom Properties',
                         style: Theme.of(context).textTheme.titleMedium,
@@ -1067,22 +1231,16 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          // "Add Group" is more complex for instance-level, simplified for now
-                          // To implement fully, you'd need a nested version of this logic.
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: () {
-                                SnackBarUtils.showSnackBar(
-                                  context,
-                                  "Instance-level group fields coming soon!",
-                                );
-                              },
+                              onPressed:
+                                  _addUserGroupField, // This is now enabled
                               icon: const Icon(Icons.add_box_outlined),
                               label: const Text('Add Group'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Theme.of(
                                   context,
-                                ).colorScheme.secondary.withOpacity(0.5),
+                                ).colorScheme.secondary,
                                 foregroundColor: Theme.of(
                                   context,
                                 ).colorScheme.onSecondary,
@@ -1092,7 +1250,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         ],
                       ),
                       const SizedBox(height: 32),
-
                       Center(
                         child: _isSavingEquipment
                             ? const CircularProgressIndicator()
