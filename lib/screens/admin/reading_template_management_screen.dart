@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../models/reading_models.dart'; // Import the new reading models
-import '../../models/bay_model.dart'; // To get list of bay types
-import '../../utils/snackbar_utils.dart'; // Ensure you have this utility
+import '../../models/reading_models.dart';
+import '../../models/bay_model.dart';
+import '../../utils/snackbar_utils.dart';
 
 enum ReadingTemplateViewMode { list, form }
 
@@ -25,7 +25,7 @@ class _ReadingTemplateManagementScreenState
   bool _isLoading = true;
   bool _isSaving = false;
 
-  String? _selectedBayType; // For the template's bay type
+  String? _selectedBayType;
   List<Map<String, dynamic>> _templateReadingFields = [];
 
   final List<String> _dataTypes = ReadingFieldDataType.values
@@ -35,7 +35,6 @@ class _ReadingTemplateManagementScreenState
       .map((e) => e.toString().split('.').last)
       .toList();
 
-  // List of available bay types from bay_model.dart
   final List<String> _bayTypes = [
     'Transformer',
     'Line',
@@ -43,7 +42,275 @@ class _ReadingTemplateManagementScreenState
     'Capacitor Bank',
     'Reactor',
     'Bus Coupler',
+    'Battery',
   ];
+
+  final List<ReadingField> _defaultEnergyFields = [
+    ReadingField(
+      name: 'Previous Day Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Current Day Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Previous Day Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Current Day Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Previous Month Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+    ReadingField(
+      name: 'Current Month Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+    ReadingField(
+      name: 'Previous Month Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+    ReadingField(
+      name: 'Current Month Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+  ];
+
+  final Map<String, List<ReadingField>> _defaultHourlyFields = {
+    'Feeder': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Transformer': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Power Factor',
+        unit: '',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Real Power (MW)',
+        unit: 'MW',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Voltage',
+        unit: 'kV',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Apparent Power (MVAR)',
+        unit: 'MVAR',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Gas Pressure (SF6)',
+        unit: 'kg/cm2',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: false,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Winding Temperature',
+        unit: 'Celsius',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Oil Temperature',
+        unit: 'Celsius',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Tap Position',
+        unit: 'No.',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Frequency',
+        unit: 'Hz',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Line': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Power Factor',
+        unit: '',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Real Power (MW)',
+        unit: 'MW',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Voltage',
+        unit: 'kV',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Apparent Power (MVAR)',
+        unit: 'MVAR',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Gas Pressure (SF6)',
+        unit: 'kg/cm2',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: false,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Capacitor Bank': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Power Factor',
+        unit: '',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Battery': [
+      ReadingField(
+        name: 'Voltage',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+  };
+
+  final Map<String, List<ReadingField>> _defaultDailyFields = {
+    'Battery': [
+      ReadingField(
+        name: 'Positive to earth',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.daily,
+      ),
+      ReadingField(
+        name: 'Negative to earth',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.daily,
+      ),
+      ReadingField(
+        name: 'Positive to Negative',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.daily,
+      ),
+      ...List.generate(55, (i) {
+        final readingFields = <ReadingField>[];
+        readingFields.add(
+          ReadingField(
+            name: 'Specific Gravity ${i + 1}',
+            unit: '',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+            frequency: ReadingFrequency.daily,
+          ),
+        );
+        readingFields.add(
+          ReadingField(
+            name: 'Cell voltage ${i + 1}',
+            unit: 'V',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+            frequency: ReadingFrequency.daily,
+          ),
+        );
+        return readingFields;
+      }).expand((pair) => pair).toList(),
+    ],
+  };
 
   @override
   void initState() {
@@ -57,32 +324,24 @@ class _ReadingTemplateManagementScreenState
   }
 
   Future<void> _fetchReadingTemplates() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('readingTemplates')
           .orderBy('bayType')
           .get();
-      setState(() {
-        _templates = snapshot.docs
-            .map((doc) => ReadingTemplate.fromFirestore(doc))
-            .toList();
-        _isLoading = false;
-      });
+      _templates = snapshot.docs
+          .map((doc) => ReadingTemplate.fromFirestore(doc))
+          .toList();
     } catch (e) {
-      print("Error fetching reading templates: $e");
-      if (mounted) {
+      if (mounted)
         SnackBarUtils.showSnackBar(
           context,
           'Failed to load reading templates: $e',
           isError: true,
         );
-      }
-      setState(() {
-        _isLoading = false;
-      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -93,14 +352,14 @@ class _ReadingTemplateManagementScreenState
       _selectedBayType = null;
       _templateReadingFields = [];
     });
-    _fetchReadingTemplates(); // Refresh list after returning
+    _fetchReadingTemplates();
   }
 
   void _showFormForNew() {
     setState(() {
       _viewMode = ReadingTemplateViewMode.form;
       _templateToEdit = null;
-      _selectedBayType = null; // Reset for new template
+      _selectedBayType = null;
       _templateReadingFields = [];
     });
   }
@@ -111,64 +370,105 @@ class _ReadingTemplateManagementScreenState
       _templateToEdit = template;
       _selectedBayType = template.bayType;
       _templateReadingFields = template.readingFields
-          .map((field) => field.toMap())
+          .map(
+            (field) =>
+                field.toMap()..['isDefault'] = _isDefaultField(field.name),
+          )
           .toList();
     });
   }
 
-  void _addReadingField(List<Map<String, dynamic>> targetList) {
+  bool _isDefaultField(String fieldName) {
+    if (_selectedBayType != 'Battery' &&
+        _defaultEnergyFields.any((field) => field.name == fieldName))
+      return true;
+    if (_selectedBayType != null) {
+      if (_defaultHourlyFields[_selectedBayType]?.any(
+            (field) => field.name == fieldName,
+          ) ??
+          false)
+        return true;
+      if (_defaultDailyFields[_selectedBayType]?.any(
+            (field) => field.name == fieldName,
+          ) ??
+          false)
+        return true;
+    }
+    return false;
+  }
+
+  void _onBayTypeSelected(String? newBayType) {
     setState(() {
-      targetList.add({
+      _selectedBayType = newBayType;
+      _templateReadingFields.removeWhere(
+        (field) => !(field['isDefault'] ?? false),
+      );
+
+      if (newBayType != null) {
+        List<ReadingField> defaultFields = [];
+        if (newBayType != 'Battery') {
+          defaultFields.addAll(_defaultEnergyFields);
+        }
+        defaultFields.addAll(_defaultHourlyFields[newBayType] ?? []);
+        defaultFields.addAll(_defaultDailyFields[newBayType] ?? []);
+
+        final defaultFieldsAsMaps = defaultFields
+            .map((field) => field.toMap()..['isDefault'] = true)
+            .toList();
+
+        for (var defaultField in defaultFieldsAsMaps) {
+          if (!_templateReadingFields.any(
+            (existing) => existing['name'] == defaultField['name'],
+          )) {
+            _templateReadingFields.insert(0, defaultField);
+          }
+        }
+      }
+    });
+  }
+
+  void _addReadingField() {
+    setState(() {
+      _templateReadingFields.add({
         'name': '',
         'dataType': ReadingFieldDataType.text.toString().split('.').last,
         'unit': '',
         'options': [],
         'isMandatory': false,
-        'frequency': ReadingFrequency.daily
-            .toString()
-            .split('.')
-            .last, // Default frequency
-        'description_remarks': '', // For boolean
+        'frequency': ReadingFrequency.daily.toString().split('.').last,
+        'description_remarks': '',
+        'isDefault': false,
       });
     });
   }
 
-  void _removeReadingField(List<Map<String, dynamic>> targetList, int index) {
+  void _removeReadingField(int index) {
     setState(() {
-      targetList.removeAt(index);
+      _templateReadingFields.removeAt(index);
     });
   }
 
   Future<void> _saveTemplate() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    if (_selectedBayType == null || _selectedBayType!.isEmpty) {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedBayType == null) {
       SnackBarUtils.showSnackBar(
         context,
-        'Please select a Bay Type for the template.',
+        'Please select a Bay Type.',
         isError: true,
       );
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
-
+    setState(() => _isSaving = true);
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      if (mounted) {
+      if (mounted)
         SnackBarUtils.showSnackBar(
           context,
           'Error: User not logged in.',
           isError: true,
         );
-      }
-      setState(() {
-        _isSaving = false;
-      });
+      setState(() => _isSaving = false);
       return;
     }
 
@@ -177,7 +477,7 @@ class _ReadingTemplateManagementScreenState
           .map((fieldMap) => ReadingField.fromMap(fieldMap))
           .toList();
 
-      final ReadingTemplate newTemplate = ReadingTemplate(
+      final newTemplate = ReadingTemplate(
         bayType: _selectedBayType!,
         readingFields: readingFields,
         createdBy: currentUser.uid,
@@ -185,71 +485,60 @@ class _ReadingTemplateManagementScreenState
       );
 
       if (_templateToEdit == null) {
-        // Add new template
         await FirebaseFirestore.instance
             .collection('readingTemplates')
             .add(newTemplate.toFirestore());
-        if (mounted) {
+        if (mounted)
           SnackBarUtils.showSnackBar(
             context,
             'Reading template added successfully!',
           );
-        }
       } else {
-        // Update existing template
         await FirebaseFirestore.instance
             .collection('readingTemplates')
             .doc(_templateToEdit!.id)
             .update(newTemplate.toFirestore());
-        if (mounted) {
+        if (mounted)
           SnackBarUtils.showSnackBar(
             context,
             'Reading template updated successfully!',
           );
-        }
       }
-      _showListView(); // Go back to list view and refresh
+      _showListView();
     } catch (e) {
-      print("Error saving reading template: $e");
-      if (mounted) {
+      if (mounted)
         SnackBarUtils.showSnackBar(
           context,
           'Failed to save template: $e',
           isError: true,
         );
-      }
     } finally {
-      setState(() {
-        _isSaving = false;
-      });
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<void> _deleteTemplate(String? templateId) async {
     if (templateId == null) return;
-
     final bool confirm =
         await showDialog(
           context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Confirm Deletion'),
-              content: const Text(
-                'Are you sure you want to delete this reading template? This action cannot be undone.',
+          builder: (BuildContext context) => AlertDialog(
+            title: const Text('Confirm Deletion'),
+            content: const Text(
+              'Are you sure you want to delete this reading template? This action cannot be undone.',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
               ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                  child: const Text('Delete'),
-                ),
-              ],
-            );
-          },
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
         ) ??
         false;
 
@@ -259,22 +548,19 @@ class _ReadingTemplateManagementScreenState
             .collection('readingTemplates')
             .doc(templateId)
             .delete();
-        if (mounted) {
+        if (mounted)
           SnackBarUtils.showSnackBar(
             context,
             'Reading template deleted successfully!',
           );
-        }
-        _fetchReadingTemplates(); // Refresh list
+        _fetchReadingTemplates();
       } catch (e) {
-        print("Error deleting template: $e");
-        if (mounted) {
+        if (mounted)
           SnackBarUtils.showSnackBar(
             context,
             'Failed to delete template: $e',
             isError: true,
           );
-        }
       }
     }
   }
@@ -284,7 +570,6 @@ class _ReadingTemplateManagementScreenState
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -336,11 +621,10 @@ class _ReadingTemplateManagementScreenState
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (String result) {
-                      if (result == 'edit') {
+                      if (result == 'edit')
                         _showFormForEdit(template);
-                      } else if (result == 'delete') {
+                      else if (result == 'delete')
                         _deleteTemplate(template.id);
-                      }
                     },
                     itemBuilder: (BuildContext context) =>
                         <PopupMenuEntry<String>>[
@@ -387,20 +671,22 @@ class _ReadingTemplateManagementScreenState
               value: _selectedBayType,
               decoration: InputDecoration(
                 labelText: 'Applies to Bay Type',
-                hintText: 'e.g., Transformer, Feeder',
                 prefixIcon: Icon(Icons.category, color: colorScheme.primary),
                 border: const OutlineInputBorder(),
               ),
-              items: _bayTypes.map((String type) {
-                return DropdownMenuItem<String>(value: type, child: Text(type));
-              }).toList(),
-              onChanged: (String? newValue) =>
-                  setState(() => _selectedBayType = newValue!),
+              items: _bayTypes
+                  .map(
+                    (String type) => DropdownMenuItem<String>(
+                      value: type,
+                      child: Text(type),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _onBayTypeSelected,
               validator: (value) =>
                   value == null ? 'Please select a bay type' : null,
             ),
             const SizedBox(height: 20),
-
             _buildReadingFieldsSection(
               'Reading Fields',
               _templateReadingFields,
@@ -455,140 +741,136 @@ class _ReadingTemplateManagementScreenState
           itemCount: fieldsList.length,
           itemBuilder: (context, index) {
             final field = fieldsList[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 8.0),
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextFormField(
-                      initialValue: field['name'] as String,
-                      decoration: const InputDecoration(
-                        labelText: 'Reading Field Name',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (value) => field['name'] = value,
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Field name required'
-                          : null,
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: field['dataType'] as String,
-                      decoration: const InputDecoration(
-                        labelText: 'Data Type',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _dataTypes
-                          .map(
-                            (type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          field['dataType'] = value!;
-                          // Reset options/unit/description when data type changes
-                          if (value != 'dropdown') {
-                            field['options'] = [];
-                          }
-                          if (value != 'number') {
-                            field['unit'] = '';
-                          }
-                          if (value != 'boolean') {
-                            field['description_remarks'] = '';
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value: field['frequency'] as String,
-                      decoration: const InputDecoration(
-                        labelText: 'Reading Frequency',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _frequencies
-                          .map(
-                            (freq) => DropdownMenuItem(
-                              value: freq,
-                              child: Text(freq),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          field['frequency'] = value!;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    if (field['dataType'] == 'dropdown')
+            final bool isDefault = field['isDefault'] ?? false;
+            return AbsorbPointer(
+              absorbing: isDefault,
+              child: Card(
+                margin: const EdgeInsets.symmetric(vertical: 8.0),
+                elevation: 2,
+                color: isDefault ? Colors.grey.shade200 : null,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       TextFormField(
-                        initialValue: (field['options'] as List<dynamic>?)
-                            ?.join(','),
+                        initialValue: field['name'] as String,
                         decoration: const InputDecoration(
-                          labelText: 'Options (comma-separated)',
+                          labelText: 'Reading Field Name',
                           border: OutlineInputBorder(),
-                          hintText: 'e.g., Option1, Option2, Option3',
                         ),
-                        onChanged: (value) => field['options'] = value
-                            .split(',')
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
+                        onChanged: (value) => field['name'] = value,
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? 'Field name required'
+                            : null,
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: field['dataType'] as String,
+                        decoration: const InputDecoration(
+                          labelText: 'Data Type',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _dataTypes
+                            .map(
+                              (type) => DropdownMenuItem(
+                                value: type,
+                                child: Text(type),
+                              ),
+                            )
                             .toList(),
+                        onChanged: (value) => setState(() {
+                          field['dataType'] = value!;
+                          if (value != 'dropdown') field['options'] = [];
+                          if (value != 'number') field['unit'] = '';
+                          if (value != 'boolean')
+                            field['description_remarks'] = '';
+                        }),
                       ),
-                    if (field['dataType'] == 'number')
-                      TextFormField(
-                        initialValue: field['unit'] as String,
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: field['frequency'] as String,
                         decoration: const InputDecoration(
-                          labelText: 'Unit (e.g., V, A, kW)',
+                          labelText: 'Reading Frequency',
                           border: OutlineInputBorder(),
                         ),
-                        onChanged: (value) => field['unit'] = value,
-                      ),
-                    if (field['dataType'] == 'boolean')
-                      TextFormField(
-                        initialValue: field['description_remarks'] as String,
-                        decoration: const InputDecoration(
-                          labelText: 'Description / Remarks (Optional)',
-                          border: OutlineInputBorder(),
-                        ),
+                        items: _frequencies
+                            .map(
+                              (freq) => DropdownMenuItem(
+                                value: freq,
+                                child: Text(freq),
+                              ),
+                            )
+                            .toList(),
                         onChanged: (value) =>
-                            field['description_remarks'] = value,
-                        maxLines: 2,
+                            setState(() => field['frequency'] = value!),
                       ),
-                    CheckboxListTile(
-                      title: const Text('Mandatory'),
-                      value: field['isMandatory'] as bool,
-                      onChanged: (value) =>
-                          setState(() => field['isMandatory'] = value!),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.remove_circle_outline,
-                          color: colorScheme.error,
+                      const SizedBox(height: 10),
+                      if (field['dataType'] == 'dropdown')
+                        TextFormField(
+                          initialValue: (field['options'] as List<dynamic>?)
+                              ?.join(','),
+                          decoration: const InputDecoration(
+                            labelText: 'Options (comma-separated)',
+                            hintText: 'e.g., Option1, Option2',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => field['options'] = value
+                              .split(',')
+                              .map((e) => e.trim())
+                              .where((e) => e.isNotEmpty)
+                              .toList(),
                         ),
-                        onPressed: () => _removeReadingField(fieldsList, index),
+                      if (field['dataType'] == 'number')
+                        TextFormField(
+                          initialValue: field['unit'] as String?,
+                          decoration: const InputDecoration(
+                            labelText: 'Unit (e.g., V, A, kW)',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => field['unit'] = value,
+                        ),
+                      if (field['dataType'] == 'boolean')
+                        TextFormField(
+                          initialValue: field['description_remarks'] as String?,
+                          decoration: const InputDecoration(
+                            labelText: 'Description / Remarks (Optional)',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) =>
+                              field['description_remarks'] = value,
+                          maxLines: 2,
+                        ),
+                      CheckboxListTile(
+                        title: const Text('Mandatory'),
+                        value: field['isMandatory'] as bool,
+                        onChanged: (value) =>
+                            setState(() => field['isMandatory'] = value!),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
                       ),
-                    ),
-                  ],
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.remove_circle_outline,
+                            color: isDefault ? Colors.grey : colorScheme.error,
+                          ),
+                          onPressed: isDefault
+                              ? null
+                              : () => _removeReadingField(index),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
           },
         ),
         ElevatedButton.icon(
-          onPressed: () => _addReadingField(fieldsList),
+          onPressed: _addReadingField,
           icon: const Icon(Icons.add),
           label: const Text('Add Reading Field'),
         ),

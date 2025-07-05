@@ -253,6 +253,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+            if (widget.appUser.role == UserRole.admin) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.rule),
+                title: const Text('Reading Templates'),
+                onTap: () {
+                  Navigator.of(context).pop(); // Close the drawer
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const ReadingTemplateManagementScreen(),
+                    ),
+                  );
+                },
+              ),
+              const Divider(),
+            ],
             // Example Drawer item for logging out
             ListTile(
               leading: const Icon(Icons.logout),

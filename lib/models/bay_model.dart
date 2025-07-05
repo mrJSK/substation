@@ -13,8 +13,9 @@ class Bay {
   final String? landmark;
   final String? contactNumber;
   final String? contactPerson;
-  final bool? isGovernmentFeeder; // NEW FIELD: Government switch status
-  final String? feederType; // NEW FIELD: Conditional feeder type
+  final bool? isGovernmentFeeder;
+  final String? feederType;
+  final double? multiplyingFactor; // **NEW**: Added for energy calculations
 
   Bay({
     required this.id,
@@ -28,8 +29,9 @@ class Bay {
     this.landmark,
     this.contactNumber,
     this.contactPerson,
-    this.isGovernmentFeeder, // Initialize new field
-    this.feederType, // Initialize new field
+    this.isGovernmentFeeder,
+    this.feederType,
+    this.multiplyingFactor, // **NEW**
   });
 
   factory Bay.fromFirestore(DocumentSnapshot doc) {
@@ -46,8 +48,10 @@ class Bay {
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
       contactPerson: data['contactPerson'],
-      isGovernmentFeeder: data['isGovernmentFeeder'], // Read new field
-      feederType: data['feederType'], // Read new field
+      isGovernmentFeeder: data['isGovernmentFeeder'],
+      feederType: data['feederType'],
+      multiplyingFactor: (data['multiplyingFactor'] as num?)
+          ?.toDouble(), // **NEW**
     );
   }
 
@@ -63,8 +67,9 @@ class Bay {
       'landmark': landmark,
       'contactNumber': contactNumber,
       'contactPerson': contactPerson,
-      'isGovernmentFeeder': isGovernmentFeeder, // Write new field
-      'feederType': feederType, // Write new field
+      'isGovernmentFeeder': isGovernmentFeeder,
+      'feederType': feederType,
+      'multiplyingFactor': multiplyingFactor, // **NEW**
     };
   }
 
@@ -80,8 +85,9 @@ class Bay {
     String? landmark,
     String? contactNumber,
     String? contactPerson,
-    bool? isGovernmentFeeder, // CopyWith new field
-    String? feederType, // CopyWith new field
+    bool? isGovernmentFeeder,
+    String? feederType,
+    double? multiplyingFactor, // **NEW**
   }) {
     return Bay(
       id: id ?? this.id,
@@ -95,9 +101,9 @@ class Bay {
       landmark: landmark ?? this.landmark,
       contactNumber: contactNumber ?? this.contactNumber,
       contactPerson: contactPerson ?? this.contactPerson,
-      isGovernmentFeeder:
-          isGovernmentFeeder ?? this.isGovernmentFeeder, // CopyWith new field
-      feederType: feederType ?? this.feederType, // CopyWith new field
+      isGovernmentFeeder: isGovernmentFeeder ?? this.isGovernmentFeeder,
+      feederType: feederType ?? this.feederType,
+      multiplyingFactor: multiplyingFactor ?? this.multiplyingFactor, // **NEW**
     );
   }
 }

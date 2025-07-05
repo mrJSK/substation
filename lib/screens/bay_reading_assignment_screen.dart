@@ -38,6 +38,9 @@ class _BayReadingAssignmentScreenState
   String?
   _existingAssignmentId; // Firestore document ID if an assignment already exists
 
+  // NEW: State variable for the reading start date
+  DateTime? _readingStartDate;
+
   // List to hold the effective reading fields for this bay (template fields + user-added fields)
   // This is the working list for the UI.
   final List<Map<String, dynamic>> _instanceReadingFields = [];
@@ -118,6 +121,15 @@ class _BayReadingAssignmentScreenState
         _existingAssignmentId = existingDoc.id;
         final assignedData = existingDoc.data();
 
+        // Load the reading start date if it exists
+        if (assignedData.containsKey('readingStartDate') &&
+            assignedData['readingStartDate'] != null) {
+          _readingStartDate = (assignedData['readingStartDate'] as Timestamp)
+              .toDate();
+        } else {
+          _readingStartDate = DateTime.now(); // Default to today if not set
+        }
+
         // Reconstruct the _selectedTemplate and _instanceReadingFields
         final existingTemplateId = assignedData['templateId'] as String?;
         if (existingTemplateId != null) {
@@ -136,13 +148,17 @@ class _BayReadingAssignmentScreenState
 
         // Initialize controllers and values from loaded fields
         _initializeFieldControllers();
-      } else if (_availableReadingTemplates.isNotEmpty) {
-        // If no existing assignment, pre-select the first available template
-        _selectedTemplate = _availableReadingTemplates.first;
-        _instanceReadingFields.addAll(
-          _selectedTemplate!.readingFields.map((e) => e.toMap()).toList(),
-        );
-        _initializeFieldControllers();
+      } else {
+        // Default start date for new assignments
+        _readingStartDate = DateTime.now();
+        if (_availableReadingTemplates.isNotEmpty) {
+          // If no existing assignment, pre-select the first available template
+          _selectedTemplate = _availableReadingTemplates.first;
+          _instanceReadingFields.addAll(
+            _selectedTemplate!.readingFields.map((e) => e.toMap()).toList(),
+          );
+          _initializeFieldControllers();
+        }
       }
     } catch (e) {
       print("Error loading bay reading assignment screen data: $e");
@@ -248,6 +264,14 @@ class _BayReadingAssignmentScreenState
       );
       return;
     }
+    if (_readingStartDate == null) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please select a reading start date.',
+        isError: true,
+      );
+      return;
+    }
 
     setState(() {
       _isSaving = true;
@@ -289,6 +313,9 @@ class _BayReadingAssignmentScreenState
         'bayType': _bayType, // Store bay type for easier querying
         'templateId': _selectedTemplate!.id!,
         'assignedFields': finalAssignedFields,
+        'readingStartDate': Timestamp.fromDate(
+          _readingStartDate!,
+        ), // Save the start date
         'recordedBy': widget.currentUser.uid, // The user making the assignment
         'recordedAt': FieldValue.serverTimestamp(),
       };
@@ -536,13 +563,13 @@ class _BayReadingAssignmentScreenState
     final String currentFieldName = fieldDef['name'] as String;
     final String currentDataType = fieldDef['dataType'] as String;
     final bool currentIsMandatory = fieldDef['isMandatory'] as bool;
-    final String currentUnit = fieldDef['unit'] as String;
+    final String currentUnit = fieldDef['unit'] as String? ?? '';
     final List<String> currentOptions = List<String>.from(
       fieldDef['options'] ?? [],
     );
     final String currentFrequency = fieldDef['frequency'] as String;
     final String currentDescriptionRemarks =
-        fieldDef['description_remarks'] as String;
+        fieldDef['description_remarks'] as String? ?? '';
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -561,7 +588,6 @@ class _BayReadingAssignmentScreenState
               onChanged: (value) {
                 setState(() {
                   fieldDef['name'] = value;
-                  // Update controller key if name changes
                   if (_textFieldControllers.containsKey(currentFieldName)) {
                     _textFieldControllers[value] = _textFieldControllers.remove(
                       currentFieldName,
@@ -594,10 +620,9 @@ class _BayReadingAssignmentScreenState
               onChanged: (value) {
                 setState(() {
                   fieldDef['dataType'] = value!;
-                  fieldDef['options'] = []; // Clear options on type change
-                  fieldDef['unit'] = ''; // Clear unit on type change
-                  fieldDef['description_remarks'] =
-                      ''; // Clear description on type change
+                  fieldDef['options'] = [];
+                  fieldDef['unit'] = '';
+                  fieldDef['description_remarks'] = '';
                 });
               },
             ),
@@ -678,10 +703,24 @@ class _BayReadingAssignmentScreenState
     );
   }
 
+  Future<void> _selectReadingStartDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _readingStartDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null && picked != _readingStartDate) {
+      setState(() {
+        _readingStartDate = picked;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -698,6 +737,18 @@ class _BayReadingAssignmentScreenState
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 20),
+              ListTile(
+                title: Text(
+                  'Reading Start Date: ${DateFormat('dd-MM-yyyy').format(_readingStartDate ?? DateTime.now())}',
+                ),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () => _selectReadingStartDate(context),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              const SizedBox(height: 20),
               Text(
                 'Select Reading Template',
                 style: Theme.of(context).textTheme.titleLarge,
@@ -708,8 +759,7 @@ class _BayReadingAssignmentScreenState
                   padding: const EdgeInsets.all(16.0),
                   child: Center(
                     child: Text(
-                      'No reading templates defined for "${_bayType ?? 'this bay type'}". '
-                      'Please define them in Admin Dashboard > Reading Templates.',
+                      'No reading templates defined for "${_bayType ?? 'this bay type'}". Please define them in Admin Dashboard > Reading Templates.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontStyle: FontStyle.italic,
@@ -742,7 +792,6 @@ class _BayReadingAssignmentScreenState
                       value == null ? 'Please select a template' : null,
                 ),
               const SizedBox(height: 24),
-
               if (_selectedTemplate != null) ...[
                 Text(
                   'Configured Reading Fields',

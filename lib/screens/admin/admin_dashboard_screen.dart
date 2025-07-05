@@ -5,6 +5,7 @@ import '../../screens/admin/master_equipment_management_screen.dart';
 import '../../screens/substation_detail_screen.dart';
 import '../../screens/equipment_hierarchy_selection_screen.dart';
 import '../../screens/admin/user_management_screen.dart'; // Import the UserManagementScreen
+import '../../screens/admin/reading_template_management_screen.dart'; // *** ADD THIS IMPORT ***
 
 class AdminDashboardScreen extends StatelessWidget {
   final AppUser adminUser;
@@ -28,15 +29,14 @@ class AdminDashboardScreen extends StatelessWidget {
         'screen': const MasterEquipmentScreen(),
         'color': Theme.of(context).colorScheme.tertiary,
       },
-      // REMOVED: The "Create New Bay" card directly from Admin Dashboard
-      // This is now handled through the "Manage Substations & Equipment" flow
-      // {
-      //   'title': 'Create New Bay',
-      //   'subtitle': 'Add a new bay to a substation',
-      //   'icon': Icons.add_box,
-      //   'screen': BayCreationScreen(currentUser: adminUser),
-      //   'color': Theme.of(context).colorScheme.secondary,
-      // },
+      // *** ADD THIS NEW CARD ***
+      {
+        'title': 'Reading Templates',
+        'subtitle': 'Define reading templates for bays',
+        'icon': Icons.rule,
+        'screen': const ReadingTemplateManagementScreen(),
+        'color': Colors.cyan,
+      },
       {
         'title': 'Manage Substations & Equipment',
         'subtitle': 'Browse substations and manage bays/equipment',

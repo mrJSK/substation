@@ -1,3 +1,4 @@
+// lib/screens/admin/admin_hierarchy_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,6 +6,7 @@ import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart'; // Contains StateModel and CityModel
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart'; // Required for Consumer and Provider.of
+import '../../models/bay_model.dart';
 
 class _AddEditHierarchyItemForm extends StatefulWidget {
   final String itemType;
@@ -49,6 +51,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   final TextEditingController voltageLevelController = TextEditingController();
   final TextEditingController typeController = TextEditingController();
   final TextEditingController sasMakeController = TextEditingController();
+  final TextEditingController multiplyingFactorController =
+      TextEditingController();
 
   Timestamp? commissioningDate;
 
@@ -56,7 +60,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   double? selectedCityId;
   String? selectedCityName;
   String? selectedVoltageLevel;
-  String? selectedContactDesignation; // NEW FIELD: Contact Designation
+  String? selectedContactDesignation;
   bool isSasOperation = false;
   String? selectedStatus;
 
@@ -75,6 +79,22 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
     _initializeFormFields();
   }
 
+  @override
+  void dispose() {
+    nameController.dispose();
+    descriptionController.dispose();
+    landmarkController.dispose();
+    contactNumberController.dispose();
+    contactPersonController.dispose();
+    substationAddressController.dispose();
+    voltageLevelController.dispose();
+    typeController.dispose();
+    sasMakeController.dispose();
+    statusDescriptionController.dispose();
+    multiplyingFactorController.dispose();
+    super.dispose();
+  }
+
   Future<void> _initializeFormFields() async {
     // Pre-populate fields if editing an existing item
     if (widget.itemToEdit != null) {
@@ -83,6 +103,11 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
       landmarkController.text = widget.itemToEdit!.landmark ?? '';
       contactNumberController.text = widget.itemToEdit!.contactNumber ?? '';
       contactPersonController.text = widget.itemToEdit!.contactPerson ?? '';
+
+      if (widget.itemToEdit is Bay) {
+        multiplyingFactorController.text =
+            (widget.itemToEdit as Bay).multiplyingFactor?.toString() ?? '';
+      }
 
       if (widget.itemToEdit is Zone) {
         bottomSheetSelectedState = (widget.itemToEdit as Zone).stateName;
@@ -98,10 +123,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
         isSasOperation = substation.operation == 'SAS';
         selectedStatus = substation.status;
         statusDescriptionController.text = substation.statusDescription ?? '';
-        selectedContactDesignation =
-            substation.contactDesignation; // NEW FIELD: Pre-populate
+        selectedContactDesignation = substation.contactDesignation;
 
-        // Derive state for existing substation
         if (substation.subdivisionId != null) {
           String? derivedState = await _findStateNameForSubdivision(
             substation.subdivisionId!,
@@ -113,7 +136,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
           }
         }
 
-        // Set selected city for editing
         if (substation.cityId != null) {
           selectedCityId = double.tryParse(substation.cityId!);
           final appState = Provider.of<AppStateData>(context, listen: false);
@@ -127,7 +149,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
         }
       }
     } else {
-      // Logic for adding a new item
       if (widget.itemType == 'Zone' &&
           Provider.of<AppStateData>(context, listen: false).states.isNotEmpty) {
         bottomSheetSelectedState = Provider.of<AppStateData>(
@@ -137,7 +158,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
       } else if (widget.itemType == 'Substation' &&
           widget.parentId != null &&
           widget.parentCollectionName == 'subdivisions') {
-        // If adding a new Substation, derive state from its parent Subdivision
         String? derivedState = await _findStateNameForSubdivision(
           widget.parentId!,
         );
@@ -152,10 +172,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
     }
   }
 
-  // Helper function to find the state name for a given subdivision ID
   Future<String?> _findStateNameForSubdivision(String subdivisionId) async {
     try {
-      // 1. Get Subdivision to find Division ID
       DocumentSnapshot subdivisionDoc = await FirebaseFirestore.instance
           .collection('subdivisions')
           .doc(subdivisionId)
@@ -164,7 +182,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
         String? divisionId =
             (subdivisionDoc.data() as Map<String, dynamic>)['divisionId'];
         if (divisionId != null) {
-          // 2. Get Division to find Circle ID
           DocumentSnapshot divisionDoc = await FirebaseFirestore.instance
               .collection('divisions')
               .doc(divisionId)
@@ -173,7 +190,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
             String? circleId =
                 (divisionDoc.data() as Map<String, dynamic>)['circleId'];
             if (circleId != null) {
-              // 3. Get Circle to find Zone ID
               DocumentSnapshot circleDoc = await FirebaseFirestore.instance
                   .collection('circles')
                   .doc(circleId)
@@ -182,7 +198,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                 String? zoneId =
                     (circleDoc.data() as Map<String, dynamic>)['zoneId'];
                 if (zoneId != null) {
-                  // 4. Get Zone to find State Name
                   DocumentSnapshot zoneDoc = await FirebaseFirestore.instance
                       .collection('zones')
                       .doc(zoneId)
@@ -201,21 +216,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
       print("Error finding state for subdivision: $e");
     }
     return null;
-  }
-
-  @override
-  void dispose() {
-    nameController.dispose();
-    descriptionController.dispose();
-    landmarkController.dispose();
-    contactNumberController.dispose();
-    contactPersonController.dispose();
-    substationAddressController.dispose();
-    voltageLevelController.dispose();
-    typeController.dispose();
-    sasMakeController.dispose();
-    statusDescriptionController.dispose();
-    super.dispose();
   }
 
   Future<void> _selectCommissioningDate(BuildContext context) async {
@@ -296,9 +296,30 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
 
-                    // Substation Technical Details Category - MOVED HERE
+                    if (widget.itemType == 'Bay') ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: multiplyingFactorController,
+                        decoration: InputDecoration(
+                          labelText: 'Multiplying Factor (MF)',
+                          prefixIcon: Icon(
+                            Icons.clear,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (value) {
+                          if (value != null &&
+                              value.isNotEmpty &&
+                              double.tryParse(value) == null) {
+                            return 'Please enter a valid number for MF';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+
                     if (widget.itemType == 'Substation') ...[
                       const SizedBox(height: 16),
                       Text(
@@ -527,13 +548,10 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                       const SizedBox(height: 16),
                     ],
 
-                    // Substation specific fields (City and Address) - REMAINS HERE
                     if (widget.itemType == 'Substation') ...[
-                      const SizedBox(
-                        height: 16,
-                      ), // Add spacing for category header
+                      const SizedBox(height: 16),
                       Text(
-                        'Substation Location Details', // New category header
+                        'Substation Location Details',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               color: Theme.of(context).colorScheme.primary,
@@ -573,7 +591,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                         asyncItems: (String filter) async {
                           if (bottomSheetSelectedState == null) {
                             _showSnackBar(
-                              'Please select a state first.', // Inform user to select state
+                              'Please select a state first.',
                               isError: true,
                             );
                             return [];
@@ -655,7 +673,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                       keyboardType: TextInputType.phone,
                     ),
                     const SizedBox(height: 16),
-                    // NEW FIELD: Contact Designation Dropdown
                     if (widget.itemType == 'Substation') ...[
                       DropdownButtonFormField<String>(
                         value: selectedContactDesignation,
@@ -677,12 +694,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             selectedContactDesignation = newValue;
                           });
                         },
-                        // validator: (value) { // Optional: make mandatory
-                        //   if (value == null || value.isEmpty) {
-                        //     return 'Please select a designation';
-                        //   }
-                        //   return null;
-                        // },
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -697,7 +708,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Description always at the end of common fields
                     TextFormField(
                       controller: descriptionController,
                       decoration: InputDecoration(
@@ -754,6 +764,13 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             '${widget.parentCollectionName!.substring(0, widget.parentCollectionName!.length - 1)}Id';
                         data[parentIdKey] = widget.parentId;
                       }
+
+                      if (widget.itemType == 'Bay') {
+                        data['multiplyingFactor'] = double.tryParse(
+                          multiplyingFactorController.text,
+                        );
+                      }
+
                       if (widget.itemType == 'Zone') {
                         data['stateName'] = bottomSheetSelectedState;
                       }
@@ -762,8 +779,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             substationAddressController.text.isEmpty
                             ? null
                             : substationAddressController.text;
-                        data['cityId'] = selectedCityId
-                            ?.toString(); // Store city ID as string in Firestore
+                        data['cityId'] = selectedCityId?.toString();
                         data['voltageLevel'] = selectedVoltageLevel;
                         data['type'] = typeController.text.isEmpty
                             ? null
@@ -778,8 +794,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             statusDescriptionController.text.isEmpty
                             ? null
                             : statusDescriptionController.text;
-                        data['contactDesignation'] =
-                            selectedContactDesignation; // NEW FIELD: Save
+                        data['contactDesignation'] = selectedContactDesignation;
                       }
 
                       widget.onAddItem(
@@ -1044,11 +1059,9 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                                 ],
                               ),
                             ),
-                          // Display City Name from AppStateData
                           if (item.cityId != null && item.cityId!.isNotEmpty)
                             Builder(
                               builder: (context) {
-                                // Access AppStateData via Provider.of for consistency in widget tree
                                 final appState = Provider.of<AppStateData>(
                                   context,
                                   listen: false,
@@ -1250,7 +1263,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                                 ],
                               ),
                             ),
-                          // NEW FIELD: Contact Designation Display
                           if (item is Substation &&
                               item.contactDesignation != null &&
                               item.contactDesignation!.isNotEmpty)
@@ -1547,9 +1559,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.background, // Set background to white
+      backgroundColor: Theme.of(context).colorScheme.background,
       appBar: AppBar(title: const Text('Manage Hierarchy'), centerTitle: true),
       floatingActionButton: FloatingActionButton.extended(
         onPressed:
@@ -1653,7 +1663,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                           );
                         }
 
-                        // Sort states for consistent display
                         final sortedStates = uniqueStatesInZones.toList()
                           ..sort();
 

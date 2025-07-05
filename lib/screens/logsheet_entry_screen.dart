@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../models/bay_model.dart';
-import '../models/reading_models.dart'; // ReadingTemplate, ReadingField, ReadingFrequency, ReadingFieldDataType
-import '../models/logsheet_models.dart'; // LogsheetEntry
-import '../models/user_model.dart'; // AppUser
+import '../models/reading_models.dart';
+import '../models/logsheet_models.dart';
+import '../models/user_model.dart';
 import '../utils/snackbar_utils.dart';
 
 class LogsheetEntryScreen extends StatefulWidget {
@@ -14,8 +14,8 @@ class LogsheetEntryScreen extends StatefulWidget {
   final String substationName;
   final String bayId;
   final DateTime readingDate;
-  final String frequency; // 'hourly', 'daily', etc.
-  final int? readingHour; // Only for hourly readings
+  final String frequency;
+  final int? readingHour;
   final AppUser currentUser;
 
   const LogsheetEntryScreen({
@@ -38,15 +38,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
 
-  Bay? _currentBay; // The bay object for display
-  DocumentSnapshot?
-  _bayReadingAssignmentDoc; // The actual Firestore document for the assignment
-  LogsheetEntry?
-  _existingLogsheetEntry; // If an entry for this slot already exists
+  Bay? _currentBay;
+  DocumentSnapshot? _bayReadingAssignmentDoc;
+  LogsheetEntry? _existingLogsheetEntry;
 
   List<ReadingField> _filteredReadingFields = [];
 
-  // Controllers/Values for the dynamic reading fields
   final Map<String, TextEditingController> _readingTextFieldControllers = {};
   final Map<String, bool> _readingBooleanFieldValues = {};
   final Map<String, DateTime?> _readingDateFieldValues = {};
@@ -77,7 +74,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     });
 
     try {
-      // 1. Fetch current bay details for display
       final bayDoc = await FirebaseFirestore.instance
           .collection('bays')
           .doc(widget.bayId)
@@ -96,7 +92,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         return;
       }
 
-      // 2. Fetch the bay's reading assignment
       final assignmentSnapshot = await FirebaseFirestore.instance
           .collection('bayReadingAssignments')
           .where('bayId', isEqualTo: widget.bayId)
@@ -117,7 +112,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             )
             .toList();
 
-        // Filter fields by the specific frequency for this screen
         _filteredReadingFields = allAssignedReadingFields
             .where(
               (field) =>
@@ -126,7 +120,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             )
             .toList();
 
-        // 3. Attempt to fetch an existing logsheet entry for this exact slot
+        _injectEnergyAccountFields();
+
         Query logsheetQuery = FirebaseFirestore.instance
             .collection('logsheetEntries')
             .where('bayId', isEqualTo: widget.bayId)
@@ -152,7 +147,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             999,
           );
         } else {
-          // For daily or other frequencies, use the start of the selected day
           queryStartTimestamp = DateTime(
             widget.readingDate.year,
             widget.readingDate.month,
@@ -187,20 +181,14 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           );
         }
 
-        // Initialize controllers with existing data or empty
         _initializeReadingFieldControllers(
           _filteredReadingFields,
           _existingLogsheetEntry,
         );
       } else {
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'No reading template assigned to this bay. Cannot enter readings.',
-            isError: true,
-          );
-          Navigator.of(context).pop();
-        }
+        _filteredReadingFields = [];
+        _injectEnergyAccountFields();
+        _initializeReadingFieldControllers(_filteredReadingFields, null);
       }
     } catch (e) {
       print("Error initializing logsheet entry screen: $e");
@@ -219,11 +207,82 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     }
   }
 
+  void _injectEnergyAccountFields() {
+    final List<ReadingField> energyFields = [];
+    const unit = 'MWH';
+    const dataType = ReadingFieldDataType.number;
+    const isMandatory = true;
+
+    if (widget.frequency == 'daily') {
+      energyFields.addAll([
+        ReadingField(
+          name: 'Previous Day Reading (Import)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.daily,
+        ),
+        ReadingField(
+          name: 'Current Day Reading (Import)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.daily,
+        ),
+        ReadingField(
+          name: 'Previous Day Reading (Export)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.daily,
+        ),
+        ReadingField(
+          name: 'Current Day Reading (Export)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.daily,
+        ),
+      ]);
+    } else if (widget.frequency == 'monthly') {
+      energyFields.addAll([
+        ReadingField(
+          name: 'Previous Month Reading (Import)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.monthly,
+        ),
+        ReadingField(
+          name: 'Current Month Reading (Import)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.monthly,
+        ),
+        ReadingField(
+          name: 'Previous Month Reading (Export)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.monthly,
+        ),
+        ReadingField(
+          name: 'Current Month Reading (Export)',
+          dataType: dataType,
+          isMandatory: isMandatory,
+          unit: unit,
+          frequency: ReadingFrequency.monthly,
+        ),
+      ]);
+    }
+    _filteredReadingFields.insertAll(0, energyFields);
+  }
+
   void _initializeReadingFieldControllers(
     List<ReadingField> fields,
     LogsheetEntry? existingEntry,
   ) {
-    // Dispose old controllers
     _readingTextFieldControllers.forEach(
       (key, controller) => controller.dispose(),
     );
@@ -275,7 +334,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    if (_currentBay == null || _bayReadingAssignmentDoc == null) {
+    if (_currentBay == null ||
+        _bayReadingAssignmentDoc == null &&
+            _filteredReadingFields.any(
+              (field) => !field.name.contains('Reading'),
+            )) {
       SnackBarUtils.showSnackBar(
         context,
         'Missing bay or assignment data.',
@@ -321,7 +384,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         }
       }
 
-      // Determine the exact timestamp for the logsheet entry
       DateTime entryTimestamp;
       if (widget.frequency == 'hourly' && widget.readingHour != null) {
         entryTimestamp = DateTime(
@@ -331,7 +393,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           widget.readingHour!,
         );
       } else {
-        // For daily or other frequencies, use the start of the selected day
         entryTimestamp = DateTime(
           widget.readingDate.year,
           widget.readingDate.month,
@@ -341,15 +402,16 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
 
       final logsheetData = LogsheetEntry(
         bayId: widget.bayId,
-        templateId: _bayReadingAssignmentDoc!.id,
+        templateId:
+            _bayReadingAssignmentDoc?.id ??
+            'HARDCODED_ENERGY_ACCOUNT', // Use a placeholder if no template
         readingTimestamp: Timestamp.fromDate(entryTimestamp),
         recordedBy: widget.currentUser.uid,
         recordedAt: Timestamp.now(),
         values: recordedValues,
-        frequency: widget.frequency, // Save frequency with the logsheet entry
-        readingHour: widget
-            .readingHour, // Save hour with the logsheet entry if applicable
-        substationId: widget.substationId, // NEW: Pass substationId here
+        frequency: widget.frequency,
+        readingHour: widget.readingHour,
+        substationId: widget.substationId,
       );
 
       if (_existingLogsheetEntry == null) {
@@ -361,7 +423,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             context,
             'Logsheet entry saved successfully!',
           );
-          Navigator.of(context).pop(); // Go back to overview after saving
+          Navigator.of(context).pop();
         }
       } else {
         await FirebaseFirestore.instance
@@ -373,7 +435,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             context,
             'Logsheet entry updated successfully!',
           );
-          Navigator.of(context).pop(); // Go back to overview after updating
+          Navigator.of(context).pop();
         }
       }
     } catch (e) {
@@ -392,17 +454,14 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     }
   }
 
-  // Helper to build dynamic input fields
   Widget _buildReadingFieldInput(ReadingField field) {
     final String fieldName = field.name;
     final String dataType = field.dataType.toString().split('.').last;
     final bool isMandatory = field.isMandatory;
     final String? unit = field.unit;
     final List<String>? options = field.options;
-    final String? initialDescriptionRemarks =
-        field.descriptionRemarks; // For boolean
+    final String? initialDescriptionRemarks = field.descriptionRemarks;
 
-    // Determine if fields should be read-only
     final bool isReadOnly =
         _existingLogsheetEntry != null &&
         widget.currentUser.role == UserRole.substationUser;
@@ -411,7 +470,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
       labelText: fieldName + (isMandatory ? ' *' : ''),
       border: const OutlineInputBorder(),
       suffixText: unit,
-      filled: isReadOnly, // Fill background if read-only
+      filled: isReadOnly,
       fillColor: isReadOnly
           ? Colors.grey.shade100
           : Theme.of(context).inputDecorationTheme.fillColor,
@@ -435,7 +494,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             fieldName,
             () => TextEditingController(),
           ),
-          readOnly: isReadOnly, // Apply read-only
+          readOnly: isReadOnly,
           decoration: inputDecoration,
           validator: validator,
         );
@@ -446,7 +505,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             fieldName,
             () => TextEditingController(),
           ),
-          readOnly: isReadOnly, // Apply read-only
+          readOnly: isReadOnly,
           decoration: inputDecoration.copyWith(
             hintText: unit != null && unit.isNotEmpty
                 ? 'Enter value in $unit'
@@ -477,16 +536,15 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
               onChanged: isReadOnly
                   ? null
                   : (value) {
-                      // Disable onChanged if read-only
                       setState(() {
                         _readingBooleanFieldValues[fieldName] = value;
                       });
                     },
-              secondary: Icon(Icons.check_box),
+              secondary: const Icon(Icons.check_box),
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
             ),
-            if (_readingBooleanFieldValues[fieldName]!) // Show description only if true
+            if (_readingBooleanFieldValues[fieldName]!)
               Padding(
                 padding: const EdgeInsets.only(
                   left: 16.0,
@@ -499,7 +557,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                     () =>
                         TextEditingController(text: initialDescriptionRemarks),
                   ),
-                  readOnly: isReadOnly, // Apply read-only
+                  readOnly: isReadOnly,
                   decoration: inputDecoration.copyWith(
                     labelText: 'Description / Remarks (Optional)',
                     filled: isReadOnly,
@@ -529,7 +587,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           onTap: isReadOnly
               ? null
               : () async {
-                  // Disable onTap if read-only
                   final DateTime? picked = await showDatePicker(
                     context: context,
                     initialDate:
@@ -555,7 +612,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           onChanged: isReadOnly
               ? null
               : (value) {
-                  // Disable onChanged if read-only
                   setState(() {
                     _readingDropdownFieldValues[fieldName] = value;
                   });
@@ -568,11 +624,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: AbsorbPointer(
-        absorbing:
-            isReadOnly, // Absorb pointers for the whole field if read-only
-        child: fieldWidget,
-      ),
+      child: AbsorbPointer(absorbing: isReadOnly, child: fieldWidget),
     );
   }
 
@@ -594,9 +646,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         widget.currentUser.role == UserRole.substationUser;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(titleText),
-      ), // Added AppBar back for this screen
+      appBar: AppBar(title: Text(titleText)),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -607,7 +657,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Substation: ${widget.substationName}', // Substation context
+                      'Substation: ${widget.substationName}',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 16),
@@ -620,7 +670,23 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                         /* Date is passed, not selected here */
                       },
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
+
+                    if (_currentBay?.multiplyingFactor != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 24.0),
+                        child: Center(
+                          child: Chip(
+                            label: Text(
+                              'Multiplying Factor (MF): ${_currentBay!.multiplyingFactor}',
+                            ),
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.secondaryContainer,
+                          ),
+                        ),
+                      ),
+
                     if (_filteredReadingFields.isEmpty)
                       Center(
                         child: Text(
@@ -636,7 +702,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                         return _buildReadingFieldInput(field);
                       }).toList(),
                     const SizedBox(height: 32),
-                    if (!isSubstationUserViewingSaved) // Hide save button if substation user viewing saved
+                    if (!isSubstationUserViewingSaved)
                       Center(
                         child: _isSaving
                             ? const CircularProgressIndicator()
@@ -653,7 +719,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                                 ),
                               ),
                       ),
-                    if (isSubstationUserViewingSaved) // Message for substation users viewing saved data
+                    if (isSubstationUserViewingSaved)
                       Center(
                         child: Padding(
                           padding: const EdgeInsets.all(8.0),
@@ -676,7 +742,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   }
 }
 
-// Extension to capitalize first letter
 extension StringExtension on String {
   String capitalize() {
     if (isEmpty) {
