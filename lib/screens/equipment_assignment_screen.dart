@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart'; // Import Uuid for generating unique keys
 import '../models/equipment_model.dart'; // Ensure CustomField and MasterEquipmentTemplate are updated here
 import '../utils/snackbar_utils.dart';
 // Import equipment icon painters
@@ -77,21 +78,13 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   MasterEquipmentTemplate? _selectedTemplate;
   bool _isSavingEquipment = false;
 
-  // Map to store values for template-defined fields (mapped by field name)
-  // This map now holds the actual values to be saved in customFieldValues.
-  // For 'group' types, it will hold a List<Map<String, dynamic>>
   final Map<String, dynamic> _templateCustomFieldValues = {};
-
-  // For dynamically added custom fields by the user for this instance
-  // This list now holds CustomField definitions added by the user
   final List<Map<String, dynamic>> _userAddedCustomFieldDefinitions = [];
 
-  // Centralized controllers for ALL fields (template-defined and user-added), keyed by a unique path
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, bool> _booleanValues = {};
   final Map<String, DateTime?> _dateValues = {};
   final Map<String, String?> _dropdownValues = {};
-  // No specific map for boolean remarks controllers; use _textControllers with a unique key.
 
   final List<String> _dataTypes = [
     'text',
@@ -99,8 +92,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     'boolean',
     'date',
     'dropdown',
-    // 'group' type is not supported for direct data entry on this screen
   ];
+
+  final Uuid _uuid = const Uuid();
 
   @override
   void initState() {
@@ -110,7 +104,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
   @override
   void dispose() {
-    // Dispose all text controllers created
     _textControllers.forEach((key, controller) => controller.dispose());
     super.dispose();
   }
@@ -145,21 +138,14 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
-  // Refactored _onTemplateSelected to defer setState
   void _onTemplateSelected(MasterEquipmentTemplate? template) {
-    // 1. Clear all previous state and dispose old controllers BEFORE new state build
     _templateCustomFieldValues.clear();
     _userAddedCustomFieldDefinitions.clear();
-    _clearAllControllers(); // Clears and disposes all controllers
+    _clearAllControllers();
 
-    // 2. Update _selectedTemplate
     _selectedTemplate = template;
 
-    // 3. Initialize new controllers and values if a template is selected
     if (_selectedTemplate != null) {
-      // Create a deep copy of the template's custom fields to avoid modifying the template itself.
-      // If `_templateCustomFieldValues` is meant to hold the *instance's data*,
-      // it should be populated with default values or empty containers based on the template structure.
       _initializeCustomFieldValues(
         _selectedTemplate!.equipmentCustomFields,
         _templateCustomFieldValues,
@@ -167,11 +153,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       );
     }
 
-    // 4. Call setState ONLY ONCE after all initializations are done
     setState(() {});
   }
 
-  // Helper to clear and dispose all controllers
   void _clearAllControllers() {
     _textControllers.forEach((key, controller) => controller.dispose());
     _textControllers.clear();
@@ -180,9 +164,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     _dropdownValues.clear();
   }
 
-  // Recursive helper to initialize the value maps and controllers for fields
-  // prefix is used to create unique keys for controllers in nested structures.
-  // This also handles loading existing values if available (e.g. from an edit scenario, which is not implemented here yet)
   void _initializeCustomFieldValues(
     List<CustomField> fields,
     Map<String, dynamic> currentValuesMap,
@@ -194,8 +175,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           : '${prefix}_${field.name}';
       final String dataType = field.dataType.toString().split('.').last;
 
-      // Ensure the map has a placeholder for this field's value
-      // Use .putIfAbsent to not overwrite existing values during recursive calls if loading old data
       currentValuesMap.putIfAbsent(field.name, () => null);
 
       if (dataType == 'text' || dataType == 'number') {
@@ -219,154 +198,115 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         _dropdownValues[uniqueControllerKey] =
             (currentValuesMap[field.name] as String?);
       } else if (dataType == 'group') {
-        // Fix: Ensure currentValuesMap[field.name] is initialized as a List if null
-        // And also ensure each item in the list is a Map.
-        List<dynamic> groupItemsList;
-        // Safely try to cast, if it fails or is null, initialize as empty list
-        if (currentValuesMap[field.name] is List<dynamic>) {
-          groupItemsList = currentValuesMap[field.name] as List<dynamic>;
+        // MODIFIED: Treat group as a single map, not a list.
+        Map<String, dynamic> groupItemMap;
+        if (currentValuesMap[field.name] is Map<String, dynamic>) {
+          groupItemMap = currentValuesMap[field.name] as Map<String, dynamic>;
         } else {
-          groupItemsList = [];
-          currentValuesMap[field.name] =
-              groupItemsList; // Assign the new empty list
+          groupItemMap = {};
+          currentValuesMap[field.name] = groupItemMap;
         }
 
         if (field.nestedFields != null && field.nestedFields!.isNotEmpty) {
-          for (int i = 0; i < groupItemsList.length; i++) {
-            // Ensure each item is a Map before passing recursively
-            if (groupItemsList[i] is Map<String, dynamic>) {
-              _initializeCustomFieldValues(
-                field.nestedFields!,
-                groupItemsList[i] as Map<String, dynamic>,
-                '${uniqueControllerKey}_item_$i',
-              );
-            } else {
-              // Handle malformed data if an item is not a Map
-              print(
-                'Warning: Expected Map for nested item in group field "${field.name}", index $i. Got ${groupItemsList[i].runtimeType}. Replacing with empty map.',
-              );
-              groupItemsList[i] =
-                  {}; // Replace with an empty map to prevent further errors
-              _initializeCustomFieldValues(
-                field.nestedFields!,
-                groupItemsList[i] as Map<String, dynamic>,
-                '${uniqueControllerKey}_item_$i',
-              ); // Initialize the new empty map
-            }
-          }
+          _initializeCustomFieldValues(
+            field.nestedFields!,
+            groupItemMap,
+            '${uniqueControllerKey}_item_single',
+          );
         }
       }
     }
   }
 
-  // Helper to add a new basic type custom field definition to _userAddedCustomFieldDefinitions
+  // NOTE: User-added fields functionality remains unchanged as the request was about template fields.
   void _addUserCustomFieldDefinition() {
     setState(() {
       final Map<String, dynamic> newFieldDef = {
         'name': '',
-        'dataType': CustomFieldDataType.text
-            .toString()
-            .split('.')
-            .last, // Default to text
+        'dataType': CustomFieldDataType.text.toString().split('.').last,
         'isMandatory': false,
         'hasUnits': false,
         'units': '',
         'options': [],
         'hasRemarksField': false,
         'templateRemarkText': '',
-        'nestedFields': null, // No nested fields by default
+        'nestedFields': null,
+        'uuid': _uuid.v4(),
       };
       _userAddedCustomFieldDefinitions.add(newFieldDef);
-      // Initialize controllers for this new definition (with a unique prefix)
       _initializeCustomFieldValues(
         [CustomField.fromMap(newFieldDef)],
         newFieldDef,
-        'user_added_field_${_userAddedCustomFieldDefinitions.length - 1}',
+        'user_added_field_${newFieldDef['uuid']}',
       );
     });
   }
 
-  // Helper to add a new group type custom field definition to _userAddedCustomFieldDefinitions
   void _addUserGroupFieldDefinition() {
     setState(() {
+      final String newUuid = _uuid.v4();
       final Map<String, dynamic> newFieldDef = {
         'name': '',
-        'dataType': CustomFieldDataType.group
-            .toString()
-            .split('.')
-            .last, // Set as group type
+        'dataType': CustomFieldDataType.group.toString().split('.').last,
         'isMandatory': false,
-        'nestedFields': [], // Initialize with empty list of nested fields
-        // FIX: Initialize other properties that might be accessed by _buildUserAddedFieldDefinitionInput
+        'nestedFields': [],
         'hasUnits': false,
         'units': '',
         'options': [],
         'hasRemarksField': false,
         'templateRemarkText': '',
+        'uuid': newUuid,
       };
       _userAddedCustomFieldDefinitions.add(newFieldDef);
-      // Initialize controllers for this new definition (with a unique prefix)
       _initializeCustomFieldValues(
         [CustomField.fromMap(newFieldDef)],
         newFieldDef,
-        'user_added_group_${_userAddedCustomFieldDefinitions.length - 1}',
+        'user_added_group_$newUuid',
       );
     });
   }
 
-  // Helper to remove a user-added field definition and its associated controllers
   void _removeUserCustomFieldDefinition(int index) {
     setState(() {
       final Map<String, dynamic> removedFieldDef =
           _userAddedCustomFieldDefinitions[index];
-      // Generate the unique prefix used for controllers of this definition
       final String uniquePrefix =
           (removedFieldDef['dataType'] ==
               CustomFieldDataType.group.toString().split('.').last)
-          ? 'user_added_group_$index'
-          : 'user_added_field_$index';
-
-      // Clean up controllers recursively associated with this definition
+          ? 'user_added_group_${removedFieldDef['uuid']}'
+          : 'user_added_field_${removedFieldDef['uuid']}';
       _cleanupControllers(
         [CustomField.fromMap(removedFieldDef)],
         removedFieldDef,
         uniquePrefix,
       );
       _userAddedCustomFieldDefinitions.removeAt(index);
-      // Note: If using index-based prefixes, removal means subsequent items' prefixes are now stale.
-      // For a robust solution, consider using UUIDs for items or re-initialize all controllers on removal.
     });
   }
 
-  // Helper to add a new item to a 'group' type custom field (for user-added groups)
   void _addNestedFieldDefinitionToUserDefinedGroup(
     Map<String, dynamic> groupFieldMap,
   ) {
     setState(() {
       final List<dynamic> nestedFieldsList =
           groupFieldMap['nestedFields'] as List<dynamic>;
+      final String newItemUuid = _uuid.v4();
       final Map<String, dynamic> newNestedFieldDef = {
         'name': '',
-        'dataType': CustomFieldDataType.text
-            .toString()
-            .split('.')
-            .last, // Default nested field to text
+        'dataType': CustomFieldDataType.text.toString().split('.').last,
         'isMandatory': false,
         'hasUnits': false,
         'units': '',
         'options': [],
         'hasRemarksField': false,
         'templateRemarkText': '',
-        'nestedFields':
-            null, // Nested fields of nested fields are null by default
+        'nestedFields': null,
+        'uuid': newItemUuid,
       };
       nestedFieldsList.add(newNestedFieldDef);
-      // Initialize controllers for this new nested definition
-      // Ensure the parent map is properly identified for unique prefixing
       final String parentGroupPrefix =
-          'user_added_group_${_userAddedCustomFieldDefinitions.indexOf(groupFieldMap)}';
-      final String newNestedPrefix =
-          '${parentGroupPrefix}_item_${nestedFieldsList.length - 1}';
+          'user_added_group_${groupFieldMap['uuid']}';
+      final String newNestedPrefix = '${parentGroupPrefix}_item_$newItemUuid';
       _initializeCustomFieldValues(
         [CustomField.fromMap(newNestedFieldDef)],
         newNestedFieldDef,
@@ -375,7 +315,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     });
   }
 
-  // Helper to remove an item from a 'group' type custom field (for user-added groups)
   void _removeNestedFieldDefinitionFromUserDefinedGroup(
     List<Map<String, dynamic>> parentNestedList,
     int nestedIndex,
@@ -385,9 +324,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       final Map<String, dynamic> removedNestedFieldDef =
           parentNestedList[nestedIndex];
       final String parentGroupPrefix =
-          'user_added_group_${_userAddedCustomFieldDefinitions.indexOf(parentGroupFieldMap)}';
+          'user_added_group_${parentGroupFieldMap['uuid']}';
       final String removedNestedPrefix =
-          '${parentGroupPrefix}_item_$nestedIndex';
+          '${parentGroupPrefix}_item_${removedNestedFieldDef['uuid']}';
       _cleanupControllers(
         [CustomField.fromMap(removedNestedFieldDef)],
         removedNestedFieldDef,
@@ -397,16 +336,16 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     });
   }
 
-  // Recursive helper to clean up controllers associated with field values
   void _cleanupControllers(
     List<CustomField> fields,
     Map<String, dynamic> valuesMap,
     String prefix,
   ) {
     for (var field in fields) {
+      final String itemIdentifier = valuesMap['uuid'] as String? ?? field.name;
       final String uniqueControllerKey = prefix.isEmpty
-          ? field.name
-          : '${prefix}_${field.name}';
+          ? itemIdentifier
+          : '${prefix}_$itemIdentifier';
       final String dataType = field.dataType.toString().split('.').last;
 
       if (dataType == 'text' || dataType == 'number') {
@@ -421,13 +360,29 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       } else if (dataType == 'dropdown') {
         _dropdownValues.remove(uniqueControllerKey);
       } else if (dataType == 'group') {
-        List<dynamic> nestedList =
-            (valuesMap[field.name] as List<dynamic>?) ?? [];
-        for (int i = 0; i < nestedList.length; i++) {
+        // MODIFIED: Logic for user-added groups remains, handles list.
+        // The check below handles both the new single-map format and the old list format if needed.
+        if (valuesMap[field.name] is List) {
+          List<dynamic> nestedList =
+              (valuesMap[field.name] as List<dynamic>?) ?? [];
+          for (int i = 0; i < nestedList.length; i++) {
+            final Map<String, dynamic> nestedItemMap = nestedList[i];
+            final String nestedItemUuid =
+                nestedItemMap['uuid'] as String? ?? '';
+            _cleanupControllers(
+              field.nestedFields ?? [],
+              nestedItemMap,
+              '${uniqueControllerKey}_item_$nestedItemUuid',
+            );
+          }
+        } else if (valuesMap[field.name] is Map) {
+          // Handles template fields
+          Map<String, dynamic> nestedItemMap =
+              (valuesMap[field.name] as Map<String, dynamic>?) ?? {};
           _cleanupControllers(
             field.nestedFields ?? [],
-            nestedList[i] as Map<String, dynamic>,
-            '${uniqueControllerKey}_item_$i',
+            nestedItemMap,
+            '${uniqueControllerKey}_item_single',
           );
         }
       }
@@ -453,13 +408,12 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null) {
-      if (mounted) {
+      if (mounted)
         SnackBarUtils.showSnackBar(
           context,
           'User not authenticated.',
           isError: true,
         );
-      }
       setState(() {
         _isSavingEquipment = false;
       });
@@ -467,7 +421,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
 
     try {
-      // 1. Collect values for template-defined custom fields
       Map<String, dynamic> templateCustomFieldValuesCollected =
           _collectCustomFieldValues(
             _selectedTemplate!.equipmentCustomFields,
@@ -475,7 +428,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             'template',
           );
 
-      // 2. Collect values for user-added custom field definitions
       Map<String, dynamic> userAddedCustomFieldValuesCollected = {};
       for (int i = 0; i < _userAddedCustomFieldDefinitions.length; i++) {
         final Map<String, dynamic> fieldDefMap =
@@ -483,8 +435,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         final CustomField userAddedFieldDef = CustomField.fromMap(fieldDefMap);
         final String uniquePrefix =
             (userAddedFieldDef.dataType == CustomFieldDataType.group)
-            ? 'user_added_group_$i'
-            : 'user_added_field_$i';
+            ? 'user_added_group_${fieldDefMap['uuid']}'
+            : 'user_added_field_${fieldDefMap['uuid']}';
 
         Map<String, dynamic> collectedValueForThisField =
             _collectCustomFieldValues(
@@ -499,7 +451,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         }
       }
 
-      // Combine all custom field values (template-defined + user-added)
       Map<String, dynamic> allCustomFieldValues = {
         ...templateCustomFieldValuesCollected,
         ...userAddedCustomFieldValuesCollected,
@@ -545,8 +496,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
-  // Recursive helper to collect all custom field values from controllers into a nested map
-  // It now collects from the `_textControllers` map directly.
   Map<String, dynamic> _collectCustomFieldValues(
     List<CustomField> fieldDefinitions,
     Map<String, dynamic> currentValuesMap,
@@ -555,9 +504,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     Map<String, dynamic> collectedValues = {};
     for (var fieldDef in fieldDefinitions) {
       final String fieldName = fieldDef.name;
+      final String itemIdentifier =
+          currentValuesMap['uuid'] as String? ?? fieldName;
       final String uniqueControllerKey = prefix.isEmpty
-          ? fieldName
-          : '${prefix}_$fieldName';
+          ? itemIdentifier
+          : '${prefix}_$itemIdentifier';
       final String dataType = fieldDef.dataType.toString().split('.').last;
 
       if (dataType == 'text' || dataType == 'number') {
@@ -579,37 +530,52 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       } else if (dataType == 'dropdown') {
         collectedValues[fieldName] = _dropdownValues[uniqueControllerKey];
       } else if (dataType == 'group') {
-        List<dynamic> groupItems =
-            (currentValuesMap[fieldName] as List<dynamic>?) ??
-            []; // Safely cast and handle null
-        List<Map<String, dynamic>> collectedGroupItems = [];
-        for (int i = 0; i < groupItems.length; i++) {
-          collectedGroupItems.add(
-            _collectCustomFieldValues(
-              fieldDef.nestedFields ?? [],
-              groupItems[i] as Map<String, dynamic>,
-              '${uniqueControllerKey}_item_$i',
-            ),
+        // MODIFIED: Collect a single map for a group, not a list of maps.
+        // The check handles both data structures to support user-added groups vs. template groups.
+        if (currentValuesMap[fieldName] is List) {
+          // For user-added groups
+          List<dynamic> groupItems =
+              (currentValuesMap[fieldName] as List<dynamic>?) ?? [];
+          List<Map<String, dynamic>> collectedGroupItems = [];
+          for (int i = 0; i < groupItems.length; i++) {
+            final Map<String, dynamic> groupItemMap =
+                groupItems[i] as Map<String, dynamic>;
+            collectedGroupItems.add(
+              _collectCustomFieldValues(
+                fieldDef.nestedFields ?? [],
+                groupItemMap,
+                '${uniqueControllerKey}_item_${groupItemMap['uuid']}',
+              ),
+            );
+          }
+          collectedValues[fieldName] = collectedGroupItems;
+        } else {
+          // For template-defined groups (now a single instance)
+          Map<String, dynamic> groupItemMap =
+              (currentValuesMap[fieldName] as Map<String, dynamic>?) ?? {};
+          Map<String, dynamic> collectedGroupItem = _collectCustomFieldValues(
+            fieldDef.nestedFields ?? [],
+            groupItemMap,
+            '${uniqueControllerKey}_item_single',
           );
+          collectedValues[fieldName] = collectedGroupItem;
         }
-        collectedValues[fieldName] = collectedGroupItems;
       }
     }
     return collectedValues;
   }
 
-  // This _buildFieldInput is for rendering the *values* of template-defined fields.
-  // It now explicitly handles the 'group' type by displaying a message.
   Widget _buildFieldInput({
     required CustomField fieldDef,
-    required Map<String, dynamic>
-    currentValuesMap, // The map where this field's value lives
-    required String prefix, // Prefix for unique controller keys
+    required Map<String, dynamic> currentValuesMap,
+    required String prefix,
   }) {
     final String fieldName = fieldDef.name;
+    final String itemIdentifier =
+        currentValuesMap['uuid'] as String? ?? fieldName;
     final String uniqueControllerKey = prefix.isEmpty
-        ? fieldName
-        : '${prefix}_$fieldName';
+        ? itemIdentifier
+        : '${prefix}_$itemIdentifier';
     final String dataType = fieldDef.dataType.toString().split('.').last;
     final bool isMandatory = fieldDef.isMandatory;
     final String? unit = fieldDef.units.isNotEmpty ? fieldDef.units : null;
@@ -630,6 +596,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     switch (dataType) {
       case 'text':
         return TextFormField(
+          key: ValueKey(uniqueControllerKey),
           controller: _textControllers.putIfAbsent(
             uniqueControllerKey,
             () => TextEditingController(
@@ -645,6 +612,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         );
       case 'number':
         fieldWidget = TextFormField(
+          key: ValueKey(uniqueControllerKey),
           controller: _textControllers.putIfAbsent(
             uniqueControllerKey,
             () => TextEditingController(
@@ -677,6 +645,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SwitchListTile(
+              key: ValueKey(uniqueControllerKey),
               title: Text(fieldName + (isMandatory ? ' *' : '')),
               value: currentBooleanValue,
               onChanged: (value) {
@@ -700,6 +669,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                   bottom: 8.0,
                 ),
                 child: TextFormField(
+                  key: ValueKey('${uniqueControllerKey}_remarks'),
                   controller: _textControllers.putIfAbsent(
                     '${uniqueControllerKey}_remarks',
                     () => TextEditingController(
@@ -746,6 +716,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           () => (currentValuesMap[fieldName] as Timestamp?)?.toDate(),
         );
         fieldWidget = ListTile(
+          key: ValueKey(uniqueControllerKey),
           title: Text(
             fieldName +
                 (isMandatory ? ' *' : '') +
@@ -773,6 +744,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         break;
       case 'dropdown':
         fieldWidget = DropdownButtonFormField<String>(
+          key: ValueKey(uniqueControllerKey),
           value: _dropdownValues.putIfAbsent(
             uniqueControllerKey,
             () => (currentValuesMap[fieldName] as String?),
@@ -793,30 +765,51 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           validator: validator,
         );
         break;
-      case 'group': // Explicitly handle 'group' type
+      case 'group':
+        // MODIFIED: Renders a single, static group of fields.
+        if (currentValuesMap[fieldName] == null ||
+            !(currentValuesMap[fieldName] is Map<String, dynamic>)) {
+          currentValuesMap[fieldName] = <String, dynamic>{};
+        }
+        final Map<String, dynamic> itemValues =
+            currentValuesMap[fieldName] as Map<String, dynamic>;
+        final String itemPrefix = '${uniqueControllerKey}_item_single';
+
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 8.0),
           elevation: 1,
-          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
           child: Padding(
             padding: const EdgeInsets.all(12.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$fieldName (Group Type - Data Entry Not Fully Supported Here)',
+                  fieldName, // Title without "(Group)"
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Theme.of(context).colorScheme.primary,
-                    fontStyle: FontStyle.italic,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'This field is a group type. Its complex structure for data entry is not fully integrated with this screen\'s current input mechanism. Please define its items in Master Equipment Templates.',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
-                ),
+                if (fieldDef.nestedFields == null ||
+                    fieldDef.nestedFields!.isEmpty)
+                  Text(
+                    'This group has no nested fields defined in its template.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade700,
+                    ),
+                  )
+                else
+                  // Render nested fields directly without a ListView or add/remove buttons.
+                  ...fieldDef.nestedFields!.map((nestedField) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: _buildFieldInput(
+                        fieldDef: nestedField,
+                        currentValuesMap: itemValues, // Pass the single map
+                        prefix: itemPrefix, // Pass the consistent prefix
+                      ),
+                    );
+                  }).toList(),
               ],
             ),
           ),
@@ -831,16 +824,13 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     );
   }
 
-  // This function is purely for defining the properties of a custom field.
-  // It builds the UI for dynamically user-added fields (not template fields).
-  // It now supports adding nested fields within user-defined groups.
+  // The rest of the file remains largely the same, but is included for completeness.
+
   Widget _buildUserAddedFieldDefinitionInput(
-    Map<String, dynamic>
-    fieldDefMap, // Map holding the definition of this field
+    Map<String, dynamic> fieldDefMap,
     int index,
-    List<Map<String, dynamic>>
-    parentList, { // Reference to the list this definition belongs to
-    bool isNestedDefinition = false, // Flag for nested definition
+    List<Map<String, dynamic>> parentList, {
+    bool isNestedDefinition = false,
   }) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final String fieldName = fieldDefMap['name'] as String;
@@ -853,17 +843,13 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     );
     final bool hasRemarksField = fieldDefMap['hasRemarksField'] as bool;
 
-    // Determine if this definition is for a Group field
     final bool isGroupFieldDefinition =
         dataType == CustomFieldDataType.group.toString().split('.').last;
-
-    // Prefix for controllers related to *values* of this user-defined field definition.
-    // This is distinct from prefixes for template-defined fields.
-    final String uniqueDefinitionPrefix = isNestedDefinition
-        ? 'nested_user_added_item_${parentList.indexOf(fieldDefMap)}'
-        : 'user_added_field_$index';
+    final String fieldUuid = fieldDefMap['uuid'] ?? _uuid.v4();
+    fieldDefMap['uuid'] = fieldUuid;
 
     return Card(
+      key: ValueKey('user_def_field_${fieldUuid}'),
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       elevation: 2,
       child: Padding(
@@ -890,8 +876,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                   : null,
             ),
             const SizedBox(height: 10),
-
-            // Data Type dropdown (hidden if it's a Group field definition)
             if (!isGroupFieldDefinition)
               DropdownButtonFormField<String>(
                 value: dataType,
@@ -899,30 +883,24 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                   labelText: 'Data Type',
                   border: OutlineInputBorder(),
                 ),
-                items:
-                    _dataTypes // Use the _dataTypes list (does not include 'group')
-                        .map(
-                          (type) =>
-                              DropdownMenuItem(value: type, child: Text(type)),
-                        )
-                        .toList(),
+                items: _dataTypes
+                    .map(
+                      (type) =>
+                          DropdownMenuItem(value: type, child: Text(type)),
+                    )
+                    .toList(),
                 onChanged: (value) {
                   setState(() {
                     fieldDefMap['dataType'] = value!;
-                    // Reset properties based on new data type
                     fieldDefMap['options'] = [];
                     fieldDefMap['hasUnits'] = false;
                     fieldDefMap['units'] = '';
                     fieldDefMap['hasRemarksField'] = false;
                     fieldDefMap['templateRemarkText'] = '';
-                    fieldDefMap['nestedFields'] =
-                        null; // Ensure null if changing from group
-                    // No need for separate controller cleanup/re-init here, handled by _removeUserCustomFieldDefinition
-                    // For user-added definitions, values are stored in the definition map itself.
+                    fieldDefMap['nestedFields'] = null;
                   });
                 },
               ),
-            // Display 'Group' label if it is a Group field definition
             if (isGroupFieldDefinition)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -934,8 +912,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                 ),
               ),
             const SizedBox(height: 10),
-
-            // Conditional UI based on data types (only if not a group field definition)
             if (!isGroupFieldDefinition) ...[
               if (dataType == 'dropdown')
                 TextFormField(
@@ -997,8 +973,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                   maxLines: 2,
                 ),
               ],
-            ], // End of if (!isGroupFieldDefinition)
-            // UI for 'group' type custom field (nested fields management)
+            ],
             if (isGroupFieldDefinition) ...[
               const SizedBox(height: 10),
               Text(
@@ -1022,11 +997,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           as List<dynamic>)[nestedIndex];
                   return _buildUserAddedFieldDefinitionInput(
                     nestedFieldDefMap,
-                    nestedIndex, // Pass this index
+                    nestedIndex,
                     (fieldDefMap['nestedFields'] as List<dynamic>)
-                        .cast<
-                          Map<String, dynamic>
-                        >(), // Pass the nested list as parent
+                        .cast<Map<String, dynamic>>(),
                     isNestedDefinition: true,
                   );
                 },
@@ -1035,7 +1008,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                 onPressed: () =>
                     _addNestedFieldDefinitionToUserDefinedGroup(fieldDefMap),
                 icon: const Icon(Icons.add),
-                label: const Text('Add Field to Group'), // Renamed button
+                label: const Text('Add Field to Group'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: colorScheme.secondary,
                   foregroundColor: colorScheme.onSecondary,
@@ -1043,7 +1016,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               ),
               const SizedBox(height: 10),
             ],
-
             CheckboxListTile(
               title: const Text('Mandatory'),
               value: isMandatory,
@@ -1073,63 +1045,57 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   }
 
   CustomPainter _getSymbolPreviewPainter(String symbolKey, Color color) {
-    const Size equipmentDrawingSize = Size(
-      100,
-      100,
-    ); // Base size for the painter
+    const Size equipmentDrawingSize = Size(100, 100);
     switch (symbolKey.toLowerCase()) {
       case 'transformer':
         return TransformerIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize, // Pass symbolSize
+          symbolSize: equipmentDrawingSize,
         );
       case 'busbar':
         return BusbarIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize, // Pass symbolSize
+          symbolSize: equipmentDrawingSize,
         );
       case 'circuit breaker':
         return CircuitBreakerIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize, // Pass symbolSize
+          symbolSize: equipmentDrawingSize,
         );
       case 'current transformer':
       case 'ct':
         return CurrentTransformerIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize, // Pass symbolSize
+          symbolSize: equipmentDrawingSize,
         );
       case 'disconnector':
         return DisconnectorIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize, // Pass symbolSize
+          symbolSize: equipmentDrawingSize,
         );
       case 'ground':
         return GroundIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize, // Pass symbolSize
+          symbolSize: equipmentDrawingSize,
         );
       case 'isolator':
         return IsolatorIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: const Size(
-            32,
-            32,
-          ), // IsolatorIconPainter does not take symbolSize in its constructor (fix later if needed)
+          symbolSize: const Size(32, 32),
         );
       case 'voltage transformer':
       case 'pt':
         return PotentialTransformerIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize, // Pass symbolSize
+          symbolSize: equipmentDrawingSize,
         );
       default:
         return _GenericIconPainter(color: color);
@@ -1216,7 +1182,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                             : null,
                       ),
                     const SizedBox(height: 24),
-
                     if (_selectedTemplate != null) ...[
                       Text(
                         'Equipment Properties',
@@ -1235,28 +1200,23 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           ),
                         )
                       else
-                        // These are the actual input fields for template-defined properties
-                        // Note: Group type fields will show a placeholder message.
                         ..._selectedTemplate!.equipmentCustomFields.map((
                           field,
                         ) {
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
                             child: _buildFieldInput(
-                              fieldDef: field, // Pass CustomField object
+                              fieldDef: field,
                               currentValuesMap: _templateCustomFieldValues,
-                              prefix:
-                                  'template_field', // Common prefix for template fields
+                              prefix: 'template_field',
                             ),
                           );
                         }).toList(),
                       const SizedBox(height: 24),
-
                       Text(
                         'Define Additional Custom Properties (for this instance)',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      // This ListView builds the *definitions* for user-added fields
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -1264,15 +1224,13 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         itemBuilder: (context, index) {
                           final fieldDefMap =
                               _userAddedCustomFieldDefinitions[index];
-                          // Pass the definition map to manage its properties
                           return _buildUserAddedFieldDefinitionInput(
                             fieldDefMap,
                             index,
-                            _userAddedCustomFieldDefinitions, // Pass list for removal
+                            _userAddedCustomFieldDefinitions,
                           );
                         },
                       ),
-                      // Buttons for adding user-defined custom fields
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
@@ -1295,9 +1253,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           Expanded(
                             child: ElevatedButton.icon(
                               onPressed: _addUserGroupFieldDefinition,
-                              icon: const Icon(
-                                Icons.group_add,
-                              ), // Icon for adding a group
+                              icon: const Icon(Icons.group_add),
                               label: const Text('Add Group Field'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Theme.of(
@@ -1312,7 +1268,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         ],
                       ),
                       const SizedBox(height: 32),
-
                       Center(
                         child: _isSavingEquipment
                             ? const CircularProgressIndicator()
