@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart'; // Import Uuid for generating unique keys
-import '../models/equipment_model.dart'; // Ensure this model is updated with the new fields
+import 'package:uuid/uuid.dart';
+import '../models/equipment_model.dart';
 import '../utils/snackbar_utils.dart';
-// Import equipment icon painters
 import '../../equipment_icons/transformer_icon.dart';
 import '../../equipment_icons/busbar_icon.dart';
 import '../../equipment_icons/circuit_breaker_icon.dart';
@@ -20,12 +19,14 @@ class EquipmentAssignmentScreen extends StatefulWidget {
   final String bayId;
   final String bayName;
   final String substationId;
+  final EquipmentInstance? equipmentToEdit;
 
   const EquipmentAssignmentScreen({
     super.key,
     required this.bayId,
     required this.bayName,
     required this.substationId,
+    this.equipmentToEdit,
   });
 
   @override
@@ -33,7 +34,6 @@ class EquipmentAssignmentScreen extends StatefulWidget {
       _EquipmentAssignmentScreenState();
 }
 
-// Move _GenericIconPainter outside of the state class
 class _GenericIconPainter extends CustomPainter {
   final Color color;
   _GenericIconPainter({required this.color});
@@ -78,7 +78,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   MasterEquipmentTemplate? _selectedTemplate;
   bool _isSavingEquipment = false;
 
-  // ✅ State variables for basic details
   final TextEditingController _makeController = TextEditingController();
   DateTime? _dateOfManufacturing;
   DateTime? _dateOfCommissioning;
@@ -104,18 +103,17 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchEquipmentTemplates();
+    _fetchEquipmentTemplatesAndInitialize();
   }
 
   @override
   void dispose() {
-    // ✅ Dispose new controller
     _makeController.dispose();
     _textControllers.forEach((key, controller) => controller.dispose());
     super.dispose();
   }
 
-  Future<void> _fetchEquipmentTemplates() async {
+  Future<void> _fetchEquipmentTemplatesAndInitialize() async {
     setState(() {
       _isLoading = true;
     });
@@ -124,12 +122,13 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           .collection('masterEquipmentTemplates')
           .orderBy('equipmentType')
           .get();
-      setState(() {
-        _equipmentTemplates = snapshot.docs
-            .map((doc) => MasterEquipmentTemplate.fromFirestore(doc))
-            .toList();
-        _isLoading = false;
-      });
+      _equipmentTemplates = snapshot.docs
+          .map((doc) => MasterEquipmentTemplate.fromFirestore(doc))
+          .toList();
+
+      if (widget.equipmentToEdit != null) {
+        _initializeForEdit(widget.equipmentToEdit!);
+      }
     } catch (e) {
       print("Error fetching equipment templates: $e");
       if (mounted) {
@@ -139,10 +138,28 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           isError: true,
         );
       }
+    } finally {
       setState(() {
         _isLoading = false;
       });
     }
+  }
+
+  void _initializeForEdit(EquipmentInstance equipment) {
+    _selectedTemplate = _equipmentTemplates.firstWhere(
+      (t) => t.id == equipment.templateId,
+      orElse: () => _equipmentTemplates.first,
+    );
+
+    _makeController.text = equipment.make;
+    _dateOfManufacturing = equipment.dateOfManufacturing?.toDate();
+    _dateOfCommissioning = equipment.dateOfCommissioning?.toDate();
+
+    _initializeCustomFieldValues(
+      _selectedTemplate!.equipmentCustomFields,
+      equipment.customFieldValues,
+      'template_field',
+    );
   }
 
   void _onTemplateSelected(MasterEquipmentTemplate? template) {
@@ -156,10 +173,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _initializeCustomFieldValues(
         _selectedTemplate!.equipmentCustomFields,
         _templateCustomFieldValues,
-        'template',
+        'template_field',
       );
     }
-
     setState(() {});
   }
 
@@ -181,42 +197,32 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           ? field.name
           : '${prefix}_${field.name}';
       final String dataType = field.dataType.toString().split('.').last;
-
-      currentValuesMap.putIfAbsent(field.name, () => null);
+      final dynamic value = currentValuesMap[field.name];
 
       if (dataType == 'text' || dataType == 'number') {
         _textControllers[uniqueControllerKey] = TextEditingController(
-          text: (currentValuesMap[field.name] as String?) ?? '',
+          text: value?.toString() ?? '',
         );
       } else if (dataType == 'boolean') {
         _booleanValues[uniqueControllerKey] =
-            (currentValuesMap[field.name]?['value'] as bool?) ?? false;
+            (value is Map && value.containsKey('value'))
+            ? value['value']
+            : false;
         _textControllers['${uniqueControllerKey}_remarks'] =
             TextEditingController(
-              text:
-                  (currentValuesMap[field.name]?['description_remarks']
-                      as String?) ??
-                  '',
+              text: (value is Map && value.containsKey('description_remarks'))
+                  ? value['description_remarks']
+                  : '',
             );
       } else if (dataType == 'date') {
-        _dateValues[uniqueControllerKey] =
-            (currentValuesMap[field.name] as Timestamp?)?.toDate();
+        _dateValues[uniqueControllerKey] = (value as Timestamp?)?.toDate();
       } else if (dataType == 'dropdown') {
-        _dropdownValues[uniqueControllerKey] =
-            (currentValuesMap[field.name] as String?);
+        _dropdownValues[uniqueControllerKey] = value as String?;
       } else if (dataType == 'group') {
-        Map<String, dynamic> groupItemMap;
-        if (currentValuesMap[field.name] is Map<String, dynamic>) {
-          groupItemMap = currentValuesMap[field.name] as Map<String, dynamic>;
-        } else {
-          groupItemMap = {};
-          currentValuesMap[field.name] = groupItemMap;
-        }
-
-        if (field.nestedFields != null && field.nestedFields!.isNotEmpty) {
+        if (value is Map<String, dynamic> && field.nestedFields != null) {
           _initializeCustomFieldValues(
             field.nestedFields!,
-            groupItemMap,
+            value,
             '${uniqueControllerKey}_item_single',
           );
         }
@@ -254,7 +260,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _booleanValues.removeWhere((key, value) => key.startsWith(prefix));
       _dateValues.removeWhere((key, value) => key.startsWith(prefix));
       _dropdownValues.removeWhere((key, value) => key.startsWith(prefix));
-
       _userAddedCustomFields.removeAt(index);
     });
   }
@@ -276,13 +281,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       final groupField = _userAddedCustomFields[groupIndex];
       final nestedFieldToRemove =
           (groupField['definition']['nestedFields'] as List)[nestedIndex];
-
       final groupValues = groupField['value'] as Map<String, dynamic>;
       final fieldUuid = nestedFieldToRemove['uuid'] as String?;
       if (fieldUuid != null) {
         groupValues.remove(fieldUuid);
       }
-
       (groupField['definition']['nestedFields'] as List).removeAt(nestedIndex);
     });
   }
@@ -324,7 +327,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           _collectCustomFieldValues(
             _selectedTemplate!.equipmentCustomFields,
             _templateCustomFieldValues,
-            'template',
+            'template_field', // CORRECTED: This prefix now matches the UI
           );
 
       Map<String, dynamic> userAddedFieldsToSave = {};
@@ -367,44 +370,71 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         ...userAddedFieldsToSave,
       };
 
-      final newEquipmentInstanceRef = FirebaseFirestore.instance
-          .collection('equipmentInstances')
-          .doc();
-
-      final newEquipmentInstance = EquipmentInstance(
-        id: newEquipmentInstanceRef.id,
-        bayId: widget.bayId,
-        templateId: _selectedTemplate!.id!,
-        equipmentTypeName: _selectedTemplate!.equipmentType,
-        symbolKey: _selectedTemplate!.symbolKey,
-        createdBy: firebaseUser.uid,
-        createdAt: Timestamp.now(),
-        customFieldValues: allCustomFieldValues,
-        // ✅ Add new fields to instance
-        make: _makeController.text.trim(),
-        dateOfManufacturing: _dateOfManufacturing != null
-            ? Timestamp.fromDate(_dateOfManufacturing!)
-            : null,
-        dateOfCommissioning: _dateOfCommissioning != null
-            ? Timestamp.fromDate(_dateOfCommissioning!)
-            : null,
-      );
-
-      await newEquipmentInstanceRef.set(newEquipmentInstance.toFirestore());
-
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          '${_selectedTemplate!.equipmentType} added to bay "${widget.bayName}" successfully!',
+      if (widget.equipmentToEdit != null) {
+        // Update existing equipment
+        final updatedEquipment = widget.equipmentToEdit!.copyWith(
+          make: _makeController.text.trim(),
+          dateOfManufacturing: _dateOfManufacturing != null
+              ? Timestamp.fromDate(_dateOfManufacturing!)
+              : null,
+          dateOfCommissioning: _dateOfCommissioning != null
+              ? Timestamp.fromDate(_dateOfCommissioning!)
+              : null,
+          customFieldValues: allCustomFieldValues,
         );
-        Navigator.of(context).pop();
+
+        await FirebaseFirestore.instance
+            .collection('equipmentInstances')
+            .doc(updatedEquipment.id)
+            .update(updatedEquipment.toFirestore());
+
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Equipment updated successfully!',
+          );
+          Navigator.of(context).pop();
+        }
+      } else {
+        // Create new equipment
+        final newEquipmentInstanceRef = FirebaseFirestore.instance
+            .collection('equipmentInstances')
+            .doc();
+
+        final newEquipmentInstance = EquipmentInstance(
+          id: newEquipmentInstanceRef.id,
+          bayId: widget.bayId,
+          templateId: _selectedTemplate!.id!,
+          equipmentTypeName: _selectedTemplate!.equipmentType,
+          symbolKey: _selectedTemplate!.symbolKey,
+          createdBy: firebaseUser.uid,
+          createdAt: Timestamp.now(),
+          customFieldValues: allCustomFieldValues,
+          make: _makeController.text.trim(),
+          dateOfManufacturing: _dateOfManufacturing != null
+              ? Timestamp.fromDate(_dateOfManufacturing!)
+              : null,
+          dateOfCommissioning: _dateOfCommissioning != null
+              ? Timestamp.fromDate(_dateOfCommissioning!)
+              : null,
+        );
+
+        await newEquipmentInstanceRef.set(newEquipmentInstance.toFirestore());
+
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            '${_selectedTemplate!.equipmentType} added to bay "${widget.bayName}" successfully!',
+          );
+          Navigator.of(context).pop();
+        }
       }
     } catch (e) {
       print('Error saving equipment instance: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to add equipment: $e',
+          'Failed to save equipment: $e',
           isError: true,
         );
       }
@@ -423,11 +453,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     Map<String, dynamic> collectedValues = {};
     for (var fieldDef in fieldDefinitions) {
       final String fieldName = fieldDef.name;
-      final String itemIdentifier =
-          currentValuesMap['uuid'] as String? ?? fieldName;
       final String uniqueControllerKey = prefix.isEmpty
-          ? itemIdentifier
-          : '${prefix}_$itemIdentifier';
+          ? fieldName
+          : '${prefix}_${fieldName}';
       final String dataType = fieldDef.dataType.toString().split('.').last;
 
       if (dataType == 'text' || dataType == 'number') {
@@ -467,11 +495,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     required String prefix,
   }) {
     final String fieldName = fieldDef.name;
-    final String itemIdentifier =
-        currentValuesMap['uuid'] as String? ?? fieldName;
     final String uniqueControllerKey = prefix.isEmpty
-        ? itemIdentifier
-        : '${prefix}_$itemIdentifier';
+        ? fieldName
+        : '${prefix}_${fieldName}';
     final String dataType = fieldDef.dataType.toString().split('.').last;
     final bool isMandatory = fieldDef.isMandatory;
     final String? unit = fieldDef.units.isNotEmpty ? fieldDef.units : null;
@@ -537,7 +563,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       case 'boolean':
         final bool currentBooleanValue = _booleanValues.putIfAbsent(
           uniqueControllerKey,
-          () => (currentValuesMap[fieldName]?['value'] as bool?) ?? false,
+          () =>
+              (currentValuesMap[fieldName] is Map &&
+                  currentValuesMap[fieldName]['value'] is bool)
+              ? currentValuesMap[fieldName]['value']
+              : false,
         );
         fieldWidget = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -549,11 +579,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               onChanged: (value) {
                 setState(() {
                   _booleanValues[uniqueControllerKey] = value;
-                  currentValuesMap[fieldName] = {
-                    'value': value,
-                    'description_remarks':
-                        currentValuesMap[fieldName]?['description_remarks'],
-                  };
+                  if (currentValuesMap[fieldName] is! Map) {
+                    currentValuesMap[fieldName] = {};
+                  }
+                  currentValuesMap[fieldName]['value'] = value;
                 });
               },
               controlAffinity: ListTileControlAffinity.leading,
@@ -572,9 +601,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                     '${uniqueControllerKey}_remarks',
                     () => TextEditingController(
                       text:
-                          (currentValuesMap[fieldName]?['description_remarks']
-                              as String?) ??
-                          '',
+                          (currentValuesMap[fieldName] is Map &&
+                              currentValuesMap[fieldName]['description_remarks']
+                                  is String)
+                          ? currentValuesMap[fieldName]['description_remarks']
+                          : '',
                     ),
                   ),
                   decoration: const InputDecoration(
@@ -589,9 +620,12 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                   maxLines: 2,
                   minLines: 1,
                   keyboardType: TextInputType.multiline,
-                  onChanged: (value) =>
-                      currentValuesMap[fieldName]['description_remarks'] =
-                          value,
+                  onChanged: (value) {
+                    if (currentValuesMap[fieldName] is! Map) {
+                      currentValuesMap[fieldName] = {};
+                    }
+                    currentValuesMap[fieldName]['description_remarks'] = value;
+                  },
                 ),
               ),
             if (isMandatory && !currentBooleanValue)
@@ -664,12 +698,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         );
         break;
       case 'group':
-        if (currentValuesMap[fieldName] == null ||
-            !(currentValuesMap[fieldName] is Map<String, dynamic>)) {
-          currentValuesMap[fieldName] = <String, dynamic>{};
-        }
         final Map<String, dynamic> itemValues =
-            currentValuesMap[fieldName] as Map<String, dynamic>;
+            (currentValuesMap[fieldName] is Map<String, dynamic>)
+            ? currentValuesMap[fieldName]
+            : <String, dynamic>{};
         final String itemPrefix = '${uniqueControllerKey}_item_single';
 
         return Card(
@@ -728,8 +760,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     if (dataType == 'group') {
       return _buildUserAddedGroupInput(index);
     }
-
-    final valueKey = fieldData['uuid'] as String;
 
     return Card(
       key: ValueKey(fieldData['uuid']),
@@ -1093,7 +1123,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
-  // ✅ New helper widget for date pickers to reduce code duplication
   Widget _buildDatePickerTile({
     required String title,
     required DateTime? selectedDate,
@@ -1128,7 +1157,13 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Add Equipment to Bay: ${widget.bayName}')),
+      appBar: AppBar(
+        title: Text(
+          widget.equipmentToEdit == null
+              ? 'Add Equipment to Bay: ${widget.bayName}'
+              : 'Edit Equipment in Bay: ${widget.bayName}',
+        ),
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -1199,14 +1234,15 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                             ),
                           );
                         }).toList(),
-                        onChanged: _onTemplateSelected,
+                        onChanged: widget.equipmentToEdit != null
+                            ? null
+                            : _onTemplateSelected,
                         validator: (value) => value == null
                             ? 'Please select an equipment type'
                             : null,
                       ),
                     const SizedBox(height: 24),
                     if (_selectedTemplate != null) ...[
-                      // ✅ UI for Basic Details
                       Text(
                         'Equipment Properties',
                         style: Theme.of(context).textTheme.titleLarge,
@@ -1349,7 +1385,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                                     ? _saveEquipmentInstance
                                     : null,
                                 icon: const Icon(Icons.save),
-                                label: const Text('Save Equipment to Bay'),
+                                label: Text(
+                                  widget.equipmentToEdit == null
+                                      ? 'Save Equipment to Bay'
+                                      : 'Update Equipment',
+                                ),
                                 style: ElevatedButton.styleFrom(
                                   minimumSize: const Size(double.infinity, 50),
                                 ),

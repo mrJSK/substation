@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:substation_manager/models/equipment_model.dart';
 import '../utils/snackbar_utils.dart';
-import 'equipment_assignment_screen.dart'; // For adding new equipment
+import 'equipment_assignment_screen.dart'; // For adding and editing equipment
 
 class BayEquipmentManagementScreen extends StatelessWidget {
   final String bayId;
@@ -72,7 +72,7 @@ class BayEquipmentManagementScreen extends StatelessWidget {
     }
   }
 
-  // NEW: Helper method to recursively build the display for custom fields
+  // Helper method to recursively build the display for custom fields
   Widget _buildCustomFieldsDisplay(
     BuildContext context,
     Map<String, dynamic> customFieldValues, {
@@ -143,7 +143,7 @@ class BayEquipmentManagementScreen extends StatelessWidget {
                 ),
                 if (value.isEmpty)
                   Padding(
-                    padding: EdgeInsets.only(left: 8.0),
+                    padding: const EdgeInsets.only(left: 8.0),
                     child: Text(
                       'No items in this list.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -157,7 +157,7 @@ class BayEquipmentManagementScreen extends StatelessWidget {
                       .value; // This should be a Map<String, dynamic> for each item
                   if (itemMap is Map<String, dynamic>) {
                     return Padding(
-                      padding: EdgeInsets.only(left: 8.0),
+                      padding: const EdgeInsets.only(left: 8.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -176,7 +176,7 @@ class BayEquipmentManagementScreen extends StatelessWidget {
                     );
                   } else {
                     return Padding(
-                      padding: EdgeInsets.only(left: 8.0),
+                      padding: const EdgeInsets.only(left: 8.0),
                       child: Text(
                         'Item ${itemIndex + 1}: $itemMap',
                         style: Theme.of(context).textTheme.bodyMedium,
@@ -284,7 +284,6 @@ class BayEquipmentManagementScreen extends StatelessWidget {
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                          // NEW: Use the recursive helper to display custom field values
                           _buildCustomFieldsDisplay(
                             context,
                             equipment.customFieldValues,
@@ -297,10 +296,17 @@ class BayEquipmentManagementScreen extends StatelessWidget {
                                 icon: const Icon(Icons.edit),
                                 color: Theme.of(context).colorScheme.tertiary,
                                 onPressed: () {
-                                  // TODO: Navigate to EquipmentAssignmentScreen in EDIT mode
-                                  SnackBarUtils.showSnackBar(
-                                    context,
-                                    'Edit functionality coming soon!',
+                                  // Navigates to the assignment screen in "edit" mode
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          EquipmentAssignmentScreen(
+                                            bayId: bayId,
+                                            bayName: bayName,
+                                            substationId: substationId,
+                                            equipmentToEdit: equipment,
+                                          ),
+                                    ),
                                   );
                                 },
                               ),
@@ -327,7 +333,7 @@ class BayEquipmentManagementScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          // Navigate to EquipmentAssignmentScreen to add new equipment to this bay
+          // Navigates to the assignment screen in "add new" mode
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => EquipmentAssignmentScreen(
