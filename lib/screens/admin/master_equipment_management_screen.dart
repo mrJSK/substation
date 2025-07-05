@@ -608,7 +608,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
             TextFormField(
               controller: _makeController,
               decoration: InputDecoration(
-                labelText: 'Make (Optional)',
+                labelText: 'Make',
                 prefixIcon: Icon(Icons.business, color: colorScheme.primary),
                 border: const OutlineInputBorder(),
               ),
@@ -617,7 +617,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
             ListTile(
               title: Text(
                 _dateOfManufacture == null
-                    ? 'Select Date of Manufacture (Optional)'
+                    ? 'Select Date of Manufacture'
                     : 'Date of Manufacture: ${DateFormat('yyyy-MM-dd').format(_dateOfManufacture!)}',
               ),
               trailing: const Icon(Icons.calendar_today),
@@ -629,7 +629,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
             ListTile(
               title: Text(
                 _dateOfCommissioning == null
-                    ? 'Select Date of Commissioning (Optional)'
+                    ? 'Select Date of Commissioning'
                     : 'Date of Commissioning: ${DateFormat('yyyy-MM-dd').format(_dateOfCommissioning!)}',
               ),
               trailing: const Icon(Icons.calendar_today),

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../models/equipment_model.dart';
+import '../models/equipment_model.dart'; // Ensure CustomField and MasterEquipmentTemplate are updated here
 import '../utils/snackbar_utils.dart';
 // Import equipment icon painters
 import '../../equipment_icons/transformer_icon.dart';
@@ -77,15 +77,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   MasterEquipmentTemplate? _selectedTemplate;
   bool _isSavingEquipment = false;
 
-  // Supported data types for user-added custom fields (excluding 'group')
-  final List<String> _dataTypes = [
-    'text',
-    'number',
-    'boolean',
-    'date',
-    'dropdown',
-  ];
-
   // Map to store values for template-defined fields (mapped by field name)
   // This map now holds the actual values to be saved in customFieldValues.
   // For 'group' types, it will hold a List<Map<String, dynamic>>
@@ -100,7 +91,16 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   final Map<String, bool> _booleanValues = {};
   final Map<String, DateTime?> _dateValues = {};
   final Map<String, String?> _dropdownValues = {};
-  // For boolean remarks controller, use a unique key if needed (e.g., "fieldName_remarks")
+  // No specific map for boolean remarks controllers; use _textControllers with a unique key.
+
+  final List<String> _dataTypes = [
+    'text',
+    'number',
+    'boolean',
+    'date',
+    'dropdown',
+    // 'group' type is not supported for direct data entry on this screen
+  ];
 
   @override
   void initState() {
@@ -145,22 +145,30 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
+  // Refactored _onTemplateSelected to defer setState
   void _onTemplateSelected(MasterEquipmentTemplate? template) {
-    setState(() {
-      _selectedTemplate = template;
-      _templateCustomFieldValues.clear(); // Clear all previous values
-      _userAddedCustomFieldDefinitions.clear(); // Clear user added definitions
-      _clearAllControllers(); // Clear and dispose all controllers
+    // 1. Clear all previous state and dispose old controllers BEFORE new state build
+    _templateCustomFieldValues.clear();
+    _userAddedCustomFieldDefinitions.clear();
+    _clearAllControllers(); // Clears and disposes all controllers
 
-      if (_selectedTemplate != null) {
-        // Initialize the top-level template-defined custom field values and controllers
-        _initializeCustomFieldValues(
-          _selectedTemplate!.equipmentCustomFields,
-          _templateCustomFieldValues,
-          'template',
-        );
-      }
-    });
+    // 2. Update _selectedTemplate
+    _selectedTemplate = template;
+
+    // 3. Initialize new controllers and values if a template is selected
+    if (_selectedTemplate != null) {
+      // Create a deep copy of the template's custom fields to avoid modifying the template itself.
+      // If `_templateCustomFieldValues` is meant to hold the *instance's data*,
+      // it should be populated with default values or empty containers based on the template structure.
+      _initializeCustomFieldValues(
+        _selectedTemplate!.equipmentCustomFields,
+        _templateCustomFieldValues,
+        'template',
+      );
+    }
+
+    // 4. Call setState ONLY ONCE after all initializations are done
+    setState(() {});
   }
 
   // Helper to clear and dispose all controllers
@@ -187,6 +195,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       final String dataType = field.dataType.toString().split('.').last;
 
       // Ensure the map has a placeholder for this field's value
+      // Use .putIfAbsent to not overwrite existing values during recursive calls if loading old data
       currentValuesMap.putIfAbsent(field.name, () => null);
 
       if (dataType == 'text' || dataType == 'number') {
@@ -196,7 +205,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       } else if (dataType == 'boolean') {
         _booleanValues[uniqueControllerKey] =
             (currentValuesMap[field.name]?['value'] as bool?) ?? false;
-        // If there are boolean remarks, create a controller for them too
         _textControllers['${uniqueControllerKey}_remarks'] =
             TextEditingController(
               text:
@@ -211,18 +219,40 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         _dropdownValues[uniqueControllerKey] =
             (currentValuesMap[field.name] as String?);
       } else if (dataType == 'group') {
-        // For 'group' type, initialize with an empty list if null, then recursively initialize its items
-        currentValuesMap.putIfAbsent(field.name, () => []);
+        // Fix: Ensure currentValuesMap[field.name] is initialized as a List if null
+        // And also ensure each item in the list is a Map.
+        List<dynamic> groupItemsList;
+        // Safely try to cast, if it fails or is null, initialize as empty list
+        if (currentValuesMap[field.name] is List<dynamic>) {
+          groupItemsList = currentValuesMap[field.name] as List<dynamic>;
+        } else {
+          groupItemsList = [];
+          currentValuesMap[field.name] =
+              groupItemsList; // Assign the new empty list
+        }
+
         if (field.nestedFields != null && field.nestedFields!.isNotEmpty) {
-          // Iterate existing nested items (if loading data for editing)
-          final List<dynamic> existingItems =
-              currentValuesMap[field.name] as List<dynamic>;
-          for (int i = 0; i < existingItems.length; i++) {
-            _initializeCustomFieldValues(
-              field.nestedFields!,
-              existingItems[i] as Map<String, dynamic>,
-              '${uniqueControllerKey}_item_$i',
-            );
+          for (int i = 0; i < groupItemsList.length; i++) {
+            // Ensure each item is a Map before passing recursively
+            if (groupItemsList[i] is Map<String, dynamic>) {
+              _initializeCustomFieldValues(
+                field.nestedFields!,
+                groupItemsList[i] as Map<String, dynamic>,
+                '${uniqueControllerKey}_item_$i',
+              );
+            } else {
+              // Handle malformed data if an item is not a Map
+              print(
+                'Warning: Expected Map for nested item in group field "${field.name}", index $i. Got ${groupItemsList[i].runtimeType}. Replacing with empty map.',
+              );
+              groupItemsList[i] =
+                  {}; // Replace with an empty map to prevent further errors
+              _initializeCustomFieldValues(
+                field.nestedFields!,
+                groupItemsList[i] as Map<String, dynamic>,
+                '${uniqueControllerKey}_item_$i',
+              ); // Initialize the new empty map
+            }
           }
         }
       }
@@ -251,7 +281,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _initializeCustomFieldValues(
         [CustomField.fromMap(newFieldDef)],
         newFieldDef,
-        'user_added_${_userAddedCustomFieldDefinitions.length - 1}',
+        'user_added_field_${_userAddedCustomFieldDefinitions.length - 1}',
       );
     });
   }
@@ -294,7 +324,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           (removedFieldDef['dataType'] ==
               CustomFieldDataType.group.toString().split('.').last)
           ? 'user_added_group_$index'
-          : 'user_added_$index';
+          : 'user_added_field_$index';
 
       // Clean up controllers recursively associated with this definition
       _cleanupControllers(
@@ -304,7 +334,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       );
       _userAddedCustomFieldDefinitions.removeAt(index);
       // Note: If using index-based prefixes, removal means subsequent items' prefixes are now stale.
-      // For a robust solution, consider using UUIDs for items or re-initializing all controllers on removal.
+      // For a robust solution, consider using UUIDs for items or re-initialize all controllers on removal.
     });
   }
 
@@ -332,10 +362,11 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       };
       nestedFieldsList.add(newNestedFieldDef);
       // Initialize controllers for this new nested definition
-      final String groupPrefix =
-          'user_added_group_${_userAddedCustomFieldDefinitions.indexOf(groupFieldMap)}'; // Find parent group's index
+      // Ensure the parent map is properly identified for unique prefixing
+      final String parentGroupPrefix =
+          'user_added_group_${_userAddedCustomFieldDefinitions.indexOf(groupFieldMap)}';
       final String newNestedPrefix =
-          '${groupPrefix}_item_${nestedFieldsList.length - 1}';
+          '${parentGroupPrefix}_item_${nestedFieldsList.length - 1}';
       _initializeCustomFieldValues(
         [CustomField.fromMap(newNestedFieldDef)],
         newNestedFieldDef,
@@ -353,9 +384,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     setState(() {
       final Map<String, dynamic> removedNestedFieldDef =
           parentNestedList[nestedIndex];
-      final String groupPrefix =
+      final String parentGroupPrefix =
           'user_added_group_${_userAddedCustomFieldDefinitions.indexOf(parentGroupFieldMap)}';
-      final String removedNestedPrefix = '${groupPrefix}_item_$nestedIndex';
+      final String removedNestedPrefix =
+          '${parentGroupPrefix}_item_$nestedIndex';
       _cleanupControllers(
         [CustomField.fromMap(removedNestedFieldDef)],
         removedNestedFieldDef,
@@ -390,8 +422,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         _dropdownValues.remove(uniqueControllerKey);
       } else if (dataType == 'group') {
         List<dynamic> nestedList =
-            (valuesMap[field.name] as List<dynamic>?) ??
-            []; // Handle potential null
+            (valuesMap[field.name] as List<dynamic>?) ?? [];
         for (int i = 0; i < nestedList.length; i++) {
           _cleanupControllers(
             field.nestedFields ?? [],
@@ -453,17 +484,15 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         final String uniquePrefix =
             (userAddedFieldDef.dataType == CustomFieldDataType.group)
             ? 'user_added_group_$i'
-            : 'user_added_$i';
+            : 'user_added_field_$i';
 
-        // Recursively collect values for this user-added field definition
         Map<String, dynamic> collectedValueForThisField =
             _collectCustomFieldValues(
               [userAddedFieldDef],
               fieldDefMap,
               uniquePrefix,
-            ); // Pass the definition map as its value source
+            );
 
-        // Extract the actual value for this field's name
         if (collectedValueForThisField.containsKey(userAddedFieldDef.name)) {
           userAddedCustomFieldValuesCollected[userAddedFieldDef.name] =
               collectedValueForThisField[userAddedFieldDef.name];
@@ -550,7 +579,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       } else if (dataType == 'dropdown') {
         collectedValues[fieldName] = _dropdownValues[uniqueControllerKey];
       } else if (dataType == 'group') {
-        // Recursively collect values for each item in the group
         List<dynamic> groupItems =
             (currentValuesMap[fieldName] as List<dynamic>?) ??
             []; // Safely cast and handle null
@@ -601,7 +629,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     Widget fieldWidget;
     switch (dataType) {
       case 'text':
-        fieldWidget = TextFormField(
+        return TextFormField(
           controller: _textControllers.putIfAbsent(
             uniqueControllerKey,
             () => TextEditingController(
@@ -615,7 +643,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           onChanged: (value) => currentValuesMap[fieldName] = value,
           validator: validator,
         );
-        break;
       case 'number':
         fieldWidget = TextFormField(
           controller: _textControllers.putIfAbsent(
@@ -830,6 +857,12 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     final bool isGroupFieldDefinition =
         dataType == CustomFieldDataType.group.toString().split('.').last;
 
+    // Prefix for controllers related to *values* of this user-defined field definition.
+    // This is distinct from prefixes for template-defined fields.
+    final String uniqueDefinitionPrefix = isNestedDefinition
+        ? 'nested_user_added_item_${parentList.indexOf(fieldDefMap)}'
+        : 'user_added_field_$index';
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       elevation: 2,
@@ -909,8 +942,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                   initialValue: options.join(','),
                   decoration: const InputDecoration(
                     labelText: 'Options (comma-separated)',
+                    hintText: 'e.g., Option1, Option2',
                     border: OutlineInputBorder(),
-                    hintText: 'e.g., Option1, Option2, Option3',
                   ),
                   onChanged: (value) => fieldDefMap['options'] = value
                       .split(',')

@@ -7,9 +7,7 @@ import '../../models/hierarchy_models.dart';
 import '../../utils/snackbar_utils.dart';
 import './substation_detail_screen.dart'; // For Bay creation/management
 import './bay_equipment_management_screen.dart'; // For direct equipment management
-// Import the new export screens (you would create these files)
-// import 'export_reports_screen.dart';
-// import 'export_master_data_screen.dart';
+import 'export_master_data_screen.dart'; // NEW: Import the new export screen
 
 class SubdivisionAssetManagementScreen extends StatefulWidget {
   final String subdivisionId;
@@ -50,10 +48,10 @@ class _SubdivisionAssetManagementScreenState
           .where('subdivisionId', isEqualTo: widget.subdivisionId)
           .orderBy('name')
           .get();
+      _substationsInSubdivision = snapshot.docs
+          .map((doc) => Substation.fromFirestore(doc))
+          .toList();
       setState(() {
-        _substationsInSubdivision = snapshot.docs
-            .map((doc) => Substation.fromFirestore(doc))
-            .toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -108,29 +106,14 @@ class _SubdivisionAssetManagementScreenState
               ),
               const SizedBox(height: 20),
               DropdownSearch<Substation>(
-                popupProps: PopupProps.menu(
-                  showSearchBox: true,
-                  menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
-                  searchFieldProps: TextFieldProps(
-                    decoration: InputDecoration(
-                      labelText: 'Search Substation',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                ),
+                popupProps: PopupProps.menu(showSearchBox: true),
                 dropdownDecoratorProps: DropDownDecoratorProps(
                   dropdownSearchDecoration: InputDecoration(
-                    labelText: 'Choose a Substation',
-                    prefixIcon: const Icon(Icons.electrical_services),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    labelText: 'Select Substation',
                   ),
                 ),
-                itemAsString: (Substation s) => s.name,
+                itemAsString: (s) => s.name,
+                selectedItem: null, // Always start as null for new selection
                 items: _substationsInSubdivision,
                 onChanged: (Substation? selectedSubstation) {
                   Navigator.of(
@@ -214,7 +197,6 @@ class _SubdivisionAssetManagementScreenState
                               currentUser: widget.currentUser,
                               // You might need to add a flag to SubstationDetailScreen
                               // to explicitly open in 'add bay' mode. For now, it defaults to list.
-                              // Consider passing BayDetailViewMode.add if SubstationDetailScreen supports it
                             ),
                           ),
                         );
@@ -274,12 +256,7 @@ class _SubdivisionAssetManagementScreenState
                         context,
                         'Logsheet export feature coming soon!',
                       );
-                      // You might want to show a dialog here for date range and then proceed
-                      // Navigator.of(context).push(MaterialPageRoute(builder: (context) => ExportReportsScreen(
-                      //   reportType: 'logsheet',
-                      //   subdivisionId: widget.subdivisionId,
-                      //   currentUser: widget.currentUser,
-                      // )));
+                      // Navigate to a dedicated export screen for logsheets
                     },
                   ),
                   const Divider(),
@@ -294,11 +271,7 @@ class _SubdivisionAssetManagementScreenState
                         context,
                         'Tripping/Shutdown export feature coming soon!',
                       );
-                      // Navigator.of(context).push(MaterialPageRoute(builder: (context) => ExportReportsScreen(
-                      //   reportType: 'tripping_shutdown',
-                      //   subdivisionId: widget.subdivisionId,
-                      //   currentUser: widget.currentUser,
-                      // )));
+                      // Navigate to a dedicated export screen for tripping/shutdown
                     },
                   ),
                   const Divider(),
@@ -309,14 +282,15 @@ class _SubdivisionAssetManagementScreenState
                       'Generate CSV of substation, bay, and equipment details',
                     ),
                     onTap: () {
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'Master data export feature coming soon!',
+                      // NEW: Navigate to ExportMasterDataScreen
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => ExportMasterDataScreen(
+                            subdivisionId: widget.subdivisionId,
+                            currentUser: widget.currentUser,
+                          ),
+                        ),
                       );
-                      // Navigator.of(context).push(MaterialPageRoute(builder: (context) => ExportMasterDataScreen(
-                      //   subdivisionId: widget.subdivisionId,
-                      //   currentUser: widget.currentUser,
-                      // )));
                     },
                   ),
                 ],
@@ -350,13 +324,9 @@ class _SubdivisionAssetManagementScreenState
                     onTap: () {
                       SnackBarUtils.showSnackBar(
                         context,
-                        'Equipment history view is under development. Please manage equipment from "Manage Bays & Equipment" for now.',
+                        'Equipment history view is under development.',
                       );
                       // This would likely involve selecting a substation first, then an equipment
-                      // Navigator.of(context).push(MaterialPageRoute(builder: (context) => EquipmentHistoryScreen(
-                      //   subdivisionId: widget.subdivisionId,
-                      //   currentUser: widget.currentUser,
-                      // )));
                     },
                   ),
                   const Divider(),
@@ -372,7 +342,7 @@ class _SubdivisionAssetManagementScreenState
                         'Equipment replacement workflow is being developed.',
                       );
                       // This action needs to be performed on a specific equipment instance,
-                      // so typically after navigating through substation and bay.
+                      // likely from the BayEquipmentManagementScreen.
                     },
                   ),
                 ],
