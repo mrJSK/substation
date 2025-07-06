@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'dart:math'; // For min and max
+
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
 import '../models/hierarchy_models.dart';
@@ -13,10 +15,305 @@ import '../screens/bay_reading_assignment_screen.dart';
 import '../models/bay_connection_model.dart';
 import '../models/reading_models.dart';
 
+// Import all your equipment icon painters here
+import '../equipment_icons/transformer_icon.dart';
+import '../equipment_icons/busbar_icon.dart';
+import '../equipment_icons/circuit_breaker_icon.dart';
+import '../equipment_icons/ct_icon.dart';
+import '../equipment_icons/disconnector_icon.dart';
+import '../equipment_icons/ground_icon.dart';
+import '../equipment_icons/isolator_icon.dart';
+import '../equipment_icons/pt_icon.dart';
+
 enum BayDetailViewMode { list, add, edit }
 
 // Enum to manage which date is being picked
 enum DateType { commissioning, manufacturing, erection }
+
+// Helper class to store rendering data for each bay on the SLD
+class BayRenderData {
+  final Bay bay;
+  final Rect rect; // Bounding box for drawing and hit-testing
+  final Offset center; // Center point of the symbol
+  // Specific connection points on the symbol's bounding box for cleaner lines
+  final Offset topCenter;
+  final Offset bottomCenter;
+  final Offset leftCenter;
+  final Offset rightCenter;
+
+  BayRenderData({
+    required this.bay,
+    required this.rect,
+    required this.center,
+    required this.topCenter,
+    required this.bottomCenter,
+    required this.leftCenter,
+    required this.rightCenter,
+  });
+}
+
+// Custom Painter for the Single Line Diagram
+class SingleLineDiagramPainter extends CustomPainter {
+  final List<BayRenderData> bayRenderDataList;
+  final List<BayConnection> bayConnections;
+  final Map<String, Bay> baysMap; // For quick lookup of bays by ID
+
+  SingleLineDiagramPainter({
+    required this.bayRenderDataList,
+    required this.bayConnections,
+    required this.baysMap,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = Colors.blueGrey.shade700
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    final busbarPaint = Paint()
+      ..color = Colors.blueGrey.shade900
+      ..strokeWidth =
+          4.0 // Thicker busbar lines
+      ..style = PaintingStyle.stroke;
+
+    final connectionDotPaint = Paint()
+      ..color = Colors.blueGrey.shade900
+      ..style = PaintingStyle.fill; // Solid dot
+
+    // Draw all connections first
+    for (var connection in bayConnections) {
+      final sourceBay = baysMap[connection.sourceBayId];
+      final targetBay = baysMap[connection.targetBayId];
+
+      if (sourceBay == null || targetBay == null) continue;
+
+      final sourceRenderData = bayRenderDataList.firstWhere(
+        (data) => data.bay.id == sourceBay.id,
+        orElse: () => _createDummyBayRenderData(),
+      );
+      final targetRenderData = bayRenderDataList.firstWhere(
+        (data) => data.bay.id == targetBay.id,
+        orElse: () => _createDummyBayRenderData(),
+      );
+
+      if (sourceRenderData == null || targetRenderData == null) continue;
+
+      Offset startPoint = sourceRenderData.center;
+      Offset endPoint = targetRenderData.center;
+
+      // Determine more precise connection points
+      if (sourceBay.bayType == 'Busbar') {
+        startPoint =
+            sourceRenderData.center; // Busbar is a line, connect to its center
+        if (targetBay.bayType == 'Transformer') {
+          // Connect busbar to transformer's HV/LV side
+          if (sourceBay.voltageLevel == targetBay.hvVoltage) {
+            endPoint = targetRenderData.topCenter; // Assuming HV is at top
+          } else if (sourceBay.voltageLevel == targetBay.lvVoltage) {
+            endPoint =
+                targetRenderData.bottomCenter; // Assuming LV is at bottom
+          }
+        } else {
+          // Connect busbar to topCenter of other bays by default
+          endPoint = targetRenderData.topCenter;
+        }
+      } else if (targetBay.bayType == 'Busbar') {
+        endPoint =
+            targetRenderData.center; // Busbar is a line, connect to its center
+        // Connect other bays to busbar's bottomCenter by default
+        startPoint = sourceRenderData.bottomCenter;
+      }
+
+      // Draw the connection line
+      canvas.drawLine(startPoint, endPoint, linePaint);
+
+      // Draw solid dot at the connection to the busbar
+      if (sourceBay.bayType == 'Busbar') {
+        canvas.drawCircle(endPoint, 4.0, connectionDotPaint);
+      } else if (targetBay.bayType == 'Busbar') {
+        canvas.drawCircle(endPoint, 4.0, connectionDotPaint);
+      }
+
+      // Draw arrowhead on the target side
+      _drawArrowhead(canvas, startPoint, endPoint, linePaint);
+    }
+
+    // Draw all symbols and their labels
+    for (var renderData in bayRenderDataList) {
+      final bay = renderData.bay;
+      final rect = renderData.rect;
+
+      // Get appropriate painter for the symbol
+      CustomPainter painter;
+      const Size equipmentDrawingSize = Size(100, 100); // Base size for icons
+
+      switch (bay.bayType) {
+        // Use bayType to select the symbol
+        case 'Transformer':
+          painter = TransformerIconPainter(
+            color: Colors.blue,
+            equipmentSize: equipmentDrawingSize,
+            symbolSize: equipmentDrawingSize,
+          );
+          break;
+        case 'Busbar':
+          painter = BusbarIconPainter(
+            color: Colors.blue,
+            equipmentSize: equipmentDrawingSize,
+            symbolSize: equipmentDrawingSize,
+            voltageText: bay.voltageLevel,
+          );
+          break;
+        case 'Circuit Breaker':
+          painter = CircuitBreakerIconPainter(
+            color: Colors.blue,
+            equipmentSize: equipmentDrawingSize,
+            symbolSize: equipmentDrawingSize,
+          );
+          break;
+        case 'Line': // Use a generic line icon or similar if available
+          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          break;
+        case 'Feeder': // Use a generic feeder icon or similar if available
+          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          break;
+        case 'Capacitor Bank':
+          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          break;
+        case 'Reactor':
+          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          break;
+        case 'Bus Coupler':
+          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          break;
+        case 'Battery':
+          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          break;
+        default:
+          painter = _GenericIconPainter(
+            color: Colors.blue,
+          ); // Fallback for unknown types
+      }
+
+      // Draw the symbol
+      canvas.save();
+      canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
+      painter.paint(
+        canvas,
+        rect.size,
+      ); // Pass the actual size of the rect for drawing
+      canvas.restore();
+
+      // Draw text label below symbol
+      final textSpan = TextSpan(
+        text: bay.name,
+        style: TextStyle(
+          color: Colors.black87,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      );
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(rect.center.dx - textPainter.width / 2, rect.bottom + 2),
+      );
+    }
+  }
+
+  // Helper to draw an arrowhead
+  void _drawArrowhead(Canvas canvas, Offset p1, Offset p2, Paint paint) {
+    const double arrowSize = 8;
+    final double angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
+
+    final path = Path();
+    path.moveTo(p2.dx, p2.dy);
+    path.lineTo(
+      p2.dx - arrowSize * cos(angle - pi / 6),
+      p2.dy - arrowSize * sin(angle - pi / 6),
+    );
+    path.lineTo(
+      p2.dx - arrowSize * cos(angle + pi / 6),
+      p2.dy - arrowSize * sin(angle + pi / 6),
+    );
+    path.close();
+    canvas.drawPath(path, paint..style = PaintingStyle.fill); // Fill arrowhead
+  }
+
+  // Helper to create a dummy BayRenderData for orElse callbacks
+  BayRenderData _createDummyBayRenderData() {
+    return BayRenderData(
+      bay: Bay(
+        id: 'dummy',
+        name: '',
+        substationId: '',
+        voltageLevel: '',
+        bayType: '',
+        createdBy: '',
+        createdAt: Timestamp.now(),
+      ),
+      rect: Rect.zero,
+      center: Offset.zero,
+      topCenter: Offset.zero,
+      bottomCenter: Offset.zero,
+      leftCenter: Offset.zero,
+      rightCenter: Offset.zero,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant SingleLineDiagramPainter oldDelegate) {
+    // A simplified check: repaint if the number of bays or connections changes.
+    // For production, you might need a deeper comparison for efficiency.
+    return oldDelegate.bayRenderDataList.length != bayRenderDataList.length ||
+        oldDelegate.bayConnections.length != bayConnections.length;
+  }
+}
+
+// Generic Painter fallback for unrecognized symbols
+class _GenericIconPainter extends CustomPainter {
+  final Color color;
+  _GenericIconPainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    final double centerX = size.width / 2;
+    final double centerY = size.height / 2;
+    final double halfWidth = size.width / 3;
+    final double halfHeight = size.height / 3;
+
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(centerX, centerY),
+        width: halfWidth * 2,
+        height: halfHeight * 2,
+      ),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(centerX - halfWidth, centerY - halfHeight),
+      Offset(centerX + halfWidth, centerY + halfHeight),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(centerX + halfWidth, centerY - halfHeight),
+      Offset(centerX - halfWidth, centerY + halfHeight),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class SubstationDetailScreen extends StatefulWidget {
   final String substationId;
@@ -37,6 +334,27 @@ class SubstationDetailScreen extends StatefulWidget {
 class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   BayDetailViewMode _viewMode = BayDetailViewMode.list;
   Bay? _bayToEdit;
+
+  // Helper to create a dummy BayRenderData for orElse callbacks
+  BayRenderData _createDummyBayRenderData() {
+    return BayRenderData(
+      bay: Bay(
+        id: 'dummy',
+        name: '',
+        substationId: '',
+        voltageLevel: '',
+        bayType: '',
+        createdBy: '',
+        createdAt: Timestamp.now(),
+      ),
+      rect: Rect.zero,
+      center: Offset.zero,
+      topCenter: Offset.zero,
+      bottomCenter: Offset.zero,
+      leftCenter: Offset.zero,
+      rightCenter: Offset.zero,
+    );
+  }
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   // --- Common Controllers ---
@@ -618,13 +936,46 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     // You can add your reading field logic here.
   }
 
-  Widget _buildBayListView() {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Substation: ${widget.substationName}'),
+        actions: [
+          if (_viewMode == BayDetailViewMode.list)
+            IconButton(
+              icon: const Icon(Icons.info_outline),
+              onPressed: () {
+                // Here you could show a dialog with substation details
+                SnackBarUtils.showSnackBar(
+                  context,
+                  'Viewing details for ${widget.substationName}.',
+                );
+              },
+            ),
+        ],
+      ),
+      body: (_viewMode == BayDetailViewMode.list)
+          ? _buildSLDView() // Call the new SLD view
+          : _buildBayFormView(),
+      floatingActionButton: (_viewMode == BayDetailViewMode.list)
+          ? FloatingActionButton.extended(
+              onPressed: () =>
+                  _initializeFormAndHierarchyForViewMode(BayDetailViewMode.add),
+              label: const Text('Add New Bay'),
+              icon: const Icon(Icons.add),
+            )
+          : null,
+    );
+  }
+
+  // NEW METHOD: Builds the Single Line Diagram View
+  Widget _buildSLDView() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
-          .orderBy('voltageLevel', descending: true)
-          .snapshots(),
+          .snapshots(), // Get all bays
       builder: (context, baysSnapshot) {
         if (baysSnapshot.hasError) {
           return Center(
@@ -652,146 +1003,307 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             ),
           );
         }
-        final bays = baysSnapshot.data!.docs
+
+        final List<Bay> allBays = baysSnapshot.data!.docs
             .map((doc) => Bay.fromFirestore(doc))
             .toList();
-        final bayIds = bays.map((bay) => bay.id).toList();
+        final Map<String, Bay> baysMap = {for (var bay in allBays) bay.id: bay};
 
+        // Also fetch bay connections
         return StreamBuilder<QuerySnapshot>(
-          stream: bayIds.isEmpty
-              ? null
-              : FirebaseFirestore.instance
-                    .collection('bayReadingAssignments')
-                    .where('bayId', whereIn: bayIds)
-                    .snapshots(),
-          builder: (context, assignmentsSnapshot) {
-            final Set<String> baysWithAssignments = {};
-            if (assignmentsSnapshot.hasData) {
-              for (var doc in assignmentsSnapshot.data!.docs) {
-                baysWithAssignments.add(doc['bayId'] as String);
+          stream: FirebaseFirestore.instance
+              .collection('bay_connections')
+              .where('substationId', isEqualTo: widget.substationId)
+              .snapshots(),
+          builder: (context, connectionsSnapshot) {
+            if (connectionsSnapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Error: ${connectionsSnapshot.error}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              );
+            }
+            if (connectionsSnapshot.connectionState ==
+                ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final List<BayConnection> allConnections = connectionsSnapshot
+                .data!
+                .docs
+                .map((doc) => BayConnection.fromFirestore(doc))
+                .toList();
+
+            // --- SLD Layout Calculation ---
+            final List<BayRenderData> bayRenderDataList = [];
+            final double symbolSize = 60; // Fixed size for symbols
+            final double symbolPadding = 20;
+            final double rowHeight =
+                symbolSize + 30; // Symbol + text label below
+            final double busbarYOffset = 50; // Starting Y for busbars
+            final double horizontalSpacing = symbolSize + 50;
+
+            // Sort bays by voltage level for consistent busbar placement
+            final List<String> sortedVoltages = _voltageLevels.toList()
+              ..sort((a, b) {
+                // Custom sort to handle kV/V and descending order for primary display
+                double getNumericVoltage(String v) {
+                  if (v.endsWith('kV'))
+                    return double.parse(v.replaceAll('kV', '')) * 1000;
+                  if (v.endsWith('V'))
+                    return double.parse(v.replaceAll('V', ''));
+                  return 0.0;
+                }
+
+                return getNumericVoltage(
+                  b,
+                ).compareTo(getNumericVoltage(a)); // Descending
+              });
+
+            Map<String, double> voltageYPositions =
+                {}; // Map voltage to Y coordinate
+            Map<String, int> voltageXIndex =
+                {}; // Map voltage to next available X index
+
+            double currentY = busbarYOffset;
+            for (String voltage in sortedVoltages) {
+              final busbarsAtVoltage = allBays
+                  .where(
+                    (b) => b.bayType == 'Busbar' && b.voltageLevel == voltage,
+                  )
+                  .toList();
+              if (busbarsAtVoltage.isNotEmpty) {
+                // Position busbars horizontally
+                double currentX = symbolPadding;
+                for (var busbar in busbarsAtVoltage) {
+                  final rect = Rect.fromLTWH(
+                    currentX,
+                    currentY,
+                    symbolSize,
+                    symbolSize,
+                  );
+                  bayRenderDataList.add(
+                    BayRenderData(
+                      bay: busbar,
+                      rect: rect,
+                      center: rect.center,
+                      topCenter: rect.topCenter,
+                      bottomCenter: rect.bottomCenter,
+                      leftCenter: rect.centerLeft,
+                      rightCenter: rect.centerRight,
+                    ),
+                  );
+                  currentX += horizontalSpacing;
+                }
+                voltageYPositions[voltage] = currentY;
+                voltageXIndex[voltage] =
+                    busbarsAtVoltage.length; // Next available index
+                currentY +=
+                    rowHeight + 30; // Space for bays connected to this bus
               }
             }
-            return _buildBayListWithAssignments(bays, baysWithAssignments);
+
+            // Position other bays (Transformers, Lines, Feeders etc.)
+            for (var bay in allBays) {
+              if (bay.bayType == 'Busbar') continue; // Already handled
+
+              double bayX = 0;
+              double bayY = 0;
+
+              if (bay.bayType == 'Transformer') {
+                final hvBusRender = bayRenderDataList.firstWhere(
+                  (data) => data.bay.id == bay.hvBusId,
+                  orElse: () => _createDummyBayRenderData(),
+                );
+                final lvBusRender = bayRenderDataList.firstWhere(
+                  (data) => data.bay.id == bay.lvBusId,
+                  orElse: () => _createDummyBayRenderData(),
+                );
+
+                if (hvBusRender.bay.id != 'dummy' &&
+                    lvBusRender.bay.id != 'dummy') {
+                  // Place transformer roughly between its HV and LV buses vertically
+                  bayY = (hvBusRender.center.dy + lvBusRender.center.dy) / 2;
+
+                  // Simple X positioning: place to the right of the HV bus
+                  bayX = hvBusRender.rect.right + symbolPadding;
+                } else {
+                  // Fallback for un-connected transformers: place in an 'Other' row
+                  bayY = currentY;
+                  bayX =
+                      (voltageXIndex['Other Bays'] ?? 0) * horizontalSpacing +
+                      symbolPadding;
+                  voltageXIndex['Other Bays'] =
+                      (voltageXIndex['Other Bays'] ?? 0) + 1;
+                }
+              } else {
+                // Non-transformer, non-busbar bays connect to one bus
+                final connectedBusId = allConnections
+                    .firstWhere(
+                      (conn) => conn.targetBayId == bay.id,
+                      orElse: () => BayConnection(
+                        substationId: '',
+                        sourceBayId: '',
+                        targetBayId: '',
+                        createdBy: '',
+                        createdAt: Timestamp.now(),
+                      ),
+                    )
+                    .sourceBayId;
+
+                final busRenderData = bayRenderDataList.firstWhere(
+                  (data) => data.bay.id == connectedBusId,
+                  orElse: () => _createDummyBayRenderData(),
+                );
+
+                if (busRenderData.bay.id != 'dummy') {
+                  // Place below the connected bus
+                  bayY =
+                      busRenderData.rect.bottom +
+                      symbolPadding +
+                      (voltageXIndex[busRenderData.bay.voltageLevel] ?? 0) *
+                          rowHeight /
+                          2;
+                  bayX = busRenderData.rect.left; // Align with the bus
+                  voltageXIndex[busRenderData.bay.voltageLevel] =
+                      (voltageXIndex[busRenderData.bay.voltageLevel] ?? 0) + 1;
+                } else {
+                  // Fallback: place in an 'Other Bays' row
+                  bayY = currentY;
+                  bayX =
+                      (voltageXIndex['Other Bays'] ?? 0) * horizontalSpacing +
+                      symbolPadding;
+                  voltageXIndex['Other Bays'] =
+                      (voltageXIndex['Other Bays'] ?? 0) + 1;
+                }
+              }
+
+              if (bayX > 0 || bayY > 0) {
+                // Only add if successfully positioned
+                final rect = Rect.fromLTWH(bayX, bayY, symbolSize, symbolSize);
+                bayRenderDataList.add(
+                  BayRenderData(
+                    bay: bay,
+                    rect: rect,
+                    center: rect.center,
+                    topCenter: rect.topCenter,
+                    bottomCenter: rect.bottomCenter,
+                    leftCenter: rect.centerLeft,
+                    rightCenter: rect.centerRight,
+                  ),
+                );
+              }
+            }
+
+            // Determine overall canvas size
+            double canvasWidth = MediaQuery.of(context).size.width;
+            double canvasHeight = max(
+              MediaQuery.of(context).size.height,
+              currentY + rowHeight + 50,
+            );
+
+            // --- End SLD Layout Calculation ---
+
+            return GestureDetector(
+              onTapUp: (details) {
+                final tappedBayRenderData = bayRenderDataList.firstWhere(
+                  (data) => data.rect.contains(details.localPosition),
+                  orElse: () => _createDummyBayRenderData(),
+                );
+
+                if (tappedBayRenderData.bay.id != 'dummy') {
+                  // Simulate pencil icon functionality (edit bay details)
+                  _initializeFormAndHierarchyForViewMode(
+                    BayDetailViewMode.edit,
+                    bay: tappedBayRenderData.bay,
+                  );
+                }
+              },
+              onLongPressStart: (details) {
+                final tappedBayRenderData = bayRenderDataList.firstWhere(
+                  (data) => data.rect.contains(details.localPosition),
+                  orElse: () => _createDummyBayRenderData(),
+                );
+
+                if (tappedBayRenderData.bay.id != 'dummy') {
+                  _showBaySymbolActions(
+                    context,
+                    tappedBayRenderData.bay,
+                    details.globalPosition,
+                  );
+                }
+              },
+              child: CustomPaint(
+                size: Size(canvasWidth, canvasHeight),
+                painter: SingleLineDiagramPainter(
+                  bayRenderDataList: bayRenderDataList,
+                  bayConnections: allConnections,
+                  baysMap: baysMap,
+                ),
+              ),
+            );
           },
         );
       },
     );
   }
 
-  Widget _buildBayListWithAssignments(
-    List<Bay> bays,
-    Set<String> baysWithAssignments,
+  // Method to show context menu on long press
+  void _showBaySymbolActions(
+    BuildContext context,
+    Bay bay,
+    Offset tapPosition,
   ) {
-    final Map<String, List<Bay>> groupedBays = {};
-    for (var bay in bays) {
-      // Group by voltageLevel. Handle cases where voltageLevel might be null (e.g., for Battery)
-      final String groupKey = bay.voltageLevel ?? 'Other Bays';
-      groupedBays.putIfAbsent(groupKey, () => []).add(bay);
-    }
-
-    // Sort keys: Voltage levels first (descending), then 'Other Bays' if present
-    final List<String> sortedGroupKeys = groupedBays.keys.toList();
-    sortedGroupKeys.sort((a, b) {
-      if (a == 'Other Bays') return 1;
-      if (b == 'Other Bays') return -1;
-
-      // Extract numerical part and compare for voltage levels
-      final double? voltageA = double.tryParse(
-        a.replaceAll('kV', '').replaceAll('V', '').replaceAll('MVA', ''),
-      );
-      final double? voltageB = double.tryParse(
-        b.replaceAll('kV', '').replaceAll('V', '').replaceAll('MVA', ''),
-      );
-
-      if (voltageA != null && voltageB != null) {
-        return voltageB.compareTo(voltageA); // Descending order for voltage
-      }
-      return a.compareTo(b); // Alphabetical for other cases
-    });
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
-      itemCount: sortedGroupKeys.length,
-      itemBuilder: (context, levelIndex) {
-        final groupKey = sortedGroupKeys[levelIndex];
-        final baysInGroup = groupedBays[groupKey]!;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8.0),
-          elevation: 3,
-          child: ExpansionTile(
-            initiallyExpanded: true,
-            title: Text(
-              '$groupKey Bays',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        tapPosition.dx,
+        tapPosition.dy,
+        MediaQuery.of(context).size.width - tapPosition.dx,
+        MediaQuery.of(context).size.height - tapPosition.dy,
+      ),
+      items: <PopupMenuEntry<String>>[
+        const PopupMenuItem<String>(
+          value: 'readings',
+          child: ListTile(
+            leading: Icon(Icons.menu_book),
+            title: Text('Manage Reading Assignments'),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'delete',
+          child: ListTile(
             leading: Icon(
-              Icons.flash_on,
-              color: Theme.of(context).colorScheme.primary,
+              Icons.delete,
+              color: Theme.of(context).colorScheme.error,
             ),
-            children: baysInGroup.map((bay) {
-              final hasReadingAssignment = baysWithAssignments.contains(bay.id);
-              return ListTile(
-                title: Text(bay.name),
-                subtitle: Text('Type: ${bay.bayType}'),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => BayEquipmentManagementScreen(
-                      bayId: bay.id,
-                      bayName: bay.name,
-                      substationId: bay.substationId,
-                    ),
-                  ),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.currentUser.role == UserRole.admin ||
-                        widget.currentUser.role == UserRole.subdivisionManager)
-                      IconButton(
-                        icon: const Icon(Icons.menu_book),
-                        tooltip: hasReadingAssignment
-                            ? 'Manage Reading Assignments'
-                            : 'Assign Readings',
-                        color: hasReadingAssignment
-                            ? Colors.green
-                            : Theme.of(context).colorScheme.tertiary,
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => BayReadingAssignmentScreen(
-                              bayId: bay.id,
-                              bayName: bay.name,
-                              currentUser: widget.currentUser,
-                            ),
-                          ),
-                        ),
-                      ),
-                    IconButton(
-                      icon: const Icon(Icons.edit),
-                      color: Theme.of(context).colorScheme.tertiary,
-                      onPressed: () => _initializeFormAndHierarchyForViewMode(
-                        BayDetailViewMode.edit,
-                        bay: bay,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      color: Theme.of(context).colorScheme.error,
-                      onPressed: () => _confirmDeleteBay(context, bay),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+            title: Text(
+              'Delete Bay',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'readings') {
+        // Navigate to reading assignment screen
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => BayReadingAssignmentScreen(
+              bayId: bay.id,
+              bayName: bay.name,
+              currentUser: widget.currentUser,
+            ),
           ),
         );
-      },
-    );
+      } else if (value == 'delete') {
+        _confirmDeleteBay(context, bay);
+      }
+    });
   }
 
+  // Define _buildBayFormView method (restored from previous versions)
   Widget _buildBayFormView() {
     if (_isLoadingFormHierarchy) {
       return const Center(child: CircularProgressIndicator());
@@ -1219,39 +1731,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Substation: ${widget.substationName}'),
-        actions: [
-          if (_viewMode == BayDetailViewMode.list)
-            IconButton(
-              icon: const Icon(Icons.info_outline),
-              onPressed: () {
-                // Here you could show a dialog with substation details
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'Viewing details for ${widget.substationName}.',
-                );
-              },
-            ),
-        ],
-      ),
-      body: (_viewMode == BayDetailViewMode.list)
-          ? _buildBayListView()
-          : _buildBayFormView(),
-      floatingActionButton: (_viewMode == BayDetailViewMode.list)
-          ? FloatingActionButton.extended(
-              onPressed: () =>
-                  _initializeFormAndHierarchyForViewMode(BayDetailViewMode.add),
-              label: const Text('Add New Bay'),
-              icon: const Icon(Icons.add),
-            )
-          : null,
     );
   }
 }
