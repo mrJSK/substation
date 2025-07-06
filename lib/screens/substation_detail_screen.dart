@@ -57,11 +57,17 @@ class SingleLineDiagramPainter extends CustomPainter {
   final List<BayRenderData> bayRenderDataList;
   final List<BayConnection> bayConnections;
   final Map<String, Bay> baysMap; // For quick lookup of bays by ID
+  final BayRenderData Function()
+  createDummyBayRenderData; // Callback for dummy data
+  final BayConnection Function()
+  createDummyBayConnection; // Callback for dummy data
 
   SingleLineDiagramPainter({
     required this.bayRenderDataList,
     required this.bayConnections,
     required this.baysMap,
+    required this.createDummyBayRenderData,
+    required this.createDummyBayConnection,
   });
 
   @override
@@ -90,14 +96,16 @@ class SingleLineDiagramPainter extends CustomPainter {
 
       final sourceRenderData = bayRenderDataList.firstWhere(
         (data) => data.bay.id == sourceBay.id,
-        orElse: () => _createDummyBayRenderData(),
+        orElse: () => createDummyBayRenderData(),
       );
       final targetRenderData = bayRenderDataList.firstWhere(
         (data) => data.bay.id == targetBay.id,
-        orElse: () => _createDummyBayRenderData(),
+        orElse: () => createDummyBayRenderData(),
       );
 
-      if (sourceRenderData == null || targetRenderData == null) continue;
+      if (sourceRenderData.bay.id == 'dummy' ||
+          targetRenderData.bay.id == 'dummy')
+        continue;
 
       Offset startPoint = sourceRenderData.center;
       Offset endPoint = targetRenderData.center;
@@ -107,7 +115,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         startPoint =
             sourceRenderData.center; // Busbar is a line, connect to its center
         if (targetBay.bayType == 'Transformer') {
-          // Connect busbar to transformer's HV/LV side
+          // Connect busbar to transformer's HV/LV side based on voltage match
           if (sourceBay.voltageLevel == targetBay.hvVoltage) {
             endPoint = targetRenderData.topCenter; // Assuming HV is at top
           } else if (sourceBay.voltageLevel == targetBay.lvVoltage) {
@@ -144,12 +152,11 @@ class SingleLineDiagramPainter extends CustomPainter {
       final bay = renderData.bay;
       final rect = renderData.rect;
 
-      // Get appropriate painter for the symbol
+      // Get appropriate painter for the symbol based on bayType
       CustomPainter painter;
       const Size equipmentDrawingSize = Size(100, 100); // Base size for icons
 
       switch (bay.bayType) {
-        // Use bayType to select the symbol
         case 'Transformer':
           painter = TransformerIconPainter(
             color: Colors.blue,
@@ -172,23 +179,27 @@ class SingleLineDiagramPainter extends CustomPainter {
             symbolSize: equipmentDrawingSize,
           );
           break;
-        case 'Line': // Use a generic line icon or similar if available
-          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+        case 'Line':
+          painter = _GenericIconPainter(
+            color: Colors.blue,
+          ); // Placeholder, ideally specific LinePainter
           break;
-        case 'Feeder': // Use a generic feeder icon or similar if available
-          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+        case 'Feeder':
+          painter = _GenericIconPainter(
+            color: Colors.blue,
+          ); // Placeholder, ideally specific FeederPainter
           break;
         case 'Capacitor Bank':
-          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          painter = _GenericIconPainter(color: Colors.blue); // Placeholder
           break;
         case 'Reactor':
-          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          painter = _GenericIconPainter(color: Colors.blue); // Placeholder
           break;
         case 'Bus Coupler':
-          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          painter = _GenericIconPainter(color: Colors.blue); // Placeholder
           break;
         case 'Battery':
-          painter = _GenericIconPainter(color: Colors.blue); // Fallback
+          painter = _GenericIconPainter(color: Colors.blue); // Placeholder
           break;
         default:
           painter = _GenericIconPainter(
@@ -206,8 +217,15 @@ class SingleLineDiagramPainter extends CustomPainter {
       canvas.restore();
 
       // Draw text label below symbol
+      String labelText = bay.name;
+      if (bay.bayType == 'Busbar' &&
+          bay.voltageLevel != null &&
+          bay.voltageLevel!.isNotEmpty) {
+        labelText =
+            '${bay.name} (${bay.voltageLevel})'; // Add voltage for busbar
+      }
       final textSpan = TextSpan(
-        text: bay.name,
+        text: labelText,
         style: TextStyle(
           color: Colors.black87,
           fontSize: 10,
@@ -243,27 +261,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
     path.close();
     canvas.drawPath(path, paint..style = PaintingStyle.fill); // Fill arrowhead
-  }
-
-  // Helper to create a dummy BayRenderData for orElse callbacks
-  BayRenderData _createDummyBayRenderData() {
-    return BayRenderData(
-      bay: Bay(
-        id: 'dummy',
-        name: '',
-        substationId: '',
-        voltageLevel: '',
-        bayType: '',
-        createdBy: '',
-        createdAt: Timestamp.now(),
-      ),
-      rect: Rect.zero,
-      center: Offset.zero,
-      topCenter: Offset.zero,
-      bottomCenter: Offset.zero,
-      leftCenter: Offset.zero,
-      rightCenter: Offset.zero,
-    );
   }
 
   @override
@@ -334,27 +331,6 @@ class SubstationDetailScreen extends StatefulWidget {
 class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   BayDetailViewMode _viewMode = BayDetailViewMode.list;
   Bay? _bayToEdit;
-
-  // Helper to create a dummy BayRenderData for orElse callbacks
-  BayRenderData _createDummyBayRenderData() {
-    return BayRenderData(
-      bay: Bay(
-        id: 'dummy',
-        name: '',
-        substationId: '',
-        voltageLevel: '',
-        bayType: '',
-        createdBy: '',
-        createdAt: Timestamp.now(),
-      ),
-      rect: Rect.zero,
-      center: Offset.zero,
-      topCenter: Offset.zero,
-      bottomCenter: Offset.zero,
-      leftCenter: Offset.zero,
-      rightCenter: Offset.zero,
-    );
-  }
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   // --- Common Controllers ---
@@ -936,6 +912,39 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     // You can add your reading field logic here.
   }
 
+  // NEW: Define _createDummyBayRenderData
+  BayRenderData _createDummyBayRenderData() {
+    return BayRenderData(
+      bay: Bay(
+        id: 'dummy',
+        name: 'Dummy Bay',
+        substationId: 'dummy',
+        bayType: 'Dummy',
+        voltageLevel: '',
+        createdBy: 'dummy',
+        createdAt: Timestamp.now(),
+      ),
+      rect: Rect.zero,
+      center: Offset.zero,
+      topCenter: Offset.zero,
+      bottomCenter: Offset.zero,
+      leftCenter: Offset.zero,
+      rightCenter: Offset.zero,
+    );
+  }
+
+  // NEW: Define _createDummyBayConnection
+  BayConnection _createDummyBayConnection() {
+    return BayConnection(
+      id: 'dummy',
+      substationId: 'dummy',
+      sourceBayId: 'dummy',
+      targetBayId: 'dummy',
+      createdBy: 'dummy',
+      createdAt: Timestamp.now(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1037,7 +1046,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
             // --- SLD Layout Calculation ---
             final List<BayRenderData> bayRenderDataList = [];
-            final double symbolSize = 60; // Fixed size for symbols
+            final double symbolSize = 40; // Reduced symbol size
             final double symbolPadding = 20;
             final double rowHeight =
                 symbolSize + 30; // Symbol + text label below
@@ -1080,9 +1089,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   final rect = Rect.fromLTWH(
                     currentX,
                     currentY,
+                    symbolSize * 1.5,
                     symbolSize,
-                    symbolSize,
-                  );
+                  ); // Busbar wider
                   bayRenderDataList.add(
                     BayRenderData(
                       bay: busbar,
@@ -1094,7 +1103,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                       rightCenter: rect.centerRight,
                     ),
                   );
-                  currentX += horizontalSpacing;
+                  currentX += horizontalSpacing * 1.5;
                 }
                 voltageYPositions[voltage] = currentY;
                 voltageXIndex[voltage] =
@@ -1105,6 +1114,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             }
 
             // Position other bays (Transformers, Lines, Feeders etc.)
+            final double transformerColumnX =
+                MediaQuery.of(context).size.width /
+                2; // Fixed column for transformers
+            Map<String, int> bayTypeCounts =
+                {}; // To manage vertical spacing within a column
+
             for (var bay in allBays) {
               if (bay.bayType == 'Busbar') continue; // Already handled
 
@@ -1123,13 +1138,24 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
                 if (hvBusRender.bay.id != 'dummy' &&
                     lvBusRender.bay.id != 'dummy') {
-                  // Place transformer roughly between its HV and LV buses vertically
+                  // Position transformer vertically between its HV and LV buses
                   bayY = (hvBusRender.center.dy + lvBusRender.center.dy) / 2;
 
-                  // Simple X positioning: place to the right of the HV bus
-                  bayX = hvBusRender.rect.right + symbolPadding;
+                  // Position transformer in a central column
+                  bayX = transformerColumnX - symbolSize / 2;
+
+                  // Adjust Y if multiple transformers at similar vertical levels
+                  int tfCount = bayTypeCounts.putIfAbsent(
+                    'Transformer',
+                    () => 0,
+                  );
+                  bayY +=
+                      tfCount *
+                      (symbolSize +
+                          20); // Stack vertically if multiple in same general area
+                  bayTypeCounts['Transformer'] = tfCount + 1;
                 } else {
-                  // Fallback for un-connected transformers: place in an 'Other' row
+                  // Fallback for un-connected transformers
                   bayY = currentY;
                   bayX =
                       (voltageXIndex['Other Bays'] ?? 0) * horizontalSpacing +
@@ -1142,13 +1168,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 final connectedBusId = allConnections
                     .firstWhere(
                       (conn) => conn.targetBayId == bay.id,
-                      orElse: () => BayConnection(
-                        substationId: '',
-                        sourceBayId: '',
-                        targetBayId: '',
-                        createdBy: '',
-                        createdAt: Timestamp.now(),
-                      ),
+                      orElse: () => _createDummyBayConnection(), // Corrected
                     )
                     .sourceBayId;
 
@@ -1158,16 +1178,17 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 );
 
                 if (busRenderData.bay.id != 'dummy') {
-                  // Place below the connected bus
-                  bayY =
-                      busRenderData.rect.bottom +
-                      symbolPadding +
-                      (voltageXIndex[busRenderData.bay.voltageLevel] ?? 0) *
-                          rowHeight /
-                          2;
-                  bayX = busRenderData.rect.left; // Align with the bus
-                  voltageXIndex[busRenderData.bay.voltageLevel] =
-                      (voltageXIndex[busRenderData.bay.voltageLevel] ?? 0) + 1;
+                  // Place below the connected bus, align vertically
+                  int countForBus = bayTypeCounts.putIfAbsent(
+                    '${busRenderData.bay.id}_connected',
+                    () => 0,
+                  );
+                  bayX =
+                      busRenderData.rect.left +
+                      (countForBus * (symbolSize + 10)); // Offset from bus
+                  bayY = busRenderData.rect.bottom + symbolPadding;
+                  bayTypeCounts['${busRenderData.bay.id}_connected'] =
+                      countForBus + 1;
                 } else {
                   // Fallback: place in an 'Other Bays' row
                   bayY = currentY;
@@ -1197,10 +1218,22 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             }
 
             // Determine overall canvas size
-            double canvasWidth = MediaQuery.of(context).size.width;
+            double canvasWidth = max(
+              MediaQuery.of(context).size.width,
+              bayRenderDataList.fold<double>(
+                    0.0,
+                    (prev, data) => max(prev, data.rect.right),
+                  ) +
+                  symbolPadding,
+            );
             double canvasHeight = max(
               MediaQuery.of(context).size.height,
-              currentY + rowHeight + 50,
+              bayRenderDataList.fold<double>(
+                    0.0,
+                    (prev, data) => max(prev, data.rect.bottom),
+                  ) +
+                  rowHeight +
+                  50,
             );
 
             // --- End SLD Layout Calculation ---
@@ -1240,6 +1273,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   bayRenderDataList: bayRenderDataList,
                   bayConnections: allConnections,
                   baysMap: baysMap,
+                  createDummyBayRenderData:
+                      _createDummyBayRenderData, // Pass the function
+                  createDummyBayConnection:
+                      _createDummyBayConnection, // Pass the function
                 ),
               ),
             );
