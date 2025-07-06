@@ -58,6 +58,27 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.busbarConnectionPoints,
   });
 
+  Color _getBusbarColor(String voltageLevel) {
+    final double voltage =
+        double.tryParse(voltageLevel.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+
+    if (voltage >= 765) {
+      return Colors.red.shade700;
+    } else if (voltage >= 400) {
+      return Colors.orange.shade700;
+    } else if (voltage >= 220) {
+      return Colors.blue.shade700;
+    } else if (voltage >= 132) {
+      return Colors.purple.shade700;
+    } else if (voltage >= 33) {
+      return Colors.green.shade700;
+    } else if (voltage >= 11) {
+      return Colors.teal.shade700;
+    } else {
+      return Colors.black; // Default color
+    }
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()
@@ -66,7 +87,6 @@ class SingleLineDiagramPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     final busbarPaint = Paint()
-      ..color = Colors.black
       ..strokeWidth = 3.0
       ..style = PaintingStyle.stroke;
 
@@ -74,10 +94,12 @@ class SingleLineDiagramPainter extends CustomPainter {
       ..color = Colors.black
       ..style = PaintingStyle.fill;
 
-    // 1. Draw Busbars
+    // 1. Draw Busbars with voltage-based colors
     for (var renderData in bayRenderDataList) {
       if (renderData.bay.bayType == 'Busbar') {
         final busbarRect = busbarRects[renderData.bay.id] ?? renderData.rect;
+        busbarPaint.color = _getBusbarColor(renderData.bay.voltageLevel);
+
         canvas.drawLine(
           busbarRect.centerLeft,
           busbarRect.centerRight,
@@ -113,38 +135,31 @@ class SingleLineDiagramPainter extends CustomPainter {
       Offset startPoint;
       Offset endPoint;
 
-      // Handle the special case of a Line connecting TO a busbar
       if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Line') {
         final busConnectionPoint =
             busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
             sourceRenderData.center;
 
-        // The line starts from above and the arrow points to the bus.
-        // p1 = line start (above bus), p2 = arrow tip (on bus)
         _drawConnectionLine(
           canvas,
-          targetRenderData.topCenter, // The start of the line from above
-          busConnectionPoint, // The end of the line on the bus
+          targetRenderData.topCenter,
+          busConnectionPoint,
           linePaint,
           connectionDotPaint,
           sourceBay.bayType,
           targetBay.bayType,
         );
-        // We've drawn this connection, so skip to the next one.
         continue;
       }
 
-      // --- Standard connection logic for everything else ---
       if (sourceBay.bayType == 'Busbar') {
         startPoint =
             busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
             sourceRenderData.center;
 
-        // The 'Line' case is handled above, so this applies to Feeder and Transformer
         if (targetBay.bayType == 'Feeder') {
           endPoint = targetRenderData.bottomCenter;
         } else {
-          // For transformers connected to a bus
           endPoint = targetRenderData.topCenter;
         }
       } else if (targetBay.bayType == 'Busbar') {
@@ -153,7 +168,6 @@ class SingleLineDiagramPainter extends CustomPainter {
             busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
             targetRenderData.center;
       } else {
-        // Connection between non-busbar elements (e.g., TF to TF)
         startPoint = sourceRenderData.bottomCenter;
         endPoint = targetRenderData.topCenter;
       }
@@ -188,10 +202,8 @@ class SingleLineDiagramPainter extends CustomPainter {
         final label = '${bay.capacity?.round() ?? ''}MVA TF\n${bay.name}';
         _drawText(canvas, label, rect.bottomCenter, offsetY: 4);
       } else if (bay.bayType == 'Line') {
-        // The rect is now above the bus. Draw text above the start of the line.
         _drawText(canvas, bay.name, rect.topCenter, offsetY: -12, isBold: true);
       } else if (bay.bayType == 'Feeder') {
-        // Draw text BELOW the arrow. The rect's bottomCenter is where the arrow tip is.
         _drawText(
           canvas,
           bay.name,
@@ -220,7 +232,8 @@ class SingleLineDiagramPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = paint.color
+        ..color = paint
+            .color // BUG FIX 1: Use the passed 'paint' object
         ..style = PaintingStyle.fill,
     );
   }
@@ -237,7 +250,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     canvas.drawLine(startPoint, endPoint, linePaint);
 
     if (sourceBayType == 'Busbar') {
-      // For lines connecting TO a bus, the endpoint is the bus connection.
       if (targetBayType == 'Line') {
         canvas.drawCircle(endPoint, 4.0, dotPaint);
       } else {
@@ -318,7 +330,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   BayDetailViewMode _viewMode = BayDetailViewMode.list;
   Bay? _bayToEdit;
 
+  // BUG FIX 3: Controller to handle transformations (pan/zoom)
+  final TransformationController _transformationController =
+      TransformationController();
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  // ... (rest of the controller definitions)
   final TextEditingController _bayNameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _landmarkController = TextEditingController();
@@ -412,6 +429,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
   @override
   void dispose() {
+    _transformationController.dispose();
     _bayNameController.dispose();
     _descriptionController.dispose();
     _landmarkController.dispose();
@@ -449,6 +467,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
   }
 
+  // ... (rest of the state methods are unchanged)
   BayConnection _createDummyBayConnection() {
     return BayConnection(
       id: 'dummy',
@@ -903,6 +922,54 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     Bay bay,
     Offset tapPosition,
   ) {
+    final List<PopupMenuEntry<String>> menuItems = [
+      const PopupMenuItem<String>(
+        value: 'edit',
+        child: ListTile(
+          leading: Icon(Icons.edit),
+          title: Text('Edit Bay Details'),
+        ),
+      ),
+    ];
+
+    if (bay.bayType != 'Busbar') {
+      menuItems.add(
+        const PopupMenuItem<String>(
+          value: 'manage_equipment',
+          child: ListTile(
+            leading: Icon(Icons.settings),
+            title: Text('Manage Equipment'),
+          ),
+        ),
+      );
+    }
+
+    menuItems.add(
+      const PopupMenuItem<String>(
+        value: 'readings',
+        child: ListTile(
+          leading: Icon(Icons.menu_book),
+          title: Text('Manage Reading Assignments'),
+        ),
+      ),
+    );
+
+    menuItems.add(
+      PopupMenuItem<String>(
+        value: 'delete',
+        child: ListTile(
+          leading: Icon(
+            Icons.delete,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: Text(
+            'Delete Bay',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ),
+    );
+
     showMenu(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -911,42 +978,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         MediaQuery.of(context).size.width - tapPosition.dx,
         MediaQuery.of(context).size.height - tapPosition.dy,
       ),
-      items: <PopupMenuEntry<String>>[
-        const PopupMenuItem<String>(
-          value: 'edit',
-          child: ListTile(
-            leading: Icon(Icons.edit),
-            title: Text('Edit Bay Details'),
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'manage_equipment',
-          child: ListTile(
-            leading: Icon(Icons.settings),
-            title: Text('Manage Equipment'),
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'readings',
-          child: ListTile(
-            leading: Icon(Icons.menu_book),
-            title: Text('Manage Reading Assignments'),
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'delete',
-          child: ListTile(
-            leading: Icon(
-              Icons.delete,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            title: Text(
-              'Delete Bay',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
-        ),
-      ],
+      items: menuItems,
     ).then((value) {
       if (value == 'edit') {
         _initializeFormAndHierarchyForViewMode(
@@ -1058,7 +1090,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
             const double symbolWidth = 60, symbolHeight = 60;
             const double horizontalSpacing = 80, verticalBusbarSpacing = 200;
-            const double topPadding = 80, sidePadding = 60;
+            const double topPadding = 80, sidePadding = 100;
 
             final busbars = allBays
                 .where((b) => b.bayType == 'Busbar')
@@ -1141,25 +1173,20 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 final double busY = busYPositions[busbar.id]!;
 
                 if (bay.bayType == 'Line') {
-                  // Line bay is represented as an arrow pointing UP TO the busbar.
-                  // The layout rect should be positioned above the bus.
                   bayRect = Rect.fromLTWH(
                     globalCurrentX,
-                    busY - lineFeederHeight, // Positioned above the bus
+                    busY - lineFeederHeight,
                     symbolWidth,
                     lineFeederHeight,
                   );
                 } else if (bay.bayType == 'Feeder') {
-                  // Feeder bay is an arrow pointing DOWN FROM the busbar.
-                  // The layout rect starts on the bus and extends downwards.
                   bayRect = Rect.fromLTWH(
                     globalCurrentX,
-                    busY, // Starts on the bus
+                    busY,
                     symbolWidth,
                     lineFeederHeight,
                   );
                 } else {
-                  // This case should not be reached with the current filters
                   bayRect = Rect.zero;
                 }
 
@@ -1179,49 +1206,68 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   () => {},
                 )[bay.id] = Offset(
                   bayRect.center.dx,
-                  busY, // Connection point is always on the bus line
+                  busY,
                 );
                 globalCurrentX += horizontalSpacing;
               }
             }
 
             for (var busbar in busbars) {
-              final rect = Rect.fromLTWH(
+              const double busbarHitboxHeight = 20.0;
+              // BUG FIX 2: Ensure result of max() is a double
+              final double busWidth = max(
+                0,
+                globalCurrentX - sidePadding,
+              ).toDouble();
+              final double busCenterY = busYPositions[busbar.id]!;
+
+              final drawingRect = Rect.fromLTWH(
                 sidePadding,
-                busYPositions[busbar.id]!,
-                max(0, globalCurrentX - sidePadding),
+                busCenterY,
+                busWidth,
                 0,
               );
-              busbarRects[busbar.id] = rect;
+              busbarRects[busbar.id] = drawingRect;
+
+              final tappableRect = Rect.fromCenter(
+                center: Offset(sidePadding + busWidth / 2, busCenterY),
+                width: busWidth,
+                height: busbarHitboxHeight,
+              );
+
               bayRenderDataList.add(
                 BayRenderData(
                   bay: busbar,
-                  rect: rect,
-                  center: rect.center,
-                  topCenter: rect.topCenter,
-                  bottomCenter: rect.bottomCenter,
-                  leftCenter: rect.centerLeft,
-                  rightCenter: rect.centerRight,
+                  rect: tappableRect,
+                  center: tappableRect.center,
+                  topCenter: tappableRect.topCenter,
+                  bottomCenter: tappableRect.bottomCenter,
+                  leftCenter: tappableRect.centerLeft,
+                  rightCenter: tappableRect.centerRight,
                 ),
               );
             }
 
-            double canvasWidth = globalCurrentX + sidePadding;
+            double canvasWidth = globalCurrentX + sidePadding + 200;
             double canvasHeight =
                 (busbars.length) * verticalBusbarSpacing + topPadding;
 
             return InteractiveViewer(
-              boundaryMargin: const EdgeInsets.all(20),
-              minScale: 0.2,
+              transformationController:
+                  _transformationController, // BUG FIX 3: Use controller
+              boundaryMargin: const EdgeInsets.all(double.infinity),
+              minScale: 0.1,
               maxScale: 4.0,
               child: GestureDetector(
                 onTapUp: (details) {
-                  final tappedBay = bayRenderDataList
-                      .where((data) => data.bay.bayType != 'Busbar')
-                      .firstWhere(
-                        (data) => data.rect.contains(details.localPosition),
-                        orElse: _createDummyBayRenderData,
-                      );
+                  // BUG FIX 3: Get coordinates relative to the transformed scene
+                  final scenePosition = _transformationController.toScene(
+                    details.localPosition,
+                  );
+                  final tappedBay = bayRenderDataList.firstWhere(
+                    (data) => data.rect.contains(scenePosition),
+                    orElse: _createDummyBayRenderData,
+                  );
                   if (tappedBay.bay.id != 'dummy')
                     _initializeFormAndHierarchyForViewMode(
                       BayDetailViewMode.edit,
@@ -1229,12 +1275,14 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     );
                 },
                 onLongPressStart: (details) {
-                  final tappedBay = bayRenderDataList
-                      .where((data) => data.bay.bayType != 'Busbar')
-                      .firstWhere(
-                        (data) => data.rect.contains(details.localPosition),
-                        orElse: _createDummyBayRenderData,
-                      );
+                  // BUG FIX 3: Get coordinates relative to the transformed scene
+                  final scenePosition = _transformationController.toScene(
+                    details.localPosition,
+                  );
+                  final tappedBay = bayRenderDataList.firstWhere(
+                    (data) => data.rect.contains(scenePosition),
+                    orElse: _createDummyBayRenderData,
+                  );
                   if (tappedBay.bay.id != 'dummy')
                     _showBaySymbolActions(
                       context,
