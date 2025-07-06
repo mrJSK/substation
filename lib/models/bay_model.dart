@@ -1,4 +1,3 @@
-// lib/models/bay_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Bay {
@@ -15,7 +14,27 @@ class Bay {
   final String? contactPerson;
   final bool? isGovernmentFeeder;
   final String? feederType;
-  final double? multiplyingFactor; // **NEW**: Added for energy calculations
+  final double? multiplyingFactor;
+
+  // --- Universal Bay Number ---
+  final String? bayNumber;
+
+  // --- Fields for Line bay type ---
+  final double? lineLength;
+  final String? circuitType;
+  final String? conductorType;
+  final String? conductorDetail; // For "Other" conductor type
+  final Timestamp? erectionDate; // **FIXED**: Added this field
+
+  // --- Fields for Transformer bay type ---
+  final String? hvVoltage;
+  final String? lvVoltage;
+  final String? make;
+  final double? capacity; // In MVA
+  final Timestamp? manufacturingDate;
+
+  // --- SHARED: Used by Line, Transformer, etc. ---
+  final Timestamp? commissioningDate;
 
   Bay({
     required this.id,
@@ -31,7 +50,19 @@ class Bay {
     this.contactPerson,
     this.isGovernmentFeeder,
     this.feederType,
-    this.multiplyingFactor, // **NEW**
+    this.multiplyingFactor,
+    this.bayNumber,
+    this.lineLength,
+    this.circuitType,
+    this.conductorType,
+    this.conductorDetail,
+    this.erectionDate, // **FIXED**
+    this.hvVoltage,
+    this.lvVoltage,
+    this.make,
+    this.capacity,
+    this.manufacturingDate,
+    this.commissioningDate,
   });
 
   factory Bay.fromFirestore(DocumentSnapshot doc) {
@@ -50,8 +81,19 @@ class Bay {
       contactPerson: data['contactPerson'],
       isGovernmentFeeder: data['isGovernmentFeeder'],
       feederType: data['feederType'],
-      multiplyingFactor: (data['multiplyingFactor'] as num?)
-          ?.toDouble(), // **NEW**
+      multiplyingFactor: (data['multiplyingFactor'] as num?)?.toDouble(),
+      bayNumber: data['bayNumber'],
+      lineLength: (data['lineLength'] as num?)?.toDouble(),
+      circuitType: data['circuitType'],
+      conductorType: data['conductorType'],
+      conductorDetail: data['conductorDetail'],
+      erectionDate: data['erectionDate'], // **FIXED**
+      hvVoltage: data['hvVoltage'],
+      lvVoltage: data['lvVoltage'],
+      make: data['make'],
+      capacity: (data['capacity'] as num?)?.toDouble(),
+      manufacturingDate: data['manufacturingDate'],
+      commissioningDate: data['commissioningDate'],
     );
   }
 
@@ -69,7 +111,19 @@ class Bay {
       'contactPerson': contactPerson,
       'isGovernmentFeeder': isGovernmentFeeder,
       'feederType': feederType,
-      'multiplyingFactor': multiplyingFactor, // **NEW**
+      'multiplyingFactor': multiplyingFactor,
+      'bayNumber': bayNumber,
+      'lineLength': lineLength,
+      'circuitType': circuitType,
+      'conductorType': conductorType,
+      'conductorDetail': conductorDetail,
+      'erectionDate': erectionDate, // **FIXED**
+      'hvVoltage': hvVoltage,
+      'lvVoltage': lvVoltage,
+      'make': make,
+      'capacity': capacity,
+      'manufacturingDate': manufacturingDate,
+      'commissioningDate': commissioningDate,
     };
   }
 
@@ -87,7 +141,19 @@ class Bay {
     String? contactPerson,
     bool? isGovernmentFeeder,
     String? feederType,
-    double? multiplyingFactor, // **NEW**
+    double? multiplyingFactor,
+    String? bayNumber,
+    double? lineLength,
+    String? circuitType,
+    String? conductorType,
+    String? conductorDetail,
+    Timestamp? erectionDate, // **FIXED**
+    String? hvVoltage,
+    String? lvVoltage,
+    String? make,
+    double? capacity,
+    Timestamp? manufacturingDate,
+    Timestamp? commissioningDate,
   }) {
     return Bay(
       id: id ?? this.id,
@@ -103,7 +169,19 @@ class Bay {
       contactPerson: contactPerson ?? this.contactPerson,
       isGovernmentFeeder: isGovernmentFeeder ?? this.isGovernmentFeeder,
       feederType: feederType ?? this.feederType,
-      multiplyingFactor: multiplyingFactor ?? this.multiplyingFactor, // **NEW**
+      multiplyingFactor: multiplyingFactor ?? this.multiplyingFactor,
+      bayNumber: bayNumber ?? this.bayNumber,
+      lineLength: lineLength ?? this.lineLength,
+      circuitType: circuitType ?? this.circuitType,
+      conductorType: conductorType ?? this.conductorType,
+      conductorDetail: conductorDetail ?? this.conductorDetail,
+      erectionDate: erectionDate ?? this.erectionDate, // **FIXED**
+      hvVoltage: hvVoltage ?? this.hvVoltage,
+      lvVoltage: lvVoltage ?? this.lvVoltage,
+      make: make ?? this.make,
+      capacity: capacity ?? this.capacity,
+      manufacturingDate: manufacturingDate ?? this.manufacturingDate,
+      commissioningDate: commissioningDate ?? this.commissioningDate,
     );
   }
 }

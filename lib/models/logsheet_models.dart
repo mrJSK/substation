@@ -26,7 +26,9 @@ class LogsheetEntry {
     required this.values,
     required this.frequency,
     this.readingHour,
-    required this.substationId, // NEW: Make substationId required in constructor
+    required this.substationId,
+    required String
+    modificationReason, // NEW: Make substationId required in constructor
   });
 
   // Create a LogsheetEntry from a Firestore DocumentSnapshot
@@ -44,6 +46,9 @@ class LogsheetEntry {
       frequency: data['frequency'] as String,
       readingHour: data['readingHour'] as int?,
       substationId: data['substationId'] as String, // NEW: Read substationId
+      modificationReason:
+          data['modificationReason'] as String? ??
+          '', // Provide a default if missing
     );
   }
 

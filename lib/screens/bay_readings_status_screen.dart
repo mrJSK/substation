@@ -218,6 +218,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
         frequency: '',
         readingHour: null,
         substationId: '', // Added dummy substationId
+        modificationReason: '', // Added required parameter
       ),
     );
 

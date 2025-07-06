@@ -43,6 +43,7 @@ class _ReadingTemplateManagementScreenState
     'Reactor',
     'Bus Coupler',
     'Battery',
+    'Busbar',
   ];
 
   final List<ReadingField> _defaultEnergyFields = [
@@ -262,6 +263,15 @@ class _ReadingTemplateManagementScreenState
         frequency: ReadingFrequency.hourly,
       ),
     ],
+    'Busbar': [
+      ReadingField(
+        name: 'Voltage',
+        unit: 'kV',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
   };
 
   final Map<String, List<ReadingField>> _defaultDailyFields = {
@@ -380,6 +390,7 @@ class _ReadingTemplateManagementScreenState
 
   bool _isDefaultField(String fieldName) {
     if (_selectedBayType != 'Battery' &&
+        _selectedBayType != 'Busbar' &&
         _defaultEnergyFields.any((field) => field.name == fieldName))
       return true;
     if (_selectedBayType != null) {
@@ -406,7 +417,7 @@ class _ReadingTemplateManagementScreenState
 
       if (newBayType != null) {
         List<ReadingField> defaultFields = [];
-        if (newBayType != 'Battery') {
+        if (newBayType != 'Battery' && newBayType != 'Busbar') {
           defaultFields.addAll(_defaultEnergyFields);
         }
         defaultFields.addAll(_defaultHourlyFields[newBayType] ?? []);

@@ -1,25 +1,21 @@
 // lib/screens/subdivision_asset_management_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:dropdown_search/dropdown_search.dart'; // Import dropdown_search for selection
+import 'package:dropdown_search/dropdown_search.dart';
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../utils/snackbar_utils.dart';
-import './substation_detail_screen.dart'; // For Bay creation/management
-import './bay_equipment_management_screen.dart'; // For direct equipment management
-import 'export_master_data_screen.dart'; // NEW: Import the new export screen
+import './substation_detail_screen.dart';
+import 'export_master_data_screen.dart';
 
 class SubdivisionAssetManagementScreen extends StatefulWidget {
   final String subdivisionId;
   final AppUser currentUser;
-  // REMOVED: final String? selectedSubstationId; // No longer passed directly
 
   const SubdivisionAssetManagementScreen({
     super.key,
     required this.subdivisionId,
     required this.currentUser,
-    String? selectedSubstationId,
-    // REMOVED: this.selectedSubstationId,
   });
 
   @override
@@ -39,9 +35,7 @@ class _SubdivisionAssetManagementScreenState
   }
 
   Future<void> _fetchSubstationsInSubdivision() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('substations')
@@ -51,25 +45,18 @@ class _SubdivisionAssetManagementScreenState
       _substationsInSubdivision = snapshot.docs
           .map((doc) => Substation.fromFirestore(doc))
           .toList();
-      setState(() {
-        _isLoading = false;
-      });
     } catch (e) {
-      print("Error fetching substations for subdivision manager: $e");
-      if (mounted) {
+      if (mounted)
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to load substations for management: $e',
+          'Failed to load substations: $e',
           isError: true,
         );
-      }
-      setState(() {
-        _isLoading = false;
-      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // NEW: Helper to show substation selection dialog
   Future<Substation?> _showSubstationSelectionDialog() async {
     if (_substationsInSubdivision.isEmpty) {
       if (mounted) {
@@ -85,20 +72,11 @@ class _SubdivisionAssetManagementScreenState
     return await showModalBottomSheet<Substation>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
-      ),
       builder: (BuildContext context) {
         return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 16.0,
-            right: 16.0,
-            top: 24.0,
-          ),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Select Substation',
@@ -107,32 +85,12 @@ class _SubdivisionAssetManagementScreenState
               const SizedBox(height: 20),
               DropdownSearch<Substation>(
                 popupProps: PopupProps.menu(showSearchBox: true),
-                dropdownDecoratorProps: DropDownDecoratorProps(
-                  dropdownSearchDecoration: InputDecoration(
-                    labelText: 'Select Substation',
-                  ),
-                ),
-                itemAsString: (s) => s.name,
-                selectedItem: null, // Always start as null for new selection
                 items: _substationsInSubdivision,
-                onChanged: (Substation? selectedSubstation) {
-                  Navigator.of(
-                    context,
-                  ).pop(selectedSubstation); // Pop with selected substation
+                itemAsString: (s) => s.name,
+                onChanged: (Substation? selected) {
+                  Navigator.of(context).pop(selected);
                 },
-                validator: (value) =>
-                    value == null ? 'Please select a Substation' : null,
               ),
-              const SizedBox(height: 20),
-              // Optional: Close button for the dialog
-              Center(
-                child: TextButton(
-                  onPressed: () =>
-                      Navigator.of(context).pop(), // Pop without selection
-                  child: const Text('Cancel'),
-                ),
-              ),
-              const SizedBox(height: 10),
             ],
           ),
         );
@@ -152,201 +110,52 @@ class _SubdivisionAssetManagementScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Asset Management for Subdivision',
-            style: Theme.of(context).textTheme.titleLarge,
+            'Asset Management',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 24),
+          Card(
+            elevation: 3,
+            child: ListTile(
+              leading: const Icon(Icons.electrical_services),
+              title: const Text('Manage Bays & Equipment'),
+              subtitle: const Text(
+                'View and manage assets within your substations',
+              ),
+              onTap: () async {
+                final selectedSubstation =
+                    await _showSubstationSelectionDialog();
+                if (selectedSubstation != null && mounted) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => SubstationDetailScreen(
+                        substationId: selectedSubstation.id,
+                        substationName: selectedSubstation.name,
+                        currentUser: widget.currentUser,
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
           ),
           const SizedBox(height: 16),
-          Text(
-            'Subdivision ID: ${widget.subdivisionId}',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-
-          // 1. Dashboard for creating bay & managing equipment
-          Text(
-            'Bays & Equipment',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 10),
           Card(
             elevation: 3,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.add_box),
-                    title: const Text('Create New Bay'),
-                    subtitle: const Text(
-                      'Add a new bay to any substation in your subdivision',
+            child: ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('Export Master Data'),
+              subtitle: const Text('Generate CSV reports of your assets'),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ExportMasterDataScreen(
+                      currentUser: widget.currentUser,
+                      subdivisionId: widget.subdivisionId,
                     ),
-                    onTap: () async {
-                      final selectedSubstation =
-                          await _showSubstationSelectionDialog();
-                      if (selectedSubstation != null && mounted) {
-                        // Navigate to SubstationDetailScreen for bay creation in 'add' mode
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => SubstationDetailScreen(
-                              substationId: selectedSubstation.id,
-                              substationName: selectedSubstation.name,
-                              currentUser: widget.currentUser,
-                              // You might need to add a flag to SubstationDetailScreen
-                              // to explicitly open in 'add bay' mode. For now, it defaults to list.
-                            ),
-                          ),
-                        );
-                      }
-                    },
                   ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.electrical_services),
-                    title: const Text('Manage Bays & Equipment in Substations'),
-                    subtitle: const Text(
-                      'View and manage bays and equipment within your assigned substations',
-                    ),
-                    onTap: () async {
-                      final selectedSubstation =
-                          await _showSubstationSelectionDialog();
-                      if (selectedSubstation != null && mounted) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => SubstationDetailScreen(
-                              substationId: selectedSubstation.id,
-                              substationName: selectedSubstation.name,
-                              currentUser: widget.currentUser,
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // 2. Exporting Reports
-          Text('Data Export', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 10),
-          Card(
-            elevation: 3,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.description),
-                    title: const Text('Export Logsheet Readings Report'),
-                    subtitle: const Text(
-                      'Generate CSV of logsheet data for a selected period',
-                    ),
-                    onTap: () {
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'Logsheet export feature coming soon!',
-                      );
-                      // Navigate to a dedicated export screen for logsheets
-                    },
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.warning),
-                    title: const Text('Export Tripping & Shutdown Report'),
-                    subtitle: const Text(
-                      'Generate CSV of tripping/shutdown events for a selected period',
-                    ),
-                    onTap: () {
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'Tripping/Shutdown export feature coming soon!',
-                      );
-                      // Navigate to a dedicated export screen for tripping/shutdown
-                    },
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.storage),
-                    title: const Text('Export Master Data'),
-                    subtitle: const Text(
-                      'Generate CSV of substation, bay, and equipment details',
-                    ),
-                    onTap: () {
-                      // NEW: Navigate to ExportMasterDataScreen
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => ExportMasterDataScreen(
-                            subdivisionId: widget.subdivisionId,
-                            currentUser: widget.currentUser,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // 3. Equipment History (Placeholder/Guidance)
-          Text(
-            'Equipment History & Replacement',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 10),
-          Card(
-            elevation: 3,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.history),
-                    title: const Text('View Equipment History'),
-                    subtitle: const Text(
-                      'Track changes and replacements of equipment over time',
-                    ),
-                    onTap: () {
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'Equipment history view is under development.',
-                      );
-                      // This would likely involve selecting a substation first, then an equipment
-                    },
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.change_circle),
-                    title: const Text('Replace Equipment (Create History)'),
-                    subtitle: const Text(
-                      'Decommission old equipment and add new with history link',
-                    ),
-                    onTap: () {
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'Equipment replacement workflow is being developed.',
-                      );
-                      // This action needs to be performed on a specific equipment instance,
-                      // likely from the BayEquipmentManagementScreen.
-                    },
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],

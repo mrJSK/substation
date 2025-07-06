@@ -60,6 +60,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   double? selectedCityId;
   String? selectedCityName;
   String? selectedVoltageLevel;
+  String? selectedBayType;
   String? selectedContactDesignation;
   bool isSasOperation = false;
   String? selectedStatus;
@@ -71,6 +72,16 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
     'SDO',
     'JE',
     'Control Room',
+  ];
+
+  final List<String> bayTypes = [
+    'Line',
+    'Transformer',
+    'Feeder',
+    'Capacitor Bank',
+    'Reactor',
+    'Bus Coupler',
+    'Busbar',
   ];
 
   @override
@@ -96,7 +107,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   }
 
   Future<void> _initializeFormFields() async {
-    // Pre-populate fields if editing an existing item
     if (widget.itemToEdit != null) {
       nameController.text = widget.itemToEdit!.name;
       descriptionController.text = widget.itemToEdit!.description ?? '';
@@ -105,8 +115,11 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
       contactPersonController.text = widget.itemToEdit!.contactPerson ?? '';
 
       if (widget.itemToEdit is Bay) {
+        final bay = widget.itemToEdit as Bay;
         multiplyingFactorController.text =
-            (widget.itemToEdit as Bay).multiplyingFactor?.toString() ?? '';
+            bay.multiplyingFactor?.toString() ?? '';
+        selectedBayType = bay.bayType;
+        selectedVoltageLevel = bay.voltageLevel;
       }
 
       if (widget.itemToEdit is Zone) {
@@ -298,6 +311,65 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                     ),
 
                     if (widget.itemType == 'Bay') ...[
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: selectedBayType,
+                        decoration: InputDecoration(
+                          labelText: 'Bay Type',
+                          prefixIcon: Icon(
+                            Icons.category,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        items: bayTypes.map<DropdownMenuItem<String>>((
+                          String value,
+                        ) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
+                        onChanged: (String? newValue) {
+                          setState(() {
+                            selectedBayType = newValue;
+                          });
+                        },
+                        validator: (value) =>
+                            value == null ? 'Please select a bay type' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: selectedVoltageLevel,
+                        decoration: InputDecoration(
+                          labelText: 'Voltage Level',
+                          prefixIcon: Icon(
+                            Icons.flash_on,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        items:
+                            <String>[
+                              '765kV',
+                              '400kV',
+                              '220kV',
+                              '132kV',
+                              '33kV',
+                              '11kV',
+                            ].map<DropdownMenuItem<String>>((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              );
+                            }).toList(),
+                        onChanged: (String? newValue) {
+                          setState(() {
+                            selectedVoltageLevel = newValue;
+                          });
+                        },
+                        validator: (value) => value == null
+                            ? 'Please select a voltage level'
+                            : null,
+                      ),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: multiplyingFactorController,
@@ -766,6 +838,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                       }
 
                       if (widget.itemType == 'Bay') {
+                        data['bayType'] = selectedBayType;
+                        data['voltageLevel'] = selectedVoltageLevel;
                         data['multiplyingFactor'] = double.tryParse(
                           multiplyingFactorController.text,
                         );

@@ -1,11 +1,11 @@
+// lib/screens/admin/admin_dashboard_screen.dart
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
-import '../../screens/admin/admin_hierarchy_screen.dart';
-import '../../screens/admin/master_equipment_management_screen.dart';
-import '../../screens/substation_detail_screen.dart';
-import '../../screens/equipment_hierarchy_selection_screen.dart';
-import '../../screens/admin/user_management_screen.dart'; // Import the UserManagementScreen
-import '../../screens/admin/reading_template_management_screen.dart'; // *** ADD THIS IMPORT ***
+import 'admin_hierarchy_screen.dart';
+import 'master_equipment_management_screen.dart';
+import 'user_management_screen.dart';
+import 'reading_template_management_screen.dart';
+import '../equipment_hierarchy_selection_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   final AppUser adminUser;
@@ -18,9 +18,16 @@ class AdminDashboardScreen extends StatelessWidget {
       {
         'title': 'Manage Hierarchy',
         'subtitle': 'Zones, Circles, Divisions, Substations',
-        'icon': Icons.location_on,
+        'icon': Icons.account_tree,
         'screen': const AdminHierarchyScreen(),
         'color': Theme.of(context).colorScheme.primary,
+      },
+      {
+        'title': 'User Management',
+        'subtitle': 'Approve users and assign roles',
+        'icon': Icons.people,
+        'screen': const UserManagementScreen(),
+        'color': Theme.of(context).colorScheme.secondary,
       },
       {
         'title': 'Master Equipment',
@@ -29,10 +36,9 @@ class AdminDashboardScreen extends StatelessWidget {
         'screen': const MasterEquipmentScreen(),
         'color': Theme.of(context).colorScheme.tertiary,
       },
-      // *** ADD THIS NEW CARD ***
       {
         'title': 'Reading Templates',
-        'subtitle': 'Define reading templates for bays',
+        'subtitle': 'Define reading parameters for bays',
         'icon': Icons.rule,
         'screen': const ReadingTemplateManagementScreen(),
         'color': Colors.cyan,
@@ -43,14 +49,6 @@ class AdminDashboardScreen extends StatelessWidget {
         'icon': Icons.electrical_services,
         'screen': EquipmentHierarchySelectionScreen(currentUser: adminUser),
         'color': Colors.indigo,
-      },
-      {
-        'title': 'User Management',
-        'subtitle': 'Approve users, assign roles',
-        'icon': Icons.people,
-        'screen':
-            const UserManagementScreen(), // Direct to UserManagementScreen
-        'color': Theme.of(context).colorScheme.secondary,
       },
       {
         'title': 'Export Data',
@@ -94,27 +92,6 @@ class AdminDashboardScreen extends StatelessWidget {
                         color: Colors.grey.shade700,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(
-                      value: 0.8,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.2),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Theme.of(context).colorScheme.primary,
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.bottomRight,
-                      child: Text(
-                        'System Health: Good (80%)',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -125,77 +102,32 @@ class AdminDashboardScreen extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            Column(
-              children: dashboardItems.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: SizedBox(
-                    width: MediaQuery.of(context).size.width,
-                    child: DashboardCard(
-                      title: item['title'],
-                      subtitle: item['subtitle'],
-                      icon: item['icon'],
-                      cardColor: item['color'],
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => item['screen'],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 1.0,
+              ),
+              itemCount: dashboardItems.length,
+              itemBuilder: (context, index) {
+                final item = dashboardItems[index];
+                return DashboardCard(
+                  title: item['title'],
+                  subtitle: item['subtitle'],
+                  icon: item['icon'],
+                  cardColor: item['color'],
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => item['screen']),
+                    );
+                  },
                 );
-              }).toList(),
+              },
             ),
-            const SizedBox(height: 8),
-            Text('Quick Stats', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: StatCard(
-                    label: 'Total Zones',
-                    value: '10',
-                    icon: Icons.public,
-                    iconColor: Colors.blue.shade700,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    label: 'Pending Approvals',
-                    value: '3',
-                    icon: Icons.pending_actions,
-                    iconColor: Theme.of(context).colorScheme.secondary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: StatCard(
-                    label: 'Total Substations',
-                    value: '150',
-                    icon: Icons.electrical_services,
-                    iconColor: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: StatCard(
-                    label: 'Active Users',
-                    value: '45',
-                    icon: Icons.person_add_alt_1,
-                    iconColor: Theme.of(context).colorScheme.tertiary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -231,17 +163,15 @@ class DashboardCard extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 40, color: cardColor),
               const SizedBox(height: 12),
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -256,63 +186,6 @@ class DashboardCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color iconColor;
-
-  const StatCard({
-    super.key,
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.iconColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontWeight: FontWeight.bold,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
         ),
       ),
     );

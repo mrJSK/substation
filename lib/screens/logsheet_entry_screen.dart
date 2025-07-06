@@ -120,75 +120,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             )
             .toList();
 
-        _injectEnergyAccountFields();
-
-        Query logsheetQuery = FirebaseFirestore.instance
-            .collection('logsheetEntries')
-            .where('bayId', isEqualTo: widget.bayId)
-            .where('frequency', isEqualTo: widget.frequency);
-
-        DateTime queryStartTimestamp;
-        DateTime queryEndTimestamp;
-
-        if (widget.frequency == 'hourly' && widget.readingHour != null) {
-          queryStartTimestamp = DateTime(
-            widget.readingDate.year,
-            widget.readingDate.month,
-            widget.readingDate.day,
-            widget.readingHour!,
-          );
-          queryEndTimestamp = DateTime(
-            widget.readingDate.year,
-            widget.readingDate.month,
-            widget.readingDate.day,
-            widget.readingHour!,
-            59,
-            59,
-            999,
-          );
-        } else {
-          queryStartTimestamp = DateTime(
-            widget.readingDate.year,
-            widget.readingDate.month,
-            widget.readingDate.day,
-          );
-          queryEndTimestamp = DateTime(
-            widget.readingDate.year,
-            widget.readingDate.month,
-            widget.readingDate.day,
-            23,
-            59,
-            59,
-            999,
-          );
-        }
-
-        logsheetQuery = logsheetQuery
-            .where(
-              'readingTimestamp',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(queryStartTimestamp),
-            )
-            .where(
-              'readingTimestamp',
-              isLessThanOrEqualTo: Timestamp.fromDate(queryEndTimestamp),
-            );
-
-        final existingLogsheetSnapshot = await logsheetQuery.limit(1).get();
-
-        if (existingLogsheetSnapshot.docs.isNotEmpty) {
-          _existingLogsheetEntry = LogsheetEntry.fromFirestore(
-            existingLogsheetSnapshot.docs.first,
-          );
-        }
-
-        _initializeReadingFieldControllers(
-          _filteredReadingFields,
-          _existingLogsheetEntry,
-        );
+        await _fetchAndInitializeLogsheetEntries();
       } else {
         _filteredReadingFields = [];
-        _injectEnergyAccountFields();
-        _initializeReadingFieldControllers(_filteredReadingFields, null);
       }
     } catch (e) {
       print("Error initializing logsheet entry screen: $e");
@@ -201,131 +135,130 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         Navigator.of(context).pop();
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  void _injectEnergyAccountFields() {
-    final List<ReadingField> energyFields = [];
-    const unit = 'MWH';
-    const dataType = ReadingFieldDataType.number;
-    const isMandatory = true;
+  Future<void> _fetchAndInitializeLogsheetEntries() async {
+    _existingLogsheetEntry = await _getLogsheetForDate(widget.readingDate);
 
-    if (widget.frequency == 'daily') {
-      energyFields.addAll([
-        ReadingField(
-          name: 'Previous Day Reading (Import)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.daily,
-        ),
-        ReadingField(
-          name: 'Current Day Reading (Import)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.daily,
-        ),
-        ReadingField(
-          name: 'Previous Day Reading (Export)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.daily,
-        ),
-        ReadingField(
-          name: 'Current Day Reading (Export)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.daily,
-        ),
-      ]);
-    } else if (widget.frequency == 'monthly') {
-      energyFields.addAll([
-        ReadingField(
-          name: 'Previous Month Reading (Import)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.monthly,
-        ),
-        ReadingField(
-          name: 'Current Month Reading (Import)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.monthly,
-        ),
-        ReadingField(
-          name: 'Previous Month Reading (Export)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.monthly,
-        ),
-        ReadingField(
-          name: 'Current Month Reading (Export)',
-          dataType: dataType,
-          isMandatory: isMandatory,
-          unit: unit,
-          frequency: ReadingFrequency.monthly,
-        ),
-      ]);
+    LogsheetEntry? previousLogsheet;
+    if (_existingLogsheetEntry == null) {
+      DateTime previousDate;
+      if (widget.frequency == 'daily') {
+        previousDate = widget.readingDate.subtract(const Duration(days: 1));
+      } else if (widget.frequency == 'monthly') {
+        previousDate = DateTime(
+          widget.readingDate.year,
+          widget.readingDate.month - 1,
+          widget.readingDate.day,
+        );
+      } else {
+        previousDate = widget.readingDate;
+      }
+      previousLogsheet = await _getLogsheetForDate(previousDate);
     }
-    _filteredReadingFields.insertAll(0, energyFields);
+
+    _initializeReadingFieldControllers(previousLogsheet);
   }
 
-  void _initializeReadingFieldControllers(
-    List<ReadingField> fields,
-    LogsheetEntry? existingEntry,
-  ) {
+  Future<LogsheetEntry?> _getLogsheetForDate(DateTime date) async {
+    Query logsheetQuery = FirebaseFirestore.instance
+        .collection('logsheetEntries')
+        .where('bayId', isEqualTo: widget.bayId)
+        .where('frequency', isEqualTo: widget.frequency);
+
+    DateTime start, end;
+    if (widget.frequency == 'hourly' && widget.readingHour != null) {
+      start = DateTime(date.year, date.month, date.day, widget.readingHour!);
+      end = start.add(const Duration(hours: 1));
+    } else {
+      start = DateTime(date.year, date.month, date.day);
+      end = DateTime(date.year, date.month, date.day, 23, 59, 59);
+    }
+
+    logsheetQuery = logsheetQuery.where(
+      'readingTimestamp',
+      isGreaterThanOrEqualTo: start,
+      isLessThanOrEqualTo: end,
+    );
+
+    final snapshot = await logsheetQuery.limit(1).get();
+    if (snapshot.docs.isNotEmpty) {
+      return LogsheetEntry.fromFirestore(snapshot.docs.first);
+    }
+    return null;
+  }
+
+  void _initializeReadingFieldControllers(LogsheetEntry? previousLogsheet) {
     _readingTextFieldControllers.forEach(
       (key, controller) => controller.dispose(),
     );
     _readingBooleanDescriptionControllers.forEach(
       (key, controller) => controller.dispose(),
     );
-
     _readingTextFieldControllers.clear();
     _readingBooleanFieldValues.clear();
     _readingDateFieldValues.clear();
     _readingDropdownFieldValues.clear();
     _readingBooleanDescriptionControllers.clear();
 
-    final Map<String, dynamic> initialValues = existingEntry?.values ?? {};
+    final Map<String, dynamic> existingValues =
+        _existingLogsheetEntry?.values ?? {};
+    final Map<String, dynamic> previousValues = previousLogsheet?.values ?? {};
 
-    for (var field in fields) {
-      final String fieldName = field.name;
-      final String dataType = field.dataType.toString().split('.').last;
-      final dynamic storedValue = initialValues[fieldName];
+    for (var field in _filteredReadingFields) {
+      final fieldName = field.name;
+      final dataType = field.dataType.toString().split('.').last;
+      dynamic value = existingValues[fieldName];
+
+      if (_existingLogsheetEntry == null) {
+        if (fieldName.startsWith('Previous Day') &&
+            previousValues.containsKey(
+              fieldName.replaceFirst('Previous Day', 'Current Day'),
+            )) {
+          value =
+              previousValues[fieldName.replaceFirst(
+                'Previous Day',
+                'Current Day',
+              )];
+        } else if (fieldName.startsWith('Previous Month') &&
+            previousValues.containsKey(
+              fieldName.replaceFirst('Previous Month', 'Current Month'),
+            )) {
+          value =
+              previousValues[fieldName.replaceFirst(
+                'Previous Month',
+                'Current Month',
+              )];
+        }
+      }
 
       if (dataType == 'text' || dataType == 'number') {
         _readingTextFieldControllers[fieldName] = TextEditingController(
-          text: storedValue?.toString() ?? '',
+          text: value?.toString() ?? '',
         );
       } else if (dataType == 'boolean') {
         _readingBooleanFieldValues[fieldName] =
-            (storedValue is Map && storedValue.containsKey('value'))
-            ? (storedValue['value'] as bool? ?? false)
+            (value is Map && value.containsKey('value'))
+            ? (value['value'] as bool? ?? false)
             : false;
         _readingBooleanDescriptionControllers[fieldName] =
             TextEditingController(
-              text:
-                  (storedValue is Map &&
-                      storedValue.containsKey('description_remarks'))
-                  ? (storedValue['description_remarks']?.toString() ?? '')
+              text: (value is Map && value.containsKey('description_remarks'))
+                  ? (value['description_remarks']?.toString() ?? '')
                   : '',
             );
       } else if (dataType == 'date') {
-        _readingDateFieldValues[fieldName] = (storedValue is Timestamp)
-            ? storedValue.toDate()
+        _readingDateFieldValues[fieldName] = (value is Timestamp)
+            ? value.toDate()
             : null;
       } else if (dataType == 'dropdown') {
-        _readingDropdownFieldValues[fieldName] = storedValue?.toString();
+        _readingDropdownFieldValues[fieldName] = value?.toString();
       }
     }
   }
@@ -335,10 +268,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
       return;
     }
     if (_currentBay == null ||
-        _bayReadingAssignmentDoc == null &&
+        (_bayReadingAssignmentDoc == null &&
             _filteredReadingFields.any(
               (field) => !field.name.contains('Reading'),
-            )) {
+            ))) {
       SnackBarUtils.showSnackBar(
         context,
         'Missing bay or assignment data.',
@@ -358,6 +291,20 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     setState(() {
       _isSaving = true;
     });
+
+    final String modificationReason =
+        await _showModificationReasonDialog() ?? "";
+    if (widget.currentUser.role == UserRole.subdivisionManager &&
+        _existingLogsheetEntry != null &&
+        modificationReason.isEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'A reason is required to modify an existing reading.',
+        isError: true,
+      );
+      setState(() => _isSaving = false);
+      return;
+    }
 
     try {
       final Map<String, dynamic> recordedValues = {};
@@ -402,9 +349,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
 
       final logsheetData = LogsheetEntry(
         bayId: widget.bayId,
-        templateId:
-            _bayReadingAssignmentDoc?.id ??
-            'HARDCODED_ENERGY_ACCOUNT', // Use a placeholder if no template
+        templateId: _bayReadingAssignmentDoc?.id ?? 'HARDCODED_ENERGY_ACCOUNT',
         readingTimestamp: Timestamp.fromDate(entryTimestamp),
         recordedBy: widget.currentUser.uid,
         recordedAt: Timestamp.now(),
@@ -412,6 +357,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         frequency: widget.frequency,
         readingHour: widget.readingHour,
         substationId: widget.substationId,
+        modificationReason: modificationReason,
       );
 
       if (_existingLogsheetEntry == null) {
@@ -454,6 +400,36 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     }
   }
 
+  Future<String?> _showModificationReasonDialog() async {
+    if (widget.currentUser.role != UserRole.subdivisionManager ||
+        _existingLogsheetEntry == null) {
+      return "Initial Entry";
+    }
+
+    TextEditingController reasonController = TextEditingController();
+    return await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reason for Modification'),
+        content: TextField(
+          controller: reasonController,
+          decoration: const InputDecoration(hintText: "Enter reason..."),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(reasonController.text),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildReadingFieldInput(ReadingField field) {
     final String fieldName = field.name;
     final String dataType = field.dataType.toString().split('.').last;
@@ -463,8 +439,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     final String? initialDescriptionRemarks = field.descriptionRemarks;
 
     final bool isReadOnly =
-        _existingLogsheetEntry != null &&
-        widget.currentUser.role == UserRole.substationUser;
+        (widget.currentUser.role == UserRole.substationUser &&
+            _existingLogsheetEntry != null) ||
+        (fieldName.startsWith("Previous") && _existingLogsheetEntry == null);
 
     final inputDecoration = InputDecoration(
       labelText: fieldName + (isMandatory ? ' *' : ''),
@@ -671,7 +648,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-
                     if (_currentBay?.multiplyingFactor != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 24.0),
@@ -686,7 +662,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                           ),
                         ),
                       ),
-
                     if (_filteredReadingFields.isEmpty)
                       Center(
                         child: Text(
