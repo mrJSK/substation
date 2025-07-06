@@ -484,34 +484,8 @@ class _EquipmentHierarchySelectionScreenState
                           ),
                         ),
                       );
-                      // Reset state after navigation to clear dropdown visually upon returning
-                      setState(() {
-                        _selectedScreenStateName = null;
-                        _selectedScreenZoneId = null;
-                        _selectedScreenZoneName = null;
-                        _selectedScreenCircleId = null;
-                        _selectedScreenCircleName = null;
-                        _selectedScreenDivisionId = null;
-                        _selectedScreenDivisionName = null;
-                        _selectedScreenSubdivisionId =
-                            (widget.currentUser.role ==
-                                    UserRole.subdivisionManager &&
-                                widget.currentUser.assignedLevels != null &&
-                                widget.currentUser.assignedLevels!.containsKey(
-                                  'subdivisionId',
-                                ))
-                            ? widget
-                                  .currentUser
-                                  .assignedLevels!['subdivisionId']
-                            : null;
-                        if (widget.currentUser.role ==
-                                UserRole.subdivisionManager &&
-                            _selectedScreenSubdivisionId != null) {
-                          _fetchSubdivisionName(_selectedScreenSubdivisionId!);
-                        } else {
-                          _selectedScreenSubdivisionName = null;
-                        }
-                      });
+                      // Removed the setState block that clears hierarchy selections
+                      // This allows the selections to persist when returning to this screen.
                     }
                   },
                   validator: (value) =>

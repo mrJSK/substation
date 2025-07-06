@@ -6,6 +6,7 @@ import 'master_equipment_management_screen.dart';
 import 'user_management_screen.dart';
 import 'reading_template_management_screen.dart';
 import '../equipment_hierarchy_selection_screen.dart';
+import 'bay_relationship_management_screen.dart'; // Import the new screen
 
 class AdminDashboardScreen extends StatelessWidget {
   final AppUser adminUser;
@@ -49,6 +50,16 @@ class AdminDashboardScreen extends StatelessWidget {
         'icon': Icons.electrical_services,
         'screen': EquipmentHierarchySelectionScreen(currentUser: adminUser),
         'color': Colors.indigo,
+      },
+      {
+        'title': 'Bay Relationship Management', // NEW ITEM
+        'subtitle':
+            'Define relationships between bays (e.g., Transformer to Bus)',
+        'icon': Icons.link,
+        'screen': BayRelationshipManagementScreen(
+          currentUser: adminUser,
+        ), // Pass current user
+        'color': Colors.purple,
       },
       {
         'title': 'Export Data',

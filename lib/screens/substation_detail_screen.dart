@@ -1,3 +1,4 @@
+// lib/screens/substation_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -62,6 +63,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   final TextEditingController _capacityController = TextEditingController();
   String? _selectedHvVoltage;
   String? _selectedLvVoltage;
+  String? _selectedHvBusId; // NEW: For HV bus connection
+  String? _selectedLvBusId; // NEW: For LV bus connection
 
   // --- Date Controllers & State (Shared by Line & Transformer) ---
   final TextEditingController _commissioningDateController =
@@ -85,6 +88,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   bool _isSavingBay = false;
 
   // --- Data Lists ---
+  // Consolidated voltage levels
   final List<String> _voltageLevels = [
     '765kV',
     '400kV',
@@ -92,18 +96,11 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     '132kV',
     '33kV',
     '11kV',
-  ];
-  final List<String> _transformerVoltageLevels = [
-    '800kV',
-    '765kV',
-    '400kV',
-    '220kV',
-    '132kV',
-    '33kV',
-    '25kV',
-    '11kV',
+    '800kV', // From previous _transformerVoltageLevels
+    '25kV', // From previous _transformerVoltageLevels
     '400V',
   ];
+
   final List<String> _bayTypes = [
     'Busbar',
     'Transformer',
@@ -195,6 +192,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     _capacityController.clear();
     _selectedHvVoltage = null;
     _selectedLvVoltage = null;
+    _selectedHvBusId = null; // NEW
+    _selectedLvBusId = null; // NEW
     _manufacturingDateController.clear();
     _manufacturingDate = null;
 
@@ -256,6 +255,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           _selectedLvVoltage = bay.lvVoltage;
           _makeController.text = bay.make ?? '';
           _capacityController.text = bay.capacity?.toString() ?? '';
+          _selectedHvBusId = bay.hvBusId; // NEW
+          _selectedLvBusId = bay.lvBusId; // NEW
           if (bay.manufacturingDate != null) {
             _manufacturingDate = bay.manufacturingDate!.toDate();
             _manufacturingDateController.text = _manufacturingDate!
@@ -313,11 +314,30 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
       return;
     }
     if (_selectedBayType != 'Busbar' &&
+        _selectedBayType != 'Transformer' && // Added condition
         _selectedBusbarId == null &&
         _viewMode == BayDetailViewMode.add) {
       SnackBarUtils.showSnackBar(
         context,
         'Please connect this bay to a busbar.',
+        isError: true,
+      );
+      return;
+    }
+    if (_selectedBayType == 'Transformer' && _selectedHvBusId == null) {
+      // NEW Validation
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please connect HV to a busbar.',
+        isError: true,
+      );
+      return;
+    }
+    if (_selectedBayType == 'Transformer' && _selectedLvBusId == null) {
+      // NEW Validation
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please connect LV to a busbar.',
         isError: true,
       );
       return;
@@ -349,7 +369,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
       final bayData = {
         'name': _bayNameController.text.trim(),
         'substationId': widget.substationId,
-        'voltageLevel': _selectedVoltageLevel!,
+        // Set voltageLevel based on bay type
+        'voltageLevel': _selectedBayType == 'Transformer'
+            ? _selectedHvVoltage // Use HV voltage for main voltageLevel for Transformers
+            : _selectedBayType == 'Battery'
+            ? null // No voltage level for Battery
+            : _selectedVoltageLevel, // Use selected voltage level for others
         'bayType': _selectedBayType!,
         'description': _descriptionController.text.trim().isEmpty
             ? null
@@ -404,6 +429,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             _selectedBayType == 'Transformer' && _manufacturingDate != null
             ? Timestamp.fromDate(_manufacturingDate!)
             : null,
+        'hvBusId': _selectedBayType == 'Transformer'
+            ? _selectedHvBusId
+            : null, // NEW
+        'lvBusId': _selectedBayType == 'Transformer'
+            ? _selectedLvBusId
+            : null, // NEW
         'commissioningDate':
             (_selectedBayType == 'Line' || _selectedBayType == 'Transformer') &&
                 _commissioningDate != null
@@ -430,7 +461,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         bayData['createdAt'] = Timestamp.now();
         await newBayRef.set(bayData);
 
-        if (_selectedBusbarId != null) {
+        // For non-transformer bays, save single connection if applicable
+        if (_selectedBayType != 'Transformer' && _selectedBusbarId != null) {
           final newConnection = BayConnection(
             substationId: widget.substationId,
             sourceBayId: _selectedBusbarId!,
@@ -441,6 +473,32 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           await FirebaseFirestore.instance
               .collection('bay_connections')
               .add(newConnection.toFirestore());
+        } else if (_selectedBayType == 'Transformer') {
+          // For transformers, save two connections (HV and LV)
+          if (_selectedHvBusId != null) {
+            final hvConnection = BayConnection(
+              substationId: widget.substationId,
+              sourceBayId: _selectedHvBusId!, // HV Bus
+              targetBayId: newBayRef.id, // Transformer Bay
+              createdBy: firebaseUser.uid,
+              createdAt: Timestamp.now(),
+            );
+            await FirebaseFirestore.instance
+                .collection('bay_connections')
+                .add(hvConnection.toFirestore());
+          }
+          if (_selectedLvBusId != null) {
+            final lvConnection = BayConnection(
+              substationId: widget.substationId,
+              sourceBayId: _selectedLvBusId!, // LV Bus
+              targetBayId: newBayRef.id, // Transformer Bay
+              createdBy: firebaseUser.uid,
+              createdAt: Timestamp.now(),
+            );
+            await FirebaseFirestore.instance
+                .collection('bay_connections')
+                .add(lvConnection.toFirestore());
+          }
         }
 
         // Refetch the created bay to pass to assignment function
@@ -626,18 +684,37 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   ) {
     final Map<String, List<Bay>> groupedBays = {};
     for (var bay in bays) {
-      groupedBays.putIfAbsent(bay.voltageLevel, () => []).add(bay);
+      // Group by voltageLevel. Handle cases where voltageLevel might be null (e.g., for Battery)
+      final String groupKey = bay.voltageLevel ?? 'Other Bays';
+      groupedBays.putIfAbsent(groupKey, () => []).add(bay);
     }
-    final sortedVoltageLevels = _voltageLevels
-        .where((level) => groupedBays.containsKey(level))
-        .toList();
+
+    // Sort keys: Voltage levels first (descending), then 'Other Bays' if present
+    final List<String> sortedGroupKeys = groupedBays.keys.toList();
+    sortedGroupKeys.sort((a, b) {
+      if (a == 'Other Bays') return 1;
+      if (b == 'Other Bays') return -1;
+
+      // Extract numerical part and compare for voltage levels
+      final double? voltageA = double.tryParse(
+        a.replaceAll('kV', '').replaceAll('V', '').replaceAll('MVA', ''),
+      );
+      final double? voltageB = double.tryParse(
+        b.replaceAll('kV', '').replaceAll('V', '').replaceAll('MVA', ''),
+      );
+
+      if (voltageA != null && voltageB != null) {
+        return voltageB.compareTo(voltageA); // Descending order for voltage
+      }
+      return a.compareTo(b); // Alphabetical for other cases
+    });
 
     return ListView.builder(
       padding: const EdgeInsets.all(16.0),
-      itemCount: sortedVoltageLevels.length,
+      itemCount: sortedGroupKeys.length,
       itemBuilder: (context, levelIndex) {
-        final voltageLevel = sortedVoltageLevels[levelIndex];
-        final baysInLevel = groupedBays[voltageLevel]!;
+        final groupKey = sortedGroupKeys[levelIndex];
+        final baysInGroup = groupedBays[groupKey]!;
 
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -645,7 +722,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           child: ExpansionTile(
             initiallyExpanded: true,
             title: Text(
-              '$voltageLevel Bays',
+              '$groupKey Bays',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).colorScheme.primary,
@@ -655,7 +732,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               Icons.flash_on,
               color: Theme.of(context).colorScheme.primary,
             ),
-            children: baysInLevel.map((bay) {
+            children: baysInGroup.map((bay) {
               final hasReadingAssignment = baysWithAssignments.contains(bay.id);
               return ListTile(
                 title: Text(bay.name),
@@ -743,19 +820,25 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               validator: (v) => v!.isEmpty ? 'Required' : null,
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedVoltageLevel,
-              decoration: const InputDecoration(
-                labelText: 'Voltage Level',
-                prefixIcon: Icon(Icons.flash_on),
+
+            // Conditional Voltage Level Field
+            if (_selectedBayType != 'Transformer' &&
+                _selectedBayType != 'Battery') ...[
+              DropdownButtonFormField<String>(
+                value: _selectedVoltageLevel,
+                decoration: const InputDecoration(
+                  labelText: 'Voltage Level',
+                  prefixIcon: Icon(Icons.flash_on),
+                ),
+                items: _voltageLevels
+                    .map((l) => DropdownMenuItem(value: l, child: Text(l)))
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedVoltageLevel = v),
+                validator: (v) => v == null ? 'Required' : null,
               ),
-              items: _voltageLevels
-                  .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                  .toList(),
-              onChanged: (v) => setState(() => _selectedVoltageLevel = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
+
             DropdownButtonFormField<String>(
               value: _selectedBayType,
               decoration: const InputDecoration(
@@ -810,8 +893,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               const SizedBox(height: 16),
             ],
 
-            // --- Connect to Busbar ---
-            if (_selectedBayType != null && _selectedBayType != 'Busbar') ...[
+            // --- Connect to Busbar (Single connection, hidden for Transformer) ---
+            if (_selectedBayType != null &&
+                _selectedBayType != 'Busbar' &&
+                _selectedBayType != 'Transformer') ...[
               DropdownButtonFormField<String>(
                 value: _selectedBusbarId,
                 decoration: const InputDecoration(
@@ -832,7 +917,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               const SizedBox(height: 16),
             ],
 
-            // --- Transformer Fields ---
+            // --- Transformer Fields (including dual bus connections) ---
             if (_selectedBayType == 'Transformer') ...[
               DropdownButtonFormField<String>(
                 value: _selectedHvVoltage,
@@ -840,11 +925,43 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   labelText: 'HV Voltage',
                   prefixIcon: Icon(Icons.electric_bolt),
                 ),
-                items: _transformerVoltageLevels
-                    .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                    .toList(),
+                items:
+                    _voltageLevels // Use consolidated list
+                        .map((l) => DropdownMenuItem(value: l, child: Text(l)))
+                        .toList(),
                 onChanged: (v) => setState(() => _selectedHvVoltage = v),
                 validator: (v) => v == null ? 'Required' : null,
+              ),
+              const SizedBox(height: 16),
+              // NEW: Connect HV to Bus
+              DropdownButtonFormField<String>(
+                value: _selectedHvBusId,
+                decoration: const InputDecoration(
+                  labelText: 'Connect HV to Bus',
+                  prefixIcon: Icon(Icons.power),
+                ),
+                items: _availableBusbars
+                    .where((b) => b.voltageLevel == _selectedHvVoltage)
+                    .map(
+                      (b) => DropdownMenuItem(
+                        value: b.id,
+                        child: Text('${b.name} (${b.voltageLevel})'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedHvBusId = v),
+                validator: (v) {
+                  if (v == null) {
+                    return 'HV bus connection is required';
+                  }
+                  final selectedBus = _availableBusbars.firstWhere(
+                    (b) => b.id == v,
+                  );
+                  if (selectedBus.voltageLevel != _selectedHvVoltage) {
+                    return 'HV bus voltage must match selected HV voltage';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
@@ -853,11 +970,43 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   labelText: 'LV Voltage',
                   prefixIcon: Icon(Icons.electric_bolt_outlined),
                 ),
-                items: _transformerVoltageLevels
-                    .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                    .toList(),
+                items:
+                    _voltageLevels // Use consolidated list
+                        .map((l) => DropdownMenuItem(value: l, child: Text(l)))
+                        .toList(),
                 onChanged: (v) => setState(() => _selectedLvVoltage = v),
                 validator: (v) => v == null ? 'Required' : null,
+              ),
+              const SizedBox(height: 16),
+              // NEW: Connect LV to Bus
+              DropdownButtonFormField<String>(
+                value: _selectedLvBusId,
+                decoration: const InputDecoration(
+                  labelText: 'Connect LV to Bus',
+                  prefixIcon: Icon(Icons.power_off),
+                ),
+                items: _availableBusbars
+                    .where((b) => b.voltageLevel == _selectedLvVoltage)
+                    .map(
+                      (b) => DropdownMenuItem(
+                        value: b.id,
+                        child: Text('${b.name} (${b.voltageLevel})'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedLvBusId = v),
+                validator: (v) {
+                  if (v == null) {
+                    return 'LV bus connection is required';
+                  }
+                  final selectedBus = _availableBusbars.firstWhere(
+                    (b) => b.id == v,
+                  );
+                  if (selectedBus.voltageLevel != _selectedLvVoltage) {
+                    return 'LV bus voltage must match selected LV voltage';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(

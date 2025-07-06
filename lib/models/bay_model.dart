@@ -1,3 +1,4 @@
+// lib/models/bay_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Bay {
@@ -32,6 +33,8 @@ class Bay {
   final String? make;
   final double? capacity; // In MVA
   final Timestamp? manufacturingDate;
+  final String? hvBusId; // NEW: For HV bus connection
+  final String? lvBusId; // NEW: For LV bus connection
 
   // --- SHARED: Used by Line, Transformer, etc. ---
   final Timestamp? commissioningDate;
@@ -62,6 +65,8 @@ class Bay {
     this.make,
     this.capacity,
     this.manufacturingDate,
+    this.hvBusId, // NEW
+    this.lvBusId, // NEW
     this.commissioningDate,
   });
 
@@ -93,6 +98,8 @@ class Bay {
       make: data['make'],
       capacity: (data['capacity'] as num?)?.toDouble(),
       manufacturingDate: data['manufacturingDate'],
+      hvBusId: data['hvBusId'] as String?, // NEW
+      lvBusId: data['lvBusId'] as String?, // NEW
       commissioningDate: data['commissioningDate'],
     );
   }
@@ -123,6 +130,8 @@ class Bay {
       'make': make,
       'capacity': capacity,
       'manufacturingDate': manufacturingDate,
+      'hvBusId': hvBusId, // NEW
+      'lvBusId': lvBusId, // NEW
       'commissioningDate': commissioningDate,
     };
   }
@@ -153,6 +162,8 @@ class Bay {
     String? make,
     double? capacity,
     Timestamp? manufacturingDate,
+    String? hvBusId, // NEW
+    String? lvBusId, // NEW
     Timestamp? commissioningDate,
   }) {
     return Bay(
@@ -181,6 +192,8 @@ class Bay {
       make: make ?? this.make,
       capacity: capacity ?? this.capacity,
       manufacturingDate: manufacturingDate ?? this.manufacturingDate,
+      hvBusId: hvBusId ?? this.hvBusId, // NEW
+      lvBusId: lvBusId ?? this.lvBusId, // NEW
       commissioningDate: commissioningDate ?? this.commissioningDate,
     );
   }
