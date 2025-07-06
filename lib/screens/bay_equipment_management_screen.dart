@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:substation_manager/models/equipment_model.dart';
+import 'package:substation_manager/models/user_model.dart';
 import '../utils/snackbar_utils.dart';
 import 'equipment_assignment_screen.dart'; // For adding and editing equipment
 
@@ -15,6 +16,7 @@ class BayEquipmentManagementScreen extends StatelessWidget {
     required this.bayId,
     required this.bayName,
     required this.substationId,
+    required AppUser currentUser,
   });
 
   Future<void> _confirmDeleteEquipment(
