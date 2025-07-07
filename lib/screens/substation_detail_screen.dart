@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'dart:math';
+import 'dart:math'; // Ensure this is imported for 'max'
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
@@ -15,7 +15,10 @@ import '../screens/bay_reading_assignment_screen.dart';
 import '../models/bay_connection_model.dart';
 import '../models/reading_models.dart';
 
+// Import your custom equipment icon painters
 import '../equipment_icons/transformer_icon.dart';
+import '../equipment_icons/line_icon.dart';
+import '../equipment_icons/feeder_icon.dart';
 
 enum BayDetailViewMode { list, add, edit }
 
@@ -48,6 +51,7 @@ class SingleLineDiagramPainter extends CustomPainter {
   final BayRenderData Function() createDummyBayRenderData;
   final Map<String, Rect> busbarRects;
   final Map<String, Map<String, Offset>> busbarConnectionPoints;
+  final bool debugDrawHitboxes; // Added for debugging
 
   SingleLineDiagramPainter({
     required this.bayRenderDataList,
@@ -56,6 +60,8 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.createDummyBayRenderData,
     required this.busbarRects,
     required this.busbarConnectionPoints,
+    this.debugDrawHitboxes =
+        false, // Default to false, but we'll enable in _buildSLDView for testing
   });
 
   Color _getBusbarColor(String voltageLevel) {
@@ -86,6 +92,12 @@ class SingleLineDiagramPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 
+    final thickLinePaint =
+        Paint() // New paint for thick lines (for connections)
+          ..color = Colors.black87
+          ..strokeWidth = 2.5
+          ..style = PaintingStyle.stroke;
+
     final busbarPaint = Paint()
       ..strokeWidth = 3.0
       ..style = PaintingStyle.stroke;
@@ -97,20 +109,22 @@ class SingleLineDiagramPainter extends CustomPainter {
     // 1. Draw Busbars with voltage-based colors
     for (var renderData in bayRenderDataList) {
       if (renderData.bay.bayType == 'Busbar') {
-        final busbarRect = busbarRects[renderData.bay.id] ?? renderData.rect;
-        busbarPaint.color = _getBusbarColor(renderData.bay.voltageLevel);
+        final busbarDrawingRect = busbarRects[renderData.bay.id];
+        if (busbarDrawingRect != null) {
+          busbarPaint.color = _getBusbarColor(renderData.bay.voltageLevel);
 
-        canvas.drawLine(
-          busbarRect.centerLeft,
-          busbarRect.centerRight,
-          busbarPaint,
-        );
-        _drawText(
-          canvas,
-          '${renderData.bay.voltageLevel} ${renderData.bay.name}',
-          Offset(busbarRect.left - 8, busbarRect.center.dy),
-          textAlign: TextAlign.right,
-        );
+          canvas.drawLine(
+            busbarDrawingRect.centerLeft,
+            busbarDrawingRect.centerRight,
+            busbarPaint,
+          );
+          _drawText(
+            canvas,
+            '${renderData.bay.voltageLevel} ${renderData.bay.name}',
+            Offset(busbarDrawingRect.left - 8, busbarDrawingRect.center.dy),
+            textAlign: TextAlign.right,
+          );
+        }
       }
     }
 
@@ -135,35 +149,39 @@ class SingleLineDiagramPainter extends CustomPainter {
       Offset startPoint;
       Offset endPoint;
 
-      if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Line') {
-        final busConnectionPoint =
-            busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
-            sourceRenderData.center;
-
-        _drawConnectionLine(
-          canvas,
-          targetRenderData.topCenter,
-          busConnectionPoint,
-          linePaint,
-          connectionDotPaint,
-          sourceBay.bayType,
-          targetBay.bayType,
-        );
-        continue;
-      }
-
-      if (sourceBay.bayType == 'Busbar') {
+      // Determine connection points based on bay types and calculated positions
+      if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Transformer') {
         startPoint =
             busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
             sourceRenderData.center;
-
-        if (targetBay.bayType == 'Feeder') {
-          endPoint = targetRenderData.bottomCenter;
-        } else {
-          endPoint = targetRenderData.topCenter;
-        }
-      } else if (targetBay.bayType == 'Busbar') {
+        endPoint = targetRenderData.topCenter;
+      } else if (sourceBay.bayType == 'Transformer' &&
+          targetBay.bayType == 'Busbar') {
         startPoint = sourceRenderData.bottomCenter;
+        endPoint =
+            busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
+            targetRenderData.center;
+      } else if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Line') {
+        startPoint =
+            busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
+            sourceRenderData.center;
+        endPoint =
+            targetRenderData.bottomCenter; // Line's bottom (closer to busbar)
+      } else if (sourceBay.bayType == 'Line' && targetBay.bayType == 'Busbar') {
+        startPoint = sourceRenderData.bottomCenter;
+        endPoint =
+            busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
+            targetRenderData.center;
+      } else if (sourceBay.bayType == 'Busbar' &&
+          targetBay.bayType == 'Feeder') {
+        startPoint =
+            busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
+            sourceRenderData.center;
+        endPoint =
+            targetRenderData.topCenter; // Feeder's top (closer to busbar)
+      } else if (sourceBay.bayType == 'Feeder' &&
+          targetBay.bayType == 'Busbar') {
+        startPoint = sourceRenderData.topCenter;
         endPoint =
             busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
             targetRenderData.center;
@@ -176,17 +194,20 @@ class SingleLineDiagramPainter extends CustomPainter {
         canvas,
         startPoint,
         endPoint,
-        linePaint,
+        linePaint, // Use thin linePaint for connections
         connectionDotPaint,
         sourceBay.bayType,
         targetBay.bayType,
+        busbarConnectionPoints, // Pass this to the drawing function
+        connection.sourceBayId,
+        connection.targetBayId,
       );
     }
 
     // 3. Draw Symbols and Labels
     for (var renderData in bayRenderDataList) {
       final bay = renderData.bay;
-      final rect = renderData.rect;
+      final rect = renderData.rect; // This rect is the tappable rect
 
       if (bay.bayType == 'Transformer') {
         final painter = TransformerIconPainter(
@@ -202,17 +223,68 @@ class SingleLineDiagramPainter extends CustomPainter {
         final label = '${bay.capacity?.round() ?? ''}MVA TF\n${bay.name}';
         _drawText(canvas, label, rect.bottomCenter, offsetY: 4);
       } else if (bay.bayType == 'Line') {
-        _drawText(canvas, bay.name, rect.topCenter, offsetY: -12, isBold: true);
+        final painter = LineIconPainter(
+          color: Colors.black87, // Color of the line symbol
+          equipmentSize: rect.size,
+          symbolSize: rect.size,
+        );
+        canvas.save();
+        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
+        painter.paint(canvas, rect.size);
+        canvas.restore();
+        _drawText(
+          canvas,
+          bay.name,
+          rect.topCenter,
+          offsetY: -12,
+          isBold: true,
+        ); // Label above the line
       } else if (bay.bayType == 'Feeder') {
+        final painter = FeederIconPainter(
+          color: Colors.black87, // Color of the feeder symbol
+          equipmentSize: rect.size,
+          symbolSize: rect.size,
+        );
+        canvas.save();
+        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
+        painter.paint(canvas, rect.size);
+        canvas.restore();
         _drawText(
           canvas,
           bay.name,
           rect.bottomCenter,
-          offsetY: 4,
+          offsetY: 4, // Label below the line
           isBold: true,
         );
+      } else if (bay.bayType != 'Busbar') {
+        // For other non-busbar bays, draw a generic rectangle (or customize further)
+        canvas.drawRect(
+          rect,
+          Paint()
+            ..color = Colors.orange.shade100
+            ..style = PaintingStyle.fill,
+        );
+        canvas.drawRect(
+          rect,
+          Paint()
+            ..color = Colors.black
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.0,
+        );
+        _drawText(canvas, bay.name, rect.center, isBold: true);
       }
     }
+
+    // DEBUGGING STEP: Draw hitboxes if debugDrawHitboxes is true
+    // if (debugDrawHitboxes) {
+    //   final debugHitboxPaint = Paint()
+    //     ..color = Colors.red
+    //         .withOpacity(0.3) // Semi-transparent red
+    //     ..style = PaintingStyle.fill;
+    //   for (var renderData in bayRenderDataList) {
+    //     canvas.drawRect(renderData.rect, debugHitboxPaint);
+    //   }
+    // }
   }
 
   void _drawArrowhead(Canvas canvas, Offset p1, Offset p2, Paint paint) {
@@ -232,8 +304,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = paint
-            .color // BUG FIX 1: Use the passed 'paint' object
+        ..color = paint.color
         ..style = PaintingStyle.fill,
     );
   }
@@ -242,26 +313,35 @@ class SingleLineDiagramPainter extends CustomPainter {
     Canvas canvas,
     Offset startPoint,
     Offset endPoint,
-    Paint linePaint,
+    Paint linePaint, // This is the paint for the connection line itself
     Paint dotPaint,
     String sourceBayType,
     String targetBayType,
+    Map<String, Map<String, Offset>> busbarConnectionPoints,
+    String sourceBayId,
+    String targetBayId,
   ) {
     canvas.drawLine(startPoint, endPoint, linePaint);
 
-    if (sourceBayType == 'Busbar') {
-      if (targetBayType == 'Line') {
-        canvas.drawCircle(endPoint, 4.0, dotPaint);
-      } else {
-        canvas.drawCircle(startPoint, 4.0, dotPaint);
+    // Draw dots at the busbar connection points for all non-busbar bays
+    if (sourceBayType == 'Busbar' && targetBayType != 'Busbar') {
+      final busConnectionPoint =
+          busbarConnectionPoints[sourceBayId]?[targetBayId];
+      if (busConnectionPoint != null) {
+        canvas.drawCircle(busConnectionPoint, 4.0, dotPaint);
       }
-    } else if (targetBayType == 'Busbar') {
-      canvas.drawCircle(endPoint, 4.0, dotPaint);
+    } else if (targetBayType == 'Busbar' && sourceBayType != 'Busbar') {
+      final busConnectionPoint =
+          busbarConnectionPoints[targetBayId]?[sourceBayId];
+      if (busConnectionPoint != null) {
+        canvas.drawCircle(busConnectionPoint, 4.0, dotPaint);
+      }
     }
 
-    if (targetBayType == 'Line' ||
-        targetBayType == 'Feeder' ||
-        (sourceBayType == 'Transformer' && targetBayType != 'Busbar')) {
+    // Draw arrowheads based on typical power flow or convention
+    // I'm keeping the transformer arrow for now, as it's common.
+    if ((sourceBayType == 'Busbar' && targetBayType == 'Transformer') ||
+        (sourceBayType == 'Transformer' && targetBayType == 'Busbar')) {
       _drawArrowhead(canvas, startPoint, endPoint, linePaint);
     }
   }
@@ -330,12 +410,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   BayDetailViewMode _viewMode = BayDetailViewMode.list;
   Bay? _bayToEdit;
 
-  // BUG FIX 3: Controller to handle transformations (pan/zoom)
   final TransformationController _transformationController =
       TransformationController();
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  // ... (rest of the controller definitions)
   final TextEditingController _bayNameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _landmarkController = TextEditingController();
@@ -467,7 +545,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
   }
 
-  // ... (rest of the state methods are unchanged)
   BayConnection _createDummyBayConnection() {
     return BayConnection(
       id: 'dummy',
@@ -623,12 +700,13 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     setState(() => _isSavingBay = true);
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null) {
-      if (mounted)
+      if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
           'User not authenticated.',
           isError: true,
         );
+      }
       setState(() => _isSavingBay = false);
       return;
     }
@@ -700,30 +778,36 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             .collection('bays')
             .doc(bayId)
             .update(bayData);
-        if (_bayToEdit!.bayType == 'Transformer') {
-          final batch = FirebaseFirestore.instance.batch();
-          final connectionsSnapshot = await FirebaseFirestore.instance
-              .collection('bay_connections')
-              .where('substationId', isEqualTo: widget.substationId)
-              .where(
-                Filter.or(
-                  Filter('sourceBayId', isEqualTo: bayId),
-                  Filter('targetBayId', isEqualTo: bayId),
-                ),
-              )
-              .get();
-          for (var doc in connectionsSnapshot.docs) {
-            batch.delete(doc.reference);
-          }
-          await batch.commit();
 
+        // Manage connections based on current and new bay types
+        final batch = FirebaseFirestore.instance.batch();
+
+        // Always delete existing connections for the bay being edited to simplify updates
+        final existingConnectionsSnapshot = await FirebaseFirestore.instance
+            .collection('bay_connections')
+            .where('substationId', isEqualTo: widget.substationId)
+            .where(
+              Filter.or(
+                Filter('sourceBayId', isEqualTo: bayId),
+                Filter('targetBayId', isEqualTo: bayId),
+              ),
+            )
+            .get();
+        for (var doc in existingConnectionsSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit(); // Commit deletions first
+
+        // Add new connections based on the updated bay type and selections
+        if (_selectedBayType == 'Transformer') {
           if (_selectedHvBusId != null) {
             await FirebaseFirestore.instance
                 .collection('bay_connections')
                 .add(
                   BayConnection(
                     substationId: widget.substationId,
-                    sourceBayId: _selectedHvBusId!,
+                    sourceBayId:
+                        _selectedHvBusId!, // Bus connects to HV side of TF
                     targetBayId: bayId,
                     createdBy: firebaseUser.uid,
                     createdAt: Timestamp.now(),
@@ -736,19 +820,35 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 .add(
                   BayConnection(
                     substationId: widget.substationId,
-                    sourceBayId: bayId,
+                    sourceBayId: bayId, // LV side of TF connects to Bus
                     targetBayId: _selectedLvBusId!,
                     createdBy: firebaseUser.uid,
                     createdAt: Timestamp.now(),
                   ).toFirestore(),
                 );
           }
+        } else if (_selectedBayType != 'Busbar' && _selectedBusbarId != null) {
+          // For other bays (Line, Feeder, etc.) that connect to a single busbar
+          await FirebaseFirestore.instance
+              .collection('bay_connections')
+              .add(
+                BayConnection(
+                  substationId: widget.substationId,
+                  sourceBayId: _selectedBusbarId!, // Bus connects to bay
+                  targetBayId: bayId,
+                  createdBy: firebaseUser.uid,
+                  createdAt: Timestamp.now(),
+                ).toFirestore(),
+              );
         }
+        // If the bay becomes a Busbar or another type that doesn't connect, no new connections are added here.
+
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Bay updated successfully!');
           _initializeFormAndHierarchyForViewMode(BayDetailViewMode.list);
         }
       } else {
+        // This is for adding a new bay
         final newBayRef = FirebaseFirestore.instance.collection('bays').doc();
         bayData['createdBy'] = firebaseUser.uid;
         bayData['createdAt'] = Timestamp.now();
@@ -806,12 +906,13 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
           'Failed to save bay: $e',
           isError: true,
         );
+      }
     } finally {
       if (mounted) setState(() => _isSavingBay = false);
     }
@@ -897,24 +998,26 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           batch.delete(doc.reference);
         }
         await batch.commit();
-        if (mounted)
+        if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
             'Bay "${bay.name}" deleted successfully!',
           );
+        }
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
             'Failed to delete bay: $e',
             isError: true,
           );
+        }
       }
     }
   }
 
   Future<void> _createDefaultReadingAssignment(Bay bay, String userId) async {
-    /* Placeholder */
+    /* Placeholder for default reading assignment creation */
   }
 
   void _showBaySymbolActions(
@@ -1014,31 +1117,47 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Substation: ${widget.substationName}'),
-        actions: [
-          if (_viewMode == BayDetailViewMode.list)
-            IconButton(
-              icon: const Icon(Icons.info_outline),
-              onPressed: () => SnackBarUtils.showSnackBar(
-                context,
-                'Viewing details for ${widget.substationName}.',
+    return PopScope(
+      canPop: _viewMode == BayDetailViewMode.list,
+      onPopInvoked: (didPop) {
+        if (!didPop && _viewMode != BayDetailViewMode.list) {
+          _initializeFormAndHierarchyForViewMode(BayDetailViewMode.list);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Substation: ${widget.substationName}'),
+          actions: [
+            if (_viewMode == BayDetailViewMode.list)
+              IconButton(
+                icon: const Icon(Icons.info_outline),
+                onPressed: () => SnackBarUtils.showSnackBar(
+                  context,
+                  'Viewing details for ${widget.substationName}.',
+                ),
               ),
-            ),
-        ],
+            if (_viewMode != BayDetailViewMode.list)
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => _initializeFormAndHierarchyForViewMode(
+                  BayDetailViewMode.list,
+                ),
+              ),
+          ],
+        ),
+        body: (_viewMode == BayDetailViewMode.list)
+            ? _buildSLDView()
+            : _buildBayFormView(),
+        floatingActionButton: (_viewMode == BayDetailViewMode.list)
+            ? FloatingActionButton.extended(
+                onPressed: () => _initializeFormAndHierarchyForViewMode(
+                  BayDetailViewMode.add,
+                ),
+                label: const Text('Add New Bay'),
+                icon: const Icon(Icons.add),
+              )
+            : null,
       ),
-      body: (_viewMode == BayDetailViewMode.list)
-          ? _buildSLDView()
-          : _buildBayFormView(),
-      floatingActionButton: (_viewMode == BayDetailViewMode.list)
-          ? FloatingActionButton.extended(
-              onPressed: () =>
-                  _initializeFormAndHierarchyForViewMode(BayDetailViewMode.add),
-              label: const Text('Add New Bay'),
-              icon: const Icon(Icons.add),
-            )
-          : null,
     );
   }
 
@@ -1049,10 +1168,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           .where('substationId', isEqualTo: widget.substationId)
           .snapshots(),
       builder: (context, baysSnapshot) {
-        if (baysSnapshot.hasError)
+        if (baysSnapshot.hasError) {
           return Center(child: Text('Error: ${baysSnapshot.error}'));
-        if (baysSnapshot.connectionState == ConnectionState.waiting)
+        }
+        if (baysSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
+        }
         if (!baysSnapshot.hasData || baysSnapshot.data!.docs.isEmpty) {
           return const Center(
             child: Padding(
@@ -1073,10 +1194,13 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               .where('substationId', isEqualTo: widget.substationId)
               .snapshots(),
           builder: (context, connectionsSnapshot) {
-            if (connectionsSnapshot.hasError)
+            if (connectionsSnapshot.hasError) {
               return Center(child: Text('Error: ${connectionsSnapshot.error}'));
-            if (connectionsSnapshot.connectionState == ConnectionState.waiting)
+            }
+            if (connectionsSnapshot.connectionState ==
+                ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
+            }
 
             final allConnections =
                 connectionsSnapshot.data?.docs
@@ -1085,12 +1209,18 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 [];
 
             final bayRenderDataList = <BayRenderData>[];
-            final busbarRects = <String, Rect>{};
+            final busbarRects =
+                <String, Rect>{}; // Used by painter for drawing busbar lines
             final busbarConnectionPoints = <String, Map<String, Offset>>{};
 
-            const double symbolWidth = 60, symbolHeight = 60;
-            const double horizontalSpacing = 80, verticalBusbarSpacing = 200;
-            const double topPadding = 80, sidePadding = 100;
+            const double symbolWidth = 60;
+            const double symbolHeight = 60;
+            const double horizontalSpacing = 100;
+            const double verticalBusbarSpacing = 200;
+            const double topPadding = 80;
+            const double sidePadding = 100;
+            const double busbarHitboxHeight = 20.0;
+            const double lineFeederHeight = 40.0;
 
             final busbars = allBays
                 .where((b) => b.bayType == 'Busbar')
@@ -1107,188 +1237,350 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   topPadding + i * verticalBusbarSpacing;
             }
 
-            double globalCurrentX = sidePadding;
+            Map<String, List<Bay>> busbarToConnectedBaysAbove = {};
+            Map<String, List<Bay>> busbarToConnectedBaysBelow = {};
+            Map<String, List<Bay>> busbarToConnectedTransformersHV = {};
+            Map<String, List<Bay>> busbarToConnectedTransformersLV = {};
 
-            final transformers = allBays
-                .where((b) => b.bayType == 'Transformer')
-                .toList();
-            for (var tf in transformers) {
-              final hvBus = busbars.firstWhere(
-                (b) => b.id == tf.hvBusId,
-                orElse: () => busbars.first,
-              );
-              final lvBus = busbars.firstWhere(
-                (b) => b.id == tf.lvBusId,
-                orElse: () => busbars.last,
-              );
-
-              final hvY = busYPositions[hvBus.id]!;
-              final lvY = busYPositions[lvBus.id]!;
-
-              final tfRect = Rect.fromCenter(
-                center: Offset(
-                  globalCurrentX + symbolWidth / 2,
-                  (hvY + lvY) / 2,
-                ),
-                width: symbolWidth,
-                height: symbolHeight,
-              );
-              bayRenderDataList.add(
-                BayRenderData(
-                  bay: tf,
-                  rect: tfRect,
-                  center: tfRect.center,
-                  topCenter: tfRect.topCenter,
-                  bottomCenter: tfRect.bottomCenter,
-                  leftCenter: tfRect.centerLeft,
-                  rightCenter: tfRect.centerRight,
-                ),
-              );
-              busbarConnectionPoints.putIfAbsent(hvBus.id, () => {})[tf.id] =
-                  Offset(tfRect.center.dx, hvY);
-              busbarConnectionPoints.putIfAbsent(lvBus.id, () => {})[tf.id] =
-                  Offset(tfRect.center.dx, lvY);
-              globalCurrentX += horizontalSpacing;
-            }
-
-            for (var busbar in busbars) {
-              final connectedBays = allBays
-                  .where(
-                    (bay) =>
-                        bay.bayType != 'Busbar' &&
-                        bay.bayType != 'Transformer' &&
-                        allConnections.any(
-                          (c) =>
-                              (c.sourceBayId == busbar.id &&
-                                  c.targetBayId == bay.id) ||
-                              (c.sourceBayId == bay.id &&
-                                  c.targetBayId == busbar.id),
-                        ),
-                  )
-                  .toList();
-
-              for (var bay in connectedBays) {
-                Rect bayRect;
-                const double lineFeederHeight = 40.0;
-                final double busY = busYPositions[busbar.id]!;
-
-                if (bay.bayType == 'Line') {
-                  bayRect = Rect.fromLTWH(
-                    globalCurrentX,
-                    busY - lineFeederHeight,
-                    symbolWidth,
-                    lineFeederHeight,
-                  );
-                } else if (bay.bayType == 'Feeder') {
-                  bayRect = Rect.fromLTWH(
-                    globalCurrentX,
-                    busY,
-                    symbolWidth,
-                    lineFeederHeight,
-                  );
-                } else {
-                  bayRect = Rect.zero;
+            for (var bay in allBays) {
+              if (bay.bayType == 'Transformer') {
+                if (bay.hvBusId != null) {
+                  busbarToConnectedTransformersHV
+                      .putIfAbsent(bay.hvBusId!, () => [])
+                      .add(bay);
                 }
+                if (bay.lvBusId != null) {
+                  busbarToConnectedTransformersLV
+                      .putIfAbsent(bay.lvBusId!, () => [])
+                      .add(bay);
+                }
+              } else if (bay.bayType != 'Busbar') {
+                final connectionToBus = allConnections.firstWhereOrNull((c) {
+                  final sourceIsBay = c.sourceBayId == bay.id;
+                  final targetIsBay = c.targetBayId == bay.id;
+                  final sourceIsBus =
+                      baysMap[c.sourceBayId]?.bayType == 'Busbar';
+                  final targetIsBus =
+                      baysMap[c.targetBayId]?.bayType == 'Busbar';
 
-                bayRenderDataList.add(
-                  BayRenderData(
-                    bay: bay,
-                    rect: bayRect,
-                    center: bayRect.center,
-                    topCenter: bayRect.topCenter,
-                    bottomCenter: bayRect.bottomCenter,
-                    leftCenter: bayRect.centerLeft,
-                    rightCenter: bayRect.centerRight,
-                  ),
-                );
-                busbarConnectionPoints.putIfAbsent(
-                  busbar.id,
-                  () => {},
-                )[bay.id] = Offset(
-                  bayRect.center.dx,
-                  busY,
-                );
-                globalCurrentX += horizontalSpacing;
+                  return (sourceIsBay && targetIsBus) ||
+                      (targetIsBay && sourceIsBus);
+                });
+
+                if (connectionToBus != null) {
+                  String connectedBusId =
+                      baysMap[connectionToBus.sourceBayId]?.bayType == 'Busbar'
+                      ? connectionToBus.sourceBayId
+                      : connectionToBus.targetBayId;
+
+                  if (bay.bayType == 'Line') {
+                    busbarToConnectedBaysAbove
+                        .putIfAbsent(connectedBusId, () => [])
+                        .add(bay);
+                  } else {
+                    busbarToConnectedBaysBelow
+                        .putIfAbsent(connectedBusId, () => [])
+                        .add(bay);
+                  }
+                }
               }
             }
 
-            for (var busbar in busbars) {
-              const double busbarHitboxHeight = 20.0;
-              // BUG FIX 2: Ensure result of max() is a double
-              final double busWidth = max(
-                0,
-                globalCurrentX - sidePadding,
-              ).toDouble();
-              final double busCenterY = busYPositions[busbar.id]!;
+            busbarToConnectedBaysAbove.forEach(
+              (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
+            );
+            busbarToConnectedBaysBelow.forEach(
+              (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
+            );
+            busbarToConnectedTransformersHV.forEach(
+              (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
+            );
+            busbarToConnectedTransformersLV.forEach(
+              (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
+            );
 
+            Map<String, Rect> finalBayRects = {};
+            // REVERTED THIS LINE: The overall max X now tracks the maximum extent for canvas size,
+            // but each busbar's elements still originate from `sidePadding`.
+            double maxOverallXForCanvas = sidePadding;
+
+            for (var busbar in busbars) {
+              final busY = busYPositions[busbar.id]!;
+              // The horizontal cursor for placing elements for *this specific busbar's lane*.
+              // It starts from the left `sidePadding` for each busbar.
+              double currentLaneX = sidePadding;
+
+              // Place HV-connected Transformers
+              final hvTransformers =
+                  busbarToConnectedTransformersHV[busbar.id] ?? [];
+              for (var tf in hvTransformers) {
+                final lvBusY =
+                    busYPositions[tf.lvBusId] ??
+                    busY; // Fallback to current busY if LV bus not found
+                final tfRect = Rect.fromCenter(
+                  center: Offset(
+                    currentLaneX + symbolWidth / 2,
+                    (busY + lvBusY) /
+                        2, // Center between HV and LV bus for transformer
+                  ),
+                  width: symbolWidth,
+                  height: symbolHeight,
+                );
+                finalBayRects[tf.id] = tfRect;
+                currentLaneX += horizontalSpacing;
+              }
+
+              // Place LV-connected Transformers (only if not already placed by HV side)
+              final lvTransformers =
+                  busbarToConnectedTransformersLV[busbar.id] ?? [];
+              for (var tf in lvTransformers) {
+                if (!finalBayRects.containsKey(tf.id)) {
+                  final hvBusY =
+                      busYPositions[tf.hvBusId] ??
+                      busY; // Fallback to current busY if HV bus not found
+                  final tfRect = Rect.fromCenter(
+                    center: Offset(
+                      currentLaneX + symbolWidth / 2,
+                      (busY + hvBusY) /
+                          2, // Center between LV and HV bus for transformer
+                    ),
+                    width: symbolWidth,
+                    height: symbolHeight,
+                  );
+                  finalBayRects[tf.id] = tfRect;
+                  currentLaneX += horizontalSpacing;
+                }
+              }
+
+              // Place Bays above this busbar (Lines)
+              final baysAbove = busbarToConnectedBaysAbove[busbar.id] ?? [];
+              for (var bay in baysAbove) {
+                final bayRect = Rect.fromLTWH(
+                  currentLaneX,
+                  busY - lineFeederHeight - 10, // Place above the busbar
+                  symbolWidth,
+                  lineFeederHeight,
+                );
+                finalBayRects[bay.id] = bayRect;
+                currentLaneX += horizontalSpacing;
+              }
+
+              // Place Bays below this busbar (Feeders, etc.)
+              final baysBelow = busbarToConnectedBaysBelow[busbar.id] ?? [];
+              for (var bay in baysBelow) {
+                final bayRect = Rect.fromLTWH(
+                  currentLaneX,
+                  busY + 10, // Place below the busbar
+                  symbolWidth,
+                  lineFeederHeight,
+                );
+                finalBayRects[bay.id] = bayRect;
+                currentLaneX += horizontalSpacing;
+              }
+
+              // Update the maximum X reached for *this* busbar's lane.
+              // Then, update the overall canvas width based on this.
+              maxOverallXForCanvas = max(maxOverallXForCanvas, currentLaneX);
+            }
+
+            // After all bays are placed and maxOverallXForCanvas is determined,
+            // now determine the actual drawing/tappable rect for busbars based on
+            // the max X used by bays connected to them.
+            for (var busbar in busbars) {
+              final busY = busYPositions[busbar.id]!;
+              // Find the max X among bays connected to *this specific busbar*
+              double maxConnectedBayX = sidePadding;
+              busbarToConnectedTransformersHV[busbar.id]?.forEach((tf) {
+                maxConnectedBayX = max(
+                  maxConnectedBayX,
+                  finalBayRects[tf.id]?.right ?? sidePadding,
+                );
+              });
+              busbarToConnectedTransformersLV[busbar.id]?.forEach((tf) {
+                maxConnectedBayX = max(
+                  maxConnectedBayX,
+                  finalBayRects[tf.id]?.right ?? sidePadding,
+                );
+              });
+              busbarToConnectedBaysAbove[busbar.id]?.forEach((bay) {
+                maxConnectedBayX = max(
+                  maxConnectedBayX,
+                  finalBayRects[bay.id]?.right ?? sidePadding,
+                );
+              });
+              busbarToConnectedBaysBelow[busbar.id]?.forEach((bay) {
+                maxConnectedBayX = max(
+                  maxConnectedBayX,
+                  finalBayRects[bay.id]?.right ?? sidePadding,
+                );
+              });
+
+              final effectiveBusWidth = max(
+                maxConnectedBayX -
+                    sidePadding +
+                    horizontalSpacing, // Ensure enough width for connected bays
+                symbolWidth * 2, // Minimum width for a busbar itself
+              ).toDouble();
+
+              // Drawing rectangle for the busbar line
               final drawingRect = Rect.fromLTWH(
                 sidePadding,
-                busCenterY,
-                busWidth,
-                0,
+                busY,
+                effectiveBusWidth,
+                0, // Busbar is a line, so 0 height for drawing purposes, but strokeWidth makes it visible
               );
               busbarRects[busbar.id] = drawingRect;
 
+              // Tappable rectangle for the busbar. This needs a height.
               final tappableRect = Rect.fromCenter(
-                center: Offset(sidePadding + busWidth / 2, busCenterY),
-                width: busWidth,
-                height: busbarHitboxHeight,
+                center: Offset(sidePadding + effectiveBusWidth / 2, busY),
+                width: effectiveBusWidth,
+                height: busbarHitboxHeight, // Use the defined hitbox height
               );
-
-              bayRenderDataList.add(
-                BayRenderData(
-                  bay: busbar,
-                  rect: tappableRect,
-                  center: tappableRect.center,
-                  topCenter: tappableRect.topCenter,
-                  bottomCenter: tappableRect.bottomCenter,
-                  leftCenter: tappableRect.centerLeft,
-                  rightCenter: tappableRect.centerRight,
-                ),
-              );
+              finalBayRects[busbar.id] = tappableRect;
             }
 
-            double canvasWidth = globalCurrentX + sidePadding + 200;
-            double canvasHeight =
-                (busbars.length) * verticalBusbarSpacing + topPadding;
+            // Populate bayRenderDataList after all finalBayRects are determined
+            // This loop ensures every bay has a BayRenderData with its final rect.
+            for (var bay in allBays) {
+              final rect = finalBayRects[bay.id];
+              if (rect != null) {
+                bayRenderDataList.add(
+                  BayRenderData(
+                    bay: bay,
+                    rect: rect,
+                    center: rect.center,
+                    topCenter: rect.topCenter,
+                    bottomCenter: rect.bottomCenter,
+                    leftCenter: rect.centerLeft,
+                    rightCenter: rect.centerRight,
+                  ),
+                );
+              }
+            }
+
+            // Calculate busbar connection points (Offset where a bay connects to a busbar)
+            // This is crucial for drawing accurate connection lines and dots
+            for (var connection in allConnections) {
+              final sourceBay = baysMap[connection.sourceBayId];
+              final targetBay = baysMap[connection.targetBayId];
+              if (sourceBay == null || targetBay == null) continue;
+
+              // Source is Busbar, Target is not
+              if (sourceBay.bayType == 'Busbar' &&
+                  targetBay.bayType != 'Busbar') {
+                final targetRect = finalBayRects[targetBay.id];
+                final busY = busYPositions[sourceBay.id];
+                if (targetRect != null && busY != null) {
+                  busbarConnectionPoints.putIfAbsent(
+                    sourceBay.id,
+                    () => {},
+                  )[targetBay.id] = Offset(
+                    targetRect
+                        .center
+                        .dx, // Align X with the center of the connected bay
+                    busY, // Align Y with the busbar
+                  );
+                }
+              }
+              // Target is Busbar, Source is not
+              else if (targetBay.bayType == 'Busbar' &&
+                  sourceBay.bayType != 'Busbar') {
+                final sourceRect = finalBayRects[sourceBay.id];
+                final busY = busYPositions[targetBay.id];
+                if (sourceRect != null && busY != null) {
+                  busbarConnectionPoints.putIfAbsent(
+                    targetBay.id,
+                    () => {},
+                  )[sourceBay.id] = Offset(
+                    sourceRect
+                        .center
+                        .dx, // Align X with the center of the connected bay
+                    busY, // Align Y with the busbar
+                  );
+                }
+              }
+            }
+
+            double canvasWidth = maxOverallXForCanvas + sidePadding + 50;
+            double canvasHeight = busYPositions.values.isNotEmpty
+                ? busYPositions.values.last + verticalBusbarSpacing / 2 + 100
+                : topPadding + verticalBusbarSpacing;
+
+            canvasWidth = max(MediaQuery.of(context).size.width, canvasWidth);
+            canvasHeight = max(
+              MediaQuery.of(context).size.height,
+              canvasHeight,
+            );
 
             return InteractiveViewer(
-              transformationController:
-                  _transformationController, // BUG FIX 3: Use controller
+              transformationController: _transformationController,
               boundaryMargin: const EdgeInsets.all(double.infinity),
               minScale: 0.1,
               maxScale: 4.0,
+              constrained: false, // Allows content to exceed viewport bounds
               child: GestureDetector(
                 onTapUp: (details) {
-                  // BUG FIX 3: Get coordinates relative to the transformed scene
-                  final scenePosition = _transformationController.toScene(
-                    details.localPosition,
+                  // Important: Get the local position relative to the CustomPaint
+                  // and then transform it to the scene coordinate system.
+                  final RenderBox renderBox =
+                      context.findRenderObject() as RenderBox;
+                  final Offset localPosition = renderBox.globalToLocal(
+                    details.globalPosition,
                   );
+                  final scenePosition = _transformationController.toScene(
+                    localPosition,
+                  );
+
                   final tappedBay = bayRenderDataList.firstWhere(
                     (data) => data.rect.contains(scenePosition),
                     orElse: _createDummyBayRenderData,
                   );
-                  if (tappedBay.bay.id != 'dummy')
+
+                  if (tappedBay.bay.id != 'dummy') {
+                    debugPrint(
+                      'Tapped Bay: ${tappedBay.bay.name} at ${scenePosition}',
+                    ); // Debug print
                     _initializeFormAndHierarchyForViewMode(
                       BayDetailViewMode.edit,
                       bay: tappedBay.bay,
                     );
+                  } else {
+                    debugPrint(
+                      'Tapped: No Bay found at ${scenePosition}',
+                    ); // Debug print
+                  }
                 },
                 onLongPressStart: (details) {
-                  // BUG FIX 3: Get coordinates relative to the transformed scene
-                  final scenePosition = _transformationController.toScene(
-                    details.localPosition,
+                  // Important: Get the local position relative to the CustomPaint
+                  // and then transform it to the scene coordinate system.
+                  final RenderBox renderBox =
+                      context.findRenderObject() as RenderBox;
+                  final Offset localPosition = renderBox.globalToLocal(
+                    details.globalPosition,
                   );
+                  final scenePosition = _transformationController.toScene(
+                    localPosition,
+                  );
+
                   final tappedBay = bayRenderDataList.firstWhere(
                     (data) => data.rect.contains(scenePosition),
                     orElse: _createDummyBayRenderData,
                   );
-                  if (tappedBay.bay.id != 'dummy')
+                  if (tappedBay.bay.id != 'dummy') {
+                    debugPrint(
+                      'Long Pressed Bay: ${tappedBay.bay.name} at ${scenePosition}',
+                    ); // Debug print
                     _showBaySymbolActions(
                       context,
                       tappedBay.bay,
-                      details.globalPosition,
+                      details.globalPosition, // Use global position for menu
                     );
+                  } else {
+                    debugPrint(
+                      'Long pressed: No Bay found at ${scenePosition}',
+                    ); // Debug print
+                  }
                 },
                 child: CustomPaint(
                   size: Size(canvasWidth, canvasHeight),
@@ -1299,6 +1591,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     createDummyBayRenderData: _createDummyBayRenderData,
                     busbarRects: busbarRects,
                     busbarConnectionPoints: busbarConnectionPoints,
+                    debugDrawHitboxes:
+                        true, // KEEP THIS TRUE FOR TESTING! Set to false later.
                   ),
                 ),
               ),
@@ -1359,7 +1653,34 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               items: _bayTypes
                   .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                   .toList(),
-              onChanged: (v) => setState(() => _selectedBayType = v),
+              onChanged: (v) => setState(() {
+                _selectedBayType = v;
+                if (v != 'Feeder') {
+                  _isGovernmentFeeder = false;
+                  _selectedFeederType = null;
+                }
+                if (v != 'Line') {
+                  _lineLengthController.clear();
+                  _selectedCircuit = null;
+                  _selectedConductor = null;
+                  _otherConductorController.clear();
+                  _erectionDateController.clear();
+                  _erectionDate = null;
+                }
+                if (v != 'Transformer') {
+                  _selectedHvVoltage = null;
+                  _selectedLvVoltage = null;
+                  _makeController.clear();
+                  _capacityController.clear();
+                  _selectedHvBusId = null;
+                  _selectedLvBusId = null;
+                  _manufacturingDateController.clear();
+                  _manufacturingDate = null;
+                }
+                if (v == 'Busbar' || v == 'Transformer' || v == 'Battery') {
+                  _selectedBusbarId = null;
+                }
+              }),
               validator: (v) => v == null ? 'Required' : null,
             ),
             const SizedBox(height: 16),
@@ -1397,7 +1718,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             ],
             if (_selectedBayType != null &&
                 _selectedBayType != 'Busbar' &&
-                _selectedBayType != 'Transformer') ...[
+                _selectedBayType != 'Transformer' &&
+                _selectedBayType != 'Battery') ...[
               DropdownButtonFormField<String>(
                 value: _selectedBusbarId,
                 decoration: const InputDecoration(
@@ -1689,5 +2011,16 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         ),
       ),
     );
+  }
+}
+
+extension IterableExtension<T> on Iterable<T> {
+  T? firstWhereOrNull(bool Function(T element) test) {
+    for (var element in this) {
+      if (test(element)) {
+        return element;
+      }
+    }
+    return null;
   }
 }
