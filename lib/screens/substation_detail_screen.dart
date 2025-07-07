@@ -1237,22 +1237,46 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   topPadding + i * verticalBusbarSpacing;
             }
 
-            Map<String, List<Bay>> busbarToConnectedBaysAbove = {};
-            Map<String, List<Bay>> busbarToConnectedBaysBelow = {};
-            Map<String, List<Bay>> busbarToConnectedTransformersHV = {};
-            Map<String, List<Bay>> busbarToConnectedTransformersLV = {};
+            // Group bays connected to busbars
+            Map<String, List<Bay>> busbarToConnectedBaysAbove = {}; // Lines
+            Map<String, List<Bay>> busbarToConnectedBaysBelow =
+                {}; // Feeders, others
+            // Map transformers by their HV and LV bus IDs
+            Map<String, Map<String, List<Bay>>> transformersByBusPair = {};
 
             for (var bay in allBays) {
               if (bay.bayType == 'Transformer') {
-                if (bay.hvBusId != null) {
-                  busbarToConnectedTransformersHV
-                      .putIfAbsent(bay.hvBusId!, () => [])
-                      .add(bay);
-                }
-                if (bay.lvBusId != null) {
-                  busbarToConnectedTransformersLV
-                      .putIfAbsent(bay.lvBusId!, () => [])
-                      .add(bay);
+                if (bay.hvBusId != null && bay.lvBusId != null) {
+                  final hvBus = baysMap[bay.hvBusId];
+                  final lvBus = baysMap[bay.lvBusId];
+                  if (hvBus != null && lvBus != null) {
+                    // Extract voltage values safely
+                    final double hvVoltage =
+                        double.tryParse(
+                          hvBus.voltageLevel.replaceAll(RegExp(r'[^0-9.]'), ''),
+                        ) ??
+                        0;
+                    final double lvVoltage =
+                        double.tryParse(
+                          lvBus.voltageLevel.replaceAll(RegExp(r'[^0-9.]'), ''),
+                        ) ??
+                        0;
+
+                    String key = "";
+                    // Now the condition is clearly boolean
+                    if (hvVoltage > lvVoltage) {
+                      key = "${hvBus.id}-${lvBus.id}";
+                    } else {
+                      key = "${lvBus.id}-${hvBus.id}";
+                    }
+                    transformersByBusPair
+                        .putIfAbsent(key, () => {})
+                        .putIfAbsent(
+                          hvBus.id,
+                          () => [],
+                        ) // Store by actual HV bus ID for later retrieval
+                        .add(bay);
+                  }
                 }
               } else if (bay.bayType != 'Busbar') {
                 final connectionToBus = allConnections.firstWhereOrNull((c) {
@@ -1286,101 +1310,151 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               }
             }
 
+            // Sort the connected bays for consistent rendering
             busbarToConnectedBaysAbove.forEach(
               (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
             );
             busbarToConnectedBaysBelow.forEach(
               (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
             );
-            busbarToConnectedTransformersHV.forEach(
-              (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
-            );
-            busbarToConnectedTransformersLV.forEach(
-              (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
-            );
+            transformersByBusPair.forEach((pairKey, transformersMap) {
+              transformersMap.forEach((busId, transformers) {
+                transformers.sort((a, b) => a.name.compareTo(b.name));
+              });
+            });
 
             Map<String, Rect> finalBayRects = {};
-            // REVERTED THIS LINE: The overall max X now tracks the maximum extent for canvas size,
-            // but each busbar's elements still originate from `sidePadding`.
-            double maxOverallXForCanvas = sidePadding;
+            double maxOverallXForCanvas =
+                sidePadding; // Tracks the maximum X coordinate used for layout
 
-            for (var busbar in busbars) {
-              final busY = busYPositions[busbar.id]!;
-              // The horizontal cursor for placing elements for *this specific busbar's lane*.
-              // It starts from the left `sidePadding` for each busbar.
-              double currentLaneX = sidePadding;
+            // Store horizontal offsets for transformers for drawing connections later
+            Map<String, double> transformerColumnX = {};
+            double nextTransformerX =
+                sidePadding; // Starting X for the first transformer column
 
-              // Place HV-connected Transformers
-              final hvTransformers =
-                  busbarToConnectedTransformersHV[busbar.id] ?? [];
-              for (var tf in hvTransformers) {
-                final lvBusY =
-                    busYPositions[tf.lvBusId] ??
-                    busY; // Fallback to current busY if LV bus not found
-                final tfRect = Rect.fromCenter(
-                  center: Offset(
-                    currentLaneX + symbolWidth / 2,
-                    (busY + lvBusY) /
-                        2, // Center between HV and LV bus for transformer
-                  ),
-                  width: symbolWidth,
-                  height: symbolHeight,
+            // Pre-calculate transformer positions to ensure they are grouped together
+            // and determine the maximum X for other bays
+            List<Bay> placedTransformers = [];
+            for (var busPairEntry in transformersByBusPair.entries) {
+              final String pairKey = busPairEntry.key;
+              final Map<String, List<Bay>> transformersForPair =
+                  busPairEntry.value;
+
+              // Find the HV bus and LV bus from the pair key to get their Y positions
+              List<String> busIdsInPair = pairKey.split('-');
+              String hvBusId = busIdsInPair[0];
+              String lvBusId = busIdsInPair[1];
+
+              // Safely get the Bay objects for the bus IDs
+              final Bay? currentHvBus = baysMap[hvBusId];
+              final Bay? currentLvBus = baysMap[lvBusId];
+
+              if (currentHvBus != null && currentLvBus != null) {
+                // Parse voltage levels safely for comparison
+                final double hvVoltageValue =
+                    double.tryParse(
+                      currentHvBus.voltageLevel.replaceAll(
+                        RegExp(r'[^0-9.]'),
+                        '',
+                      ),
+                    ) ??
+                    0;
+                final double lvVoltageValue =
+                    double.tryParse(
+                      currentLvBus.voltageLevel.replaceAll(
+                        RegExp(r'[^0-9.]'),
+                        '',
+                      ),
+                    ) ??
+                    0;
+
+                // If the order was LV-HV, swap them to ensure HV-LV
+                // Now the condition is clearly boolean
+                if (hvVoltageValue < lvVoltageValue) {
+                  // Compare the actual double values
+                  String temp = hvBusId;
+                  hvBusId = lvBusId;
+                  lvBusId = temp;
+                }
+              } else {
+                // Handle cases where a bus ID in the pair key is invalid/missing in baysMap
+                // This could indicate a data inconsistency. You might want to log this or skip.
+                debugPrint(
+                  'Warning: One of the bus IDs (${hvBusId}, ${lvBusId}) in bus pair key ${pairKey} not found in baysMap.',
                 );
-                finalBayRects[tf.id] = tfRect;
-                currentLaneX += horizontalSpacing;
+                continue; // Skip this transformer pair if buses are not found
               }
 
-              // Place LV-connected Transformers (only if not already placed by HV side)
-              final lvTransformers =
-                  busbarToConnectedTransformersLV[busbar.id] ?? [];
-              for (var tf in lvTransformers) {
-                if (!finalBayRects.containsKey(tf.id)) {
-                  final hvBusY =
-                      busYPositions[tf.hvBusId] ??
-                      busY; // Fallback to current busY if HV bus not found
+              final double hvBusY = busYPositions[hvBusId]!;
+              final double lvBusY = busYPositions[lvBusId]!;
+
+              final List<Bay> transformers =
+                  transformersForPair[hvBusId] ??
+                  transformersForPair[lvBusId] ??
+                  [];
+              for (var tf in transformers) {
+                if (!placedTransformers.contains(tf)) {
+                  // Prevent placing the same transformer twice
                   final tfRect = Rect.fromCenter(
                     center: Offset(
-                      currentLaneX + symbolWidth / 2,
-                      (busY + hvBusY) /
-                          2, // Center between LV and HV bus for transformer
+                      nextTransformerX + symbolWidth / 2,
+                      (hvBusY + lvBusY) /
+                          2, // Vertically center between HV and LV bus
                     ),
                     width: symbolWidth,
                     height: symbolHeight,
                   );
                   finalBayRects[tf.id] = tfRect;
-                  currentLaneX += horizontalSpacing;
+                  transformerColumnX[tf.id] =
+                      nextTransformerX + symbolWidth / 2; // Store center X
+                  nextTransformerX += horizontalSpacing;
+                  placedTransformers.add(tf);
+                  maxOverallXForCanvas = max(
+                    maxOverallXForCanvas,
+                    tfRect.right,
+                  );
                 }
               }
+            }
+
+            // Now place other bays (Lines, Feeders, etc.)
+            // This `currentLaneX` will now start *after* the transformers
+            double currentLaneXForOtherBays =
+                nextTransformerX; // Start after transformers
+
+            for (var busbar in busbars) {
+              final busY = busYPositions[busbar.id]!;
 
               // Place Bays above this busbar (Lines)
               final baysAbove = busbarToConnectedBaysAbove[busbar.id] ?? [];
+              double currentX =
+                  currentLaneXForOtherBays; // Use a temporary X for this busbar's lane
               for (var bay in baysAbove) {
                 final bayRect = Rect.fromLTWH(
-                  currentLaneX,
+                  currentX,
                   busY - lineFeederHeight - 10, // Place above the busbar
                   symbolWidth,
                   lineFeederHeight,
                 );
                 finalBayRects[bay.id] = bayRect;
-                currentLaneX += horizontalSpacing;
+                currentX += horizontalSpacing;
               }
+              maxOverallXForCanvas = max(maxOverallXForCanvas, currentX);
 
               // Place Bays below this busbar (Feeders, etc.)
               final baysBelow = busbarToConnectedBaysBelow[busbar.id] ?? [];
+              currentX = currentLaneXForOtherBays; // Reset for below bays
               for (var bay in baysBelow) {
                 final bayRect = Rect.fromLTWH(
-                  currentLaneX,
+                  currentX,
                   busY + 10, // Place below the busbar
                   symbolWidth,
                   lineFeederHeight,
                 );
                 finalBayRects[bay.id] = bayRect;
-                currentLaneX += horizontalSpacing;
+                currentX += horizontalSpacing;
               }
-
-              // Update the maximum X reached for *this* busbar's lane.
-              // Then, update the overall canvas width based on this.
-              maxOverallXForCanvas = max(maxOverallXForCanvas, currentLaneX);
+              maxOverallXForCanvas = max(maxOverallXForCanvas, currentX);
             }
 
             // After all bays are placed and maxOverallXForCanvas is determined,
@@ -1388,31 +1462,34 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             // the max X used by bays connected to them.
             for (var busbar in busbars) {
               final busY = busYPositions[busbar.id]!;
-              // Find the max X among bays connected to *this specific busbar*
-              double maxConnectedBayX = sidePadding;
-              busbarToConnectedTransformersHV[busbar.id]?.forEach((tf) {
-                maxConnectedBayX = max(
-                  maxConnectedBayX,
-                  finalBayRects[tf.id]?.right ?? sidePadding,
-                );
-              });
-              busbarToConnectedTransformersLV[busbar.id]?.forEach((tf) {
-                maxConnectedBayX = max(
-                  maxConnectedBayX,
-                  finalBayRects[tf.id]?.right ?? sidePadding,
-                );
-              });
-              busbarToConnectedBaysAbove[busbar.id]?.forEach((bay) {
-                maxConnectedBayX = max(
-                  maxConnectedBayX,
-                  finalBayRects[bay.id]?.right ?? sidePadding,
-                );
-              });
-              busbarToConnectedBaysBelow[busbar.id]?.forEach((bay) {
-                maxConnectedBayX = max(
-                  maxConnectedBayX,
-                  finalBayRects[bay.id]?.right ?? sidePadding,
-                );
+              double maxConnectedBayX = sidePadding; // Start from left padding
+
+              // Consider all bays connected to this busbar when determining its width
+              // This includes transformers (both HV and LV side connections) and other bays
+              allBays.where((b) => b.bayType != 'Busbar').forEach((bay) {
+                if (bay.bayType == 'Transformer') {
+                  if ((bay.hvBusId == busbar.id || bay.lvBusId == busbar.id) &&
+                      finalBayRects.containsKey(bay.id)) {
+                    maxConnectedBayX = max(
+                      maxConnectedBayX,
+                      finalBayRects[bay.id]!.right,
+                    );
+                  }
+                } else {
+                  // Lines, Feeders, etc.
+                  final connectionToBus = allConnections.firstWhereOrNull((c) {
+                    return (c.sourceBayId == bay.id &&
+                            c.targetBayId == busbar.id) ||
+                        (c.targetBayId == bay.id && c.sourceBayId == busbar.id);
+                  });
+                  if (connectionToBus != null &&
+                      finalBayRects.containsKey(bay.id)) {
+                    maxConnectedBayX = max(
+                      maxConnectedBayX,
+                      finalBayRects[bay.id]!.right,
+                    );
+                  }
+                }
               });
 
               final effectiveBusWidth = max(
@@ -1441,7 +1518,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             }
 
             // Populate bayRenderDataList after all finalBayRects are determined
-            // This loop ensures every bay has a BayRenderData with its final rect.
             for (var bay in allBays) {
               final rect = finalBayRects[bay.id];
               if (rect != null) {
@@ -1459,15 +1535,44 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               }
             }
 
-            // Calculate busbar connection points (Offset where a bay connects to a busbar)
-            // This is crucial for drawing accurate connection lines and dots
+            // Recalculate busbar connection points for transformers based on their new fixed X positions
             for (var connection in allConnections) {
               final sourceBay = baysMap[connection.sourceBayId];
               final targetBay = baysMap[connection.targetBayId];
               if (sourceBay == null || targetBay == null) continue;
 
-              // Source is Busbar, Target is not
+              // If source is a Busbar and target is a Transformer (HV side)
               if (sourceBay.bayType == 'Busbar' &&
+                  targetBay.bayType == 'Transformer') {
+                final targetRect = finalBayRects[targetBay.id];
+                final busY = busYPositions[sourceBay.id];
+                if (targetRect != null && busY != null) {
+                  busbarConnectionPoints.putIfAbsent(
+                    sourceBay.id,
+                    () => {},
+                  )[targetBay.id] = Offset(
+                    targetRect.center.dx, // Transformer's center X
+                    busY, // Busbar's Y
+                  );
+                }
+              }
+              // If target is a Busbar and source is a Transformer (LV side)
+              else if (targetBay.bayType == 'Busbar' &&
+                  sourceBay.bayType == 'Transformer') {
+                final sourceRect = finalBayRects[sourceBay.id];
+                final busY = busYPositions[targetBay.id];
+                if (sourceRect != null && busY != null) {
+                  busbarConnectionPoints.putIfAbsent(
+                    targetBay.id,
+                    () => {},
+                  )[sourceBay.id] = Offset(
+                    sourceRect.center.dx, // Transformer's center X
+                    busY, // Busbar's Y
+                  );
+                }
+              }
+              // For other connections (Line/Feeder to Busbar)
+              else if (sourceBay.bayType == 'Busbar' &&
                   targetBay.bayType != 'Busbar') {
                 final targetRect = finalBayRects[targetBay.id];
                 final busY = busYPositions[sourceBay.id];
@@ -1482,9 +1587,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     busY, // Align Y with the busbar
                   );
                 }
-              }
-              // Target is Busbar, Source is not
-              else if (targetBay.bayType == 'Busbar' &&
+              } else if (targetBay.bayType == 'Busbar' &&
                   sourceBay.bayType != 'Busbar') {
                 final sourceRect = finalBayRects[sourceBay.id];
                 final busY = busYPositions[targetBay.id];
