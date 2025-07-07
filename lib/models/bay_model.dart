@@ -25,7 +25,7 @@ class Bay {
   final String? circuitType;
   final String? conductorType;
   final String? conductorDetail; // For "Other" conductor type
-  final Timestamp? erectionDate; // **FIXED**: Added this field
+  final Timestamp? erectionDate;
 
   // --- Fields for Transformer bay type ---
   final String? hvVoltage;
@@ -38,6 +38,10 @@ class Bay {
 
   // --- SHARED: Used by Line, Transformer, etc. ---
   final Timestamp? commissioningDate;
+
+  // --- NEW: Fields for custom position ---
+  final double? xPosition;
+  final double? yPosition;
 
   Bay({
     required this.id,
@@ -59,15 +63,17 @@ class Bay {
     this.circuitType,
     this.conductorType,
     this.conductorDetail,
-    this.erectionDate, // **FIXED**
+    this.erectionDate,
     this.hvVoltage,
     this.lvVoltage,
     this.make,
     this.capacity,
     this.manufacturingDate,
-    this.hvBusId, // NEW
-    this.lvBusId, // NEW
+    this.hvBusId,
+    this.lvBusId,
     this.commissioningDate,
+    this.xPosition,
+    this.yPosition,
   });
 
   factory Bay.fromFirestore(DocumentSnapshot doc) {
@@ -92,15 +98,17 @@ class Bay {
       circuitType: data['circuitType'],
       conductorType: data['conductorType'],
       conductorDetail: data['conductorDetail'],
-      erectionDate: data['erectionDate'], // **FIXED**
+      erectionDate: data['erectionDate'],
       hvVoltage: data['hvVoltage'],
       lvVoltage: data['lvVoltage'],
       make: data['make'],
       capacity: (data['capacity'] as num?)?.toDouble(),
       manufacturingDate: data['manufacturingDate'],
-      hvBusId: data['hvBusId'] as String?, // NEW
-      lvBusId: data['lvBusId'] as String?, // NEW
+      hvBusId: data['hvBusId'] as String?,
+      lvBusId: data['lvBusId'] as String?,
       commissioningDate: data['commissioningDate'],
+      xPosition: (data['xPosition'] as num?)?.toDouble(),
+      yPosition: (data['yPosition'] as num?)?.toDouble(),
     );
   }
 
@@ -124,15 +132,17 @@ class Bay {
       'circuitType': circuitType,
       'conductorType': conductorType,
       'conductorDetail': conductorDetail,
-      'erectionDate': erectionDate, // **FIXED**
+      'erectionDate': erectionDate,
       'hvVoltage': hvVoltage,
       'lvVoltage': lvVoltage,
       'make': make,
       'capacity': capacity,
       'manufacturingDate': manufacturingDate,
-      'hvBusId': hvBusId, // NEW
-      'lvBusId': lvBusId, // NEW
+      'hvBusId': hvBusId,
+      'lvBusId': lvBusId,
       'commissioningDate': commissioningDate,
+      'xPosition': xPosition,
+      'yPosition': yPosition,
     };
   }
 
@@ -156,15 +166,17 @@ class Bay {
     String? circuitType,
     String? conductorType,
     String? conductorDetail,
-    Timestamp? erectionDate, // **FIXED**
+    Timestamp? erectionDate,
     String? hvVoltage,
     String? lvVoltage,
     String? make,
     double? capacity,
     Timestamp? manufacturingDate,
-    String? hvBusId, // NEW
-    String? lvBusId, // NEW
+    String? hvBusId,
+    String? lvBusId,
     Timestamp? commissioningDate,
+    double? xPosition,
+    double? yPosition,
   }) {
     return Bay(
       id: id ?? this.id,
@@ -186,15 +198,17 @@ class Bay {
       circuitType: circuitType ?? this.circuitType,
       conductorType: conductorType ?? this.conductorType,
       conductorDetail: conductorDetail ?? this.conductorDetail,
-      erectionDate: erectionDate ?? this.erectionDate, // **FIXED**
+      erectionDate: erectionDate ?? this.erectionDate,
       hvVoltage: hvVoltage ?? this.hvVoltage,
       lvVoltage: lvVoltage ?? this.lvVoltage,
       make: make ?? this.make,
       capacity: capacity ?? this.capacity,
       manufacturingDate: manufacturingDate ?? this.manufacturingDate,
-      hvBusId: hvBusId ?? this.hvBusId, // NEW
-      lvBusId: lvBusId ?? this.lvBusId, // NEW
+      hvBusId: hvBusId ?? this.hvBusId,
+      lvBusId: lvBusId ?? this.lvBusId,
       commissioningDate: commissioningDate ?? this.commissioningDate,
+      xPosition: xPosition ?? this.xPosition,
+      yPosition: yPosition ?? this.yPosition,
     );
   }
 }
