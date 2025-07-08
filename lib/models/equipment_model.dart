@@ -1,3 +1,4 @@
+// lib/models/equipment_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Defines the possible data types for custom fields associated with equipment templates.
@@ -302,7 +303,6 @@ class EquipmentInstance {
   /// The reason for changing the status (e.g., 'fault', 'upgrade', 'maintenance').
   final String? reasonForChange;
 
-  // ✅ NEWLY ADDED FIELDS
   /// The make or manufacturer of the specific equipment instance.
   final String make;
 
@@ -311,6 +311,9 @@ class EquipmentInstance {
 
   /// The commissioning date of the specific equipment instance.
   final Timestamp? dateOfCommissioning;
+
+  // NEW FIELD for ordering equipment within a bay
+  final int? positionIndex;
 
   /// Creates an [EquipmentInstance] instance.
   EquipmentInstance({
@@ -327,10 +330,10 @@ class EquipmentInstance {
     this.replacementEquipmentInstanceId,
     this.decommissionedAt,
     this.reasonForChange,
-    // ✅ NEWLY ADDED CONSTRUCTOR PARAMETERS
     required this.make,
     this.dateOfManufacturing,
     this.dateOfCommissioning,
+    this.positionIndex, // Initialize new field
   });
 
   /// Creates an [EquipmentInstance] instance from a Firestore [DocumentSnapshot].
@@ -353,10 +356,10 @@ class EquipmentInstance {
           data['replacementEquipmentInstanceId'] as String?,
       decommissionedAt: data['decommissionedAt'] as Timestamp?,
       reasonForChange: data['reasonForChange'] as String?,
-      // ✅ NEWLY ADDED FACTORY PARAMETERS
       make: data['make'] as String? ?? '',
       dateOfManufacturing: data['dateOfManufacturing'] as Timestamp?,
       dateOfCommissioning: data['dateOfCommissioning'] as Timestamp?,
+      positionIndex: data['positionIndex'] as int?, // Read from Firestore
     );
   }
 
@@ -375,10 +378,10 @@ class EquipmentInstance {
       'replacementEquipmentInstanceId': replacementEquipmentInstanceId,
       'decommissionedAt': decommissionedAt,
       'reasonForChange': reasonForChange,
-      // ✅ NEWLY ADDED MAP ENTRIES
       'make': make,
       'dateOfManufacturing': dateOfManufacturing,
       'dateOfCommissioning': dateOfCommissioning,
+      'positionIndex': positionIndex, // Include in toFirestore
     };
   }
 
@@ -397,10 +400,10 @@ class EquipmentInstance {
     String? replacementEquipmentInstanceId,
     Timestamp? decommissionedAt,
     String? reasonForChange,
-    // ✅ NEWLY ADDED copyWith PARAMETERS
     String? make,
     Timestamp? dateOfManufacturing,
     Timestamp? dateOfCommissioning,
+    int? positionIndex, // Add to copyWith
   }) {
     return EquipmentInstance(
       id: id ?? this.id,
@@ -418,10 +421,12 @@ class EquipmentInstance {
           replacementEquipmentInstanceId ?? this.replacementEquipmentInstanceId,
       decommissionedAt: decommissionedAt ?? this.decommissionedAt,
       reasonForChange: reasonForChange ?? this.reasonForChange,
-      // ✅ NEWLY ADDED copyWith LOGIC
       make: make ?? this.make,
       dateOfManufacturing: dateOfManufacturing ?? this.dateOfManufacturing,
       dateOfCommissioning: dateOfCommissioning ?? this.dateOfCommissioning,
+      positionIndex:
+          positionIndex ??
+          this.positionIndex, // Use null-aware operator for copyWith
     );
   }
 }

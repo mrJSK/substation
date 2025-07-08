@@ -14,6 +14,9 @@ import '../../equipment_icons/disconnector_icon.dart';
 import '../../equipment_icons/ground_icon.dart';
 import '../../equipment_icons/isolator_icon.dart';
 import '../../equipment_icons/pt_icon.dart';
+import '../../equipment_icons/line_icon.dart';
+import '../../equipment_icons/feeder_icon.dart';
+import '../models/bay_model.dart'; // Import Bay model (still needed for bay type fetching if required elsewhere)
 
 class EquipmentAssignmentScreen extends StatefulWidget {
   final String bayId;
@@ -118,10 +121,14 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _isLoading = true;
     });
     try {
+      // No need to fetch bay type or existing transformer for conditional template filtering here.
+      // All templates are always available.
+
       final snapshot = await FirebaseFirestore.instance
           .collection('masterEquipmentTemplates')
           .orderBy('equipmentType')
           .get();
+
       _equipmentTemplates = snapshot.docs
           .map((doc) => MasterEquipmentTemplate.fromFirestore(doc))
           .toList();
@@ -304,6 +311,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       return;
     }
 
+    // No specific validation for Transformer bay type here anymore.
+    // That validation is moved to BayEquipmentManagementScreen's save button.
+
     setState(() {
       _isSavingEquipment = true;
     });
@@ -328,7 +338,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           _collectCustomFieldValues(
             _selectedTemplate!.equipmentCustomFields,
             _templateCustomFieldValues,
-            'template_field', // CORRECTED: This prefix now matches the UI
+            'template_field',
           );
 
       Map<String, dynamic> userAddedFieldsToSave = {};
@@ -382,6 +392,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               ? Timestamp.fromDate(_dateOfCommissioning!)
               : null,
           customFieldValues: allCustomFieldValues,
+          positionIndex: widget
+              .equipmentToEdit!
+              .positionIndex, // Preserve existing position index
         );
 
         await FirebaseFirestore.instance
@@ -402,6 +415,14 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             .collection('equipmentInstances')
             .doc();
 
+        // Determine a new positionIndex: Fetch current count of equipment in bay and add 1
+        final existingEquipmentCount = await FirebaseFirestore.instance
+            .collection('equipmentInstances')
+            .where('bayId', isEqualTo: widget.bayId)
+            .count()
+            .get();
+        final newPositionIndex = existingEquipmentCount.count ?? 0;
+
         final newEquipmentInstance = EquipmentInstance(
           id: newEquipmentInstanceRef.id,
           bayId: widget.bayId,
@@ -418,6 +439,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           dateOfCommissioning: _dateOfCommissioning != null
               ? Timestamp.fromDate(_dateOfCommissioning!)
               : null,
+          positionIndex: newPositionIndex, // Assign new position index
         );
 
         await newEquipmentInstanceRef.set(newEquipmentInstance.toFirestore());
@@ -1095,6 +1117,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           symbolSize: equipmentDrawingSize,
         );
       case 'disconnector':
+      case 'disconnect':
         return DisconnectorIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
@@ -1115,6 +1138,18 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       case 'voltage transformer':
       case 'pt':
         return PotentialTransformerIconPainter(
+          color: color,
+          equipmentSize: equipmentDrawingSize,
+          symbolSize: equipmentDrawingSize,
+        );
+      case 'line':
+        return LineIconPainter(
+          color: color,
+          equipmentSize: equipmentDrawingSize,
+          symbolSize: equipmentDrawingSize,
+        );
+      case 'feeder':
+        return FeederIconPainter(
           color: color,
           equipmentSize: equipmentDrawingSize,
           symbolSize: equipmentDrawingSize,
@@ -1157,6 +1192,9 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Message will not be dynamically set here as the rule is moved to the save button
+    String templateSelectionMessage = '';
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -1187,13 +1225,24 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                       'Select Equipment Type',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
+                    if (templateSelectionMessage.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Text(
+                          templateSelectionMessage,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 16),
                     if (_equipmentTemplates.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Center(
                           child: Text(
-                            'No equipment templates defined. Please define them in Admin Dashboard > Master Equipment.',
+                            'No equipment templates available. Please define them in Admin Dashboard > Master Equipment.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontStyle: FontStyle.italic,
@@ -1213,6 +1262,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                         items: _equipmentTemplates.map((template) {
                           return DropdownMenuItem<MasterEquipmentTemplate>(
                             value: template,
+                            // No longer disable items here based on transformer rule,
+                            // Validation happens on save.
                             child: Row(
                               children: [
                                 SizedBox(
@@ -1236,8 +1287,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           );
                         }).toList(),
                         onChanged: widget.equipmentToEdit != null
-                            ? null
-                            : _onTemplateSelected,
+                            ? null // Cannot change template when editing existing equipment
+                            : (newValue) {
+                                _onTemplateSelected(newValue);
+                              },
                         validator: (value) => value == null
                             ? 'Please select an equipment type'
                             : null,
