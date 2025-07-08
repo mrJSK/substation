@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
+import 'package:collection/collection.dart'
+    as collection; // Modified import to use a prefix
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
@@ -37,6 +39,23 @@ class BayEnergyData {
   });
 }
 
+// NEW: SldRenderData class to encapsulate all rendering data
+class SldRenderData {
+  final List<BayRenderData> bayRenderDataList;
+  final Map<String, Rect> finalBayRects;
+  final Map<String, Rect> busbarRects;
+  final Map<String, Map<String, Offset>> busbarConnectionPoints;
+  final Map<String, BayEnergyData> bayEnergyData; // NEW: Add energy data
+
+  SldRenderData({
+    required this.bayRenderDataList,
+    required this.finalBayRects,
+    required this.busbarRects,
+    required this.busbarConnectionPoints,
+    required this.bayEnergyData, // NEW: Require it in constructor
+  });
+}
+
 class EnergySldScreen extends StatefulWidget {
   final String substationId;
   final String substationName;
@@ -55,15 +74,17 @@ class EnergySldScreen extends StatefulWidget {
 
 class _EnergySldScreenState extends State<EnergySldScreen> {
   bool _isLoading = true;
-  DateTime _selectedDate = DateTime.now();
+  DateTime _startDate = DateTime.now().subtract(
+    const Duration(days: 1),
+  ); // Default to yesterday
+  DateTime _endDate = DateTime.now(); // Default to today
 
   List<Bay> _allBaysInSubstation = [];
   Map<String, Bay> _baysMap = {};
   List<BayConnection> _allConnections = [];
 
-  // Data for energy tables
   Map<String, BayEnergyData> _bayEnergyData = {};
-  Map<String, double> _abstractEnergyData = {}; // Sum of imp/exp, diff, loss
+  Map<String, double> _abstractEnergyData = {};
 
   final TransformationController _transformationController =
       TransformationController();
@@ -71,6 +92,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   @override
   void initState() {
     super.initState();
+    print(
+      'DEBUG: EnergySldScreen initState - substationId: ${widget.substationId}',
+    );
     if (widget.substationId.isNotEmpty) {
       _loadEnergyData();
     } else {
@@ -116,122 +140,312 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           .map((doc) => BayConnection.fromFirestore(doc))
           .toList();
 
-      // 3. Fetch Logsheet Entries for current and previous day
-      final currentDay = _selectedDate;
-      final previousDay = _selectedDate.subtract(const Duration(days: 1));
-
-      final startOfCurrentDay = DateTime(
-        currentDay.year,
-        currentDay.month,
-        currentDay.day,
+      // 3. Fetch Logsheet Entries based on date range
+      final startOfStartDate = DateTime(
+        _startDate.year,
+        _startDate.month,
+        _startDate.day,
       );
-      final endOfCurrentDay = DateTime(
-        currentDay.year,
-        currentDay.month,
-        currentDay.day,
+      final endOfStartDate = DateTime(
+        _startDate.year,
+        _startDate.month,
+        _startDate.day,
         23,
         59,
         59,
         999,
       );
 
-      final startOfPreviousDay = DateTime(
-        previousDay.year,
-        previousDay.month,
-        previousDay.day,
+      final startOfEndDate = DateTime(
+        _endDate.year,
+        _endDate.month,
+        _endDate.day,
       );
-      final endOfPreviousDay = DateTime(
-        previousDay.year,
-        previousDay.month,
-        previousDay.day,
+      final endOfEndDate = DateTime(
+        _endDate.year,
+        _endDate.month,
+        _endDate.day,
         23,
         59,
         59,
         999,
       );
 
-      // Fetch all daily readings for current and previous day
-      final currentDayLogsheetsSnapshot = await FirebaseFirestore.instance
+      Map<String, LogsheetEntry> startDayReadings = {};
+      Map<String, LogsheetEntry> endDayReadings = {};
+      Map<String, LogsheetEntry> previousDayToStartDateReadings =
+          {}; // For single day calculation
+
+      // Fetch readings for Start Date
+      final startDayLogsheetsSnapshot = await FirebaseFirestore.instance
           .collection('logsheetEntries')
           .where('substationId', isEqualTo: widget.substationId)
           .where('frequency', isEqualTo: 'daily')
-          .where('readingTimestamp', isGreaterThanOrEqualTo: startOfCurrentDay)
-          .where('readingTimestamp', isLessThanOrEqualTo: endOfCurrentDay)
+          .where('readingTimestamp', isGreaterThanOrEqualTo: startOfStartDate)
+          .where('readingTimestamp', isLessThanOrEqualTo: endOfStartDate)
           .get();
-
-      final previousDayLogsheetsSnapshot = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where('substationId', isEqualTo: widget.substationId)
-          .where('frequency', isEqualTo: 'daily')
-          .where('readingTimestamp', isGreaterThanOrEqualTo: startOfPreviousDay)
-          .where('readingTimestamp', isLessThanOrEqualTo: endOfPreviousDay)
-          .get();
-
-      Map<String, LogsheetEntry> currentDayReadings = {
-        for (var doc in currentDayLogsheetsSnapshot.docs)
+      startDayReadings = {
+        for (var doc in startDayLogsheetsSnapshot.docs)
           (doc.data() as Map<String, dynamic>)['bayId']:
               LogsheetEntry.fromFirestore(doc),
       };
+      print('DEBUG: Start Day Readings (for $_startDate): $startDayReadings');
 
-      Map<String, LogsheetEntry> previousDayReadings = {
-        for (var doc in previousDayLogsheetsSnapshot.docs)
-          (doc.data() as Map<String, dynamic>)['bayId']:
-              LogsheetEntry.fromFirestore(doc),
-      };
+      // Fetch readings for End Date
+      if (!_startDate.isAtSameMomentAs(_endDate)) {
+        final endDayLogsheetsSnapshot = await FirebaseFirestore.instance
+            .collection('logsheetEntries')
+            .where('substationId', isEqualTo: widget.substationId)
+            .where('frequency', isEqualTo: 'daily')
+            .where('readingTimestamp', isGreaterThanOrEqualTo: startOfEndDate)
+            .where('readingTimestamp', isLessThanOrEqualTo: endOfEndDate)
+            .get();
+        endDayReadings = {
+          for (var doc in endDayLogsheetsSnapshot.docs)
+            (doc.data() as Map<String, dynamic>)['bayId']:
+                LogsheetEntry.fromFirestore(doc),
+        };
+        print('DEBUG: End Day Readings (for $_endDate): $endDayReadings');
+      } else {
+        // If start date == end date, endDayReadings is just startDayReadings
+        endDayReadings = startDayReadings;
+
+        // Also fetch previous day's reading for single day calculation
+        final previousDay = _startDate.subtract(const Duration(days: 1));
+        final startOfPreviousDay = DateTime(
+          previousDay.year,
+          previousDay.month,
+          previousDay.day,
+        );
+        final endOfPreviousDay = DateTime(
+          previousDay.year,
+          previousDay.month,
+          previousDay.day,
+          23,
+          59,
+          59,
+          999,
+        );
+
+        final previousDayToStartDateLogsheetsSnapshot = await FirebaseFirestore
+            .instance
+            .collection('logsheetEntries')
+            .where('substationId', isEqualTo: widget.substationId)
+            .where('frequency', isEqualTo: 'daily')
+            .where(
+              'readingTimestamp',
+              isGreaterThanOrEqualTo: startOfPreviousDay,
+            )
+            .where('readingTimestamp', isLessThanOrEqualTo: endOfPreviousDay)
+            .get();
+        previousDayToStartDateReadings = {
+          for (var doc in previousDayToStartDateLogsheetsSnapshot.docs)
+            (doc.data() as Map<String, dynamic>)['bayId']:
+                LogsheetEntry.fromFirestore(doc),
+        };
+        print(
+          'DEBUG: Previous Day to Start Date Readings (for $previousDay): $previousDayToStartDateReadings',
+        );
+      }
 
       // 4. Process data for each bay
       double totalImp = 0;
       double totalExp = 0;
-      double totalPreviousImp = 0;
-      double totalPreviousExp = 0;
 
       for (var bay in _allBaysInSubstation) {
-        final currentReading = currentDayReadings[bay.id];
-        final previousReading = previousDayReadings[bay.id];
-
-        // Retrieve values for 'Previous Day Reading (Import/Export)' and 'Current Day Reading (Import/Export)'
-        // These are the names defined in the default reading templates.
-        final double? currImpVal =
-            (currentReading?.values['Current Day Reading (Import)'] as num?)
-                ?.toDouble();
-        final double? currExpVal =
-            (currentReading?.values['Current Day Reading (Export)'] as num?)
-                ?.toDouble();
-        final double? prevImpVal =
-            (previousReading?.values['Current Day Reading (Import)'] as num?)
-                ?.toDouble(); // Get current day's reading from previous day's logsheet for previous reading
-        final double? prevExpVal =
-            (previousReading?.values['Current Day Reading (Export)'] as num?)
-                ?.toDouble(); // Get current day's reading from previous day's logsheet for previous reading
-
         final double? mf = bay.multiplyingFactor;
+        double? calculatedImpConsumed;
+        double? calculatedExpConsumed;
 
-        double? impConsumed;
-        double? expConsumed;
+        if (_startDate.isAtSameMomentAs(_endDate)) {
+          // Case: Single Day Consumption
+          final currentReadingLogsheet =
+              endDayReadings[bay
+                  .id]; // This is the reading for the selected single day
+          final previousReadingLogsheetDocument =
+              previousDayToStartDateReadings[bay
+                  .id]; // Document from day before selected single day
 
-        if (currImpVal != null && prevImpVal != null && mf != null) {
-          impConsumed = (currImpVal - prevImpVal) * mf;
+          print('DEBUG: Single Day Calculation for Bay: ${bay.name}');
+          print(
+            'DEBUG: Current Reading (${DateFormat('dd-MMM-yyyy').format(_endDate)}): $currentReadingLogsheet',
+          );
+          print(
+            'DEBUG: Previous Reading Document (${DateFormat('dd-MMM-yyyy').format(_endDate.subtract(const Duration(days: 1)))}): $previousReadingLogsheetDocument',
+          );
+
+          final double? currImpVal = double.tryParse(
+            currentReadingLogsheet?.values['Current Day Reading (Import)']
+                    ?.toString() ??
+                '',
+          );
+          final double? currExpVal = double.tryParse(
+            currentReadingLogsheet?.values['Current Day Reading (Export)']
+                    ?.toString() ??
+                '',
+          );
+
+          double? prevImpValForCalculation;
+          double? prevExpValForCalculation;
+
+          // First, try to get previous day's value from the *previous day's document*
+          final double? prevImpValFromPreviousDocument = double.tryParse(
+            previousReadingLogsheetDocument
+                    ?.values['Current Day Reading (Import)']
+                    ?.toString() ??
+                '',
+          );
+          final double? prevExpValFromPreviousDocument = double.tryParse(
+            previousReadingLogsheetDocument
+                    ?.values['Current Day Reading (Export)']
+                    ?.toString() ??
+                '',
+          );
+
+          if (prevImpValFromPreviousDocument != null) {
+            prevImpValForCalculation = prevImpValFromPreviousDocument;
+          } else {
+            // If no previous day's *document*, try to get "Previous Day Reading" *field* from current day's document
+            prevImpValForCalculation = double.tryParse(
+              currentReadingLogsheet?.values['Previous Day Reading (Import)']
+                      ?.toString() ??
+                  '',
+            );
+            if (prevImpValForCalculation != null) {
+              print(
+                'DEBUG: Used "Previous Day Reading (Import)" field from current day\'s logsheet for ${bay.name}',
+              );
+            }
+          }
+
+          if (prevExpValFromPreviousDocument != null) {
+            prevExpValForCalculation = prevExpValFromPreviousDocument;
+          } else {
+            // If no previous day's *document*, try to get "Previous Day Reading" *field* from current day's document
+            prevExpValForCalculation = double.tryParse(
+              currentReadingLogsheet?.values['Previous Day Reading (Export)']
+                      ?.toString() ??
+                  '',
+            );
+            if (prevExpValForCalculation != null) {
+              print(
+                'DEBUG: Used "Previous Day Reading (Export)" field from current day\'s logsheet for ${bay.name}',
+              );
+            }
+          }
+
+          print(
+            'DEBUG: currImpVal: $currImpVal, prevImpValForCalculation: $prevImpValForCalculation',
+          );
+          print(
+            'DEBUG: currExpVal: $currExpVal, prevExpValForCalculation: $prevExpValForCalculation',
+          );
+
+          if (currImpVal != null &&
+              prevImpValForCalculation != null &&
+              mf != null) {
+            calculatedImpConsumed =
+                (currImpVal - prevImpValForCalculation) * mf;
+          } else if (currImpVal != null && mf != null) {
+            // Fallback if no prev reading at all
+            calculatedImpConsumed = currImpVal * mf;
+            print(
+              'DEBUG: No sufficient previous reading for ${bay.name}, showing current * MF as consumption.',
+            );
+          }
+
+          if (currExpVal != null &&
+              prevExpValForCalculation != null &&
+              mf != null) {
+            calculatedExpConsumed =
+                (currExpVal - prevExpValForCalculation) * mf;
+          } else if (currExpVal != null && mf != null) {
+            // Fallback
+            calculatedExpConsumed = currExpVal * mf;
+            print(
+              'DEBUG: No sufficient previous reading for ${bay.name}, showing current * MF as consumption.',
+            );
+          }
+          print(
+            'DEBUG: calculatedImpConsumed for ${bay.name}: $calculatedImpConsumed',
+          );
+          print(
+            'DEBUG: calculatedExpConsumed for ${bay.name}: $calculatedExpConsumed',
+          );
+
+          _bayEnergyData[bay.id] = BayEnergyData(
+            bayName: bay.name,
+            prevImp: prevImpValForCalculation,
+            currImp: currImpVal,
+            prevExp: prevExpValForCalculation,
+            currExp: currExpVal,
+            mf: mf,
+            impConsumed: calculatedImpConsumed,
+            expConsumed: calculatedExpConsumed,
+          );
+        } else {
+          // Case: Period Consumption
+          final startReading = startDayReadings[bay.id];
+          final endReading = endDayReadings[bay.id];
+
+          print('DEBUG: Period Calculation for Bay: ${bay.name}');
+          print(
+            'DEBUG: Start Reading (${DateFormat('dd-MMM-yyyy').format(_startDate)}): $startReading',
+          );
+          print(
+            'DEBUG: End Reading (${DateFormat('dd-MMM-yyyy').format(_endDate)}): $endReading',
+          );
+
+          final double? startImpVal = double.tryParse(
+            startReading?.values['Current Day Reading (Import)']?.toString() ??
+                '',
+          );
+          final double? startExpVal = double.tryParse(
+            startReading?.values['Current Day Reading (Export)']?.toString() ??
+                '',
+          );
+          final double? endImpVal = double.tryParse(
+            endReading?.values['Current Day Reading (Import)']?.toString() ??
+                '',
+          );
+          final double? endExpVal = double.tryParse(
+            endReading?.values['Current Day Reading (Export)']?.toString() ??
+                '',
+          );
+
+          print('DEBUG: startImpVal: $startImpVal, endImpVal: $endImpVal');
+          print('DEBUG: startExpVal: $startExpVal, endExpVal: $endExpVal');
+
+          if (startImpVal != null && endImpVal != null && mf != null) {
+            calculatedImpConsumed = (endImpVal - startImpVal) * mf;
+          }
+          if (startExpVal != null && endExpVal != null && mf != null) {
+            calculatedExpConsumed = (endExpVal - startExpVal) * mf;
+          }
+          print(
+            'DEBUG: calculatedImpConsumed for ${bay.name}: $calculatedImpConsumed',
+          );
+          print(
+            'DEBUG: calculatedExpConsumed for ${bay.name}: $calculatedExpConsumed',
+          );
+
+          _bayEnergyData[bay.id] = BayEnergyData(
+            bayName: bay.name,
+            prevImp: startImpVal, // For display, prev is start of period
+            currImp: endImpVal, // For display, curr is end of period
+            prevExp: startExpVal,
+            currExp: endExpVal,
+            mf: mf,
+            impConsumed: calculatedImpConsumed,
+            expConsumed: calculatedExpConsumed,
+          );
         }
-        if (currExpVal != null && prevExpVal != null && mf != null) {
-          expConsumed = (currExpVal - prevExpVal) * mf;
-        }
 
-        _bayEnergyData[bay.id] = BayEnergyData(
-          bayName: bay.name,
-          prevImp: prevImpVal,
-          currImp: currImpVal,
-          prevExp: prevExpVal,
-          currExp: currExpVal,
-          mf: mf,
-          impConsumed: impConsumed,
-          expConsumed: expConsumed,
-        );
-
-        if (impConsumed != null) totalImp += impConsumed;
-        if (expConsumed != null) totalExp += expConsumed;
+        if (calculatedImpConsumed != null) totalImp += calculatedImpConsumed;
+        if (calculatedExpConsumed != null) totalExp += calculatedExpConsumed;
       }
 
-      // 5. Calculate Abstract Data
+      // 5. Calculate Abstract Data (Still useful for overall substation view)
       double difference = totalImp - totalExp;
       double lossPercentage = 0;
       if (totalImp > 0) {
@@ -263,30 +477,33 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+    final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime.now(), // Only allow past and current dates
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
     );
-    if (picked != null && picked != _selectedDate) {
+
+    if (picked != null &&
+        (picked.start != _startDate || picked.end != _endDate)) {
       setState(() {
-        _selectedDate = picked;
+        _startDate = picked.start;
+        _endDate = picked.end;
       });
       await _loadEnergyData();
     }
   }
 
-  // Re-use logic for creating BayRenderDataList and busbar positions
-  List<BayRenderData> _buildBayRenderDataList(
+  // Modified to return SldRenderData, now also takes bayEnergyData
+  SldRenderData _buildBayRenderDataList(
     List<Bay> allBays,
     Map<String, Bay> baysMap,
     List<BayConnection> allConnections,
+    Map<String, BayEnergyData> bayEnergyData,
   ) {
     final List<BayRenderData> bayRenderDataList = [];
     final Map<String, Rect> finalBayRects = {};
-    final Map<String, Rect> busbarRects =
-        {}; // Used by painter for drawing busbar lines
+    final Map<String, Rect> busbarRects = {};
     final Map<String, Map<String, Offset>> busbarConnectionPoints = {};
 
     const double symbolWidth = 60;
@@ -312,12 +529,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       busYPositions[busbars[i].id] = topPadding + i * verticalBusbarSpacing;
     }
 
-    final Map<String, List<Bay>> busbarToConnectedBaysAbove = {}; // Lines
-    final Map<String, List<Bay>> busbarToConnectedBaysBelow =
-        {}; // Feeders, others
+    final Map<String, List<Bay>> busbarToConnectedBaysAbove = {};
+    final Map<String, List<Bay>> busbarToConnectedBaysBelow = {};
     final Map<String, Map<String, List<Bay>>> transformersByBusPair = {};
 
     for (var bay in allBays) {
+      // Filter to only include the required bay types for the energy SLD visual
+      if (!['Busbar', 'Transformer', 'Line', 'Feeder'].contains(bay.bayType)) {
+        continue; // Skip other bay types from visual layout
+      }
+
       if (bay.bayType == 'Transformer') {
         if (bay.hvBusId != null && bay.lvBusId != null) {
           final hvBus = baysMap[bay.hvBusId];
@@ -542,7 +763,19 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       finalBayRects[busbar.id] = tappableRect;
     }
 
+    // After all layout calculations, populate bayRenderDataList
+    // ONLY for the allowed bay types
+    final List<String> allowedVisualBayTypes = [
+      'Busbar',
+      'Transformer',
+      'Line',
+      'Feeder',
+    ];
+
     for (var bay in allBays) {
+      if (!allowedVisualBayTypes.contains(bay.bayType)) {
+        continue; // Skip adding other bay types to the render list
+      }
       final Rect? rect = finalBayRects[bay.id];
       if (rect != null) {
         bayRenderDataList.add(
@@ -554,16 +787,23 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             bottomCenter: rect.bottomCenter,
             leftCenter: rect.centerLeft,
             rightCenter: rect.centerRight,
+            // equipmentInstances will be empty for Energy SLD as it's not managed here
           ),
         );
       }
     }
 
-    // Recalculate busbar connection points for transformers based on their new fixed X positions
+    // Recalculate busbar connection points based on their new fixed X positions
     for (var connection in allConnections) {
-      final Bay? sourceBay = _baysMap[connection.sourceBayId];
-      final Bay? targetBay = _baysMap[connection.targetBayId];
+      final Bay? sourceBay = baysMap[connection.sourceBayId];
+      final Bay? targetBay = baysMap[connection.targetBayId];
       if (sourceBay == null || targetBay == null) continue;
+
+      // Only add connection points if both source and target bays are allowed types
+      if (!allowedVisualBayTypes.contains(sourceBay.bayType) ||
+          !allowedVisualBayTypes.contains(targetBay.bayType)) {
+        continue;
+      }
 
       if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Transformer') {
         final Rect? targetRect = finalBayRects[targetBay.id];
@@ -618,7 +858,15 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         }
       }
     }
-    return bayRenderDataList;
+    return SldRenderData(
+      bayRenderDataList: bayRenderDataList,
+      finalBayRects: finalBayRects,
+      busbarRects: busbarRects,
+      busbarConnectionPoints: busbarConnectionPoints,
+      bayEnergyData: {
+        for (var entry in bayEnergyData.entries) entry.key: entry.value,
+      },
+    );
   }
 
   // Dummy function for SingleLineDiagramPainter
@@ -644,6 +892,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String dateRangeText;
+    if (_startDate.isAtSameMomentAs(_endDate)) {
+      dateRangeText = DateFormat('dd-MMM-yyyy').format(_startDate);
+    } else {
+      dateRangeText =
+          '${DateFormat('dd-MMM-yyyy').format(_startDate)} to ${DateFormat('dd-MMM-yyyy').format(_endDate)}';
+    }
+
     if (widget.substationId.isEmpty) {
       return const Center(
         child: Padding(
@@ -657,93 +913,41 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       );
     }
 
-    final List<BayRenderData> currentBayRenderDataList =
-        _buildBayRenderDataList(
-          _allBaysInSubstation,
-          _baysMap,
-          _allConnections,
-        );
+    final SldRenderData sldRenderData = _buildBayRenderDataList(
+      _allBaysInSubstation,
+      _baysMap,
+      _allConnections,
+      _bayEnergyData,
+    );
 
-    // Reconstruct busbarRects and busbarConnectionPoints for the painter
-    final Map<String, Rect> busbarRects = {};
-    final Map<String, Map<String, Offset>> busbarConnectionPoints = {};
-    final Map<String, double> busYPositions = {}; // Needed for busbar layout
+    double contentMaxX = sldRenderData.bayRenderDataList.isNotEmpty
+        ? sldRenderData.bayRenderDataList
+              .map((e) => e.rect.right + 100) // Add padding to the right
+              .reduce(max)
+        : 0;
+    double contentMaxY = sldRenderData.bayRenderDataList.isNotEmpty
+        ? sldRenderData.bayRenderDataList
+              .map((e) => e.rect.bottom + 100) // Add padding below
+              .reduce(max)
+        : 0;
 
-    double currentY = 80;
-    final List<Bay> busbars = _allBaysInSubstation
-        .where((b) => b.bayType == 'Busbar')
-        .toList();
-    busbars.sort((a, b) {
-      double getV(String v) =>
-          double.tryParse(v.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
-      return getV(b.voltageLevel).compareTo(getV(a.voltageLevel));
-    });
+    const double abstractCardHeightEstimate = 180;
+    contentMaxY = max(contentMaxY, abstractCardHeightEstimate + 50);
 
-    for (var busbar in busbars) {
-      busYPositions[busbar.id] = currentY;
-      currentY += 200; // Vertical spacing between busbars
-
-      // For the painter, we need the actual drawing rect of the busbar.
-      // This part is derived from the SLD layout logic in substation_detail_screen.
-      // We assume a certain width for the busbar visually.
-      const double busbarVisualWidth = 500; // Placeholder for visual width
-      const double sidePadding = 100;
-      busbarRects[busbar.id] = Rect.fromLTWH(
-        sidePadding,
-        busYPositions[busbar.id]!,
-        busbarVisualWidth,
-        0, // line, not a rect
-      );
-    }
-
-    // Populate busbarConnectionPoints (this is complex in the original, simplified here)
-    for (var conn in _allConnections) {
-      final sourceBay = _baysMap[conn.sourceBayId];
-      final targetBay = _baysMap[conn.targetBayId];
-      if (sourceBay == null || targetBay == null) continue;
-
-      // Logic to determine connection points on busbars, similar to SubstationDetailScreen
-      // This is a simplified version and might need exact replication from _buildSLDView's logic
-      // if precise connection rendering is critical.
-      if (sourceBay.bayType == 'Busbar' && targetBay.bayType != 'Busbar') {
-        final targetBayRenderData = currentBayRenderDataList.firstWhereOrNull(
-          (d) => d.bay.id == targetBay.id,
-        );
-        if (targetBayRenderData != null &&
-            busYPositions.containsKey(sourceBay.id)) {
-          busbarConnectionPoints.putIfAbsent(
-            sourceBay.id,
-            () => {},
-          )[targetBay.id] = Offset(
-            targetBayRenderData.rect.center.dx,
-            busYPositions[sourceBay.id]!,
-          );
-        }
-      } else if (targetBay.bayType == 'Busbar' &&
-          sourceBay.bayType != 'Busbar') {
-        final sourceBayRenderData = currentBayRenderDataList.firstWhereOrNull(
-          (d) => d.bay.id == sourceBay.id,
-        );
-        if (sourceBayRenderData != null &&
-            busYPositions.containsKey(targetBay.id)) {
-          busbarConnectionPoints.putIfAbsent(
-            targetBay.id,
-            () => {},
-          )[sourceBay.id] = Offset(
-            sourceBayRenderData.rect.center.dx,
-            busYPositions[targetBay.id]!,
-          );
-        }
-      }
-    }
-
-    double canvasWidth =
-        MediaQuery.of(context).size.width * 0.6; // SLD takes 60%
-    double canvasHeight = MediaQuery.of(context).size.height; // Fill height
+    double canvasWidth = max(
+      MediaQuery.of(context).size.width,
+      contentMaxX + 50,
+    );
+    double canvasHeight = max(
+      MediaQuery.of(context).size.height,
+      contentMaxY + 50,
+    );
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Energy Account: ${widget.substationName}'),
+        title: Text(
+          'Energy Account: ${widget.substationName} ($dateRangeText)',
+        ), // Updated title
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_today),
@@ -753,168 +957,75 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Row(
+          : Stack(
               children: [
-                // SLD View (Left Half)
-                Expanded(
-                  flex: 3, // Takes 60% of width
-                  child: InteractiveViewer(
-                    transformationController: _transformationController,
-                    boundaryMargin: const EdgeInsets.all(double.infinity),
-                    minScale: 0.1,
-                    maxScale: 4.0,
-                    constrained: false,
-                    child: CustomPaint(
-                      size: Size(canvasWidth, canvasHeight),
-                      painter: SingleLineDiagramPainter(
-                        bayRenderDataList: currentBayRenderDataList,
-                        bayConnections: _allConnections,
-                        baysMap: _baysMap,
-                        createDummyBayRenderData: _createDummyBayRenderData,
-                        busbarRects: busbarRects,
-                        busbarConnectionPoints: busbarConnectionPoints,
-                        debugDrawHitboxes: false, // Set to false for production
-                        selectedBayForMovementId: null, // No movement here
-                      ),
+                InteractiveViewer(
+                  transformationController: _transformationController,
+                  boundaryMargin: const EdgeInsets.all(double.infinity),
+                  minScale: 0.1,
+                  maxScale: 4.0,
+                  constrained: false,
+                  child: CustomPaint(
+                    size: Size(canvasWidth, canvasHeight),
+                    painter: SingleLineDiagramPainter(
+                      bayRenderDataList: sldRenderData.bayRenderDataList,
+                      bayConnections: _allConnections,
+                      baysMap: _baysMap,
+                      createDummyBayRenderData: _createDummyBayRenderData,
+                      busbarRects: sldRenderData.busbarRects,
+                      busbarConnectionPoints:
+                          sldRenderData.busbarConnectionPoints,
+                      debugDrawHitboxes: false,
+                      selectedBayForMovementId: null,
+                      bayEnergyData: sldRenderData.bayEnergyData,
                     ),
                   ),
                 ),
-                // Energy Tables (Right Half)
-                Expanded(
-                  flex: 2, // Takes 40% of width
-                  child: SingleChildScrollView(
+                // Overlay for Abstract Data
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Daily Energy Data for ${DateFormat('dd-MMM-yyyy').format(_selectedDate)}',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 16),
-                        // Individual Bay Energy Tables
-                        _bayEnergyData.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  'No energy data found for this date.',
-                                ),
-                              )
-                            : ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: _bayEnergyData.length,
-                                itemBuilder: (context, index) {
-                                  final bayId = _bayEnergyData.keys.elementAt(
-                                    index,
-                                  );
-                                  final data = _bayEnergyData[bayId]!;
-                                  return Card(
-                                    margin: const EdgeInsets.symmetric(
-                                      vertical: 8.0,
-                                    ),
-                                    elevation: 2,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(12.0),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            data.bayName,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleMedium
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                          ),
-                                          const Divider(),
-                                          _buildEnergyRow(
-                                            'Previous Import',
-                                            data.prevImp,
-                                            'MWH',
-                                          ),
-                                          _buildEnergyRow(
-                                            'Current Import',
-                                            data.currImp,
-                                            'MWH',
-                                          ),
-                                          _buildEnergyRow(
-                                            'Import Consumed',
-                                            data.impConsumed,
-                                            'MWH',
-                                          ),
-                                          const SizedBox(height: 8),
-                                          _buildEnergyRow(
-                                            'Previous Export',
-                                            data.prevExp,
-                                            'MWH',
-                                          ),
-                                          _buildEnergyRow(
-                                            'Current Export',
-                                            data.currExp,
-                                            'MWH',
-                                          ),
-                                          _buildEnergyRow(
-                                            'Export Consumed',
-                                            data.expConsumed,
-                                            'MWH',
-                                          ),
-                                          const SizedBox(height: 8),
-                                          _buildEnergyRow(
-                                            'Multiplying Factor',
-                                            data.mf,
-                                            '',
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                        const SizedBox(height: 24),
-                        // Abstract Table
-                        Text(
-                          'Abstract of Substation',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 16),
-                        Card(
-                          elevation: 2,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildEnergyRow(
-                                  'Total Import',
-                                  _abstractEnergyData['totalImp'],
-                                  'MWH',
-                                  isAbstract: true,
-                                ),
-                                _buildEnergyRow(
-                                  'Total Export',
-                                  _abstractEnergyData['totalExp'],
-                                  'MWH',
-                                  isAbstract: true,
-                                ),
-                                _buildEnergyRow(
-                                  'Difference',
-                                  _abstractEnergyData['difference'],
-                                  'MWH',
-                                  isAbstract: true,
-                                ),
-                                _buildEnergyRow(
-                                  'Loss Percentage',
-                                  _abstractEnergyData['lossPercentage'],
-                                  '%',
-                                  isAbstract: true,
-                                ),
-                              ],
+                    child: Card(
+                      elevation: 4,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Abstract of Substation',
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
-                          ),
+                            const Divider(),
+                            _buildEnergyRow(
+                              'Total Import',
+                              _abstractEnergyData['totalImp'],
+                              'MWH',
+                              isAbstract: true,
+                            ),
+                            _buildEnergyRow(
+                              'Total Export',
+                              _abstractEnergyData['totalExp'],
+                              'MWH',
+                              isAbstract: true,
+                            ),
+                            _buildEnergyRow(
+                              'Difference',
+                              _abstractEnergyData['difference'],
+                              'MWH',
+                              isAbstract: true,
+                            ),
+                            _buildEnergyRow(
+                              'Loss Percentage',
+                              _abstractEnergyData['lossPercentage'],
+                              '%',
+                              isAbstract: true,
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -937,18 +1048,18 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           Text(
             label + ':',
             style: isAbstract
-                ? Theme.of(context).textTheme.titleMedium
-                : Theme.of(context).textTheme.bodyLarge,
+                ? Theme.of(context).textTheme.titleSmall
+                : Theme.of(context).textTheme.bodySmall,
           ),
           Text(
             value != null ? '${value.toStringAsFixed(2)} $unit' : 'N/A',
             style: isAbstract
                 ? Theme.of(
                     context,
-                  ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)
                 : Theme.of(
                     context,
-                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
           ),
         ],
       ),

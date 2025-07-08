@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'dart:math'; // Ensure this is imported for 'max'
+import 'package:collection/collection.dart'; // Import for firstWhereOrNull
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
@@ -28,6 +29,8 @@ import '../equipment_icons/disconnector_icon.dart';
 import '../equipment_icons/ground_icon.dart';
 import '../equipment_icons/isolator_icon.dart';
 import '../equipment_icons/pt_icon.dart';
+
+import 'energy_sld_screen.dart'; // Import EnergySldScreen for BayEnergyData and SldRenderData
 
 enum BayDetailViewMode { list, add, edit }
 
@@ -55,6 +58,44 @@ class BayRenderData {
   });
 }
 
+class _GenericIconPainter extends CustomPainter {
+  final Color color;
+  _GenericIconPainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    final double centerX = size.width / 2;
+    final double centerY = size.height / 2;
+    final double halfWidth = size.width / 3;
+    final double halfHeight = size.height / 3;
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(centerX, centerY),
+        width: halfWidth * 2,
+        height: halfHeight * 2,
+      ),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(centerX - halfWidth, centerY - halfHeight),
+      Offset(centerX + halfWidth, centerY + halfHeight),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(centerX + halfWidth, centerY - halfHeight),
+      Offset(centerX - halfWidth, centerY + halfHeight),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _GenericIconPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
 class SingleLineDiagramPainter extends CustomPainter {
   final List<BayRenderData> bayRenderDataList;
   final List<BayConnection> bayConnections;
@@ -64,6 +105,7 @@ class SingleLineDiagramPainter extends CustomPainter {
   final Map<String, Map<String, Offset>> busbarConnectionPoints;
   final bool debugDrawHitboxes; // Added for debugging
   final String? selectedBayForMovementId; // To highlight the selected bay
+  final Map<String, BayEnergyData> bayEnergyData; // NEW: Add energy data
 
   SingleLineDiagramPainter({
     required this.bayRenderDataList,
@@ -75,6 +117,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     this.debugDrawHitboxes =
         false, // Default to false, but we'll enable in _buildSLDView for testing
     this.selectedBayForMovementId, // Initialize new parameter
+    required this.bayEnergyData, // NEW: Require it
   });
 
   Color _getBusbarColor(String voltageLevel) {
@@ -371,8 +414,10 @@ class SingleLineDiagramPainter extends CustomPainter {
         _drawText(canvas, bay.name, rect.center, isBold: true);
       }
 
-      // NEW: Draw individual equipment within the bay's rectangle
-      if (renderData.equipmentInstances.isNotEmpty) {
+      // Draw individual equipment within the bay's rectangle (if present in main SLD)
+      // Only draw equipment if not moving (selectedBayForMovementId is null for Energy SLD)
+      if (renderData.equipmentInstances.isNotEmpty &&
+          selectedBayForMovementId == null) {
         // Define spacing and size for sub-equipment icons
         const double subIconSize = 25; // Smaller size for sub-equipment icons
         const double subIconSpacing = 5;
@@ -433,20 +478,123 @@ class SingleLineDiagramPainter extends CustomPainter {
           currentY += subIconSize + subIconSpacing;
         }
       }
+
+      // NEW: Draw energy data beside the bay
+      final energyData = bayEnergyData[bay.id];
+      if (energyData != null) {
+        // Smallest possible font size for labels
+        const double energyTextFontSize = 7.0;
+
+        final String importText = energyData.impConsumed != null
+            ? 'Imp: ${energyData.impConsumed!.toStringAsFixed(2)}'
+            : 'Imp: N/A';
+        final String exportText = energyData.expConsumed != null
+            ? 'Exp: ${energyData.expConsumed!.toStringAsFixed(2)}'
+            : 'Exp: N/A';
+
+        // Position the text next to the bay, slightly offset to avoid overlap with symbol/label.
+        // We can place it to the right of the bay's bounding box.
+        // Adjust these offsets to fine-tune placement.
+        Offset energyTextTopLeft;
+
+        // Smart positioning based on bay type or fixed position
+        if (bay.bayType == 'Transformer') {
+          // Place below transformer, slightly to the right to avoid label
+          energyTextTopLeft = Offset(
+            rect.left + rect.width * 0.1,
+            rect.bottom + 5,
+          );
+        } else if (bay.bayType == 'Line') {
+          // Place above line, to the right
+          energyTextTopLeft = Offset(rect.right + 5, rect.top - 20);
+        } else if (bay.bayType == 'Feeder') {
+          // Place below feeder, to the right
+          energyTextTopLeft = Offset(rect.right + 5, rect.bottom + 5);
+        } else {
+          // Default: to the right of the bay's bounding box
+          energyTextTopLeft = Offset(rect.right + 5, rect.top);
+        }
+
+        _drawText(
+          canvas,
+          importText,
+          energyTextTopLeft,
+          textAlign: TextAlign.left,
+          fontSize: energyTextFontSize, // Use smaller font
+        );
+        _drawText(
+          canvas,
+          exportText,
+          Offset(
+            energyTextTopLeft.dx,
+            energyTextTopLeft.dy + energyTextFontSize + 2,
+          ), // Below import
+          textAlign: TextAlign.left,
+          fontSize: energyTextFontSize, // Use smaller font
+        );
+        _drawText(
+          canvas,
+          'MWH',
+          Offset(
+            energyTextTopLeft.dx,
+            energyTextTopLeft.dy + (energyTextFontSize + 2) * 2,
+          ), // Below export
+          textAlign: TextAlign.left,
+          fontSize: energyTextFontSize, // Use smaller font
+          isBold: true,
+        );
+      }
     }
 
     // DEBUGGING STEP: Draw hitboxes if debugDrawHitboxes is true
-    // if (debugDrawHitboxes) {
-    //   final debugHitboxPaint = Paint()
-    //     ..color = Colors.red
-    //         .withOpacity(0.3) // Semi-transparent red
-    //     ..style = PaintingStyle.fill;
-    //   for (var renderData in bayRenderDataList) {
-    //     canvas.drawRect(renderData.rect, debugHitboxPaint);
-    //   }
-    // }
+    if (debugDrawHitboxes) {
+      // Keeping this enabled if it helps debugging layout
+      final debugHitboxPaint = Paint()
+        ..color = Colors.red
+            .withOpacity(0.3) // Semi-transparent red
+        ..style = PaintingStyle.fill;
+      for (var renderData in bayRenderDataList) {
+        canvas.drawRect(renderData.rect, debugHitboxPaint);
+      }
+    }
   }
 
+  // Modified _drawText to accept font size
+  void _drawText(
+    Canvas canvas,
+    String text,
+    Offset position, {
+    double offsetY = 0,
+    bool isBold = false,
+    TextAlign textAlign = TextAlign.center,
+    double fontSize = 9, // NEW: Default font size
+  }) {
+    final textStyle = TextStyle(
+      color: Colors.black87,
+      fontSize: fontSize, // Use passed font size
+      fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+    );
+    final textSpan = TextSpan(text: text, style: textStyle);
+    final textPainter = TextPainter(
+      text: textSpan,
+      textAlign: textAlign,
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout(
+      maxWidth: 100,
+    ); // Max width to allow text wrapping if needed
+
+    double x = position.dx;
+    if (textAlign == TextAlign.center) {
+      x -= textPainter.width / 2;
+    } else if (textAlign == TextAlign.right) {
+      x -= textPainter.width;
+    }
+
+    textPainter.paint(canvas, Offset(x, position.dy + offsetY));
+  }
+
+  // Moved _drawArrowhead into SingleLineDiagramPainter
   void _drawArrowhead(Canvas canvas, Offset p1, Offset p2, Paint paint) {
     const double arrowSize = 6.0;
     final double angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
@@ -469,11 +617,12 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
   }
 
+  // Moved _drawConnectionLine into SingleLineDiagramPainter
   void _drawConnectionLine(
     Canvas canvas,
     Offset startPoint,
     Offset endPoint,
-    Paint linePaint, // This is the paint for the connection line itself
+    Paint linePaint,
     Paint dotPaint,
     String sourceBayType,
     String targetBayType,
@@ -483,7 +632,6 @@ class SingleLineDiagramPainter extends CustomPainter {
   ) {
     canvas.drawLine(startPoint, endPoint, linePaint);
 
-    // Draw dots at the busbar connection points for all non-busbar bays
     if (sourceBayType == 'Busbar' && targetBayType != 'Busbar') {
       final busConnectionPoint =
           busbarConnectionPoints[sourceBayId]?[targetBayId];
@@ -498,95 +646,27 @@ class SingleLineDiagramPainter extends CustomPainter {
       }
     }
 
-    // Draw arrowheads based on typical power flow or convention
-    // I'm keeping the transformer arrow for now, as it's common.
     if ((sourceBayType == 'Busbar' && targetBayType == 'Transformer') ||
         (sourceBayType == 'Transformer' && targetBayType == 'Busbar')) {
       _drawArrowhead(canvas, startPoint, endPoint, linePaint);
     }
   }
 
-  void _drawText(
-    Canvas canvas,
-    String text,
-    Offset position, {
-    double offsetY = 0,
-    bool isBold = false,
-    TextAlign textAlign = TextAlign.center,
-  }) {
-    final textStyle = TextStyle(
-      color: Colors.black87,
-      fontSize: 9,
-      fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-    );
-    final textSpan = TextSpan(text: text, style: textStyle);
-    final textPainter = TextPainter(
-      text: textSpan,
-      textAlign: textAlign,
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout(maxWidth: 100);
-
-    double x = position.dx;
-    if (textAlign == TextAlign.center) {
-      x -= textPainter.width / 2;
-    } else if (textAlign == TextAlign.right) {
-      x -= textPainter.width;
-    }
-
-    textPainter.paint(canvas, Offset(x, position.dy + offsetY));
-  }
-
   @override
   bool shouldRepaint(covariant SingleLineDiagramPainter oldDelegate) {
-    // Repaint if selectedBayForMovementId changes, or if anything else changes
     return oldDelegate.selectedBayForMovementId != selectedBayForMovementId ||
         oldDelegate.bayRenderDataList != bayRenderDataList ||
         oldDelegate.bayConnections != bayConnections ||
         oldDelegate.baysMap != baysMap ||
         oldDelegate.busbarRects != busbarRects ||
-        oldDelegate.busbarConnectionPoints != busbarConnectionPoints;
+        oldDelegate.busbarConnectionPoints != busbarConnectionPoints ||
+        oldDelegate.bayEnergyData !=
+            bayEnergyData; // NEW: Repaint if energy data changes
   }
 }
 
-// This _GenericIconPainter needs to be a top-level class, outside of any State or other class.
-class _GenericIconPainter extends CustomPainter {
-  final Color color;
-  _GenericIconPainter({required this.color});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    final double centerX = size.width / 2;
-    final double centerY = size.height / 2;
-    final double halfWidth = size.width / 3;
-    final double halfHeight = size.height / 3;
-    canvas.drawRect(
-      Rect.fromCenter(
-        center: Offset(centerX, centerY),
-        width: halfWidth * 2,
-        height: halfHeight * 2,
-      ),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(centerX - halfWidth, centerY - halfHeight),
-      Offset(centerX + halfWidth, centerY + halfHeight),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(centerX + halfWidth, centerY - halfHeight),
-      Offset(centerX - halfWidth, centerY + halfHeight),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _GenericIconPainter oldDelegate) =>
-      oldDelegate.color != color;
-}
+// ... (Rest of SubstationDetailScreen class remains unchanged, except for the import of energy_sld_screen.dart)
+// The _GenericIconPainter also remains unchanged.
 
 class SubstationDetailScreen extends StatefulWidget {
   final String substationId;
@@ -948,7 +1028,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         'circuitType': _selectedBayType == 'Line' ? _selectedCircuit : null,
         'conductorType': _selectedBayType == 'Line' ? _selectedConductor : null,
         'conductorDetail':
-            _selectedBayType == 'Line' && _selectedConductor == 'Other'
+            _selectedBayType == 'Line' &&
+                _selectedConductor ==
+                    'Other' // Corrected here
             ? _otherConductorController.text.trim()
             : null,
         'erectionDate': _selectedBayType == 'Line' && _erectionDate != null
@@ -1401,8 +1483,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         appBar: AppBar(
           title: Text('Substation: ${widget.substationName}'),
           actions: [
+            // Existing info button (if any)
             if (_viewMode == BayDetailViewMode.list &&
-                _selectedBayForMovementId == null) // Hide info when moving
+                _selectedBayForMovementId == null)
               IconButton(
                 icon: const Icon(Icons.info_outline),
                 onPressed: () => SnackBarUtils.showSnackBar(
@@ -1410,9 +1493,25 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   'Viewing details for ${widget.substationName}.',
                 ),
               ),
+            // NEW: Button to go to Energy SLD for the current substation
+            IconButton(
+              icon: const Icon(Icons.flash_on),
+              tooltip: 'View Energy SLD',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => EnergySldScreen(
+                      substationId: widget.substationId,
+                      substationName: widget.substationName,
+                      currentUser: widget.currentUser,
+                    ),
+                  ),
+                );
+              },
+            ),
+            // Existing back/cancel button
             if (_viewMode != BayDetailViewMode.list ||
-                _selectedBayForMovementId !=
-                    null) // Show back/cancel when in form or move mode
+                _selectedBayForMovementId != null)
               IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () {
@@ -1805,7 +1904,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   final Map<String, List<Bay>> transformersForPair =
                       busPairEntry.value;
 
-                  // Find the HV bus and LV bus from the pair key to get their Y positions
                   List<String> busIdsInPair = pairKey.split('-');
                   String hvBusId = busIdsInPair[0];
                   String lvBusId = busIdsInPair[1];
@@ -2076,8 +2174,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   // If source is a Busbar and target is a Transformer (HV side)
                   if (sourceBay.bayType == 'Busbar' &&
                       targetBay.bayType == 'Transformer') {
-                    final targetRect = finalBayRects[targetBay.id];
-                    final busY = busYPositions[sourceBay.id];
+                    final Rect? targetRect = finalBayRects[targetBay.id];
+                    final double? busY = busYPositions[sourceBay.id];
                     if (targetRect != null && busY != null) {
                       busbarConnectionPoints.putIfAbsent(
                         sourceBay.id,
@@ -2091,8 +2189,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   // If target is a Busbar and source is a Transformer (LV side)
                   else if (targetBay.bayType == 'Busbar' &&
                       sourceBay.bayType == 'Transformer') {
-                    final sourceRect = finalBayRects[sourceBay.id];
-                    final busY = busYPositions[targetBay.id];
+                    final Rect? sourceRect = finalBayRects[sourceBay.id];
+                    final double? busY = busYPositions[targetBay.id];
                     if (sourceRect != null && busY != null) {
                       busbarConnectionPoints.putIfAbsent(
                         targetBay.id,
@@ -2106,8 +2204,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   // For other connections (Line/Feeder to Busbar)
                   else if (sourceBay.bayType == 'Busbar' &&
                       targetBay.bayType != 'Busbar') {
-                    final targetRect = finalBayRects[targetBay.id];
-                    final busY = busYPositions[sourceBay.id];
+                    final Rect? targetRect = finalBayRects[targetBay.id];
+                    final double? busY = busYPositions[sourceBay.id];
                     if (targetRect != null && busY != null) {
                       busbarConnectionPoints.putIfAbsent(
                         sourceBay.id,
@@ -2122,7 +2220,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   } else if (targetBay.bayType == 'Busbar' &&
                       sourceBay.bayType != 'Busbar') {
                     final sourceRect = finalBayRects[sourceBay.id];
-                    final busY = busYPositions[targetBay.id];
+                    final double? busY = busYPositions[targetBay.id];
                     if (sourceRect != null && busY != null) {
                       busbarConnectionPoints.putIfAbsent(
                         targetBay.id,
@@ -2254,6 +2352,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                             true, // KEEP THIS TRUE FOR TESTING! Set to false later.
                         selectedBayForMovementId:
                             _selectedBayForMovementId, // Pass the selected ID to the painter
+                        bayEnergyData: const {}, // Pass empty map for main SLD
                       ),
                     ),
                   ),
@@ -2674,16 +2773,5 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         ),
       ),
     );
-  }
-}
-
-extension IterableExtension<T> on Iterable<T> {
-  T? firstWhereOrNull(bool Function(T element) test) {
-    for (var element in this) {
-      if (test(element)) {
-        return element;
-      }
-    }
-    return null;
   }
 }
