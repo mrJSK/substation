@@ -46,13 +46,16 @@ class SldRenderData {
   final Map<String, Rect> busbarRects;
   final Map<String, Map<String, Offset>> busbarConnectionPoints;
   final Map<String, BayEnergyData> bayEnergyData; // NEW: Add energy data
+  final Map<String, Map<String, double>>
+  busEnergySummary; // NEW: Add bus summary
 
   SldRenderData({
     required this.bayRenderDataList,
     required this.finalBayRects,
     required this.busbarRects,
     required this.busbarConnectionPoints,
-    required this.bayEnergyData, // NEW: Require it in constructor
+    required this.bayEnergyData,
+    required this.busEnergySummary, // NEW
   });
 }
 
@@ -85,6 +88,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   Map<String, BayEnergyData> _bayEnergyData = {};
   Map<String, double> _abstractEnergyData = {};
+  Map<String, Map<String, double>> _busEnergySummary =
+      {}; // NEW state variable for bus totals
 
   final TransformationController _transformationController =
       TransformationController();
@@ -114,6 +119,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _isLoading = true;
       _bayEnergyData.clear();
       _abstractEnergyData.clear();
+      _busEnergySummary.clear(); // Clear bus summary
       _allBaysInSubstation.clear();
       _baysMap.clear();
       _allConnections.clear();
@@ -249,8 +255,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
 
       // 4. Process data for each bay
-      double totalImp = 0;
-      double totalExp = 0;
+      double abstractSubstationTotalImp =
+          0; // Renamed from totalImp for clarity
+      double abstractSubstationTotalExp =
+          0; // Renamed from totalExp for clarity
+
+      Map<String, double> tempBusImports = {}; // Temp storage for bus imports
+      Map<String, double> tempBusExports = {}; // Temp storage for bus exports
 
       for (var bay in _allBaysInSubstation) {
         final double? mf = bay.multiplyingFactor;
@@ -441,20 +452,82 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           );
         }
 
-        if (calculatedImpConsumed != null) totalImp += calculatedImpConsumed;
-        if (calculatedExpConsumed != null) totalExp += calculatedExpConsumed;
+        // Aggregate for Abstract Substation Data (only for Lines and Feeders)
+        if (bay.bayType == 'Line' || bay.bayType == 'Feeder') {
+          if (calculatedImpConsumed != null)
+            abstractSubstationTotalImp += calculatedImpConsumed;
+          if (calculatedExpConsumed != null)
+            abstractSubstationTotalExp += calculatedExpConsumed;
+        }
       }
 
-      // 5. Calculate Abstract Data (Still useful for overall substation view)
-      double difference = totalImp - totalExp;
+      // Populate _busEnergySummary
+      for (var busbar in _allBaysInSubstation.where(
+        (b) => b.bayType == 'Busbar',
+      )) {
+        double busTotalImp = 0.0;
+        double busTotalExp = 0.0;
+
+        // Find bays connected to this busbar
+        for (var connection in _allConnections) {
+          String? connectedBayId;
+          bool isSourceToBus =
+              false; // True if current bay is source, bus is target
+          bool isTargetToBus =
+              false; // True if current bay is target, bus is source
+
+          if (connection.sourceBayId == busbar.id) {
+            connectedBayId = connection.targetBayId;
+            isSourceToBus = true;
+          } else if (connection.targetBayId == busbar.id) {
+            connectedBayId = connection.sourceBayId;
+            isTargetToBus = true;
+          }
+
+          if (connectedBayId != null) {
+            final connectedBay = _baysMap[connectedBayId];
+            if (connectedBay != null &&
+                (connectedBay.bayType == 'Line' ||
+                    connectedBay.bayType == 'Feeder' ||
+                    connectedBay.bayType == 'Transformer')) {
+              final connectedBayEnergyData = _bayEnergyData[connectedBayId];
+
+              if (connectedBayEnergyData != null) {
+                // Determine directionality relative to the bus for import/export
+                // Simplified logic: If a bay imports, it adds to bus import. If it exports, it adds to bus export.
+                // This might need more complex power flow logic depending on exact definitions.
+                if (connectedBayEnergyData.impConsumed != null &&
+                    connectedBayEnergyData.impConsumed! > 0) {
+                  busTotalImp += connectedBayEnergyData.impConsumed!;
+                }
+                if (connectedBayEnergyData.expConsumed != null &&
+                    connectedBayEnergyData.expConsumed! > 0) {
+                  busTotalExp += connectedBayEnergyData.expConsumed!;
+                }
+              }
+            }
+          }
+        }
+        _busEnergySummary[busbar.id] = {
+          'totalImp': busTotalImp,
+          'totalExp': busTotalExp,
+        };
+        print(
+          'DEBUG: Bus Energy Summary for ${busbar.name}: Imp=${busTotalImp}, Exp=${busTotalExp}',
+        );
+      }
+
+      // 5. Calculate Abstract Data for overall substation
+      double difference =
+          abstractSubstationTotalImp - abstractSubstationTotalExp;
       double lossPercentage = 0;
-      if (totalImp > 0) {
-        lossPercentage = (difference / totalImp) * 100;
+      if (abstractSubstationTotalImp > 0) {
+        lossPercentage = (difference / abstractSubstationTotalImp) * 100;
       }
 
       _abstractEnergyData = {
-        'totalImp': totalImp,
-        'totalExp': totalExp,
+        'totalImp': abstractSubstationTotalImp,
+        'totalExp': abstractSubstationTotalExp,
         'difference': difference,
         'lossPercentage': lossPercentage,
       };
@@ -494,12 +567,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Modified to return SldRenderData, now also takes bayEnergyData
+  // Modified to return SldRenderData, now also takes bayEnergyData and busEnergySummary
   SldRenderData _buildBayRenderDataList(
     List<Bay> allBays,
     Map<String, Bay> baysMap,
     List<BayConnection> allConnections,
     Map<String, BayEnergyData> bayEnergyData,
+    Map<String, Map<String, double>> busEnergySummary, // NEW
   ) {
     final List<BayRenderData> bayRenderDataList = [];
     final Map<String, Rect> finalBayRects = {};
@@ -863,9 +937,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       finalBayRects: finalBayRects,
       busbarRects: busbarRects,
       busbarConnectionPoints: busbarConnectionPoints,
-      bayEnergyData: {
-        for (var entry in bayEnergyData.entries) entry.key: entry.value,
-      },
+      bayEnergyData: bayEnergyData,
+      busEnergySummary: busEnergySummary, // Pass the bus summary
     );
   }
 
@@ -918,6 +991,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _baysMap,
       _allConnections,
       _bayEnergyData,
+      _busEnergySummary, // Pass bus summary
     );
 
     double contentMaxX = sldRenderData.bayRenderDataList.isNotEmpty
@@ -978,6 +1052,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       debugDrawHitboxes: false,
                       selectedBayForMovementId: null,
                       bayEnergyData: sldRenderData.bayEnergyData,
+                      busEnergySummary:
+                          sldRenderData.busEnergySummary, // Pass bus summary
                     ),
                   ),
                 ),

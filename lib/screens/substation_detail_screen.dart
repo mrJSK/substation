@@ -117,7 +117,9 @@ class SingleLineDiagramPainter extends CustomPainter {
     this.debugDrawHitboxes =
         false, // Default to false, but we'll enable in _buildSLDView for testing
     this.selectedBayForMovementId, // Initialize new parameter
-    required this.bayEnergyData, // NEW: Require it
+    required this.bayEnergyData,
+    required Map<String, Map<String, double>>
+    busEnergySummary, // NEW: Require it
   });
 
   Color _getBusbarColor(String voltageLevel) {
@@ -2352,7 +2354,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                             true, // KEEP THIS TRUE FOR TESTING! Set to false later.
                         selectedBayForMovementId:
                             _selectedBayForMovementId, // Pass the selected ID to the painter
-                        bayEnergyData: const {}, // Pass empty map for main SLD
+                        bayEnergyData: const {},
+                        busEnergySummary: {}, // Pass empty map for main SLD
                       ),
                     ),
                   ),
