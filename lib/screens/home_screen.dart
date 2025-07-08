@@ -13,7 +13,9 @@ import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/equipment_hierarchy_selection_screen.dart';
 import '../screens/substation_detail_screen.dart';
 import '../screens/admin/reading_template_management_screen.dart';
+import '../screens/energy_sld_screen.dart'; // NEW: Import the new screen
 
+import '../utils/snackbar_utils.dart';
 import 'substation_user_dashboard_screen.dart'; // NEW: Import the new substation user dashboard
 
 class HomeScreen extends StatefulWidget {
@@ -244,11 +246,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   Text(
                     'Role: ${widget.appUser.role.toString().split('.').last}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onPrimary.withOpacity(0.7),
-                    ),
+                    style:
+                        (Theme.of(context).textTheme.bodyMedium ??
+                                const TextStyle())
+                            .copyWith(
+                              // Changed line here
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimary.withOpacity(0.7),
+                            ),
                   ),
                 ],
               ),
@@ -268,7 +274,106 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
               ),
+              // NEW: Energy SLD entry for Admin
+              ListTile(
+                leading: const Icon(Icons.flash_on),
+                title: const Text('Energy SLD'),
+                onTap: () async {
+                  Navigator.of(context).pop(); // Close the drawer
+                  // Allow admin to select substation for Energy SLD
+                  final selectedSubstation =
+                      await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  EquipmentHierarchySelectionScreen(
+                                    currentUser: widget.appUser,
+                                  ),
+                            ),
+                          )
+                          as Substation?; // Expect a Substation object back
+                  if (selectedSubstation != null) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => EnergySldScreen(
+                          substationId: selectedSubstation.id,
+                          substationName: selectedSubstation.name,
+                          currentUser: widget.appUser,
+                        ),
+                      ),
+                    );
+                  } else {
+                    SnackBarUtils.showSnackBar(
+                      context,
+                      'No substation selected for Energy SLD.',
+                      isError: true,
+                    );
+                  }
+                },
+              ),
               const Divider(),
+            ],
+            // NEW: Energy SLD entry for SubstationUser & SubdivisionManager
+            if (widget.appUser.role == UserRole.substationUser ||
+                widget.appUser.role == UserRole.subdivisionManager) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.flash_on),
+                title: const Text('Energy SLD'),
+                onTap: () async {
+                  Navigator.of(context).pop(); // Close the drawer
+                  // Logic to select substation for user roles (if multiple are accessible)
+                  Substation? substationToView;
+                  if (widget.appUser.assignedLevels != null &&
+                      widget.appUser.assignedLevels!.containsKey(
+                        'substationId',
+                      )) {
+                    // SubstationUser: directly use assigned substation
+                    final substationDoc = await FirebaseFirestore.instance
+                        .collection('substations')
+                        .doc(widget.appUser.assignedLevels!['substationId'])
+                        .get();
+                    if (substationDoc.exists) {
+                      substationToView = Substation.fromFirestore(
+                        substationDoc,
+                      );
+                    }
+                  } else if (widget.appUser.assignedLevels != null &&
+                      widget.appUser.assignedLevels!.containsKey(
+                        'subdivisionId',
+                      )) {
+                    // SubdivisionManager: allow selection from their subdivision
+                    final selectedSubstation =
+                        await Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    EquipmentHierarchySelectionScreen(
+                                      currentUser: widget.appUser,
+                                    ),
+                              ),
+                            )
+                            as Substation?; // Expect a Substation object back
+                    substationToView = selectedSubstation;
+                  }
+
+                  if (substationToView != null) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => EnergySldScreen(
+                          substationId: substationToView!.id,
+                          substationName: substationToView.name,
+                          currentUser: widget.appUser,
+                        ),
+                      ),
+                    );
+                  } else {
+                    SnackBarUtils.showSnackBar(
+                      context,
+                      'No substation assigned or selected for Energy SLD.',
+                      isError: true,
+                    );
+                  }
+                },
+              ),
             ],
             // Example Drawer item for logging out
             ListTile(

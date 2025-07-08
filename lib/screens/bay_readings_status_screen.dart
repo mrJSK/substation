@@ -2,13 +2,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:collection/collection.dart'; // Import for firstWhereOrNull
 
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
 import '../../models/reading_models.dart'; // For ReadingFieldDataType, ReadingFrequency
 import '../../models/logsheet_models.dart'; // For LogsheetEntry
 import '../../utils/snackbar_utils.dart';
-import 'logsheet_entry_screen.dart'; // Screen 3: The detailed entry screen
+import 'bay_readings_status_screen.dart';
+import 'logsheet_entry_screen.dart'; // Screen 2: The current screen
 
 class BayReadingsStatusScreen extends StatefulWidget {
   final String substationId;
@@ -35,7 +37,7 @@ class BayReadingsStatusScreen extends StatefulWidget {
 
 class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
   bool _isLoading = true;
-  List<Bay> _baysInSubstation = [];
+  List<Bay> _baysInSubstation = []; // This will now hold *only* assigned bays
 
   // Map to store completion status for each bay: {bayId: isComplete}
   final Map<String, bool> _bayCompletionStatus = {};
@@ -54,35 +56,42 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
   Future<void> _loadDataAndCalculateStatuses() async {
     setState(() {
       _isLoading = true;
+      _bayCompletionStatus.clear();
+      _baysInSubstation.clear(); // Clear existing list
+      _bayMandatoryFields.clear();
+      _logsheetEntriesForSlot.clear();
     });
 
     try {
-      // 1. Fetch all bays for the current substation
+      // 1. Fetch all bays for the current substation into a temporary map for lookup
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
           .orderBy('name')
           .get();
-      _baysInSubstation = baysSnapshot.docs
-          .map((doc) => Bay.fromFirestore(doc))
-          .toList();
+      final Map<String, Bay> allBaysTempMap = {
+        for (var doc in baysSnapshot.docs) doc.id: Bay.fromFirestore(doc),
+      };
 
-      // 2. Fetch all reading assignments for these bays to get mandatory fields
-      final List<String> bayIds = _baysInSubstation
-          .map((bay) => bay.id)
-          .toList();
-      if (bayIds.isEmpty) {
-        _isLoading = false;
-        setState(() {});
+      final List<String> allBayIdsInSubstation = allBaysTempMap.keys.toList();
+
+      if (allBayIdsInSubstation.isEmpty) {
+        // No bays in this substation at all
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
+
+      // 2. Fetch all reading assignments for these bays
       final assignmentsSnapshot = await FirebaseFirestore.instance
           .collection('bayReadingAssignments')
-          .where('bayId', whereIn: bayIds)
+          .where('bayId', whereIn: allBayIdsInSubstation)
           .get();
 
-      _bayMandatoryFields.clear();
+      final List<String> assignedBayIds =
+          []; // Collect IDs of bays with relevant assignments
+
       for (var doc in assignmentsSnapshot.docs) {
+        final String bayId = doc['bayId'] as String;
         final assignedFieldsData =
             (doc.data() as Map<String, dynamic>)['assignedFields']
                 as List<dynamic>;
@@ -94,7 +103,9 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
             .toList();
 
         // Store only the mandatory fields relevant to this frequencyType
-        _bayMandatoryFields[doc['bayId'] as String] = allFields
+        // We ensure that _bayMandatoryFields only contains entries for bays
+        // that have *relevant* mandatory fields for the current frequency.
+        final List<ReadingField> relevantMandatoryFields = allFields
             .where(
               (field) =>
                   field.isMandatory &&
@@ -102,9 +113,35 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
                       widget.frequencyType,
             )
             .toList();
+
+        _bayMandatoryFields[bayId] = relevantMandatoryFields;
+
+        // NEW: Only add bay to the list if it has mandatory fields relevant to this frequency
+        if (relevantMandatoryFields.isNotEmpty) {
+          assignedBayIds.add(bayId);
+        }
+      }
+
+      // NEW: Filter _baysInSubstation to only include bays that actually have assignments for this frequency type.
+      _baysInSubstation =
+          assignedBayIds
+              .map(
+                (id) => allBaysTempMap[id]!,
+              ) // Get the Bay object from the temp map
+              .toList()
+            ..sort(
+              (a, b) => a.name.compareTo(b.name),
+            ); // Sort by name for consistent display
+
+      if (_baysInSubstation.isEmpty) {
+        // If no bays found with assignments for the current frequency after filtering
+        if (mounted) setState(() => _isLoading = false);
+        return;
       }
 
       // 3. Fetch ALL logsheet entries for the SPECIFIC SLOT (date + hour/day)
+      // This part remains largely the same, but will now only check against _baysInSubstation
+      // which is already filtered.
       _logsheetEntriesForSlot.clear();
 
       DateTime queryStartTimestamp;
@@ -165,8 +202,9 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
       // 4. Calculate completion status for each bay for this specific slot
       _bayCompletionStatus.clear();
       for (var bay in _baysInSubstation) {
-        final bool isComplete = _isBayLogsheetCompleteForSlot(bay.id);
-        _bayCompletionStatus[bay.id] = isComplete;
+        // Now iterates only over assigned bays
+        final bool isBayCompleteForSlot = _isBayLogsheetCompleteForSlot(bay.id);
+        _bayCompletionStatus[bay.id] = isBayCompleteForSlot;
       }
     } catch (e) {
       print("Error loading data for BayReadingsStatusScreen: $e");
@@ -178,53 +216,47 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
         );
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   // Helper function to check if a specific bay's logsheet is complete for THIS slot
   bool _isBayLogsheetCompleteForSlot(String bayId) {
     final List<ReadingField> mandatoryFields = _bayMandatoryFields[bayId] ?? [];
+    // If a bay has no mandatory fields for this frequency (after filtering), it's considered complete for this slot.
+    // This case should ideally not be hit frequently now, as _baysInSubstation is already filtered.
     if (mandatoryFields.isEmpty) {
-      return true; // No mandatory fields for this bay/frequency, so considered complete
+      return true;
     }
 
     // Find the logsheet entry for this bay and this specific slot from cached data
-    final relevantLogsheet = (_logsheetEntriesForSlot[bayId] ?? []).firstWhere(
-      (entry) {
-        final entryTimestamp = entry.readingTimestamp.toDate();
-        if (widget.frequencyType == 'hourly' && widget.selectedHour != null) {
-          return entryTimestamp.year == widget.selectedDate.year &&
-              entryTimestamp.month == widget.selectedDate.month &&
-              entryTimestamp.day == widget.selectedDate.day &&
-              entryTimestamp.hour == widget.selectedHour;
-        } else if (widget.frequencyType == 'daily') {
-          return entryTimestamp.year == widget.selectedDate.year &&
-              entryTimestamp.month == widget.selectedDate.month &&
-              entryTimestamp.day == widget.selectedDate.day;
-        }
-        return false;
-      },
-      orElse: () => LogsheetEntry(
-        // Dummy entry if not found
-        bayId: '',
-        templateId: '',
-        readingTimestamp: Timestamp.now(),
-        recordedBy: '',
-        recordedAt: Timestamp.now(),
-        values: {},
-        frequency: '',
-        readingHour: null,
-        substationId: '', // Added dummy substationId
-        modificationReason: '', // Added required parameter
-      ),
-    );
+    final relevantLogsheet = (_logsheetEntriesForSlot[bayId] ?? [])
+        .firstWhereOrNull(
+          // Using firstWhereOrNull from 'package:collection/collection.dart'
+          (entry) {
+            final entryTimestamp = entry.readingTimestamp.toDate();
+            if (widget.frequencyType == 'hourly' &&
+                widget.selectedHour != null) {
+              return entryTimestamp.year == widget.selectedDate.year &&
+                  entryTimestamp.month == widget.selectedDate.month &&
+                  entryTimestamp.day == widget.selectedDate.day &&
+                  entryTimestamp.hour == widget.selectedHour;
+            } else if (widget.frequencyType == 'daily') {
+              return entryTimestamp.year == widget.selectedDate.year &&
+                  entryTimestamp.month == widget.selectedDate.month &&
+                  entryTimestamp.day == widget.selectedDate.day;
+            }
+            return false;
+          },
+        );
 
-    if (relevantLogsheet.bayId.isEmpty) {
-      // Dummy entry found, meaning no logsheet
-      return false;
+    if (relevantLogsheet == null) {
+      // Check for null directly
+      return false; // No logsheet found for this bay and slot
     }
 
     // Check if all mandatory fields in this logsheet entry have non-empty values
@@ -255,10 +287,12 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
       appBar: AppBar(title: Text('Bays for $slotTitle')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _baysInSubstation.isEmpty
+          : _baysInSubstation
+                .isEmpty // Check if the filtered list is empty
           ? Center(
               child: Text(
-                'No bays found for ${widget.substationName}.',
+                'No bays with assigned readings found for ${widget.substationName} for this frequency and date. Please assign reading templates to bays in Asset Management.',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontStyle: FontStyle.italic,
                   color: Colors.grey.shade600,
@@ -300,7 +334,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
                                 bayId: bay.id,
                                 readingDate: widget.selectedDate,
                                 frequency: widget.frequencyType,
-                                readingHour: widget.selectedHour,
+                                selectedHour: widget.selectedHour,
                                 currentUser: widget.currentUser,
                               ),
                             ),
@@ -314,5 +348,15 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
               },
             ),
     );
+  }
+}
+
+// Extension to capitalize first letter
+extension StringExtension on String {
+  String capitalize() {
+    if (isEmpty) {
+      return this;
+    }
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

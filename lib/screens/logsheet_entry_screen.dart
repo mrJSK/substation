@@ -15,7 +15,7 @@ class LogsheetEntryScreen extends StatefulWidget {
   final String bayId;
   final DateTime readingDate;
   final String frequency;
-  final int? readingHour;
+  final int? readingHour; // Keep this field definition
   final AppUser currentUser;
 
   const LogsheetEntryScreen({
@@ -25,8 +25,10 @@ class LogsheetEntryScreen extends StatefulWidget {
     required this.bayId,
     required this.readingDate,
     required this.frequency,
-    this.readingHour,
+    this.readingHour, // Use this named parameter: 'readingHour'
     required this.currentUser,
+    int? selectedHour,
+    // REMOVE THIS LINE: int? selectedHour, // This was the redundant parameter causing the error
   });
 
   @override
@@ -41,6 +43,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   Bay? _currentBay;
   DocumentSnapshot? _bayReadingAssignmentDoc;
   LogsheetEntry? _existingLogsheetEntry;
+  LogsheetEntry?
+  _previousLogsheetEntry; // Added to store previous day's logsheet
 
   List<ReadingField> _filteredReadingFields = [];
 
@@ -50,6 +54,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   final Map<String, String?> _readingDropdownFieldValues = {};
   final Map<String, TextEditingController>
   _readingBooleanDescriptionControllers = {};
+
+  bool _isFirstDataEntryForThisBayFrequency =
+      false; // NEW: Flag for first entry
 
   @override
   void initState() {
@@ -120,9 +127,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             )
             .toList();
 
-        await _fetchAndInitializeLogsheetEntries();
+        await _fetchAndInitializeLogsheetEntries(); // This will determine _isFirstDataEntryForThisBayFrequency
       } else {
         _filteredReadingFields = [];
+        // If no assignment, it's implicitly the first "entry" if we were to allow it.
+        // But for readings, an assignment must exist.
+        _isFirstDataEntryForThisBayFrequency = true;
       }
     } catch (e) {
       print("Error initializing logsheet entry screen: $e");
@@ -146,24 +156,48 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   Future<void> _fetchAndInitializeLogsheetEntries() async {
     _existingLogsheetEntry = await _getLogsheetForDate(widget.readingDate);
 
-    LogsheetEntry? previousLogsheet;
-    if (_existingLogsheetEntry == null) {
-      DateTime previousDate;
-      if (widget.frequency == 'daily') {
-        previousDate = widget.readingDate.subtract(const Duration(days: 1));
-      } else if (widget.frequency == 'monthly') {
-        previousDate = DateTime(
+    // Determine the previous date based on frequency
+    DateTime queryPreviousDate;
+    if (widget.frequency == 'daily') {
+      queryPreviousDate = widget.readingDate.subtract(const Duration(days: 1));
+    } else if (widget.frequency == 'monthly') {
+      queryPreviousDate = DateTime(
+        widget.readingDate.year,
+        widget.readingDate.month - 1,
+        widget.readingDate.day,
+      );
+    } else {
+      // For hourly, previous reading from the same day, previous hour
+      if (widget.readingHour != null && widget.readingHour! > 0) {
+        queryPreviousDate = DateTime(
           widget.readingDate.year,
-          widget.readingDate.month - 1,
+          widget.readingDate.month,
           widget.readingDate.day,
+          widget.readingHour! - 1,
+        );
+      } else if (widget.readingHour == 0) {
+        // If 00 hour, previous is 23 hour of previous day
+        queryPreviousDate = DateTime(
+          widget.readingDate.year,
+          widget.readingDate.month,
+          widget.readingDate.day - 1,
+          23,
         );
       } else {
-        previousDate = widget.readingDate;
+        // Fallback for unexpected hourly scenario
+        queryPreviousDate = widget.readingDate.subtract(
+          const Duration(days: 1),
+        );
       }
-      previousLogsheet = await _getLogsheetForDate(previousDate);
     }
 
-    _initializeReadingFieldControllers(previousLogsheet);
+    _previousLogsheetEntry = await _getLogsheetForDate(queryPreviousDate);
+
+    // Determine if this is the first data entry for this bay/frequency combination
+    _isFirstDataEntryForThisBayFrequency =
+        _existingLogsheetEntry == null && _previousLogsheetEntry == null;
+
+    _initializeReadingFieldControllers();
   }
 
   Future<LogsheetEntry?> _getLogsheetForDate(DateTime date) async {
@@ -175,17 +209,24 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     DateTime start, end;
     if (widget.frequency == 'hourly' && widget.readingHour != null) {
       start = DateTime(date.year, date.month, date.day, widget.readingHour!);
-      end = start.add(const Duration(hours: 1));
+      end = start
+          .add(const Duration(hours: 1))
+          .subtract(const Duration(milliseconds: 1)); // End of the hour
     } else {
+      // Daily or Monthly
       start = DateTime(date.year, date.month, date.day);
-      end = DateTime(date.year, date.month, date.day, 23, 59, 59);
+      end = DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
     }
 
-    logsheetQuery = logsheetQuery.where(
-      'readingTimestamp',
-      isGreaterThanOrEqualTo: start,
-      isLessThanOrEqualTo: end,
-    );
+    logsheetQuery = logsheetQuery
+        .where(
+          'readingTimestamp',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+        )
+        .where(
+          'readingTimestamp',
+          isLessThanOrEqualTo: Timestamp.fromDate(end),
+        );
 
     final snapshot = await logsheetQuery.limit(1).get();
     if (snapshot.docs.isNotEmpty) {
@@ -194,7 +235,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     return null;
   }
 
-  void _initializeReadingFieldControllers(LogsheetEntry? previousLogsheet) {
+  void _initializeReadingFieldControllers() {
     _readingTextFieldControllers.forEach(
       (key, controller) => controller.dispose(),
     );
@@ -209,15 +250,18 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
 
     final Map<String, dynamic> existingValues =
         _existingLogsheetEntry?.values ?? {};
-    final Map<String, dynamic> previousValues = previousLogsheet?.values ?? {};
+    final Map<String, dynamic> previousValues =
+        _previousLogsheetEntry?.values ?? {};
 
     for (var field in _filteredReadingFields) {
       final fieldName = field.name;
       final dataType = field.dataType.toString().split('.').last;
       dynamic value = existingValues[fieldName];
 
+      // Auto-fill logic for "Previous Day/Month Reading"
       if (_existingLogsheetEntry == null) {
-        if (fieldName.startsWith('Previous Day') &&
+        // Only pre-fill if it's a new entry (not editing an existing one)
+        if (fieldName.startsWith('Previous Day Reading') &&
             previousValues.containsKey(
               fieldName.replaceFirst('Previous Day', 'Current Day'),
             )) {
@@ -226,7 +270,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                 'Previous Day',
                 'Current Day',
               )];
-        } else if (fieldName.startsWith('Previous Month') &&
+        } else if (fieldName.startsWith('Previous Month Reading') &&
             previousValues.containsKey(
               fieldName.replaceFirst('Previous Month', 'Current Month'),
             )) {
@@ -433,15 +477,29 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   Widget _buildReadingFieldInput(ReadingField field) {
     final String fieldName = field.name;
     final String dataType = field.dataType.toString().split('.').last;
-    final bool isMandatory = field.isMandatory;
+    bool isMandatory = field.isMandatory; // Can be overridden
+
+    // NEW: Conditional mandatory logic for "Previous Day/Month Reading"
+    final bool isPreviousReadingField =
+        fieldName.startsWith('Previous Day Reading') ||
+        fieldName.startsWith('Previous Month Reading');
+
+    if (isPreviousReadingField && _isFirstDataEntryForThisBayFrequency) {
+      isMandatory = false; // Make optional for the first entry
+    }
+
     final String? unit = field.unit;
     final List<String>? options = field.options;
     final String? initialDescriptionRemarks = field.descriptionRemarks;
 
+    // Determine if the field should be read-only (e.g., Substation User viewing saved, or Previous Reading field)
     final bool isReadOnly =
         (widget.currentUser.role == UserRole.substationUser &&
             _existingLogsheetEntry != null) ||
-        (fieldName.startsWith("Previous") && _existingLogsheetEntry == null);
+        (isPreviousReadingField &&
+            _existingLogsheetEntry == null &&
+            _previousLogsheetEntry !=
+                null); // If it's a new entry, and previous logsheet exists, previous reading field is read-only
 
     final inputDecoration = InputDecoration(
       labelText: fieldName + (isMandatory ? ' *' : ''),
@@ -461,6 +519,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         }
         return null;
       };
+    } else {
+      validator = null; // Ensure validator is null if not mandatory
     }
 
     Widget fieldWidget;
@@ -545,20 +605,46 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                   maxLines: 2,
                 ),
               ),
+            // NEW: Display validation error for boolean if mandatory and not true
+            if (isMandatory &&
+                !_readingBooleanFieldValues[fieldName]! &&
+                _formKey.currentState?.validate() ==
+                    false) // Simplified check for validation trigger
+              Padding(
+                padding: const EdgeInsets.only(left: 48.0, top: 4.0),
+                child: Text(
+                  '$fieldName is mandatory',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
           ],
         );
         break;
       case 'date':
+        // Corrected initialization of currentDate
+        final DateTime?
+        currentDate = _readingDateFieldValues.putIfAbsent(fieldName, () {
+          if (_readingDateFieldValues.containsKey(fieldName)) {
+            return _readingDateFieldValues[fieldName];
+          }
+          if (field.isMandatory && _existingLogsheetEntry == null) {
+            return widget
+                .readingDate; // Default to current reading date for new mandatory date fields
+          }
+          return null; // Otherwise null
+        });
+
         fieldWidget = ListTile(
           title: Text(
             fieldName +
                 (isMandatory ? ' *' : '') +
                 ': ' +
-                (_readingDateFieldValues[fieldName] == null
+                (currentDate == null
                     ? 'Select Date'
-                    : DateFormat(
-                        'yyyy-MM-dd',
-                      ).format(_readingDateFieldValues[fieldName]!)),
+                    : DateFormat('yyyy-MM-dd').format(currentDate)),
           ),
           trailing: const Icon(Icons.calendar_today),
           onTap: isReadOnly
@@ -566,8 +652,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
               : () async {
                   final DateTime? picked = await showDatePicker(
                     context: context,
-                    initialDate:
-                        _readingDateFieldValues[fieldName] ?? DateTime.now(),
+                    initialDate: currentDate ?? DateTime.now(),
                     firstDate: DateTime(2000),
                     lastDate: DateTime(2101),
                   );

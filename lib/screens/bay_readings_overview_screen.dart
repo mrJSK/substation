@@ -2,19 +2,21 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:collection/collection.dart'; // Import for firstWhereOrNull
 
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
-import '../../models/reading_models.dart';
-import '../../models/logsheet_models.dart';
+import '../../models/reading_models.dart'; // For ReadingFieldDataType, ReadingFrequency
+import '../../models/logsheet_models.dart'; // For LogsheetEntry
 import '../../utils/snackbar_utils.dart';
-import 'bay_readings_status_screen.dart';
+import 'bay_readings_status_screen.dart'; // Screen 2: List of bays for a slot
 
 class BayReadingsOverviewScreen extends StatefulWidget {
+  // Renamed internally for clarity, but file remains BayReadingsOverviewScreen.dart
   final String substationId;
   final String substationName;
   final AppUser currentUser;
-  final String frequencyType;
+  final String frequencyType; // 'hourly' or 'daily'
 
   const BayReadingsOverviewScreen({
     super.key,
@@ -31,51 +33,36 @@ class BayReadingsOverviewScreen extends StatefulWidget {
 
 class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
   bool _isLoading = true;
-  DateTime _selectedDate = DateTime.now();
+  DateTime _selectedDate = DateTime.now(); // Date for which to view slots
+  DateTime _earliestAssignmentDate = DateTime(
+    2000,
+    1,
+    1,
+  ); // NEW: To store the earliest date
 
+  // Maps to store computed completion statuses for each slot (e.g., '00', '2025-07-01')
+  // Slot Key -> IsComplete (True if ALL bays are complete for that slot)
   final Map<String, bool> _overallSlotCompletionStatus = {};
+
+  // Data cached for efficient status checking
   List<Bay> _allBaysInSubstation = [];
   Map<String, List<ReadingField>> _bayMandatoryFields = {};
-  Map<String, Map<String, LogsheetEntry>> _logsheetEntriesForDate = {};
-  bool _hasAssignments = false;
+  Map<String, Map<String, LogsheetEntry>> _logsheetEntriesForDate =
+      {}; // bayId -> slotKey -> LogsheetEntry
 
   @override
   void initState() {
     super.initState();
-    if (widget.substationId.isNotEmpty) {
-      _loadAllDataAndCalculateStatuses();
-    } else {
-      _isLoading = false;
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant BayReadingsOverviewScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.substationId != oldWidget.substationId) {
-      if (widget.substationId.isNotEmpty) {
-        _loadAllDataAndCalculateStatuses();
-      } else {
-        setState(() {
-          _isLoading = false;
-          _allBaysInSubstation.clear();
-          _bayMandatoryFields.clear();
-          _logsheetEntriesForDate.clear();
-          _overallSlotCompletionStatus.clear();
-          _hasAssignments = false;
-        });
-      }
-    }
+    _loadAllDataAndCalculateStatuses();
   }
 
   Future<void> _loadAllDataAndCalculateStatuses() async {
-    if (!mounted) return;
     setState(() {
       _isLoading = true;
-      _hasAssignments = false;
     });
 
     try {
+      // 1. Fetch all bays for the current substation
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
@@ -85,35 +72,36 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
           .map((doc) => Bay.fromFirestore(doc))
           .toList();
 
-      if (_allBaysInSubstation.isEmpty) {
-        if (mounted) setState(() => _isLoading = false);
+      // 2. Fetch all reading assignments for these bays to get mandatory fields
+      final List<String> bayIds = _allBaysInSubstation
+          .map((bay) => bay.id)
+          .toList();
+      if (bayIds.isEmpty) {
+        // No bays, nothing to do
+        _isLoading = false;
+        setState(() {});
         return;
       }
-
-      final bayIds = _allBaysInSubstation.map((bay) => bay.id).toList();
-
       final assignmentsSnapshot = await FirebaseFirestore.instance
           .collection('bayReadingAssignments')
           .where('bayId', whereIn: bayIds)
           .get();
 
-      if (assignmentsSnapshot.docs.isEmpty) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
-      }
-      _hasAssignments = true;
-
       _bayMandatoryFields.clear();
+      DateTime? tempEarliestDate; // To find the earliest assignment date
       for (var doc in assignmentsSnapshot.docs) {
         final assignedFieldsData =
-            doc.data()['assignedFields'] as List<dynamic>;
-        final allFields = assignedFieldsData
+            (doc.data() as Map<String, dynamic>)['assignedFields']
+                as List<dynamic>;
+        final List<ReadingField> allFields = assignedFieldsData
             .map(
               (fieldMap) =>
                   ReadingField.fromMap(fieldMap as Map<String, dynamic>),
             )
             .toList();
-        _bayMandatoryFields[doc['bayId']] = allFields
+
+        // Store only the mandatory fields relevant to this frequencyType
+        _bayMandatoryFields[doc['bayId'] as String] = allFields
             .where(
               (field) =>
                   field.isMandatory &&
@@ -121,102 +109,131 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
                       widget.frequencyType,
             )
             .toList();
+
+        // NEW: Capture the earliest reading start date
+        if (doc.data().containsKey('readingStartDate') &&
+            doc.data()['readingStartDate'] is Timestamp) {
+          // Ensure it exists and is a Timestamp
+          final Timestamp startDateTimestamp =
+              doc.data()['readingStartDate'] as Timestamp;
+          final DateTime startDate = startDateTimestamp.toDate();
+          if (tempEarliestDate == null ||
+              startDate.isBefore(tempEarliestDate)) {
+            tempEarliestDate = startDate;
+          }
+        }
       }
 
-      DateTime startOfPeriod;
-      DateTime endOfPeriod;
+      // NEW: Set the earliest assignment date and print for debugging
+      _earliestAssignmentDate = tempEarliestDate ?? DateTime(2000, 1, 1);
+      print(
+        'DEBUG: _earliestAssignmentDate set to: $_earliestAssignmentDate',
+      ); // DEBUG PRINT
 
-      if (widget.frequencyType == 'monthly') {
-        startOfPeriod = DateTime(_selectedDate.year, _selectedDate.month, 1);
-        endOfPeriod = DateTime(
-          _selectedDate.year,
-          _selectedDate.month + 1,
-          0,
-          23,
-          59,
-          59,
-          999,
-        );
-      } else {
-        startOfPeriod = DateTime(
-          _selectedDate.year,
-          _selectedDate.month,
-          _selectedDate.day,
-        );
-        endOfPeriod = DateTime(
-          _selectedDate.year,
-          _selectedDate.month,
-          _selectedDate.day,
-          23,
-          59,
-          59,
-          999,
-        );
+      // If selectedDate is before earliest assignment, adjust it
+      if (_selectedDate.isBefore(_earliestAssignmentDate)) {
+        _selectedDate = _earliestAssignmentDate;
+        print(
+          'DEBUG: _selectedDate adjusted to: $_selectedDate',
+        ); // DEBUG PRINT
       }
+
+      // 3. Fetch ALL logsheet entries for the selected date and frequencyType
+      // This is crucial for efficient in-memory processing.
+      _logsheetEntriesForDate.clear();
+      final startOfSelectedDate = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+      );
+      final endOfSelectedDate = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        23,
+        59,
+        59,
+        999,
+      );
 
       final logsheetsSnapshot = await FirebaseFirestore.instance
           .collection('logsheetEntries')
-          .where('substationId', isEqualTo: widget.substationId)
+          .where(
+            'substationId',
+            isEqualTo: widget.substationId,
+          ) // Requires substationId in logsheet entry model
           .where('frequency', isEqualTo: widget.frequencyType)
           .where(
             'readingTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfPeriod),
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfSelectedDate),
           )
           .where(
             'readingTimestamp',
-            isLessThanOrEqualTo: Timestamp.fromDate(endOfPeriod),
+            isLessThanOrEqualTo: Timestamp.fromDate(endOfSelectedDate),
           )
           .get();
 
-      _logsheetEntriesForDate.clear();
       for (var doc in logsheetsSnapshot.docs) {
         final entry = LogsheetEntry.fromFirestore(doc);
         final slotKey = _getTimeKeyFromLogsheetEntry(entry);
-        _logsheetEntriesForDate.putIfAbsent(entry.bayId, () => {})[slotKey] =
-            entry;
+        _logsheetEntriesForDate.putIfAbsent(entry.bayId, () => {});
+        _logsheetEntriesForDate[entry.bayId]![slotKey] = entry;
       }
 
+      // 4. Calculate overall slot statuses
       _calculateSlotCompletionStatuses();
     } catch (e) {
-      if (mounted)
+      print("Error loading data for ReadingSlotOverviewScreen: $e");
+      if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
           'Failed to load data: $e',
           isError: true,
         );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // Helper to get the time key string from a logsheet entry based on frequency
   String _getTimeKeyFromLogsheetEntry(LogsheetEntry entry) {
-    switch (entry.frequency) {
-      case 'hourly':
-        return entry.readingHour!.toString().padLeft(2, '0');
-      case 'daily':
-        return DateFormat('yyyy-MM-dd').format(entry.readingTimestamp.toDate());
-      case 'monthly':
-        return DateFormat('yyyy-MM').format(entry.readingTimestamp.toDate());
-      default:
-        return '';
+    if (entry.frequency == ReadingFrequency.hourly.toString().split('.').last &&
+        entry.readingHour != null) {
+      return entry.readingHour!.toString().padLeft(2, '0');
+    } else if (entry.frequency ==
+        ReadingFrequency.daily.toString().split('.').last) {
+      return DateFormat('yyyy-MM-dd').format(entry.readingTimestamp.toDate());
     }
+    return ''; // Should not happen for hourly/daily
   }
 
-  bool _isBayLogsheetCompleteForSlot(String bayId, String slotTimeKey) {
-    final relevantLogsheet = _logsheetEntriesForDate[bayId]?[slotTimeKey];
-    if (relevantLogsheet == null) {
-      return false; // **FIX**: If no logsheet exists, it is not complete.
-    }
-
-    final mandatoryFields = _bayMandatoryFields[bayId] ?? [];
+  // Function to determine if a specific bay's logsheet is complete for a given slot
+  bool _isBayLogsheetCompleteForSlot(
+    String bayId,
+    String slotTimeKey, // e.g., '00' for hourly, '2025-07-01' for daily
+  ) {
+    final List<ReadingField> mandatoryFields = _bayMandatoryFields[bayId] ?? [];
     if (mandatoryFields.isEmpty) {
-      return true;
+      return true; // No mandatory fields assigned for this bay/frequency, so considered complete
     }
 
+    final LogsheetEntry? relevantLogsheet =
+        _logsheetEntriesForDate[bayId]?[slotTimeKey];
+
+    if (relevantLogsheet == null) {
+      return false; // No logsheet found for this bay and slot
+    }
+
+    // Check if all mandatory fields in this logsheet entry have non-empty values
     return mandatoryFields.every((field) {
       final value = relevantLogsheet.values[field.name];
-      if (field.dataType == ReadingFieldDataType.boolean) {
-        return value is Map && value['value'] != null;
+      if (field.dataType ==
+              ReadingFieldDataType.boolean.toString().split('.').last &&
+          value is Map &&
+          value.containsKey('value')) {
+        return value['value'] !=
+            null; // Boolean value itself matters for completion
       }
       return value != null && (value is! String || value.isNotEmpty);
     });
@@ -224,72 +241,79 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
   void _calculateSlotCompletionStatuses() {
     _overallSlotCompletionStatus.clear();
-    final slotKeys = _generateTimeSlotKeys();
+    final List<String> slotKeys = _generateTimeSlotKeys();
 
     for (String slotKey in slotKeys) {
-      bool allBaysComplete = _allBaysInSubstation.every((bay) {
-        return _isBayLogsheetCompleteForSlot(bay.id, slotKey);
-      });
-      _overallSlotCompletionStatus[slotKey] = allBaysComplete;
+      bool allBaysCompleteForThisSlot = true;
+      if (_allBaysInSubstation.isEmpty) {
+        allBaysCompleteForThisSlot =
+            true; // If no bays, it's vacuously complete
+      } else {
+        for (Bay bay in _allBaysInSubstation) {
+          if (!_bayMandatoryFields.containsKey(bay.id) ||
+              _bayMandatoryFields[bay.id]!.isEmpty) {
+            // If bay has no mandatory fields for this frequency, it's considered complete for this slot.
+            continue;
+          }
+          if (!_isBayLogsheetCompleteForSlot(bay.id, slotKey)) {
+            allBaysCompleteForThisSlot = false;
+            break; // One incomplete bay makes the whole slot incomplete
+          }
+        }
+      }
+      _overallSlotCompletionStatus[slotKey] = allBaysCompleteForThisSlot;
     }
   }
 
   List<String> _generateTimeSlotKeys() {
-    if (!_hasAssignments) {
-      return [];
-    }
-
     List<String> keys = [];
     DateTime now = DateTime.now();
-    bool isToday = DateUtils.isSameDay(_selectedDate, now);
+    bool isCurrentDay = DateUtils.isSameDay(_selectedDate, now);
 
     if (widget.frequencyType == 'hourly') {
       for (int hour = 0; hour < 24; hour++) {
-        if (isToday && hour > now.hour) continue;
+        // Only show elapsed hours for the current date
+        if (isCurrentDay && hour > now.hour) {
+          continue; // Skip future hours
+        }
         keys.add(hour.toString().padLeft(2, '0'));
       }
     } else if (widget.frequencyType == 'daily') {
-      if (!isToday || (isToday && now.hour >= 8)) {
-        keys.add(DateFormat('yyyy-MM-dd').format(_selectedDate));
+      // Only show daily slot if it's past 08:00 AM for the current day
+      if (isCurrentDay && now.hour < 8) {
+        // If it's the current day and before 08:00, do not add the slot key.
+        return [];
       }
-    } else if (widget.frequencyType == 'monthly') {
-      bool isFirstDayOfMonth = _selectedDate.day == 1;
-      if (isFirstDayOfMonth) {
-        if (!isToday || (isToday && now.hour >= 8)) {
-          keys.add(DateFormat('yyyy-MM').format(_selectedDate));
-        }
-      }
+      keys.add(
+        DateFormat('yyyy-MM-dd').format(_selectedDate),
+      ); // Single key for the whole day
     }
-    return keys.reversed.toList();
+    return keys;
   }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
+      firstDate:
+          _earliestAssignmentDate, // NEW: Use earliest assignment date as first date
+      lastDate: DateTime.now(), // Disable future dates
     );
     if (picked != null && picked != _selectedDate) {
-      setState(() => _selectedDate = picked);
-      await _loadAllDataAndCalculateStatuses();
+      setState(() {
+        _selectedDate = picked;
+      });
+      await _loadAllDataAndCalculateStatuses(); // Recalculate statuses for new date
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.substationId.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Text(
-            'Please select a substation to view data.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
-          ),
-        ),
-      );
-    }
+    // Check for the "Daily reading available after 08:00" message condition
+    bool showDailyReadingMessage =
+        widget.frequencyType == 'daily' &&
+        DateUtils.isSameDay(_selectedDate, DateTime.now()) &&
+        DateTime.now().hour < 8;
 
     return _isLoading
         ? const Center(child: CircularProgressIndicator())
@@ -297,130 +321,141 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Readings For: ${DateFormat.yMMMMd().format(_selectedDate)}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.calendar_today),
-                      onPressed: () => _selectDate(context),
-                    ),
-                  ],
+                child: ListTile(
+                  title: Text(
+                    'Readings Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () => _selectDate(context),
                 ),
               ),
-              Expanded(child: _buildSlotList()),
+              Expanded(
+                child: showDailyReadingMessage
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(
+                            'Daily readings for today will be available for entry after 08:00 AM IST.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.grey.shade700,
+                                ),
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        itemCount: _generateTimeSlotKeys().length,
+                        itemBuilder: (context, index) {
+                          final slotKey = _generateTimeSlotKeys()[index];
+                          final bool isSlotComplete =
+                              _overallSlotCompletionStatus[slotKey] ?? false;
+
+                          String slotTitle;
+                          DateTime
+                          slotDateTime; // Represents the start of the slot
+                          if (widget.frequencyType == 'hourly') {
+                            slotTitle = '${slotKey}:00 Hr';
+                            slotDateTime = DateTime(
+                              _selectedDate.year,
+                              _selectedDate.month,
+                              _selectedDate.day,
+                              int.parse(slotKey),
+                            );
+                          } else {
+                            // daily
+                            slotTitle =
+                                'Daily Reading'; // For daily, only one slot for the day
+                            slotDateTime =
+                                _selectedDate; // Use the selected date itself
+                          }
+
+                          // Check if the slot is in the future for the current date
+                          final bool isFutureSlot =
+                              DateUtils.isSameDay(
+                                slotDateTime,
+                                DateTime.now(),
+                              ) &&
+                              slotDateTime.isAfter(DateTime.now());
+
+                          // Determine if the slot should be disabled
+                          final bool isDisabled =
+                              isFutureSlot; // Future slots are disabled
+
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 8.0),
+                            elevation: 2,
+                            child: ListTile(
+                              leading: Icon(
+                                isSlotComplete
+                                    ? Icons.check_circle
+                                    : Icons.cancel,
+                                color: isDisabled
+                                    ? Colors.grey
+                                    : (isSlotComplete
+                                          ? Colors.green
+                                          : Colors.red),
+                              ),
+                              title: Text(
+                                '${DateFormat('dd.MMM.yyyy').format(_selectedDate)} - $slotTitle',
+                                style: TextStyle(
+                                  color: isDisabled
+                                      ? Colors.grey
+                                      : Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium?.color,
+                                ),
+                              ),
+                              trailing: const Icon(Icons.arrow_forward_ios),
+                              onTap: isDisabled
+                                  ? null // Disable tap for future slots
+                                  : () {
+                                      Navigator.of(context)
+                                          .push(
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  BayReadingsStatusScreen(
+                                                    substationId:
+                                                        widget.substationId,
+                                                    substationName:
+                                                        widget.substationName,
+                                                    currentUser:
+                                                        widget.currentUser,
+                                                    frequencyType:
+                                                        widget.frequencyType,
+                                                    selectedDate: _selectedDate,
+                                                    selectedHour:
+                                                        widget.frequencyType ==
+                                                            'hourly'
+                                                        ? int.parse(slotKey)
+                                                        : null,
+                                                  ),
+                                            ),
+                                          )
+                                          .then(
+                                            (_) =>
+                                                _loadAllDataAndCalculateStatuses(), // Update status on return
+                                          );
+                                    },
+                            ),
+                          );
+                        },
+                      ),
+              ),
             ],
           );
   }
+}
 
-  Widget _buildSlotList() {
-    final slotKeys = _generateTimeSlotKeys();
-
-    if (!_hasAssignments) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'No reading templates have been assigned to the bays in this substation.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ),
-      );
+// Extension to capitalize first letter
+extension StringExtension on String {
+  String capitalize() {
+    if (isEmpty) {
+      return this;
     }
-
-    if (slotKeys.isEmpty && !_isLoading) {
-      String message = 'No reading slots available for the selected period.';
-      final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
-
-      if (widget.frequencyType == 'daily' && isToday) {
-        message = 'Daily readings for today will be available after 08:00 AM.';
-      } else if (widget.frequencyType == 'monthly') {
-        if (_selectedDate.day != 1) {
-          message =
-              'Monthly readings can only be entered on the 1st of the month.';
-        } else if (isToday) {
-          message = 'Monthly readings for today are available after 08:00 AM.';
-        }
-      }
-
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      itemCount: slotKeys.length,
-      itemBuilder: (context, index) {
-        final slotKey = slotKeys[index];
-        final isComplete = _overallSlotCompletionStatus[slotKey] ?? false;
-
-        String slotTitle;
-        int? selectedHour;
-
-        switch (widget.frequencyType) {
-          case 'hourly':
-            slotTitle = '$slotKey:00 Hr';
-            selectedHour = int.parse(slotKey);
-            break;
-          case 'daily':
-            slotTitle = 'Daily Reading';
-            break;
-          case 'monthly':
-            slotTitle =
-                'Monthly Reading for ${DateFormat('MMMM yyyy').format(_selectedDate)}';
-            break;
-          default:
-            slotTitle = 'Reading';
-        }
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8.0),
-          elevation: 2,
-          child: ListTile(
-            leading: Icon(
-              isComplete ? Icons.check_circle : Icons.cancel,
-              color: isComplete ? Colors.green : Colors.red,
-            ),
-            title: Text(slotTitle),
-            subtitle: Text('Status: ${isComplete ? 'Complete' : 'Pending'}'),
-            trailing: const Icon(Icons.arrow_forward_ios),
-            onTap: () {
-              Navigator.of(context)
-                  .push(
-                    MaterialPageRoute(
-                      builder: (context) => BayReadingsStatusScreen(
-                        substationId: widget.substationId,
-                        substationName: widget.substationName,
-                        currentUser: widget.currentUser,
-                        frequencyType: widget.frequencyType,
-                        selectedDate: _selectedDate,
-                        selectedHour: selectedHour,
-                      ),
-                    ),
-                  )
-                  .then((_) => _loadAllDataAndCalculateStatuses());
-            },
-          ),
-        );
-      },
-    );
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }
