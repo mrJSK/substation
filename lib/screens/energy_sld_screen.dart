@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
-import 'package:collection/collection.dart' as collection;
+import 'package:collection/collection.dart'; // This import is correct for extension methods like firstWhereOrNull
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
-import '../models/reading_models.dart';
+import '../models/reading_models.dart'; // Assuming this is correct from user's project
 import '../models/logsheet_models.dart';
 import '../models/bay_connection_model.dart';
+import '../models/busbar_energy_map.dart'; // NEW: Import the new model
 import '../utils/snackbar_utils.dart';
 
 // Reusing components from substation_detail_screen.dart
@@ -83,6 +84,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Map<String, BayEnergyData> _bayEnergyData = {};
   Map<String, double> _abstractEnergyData = {};
   Map<String, Map<String, double>> _busEnergySummary = {};
+  Map<String, BusbarEnergyMap> _busbarEnergyMaps =
+      {}; // NEW: busbarId-connectedBayId -> BusbarEnergyMap
 
   final TransformationController _transformationController =
       TransformationController();
@@ -129,6 +132,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _allBaysInSubstation.clear();
       _baysMap.clear();
       _allConnections.clear();
+      _busbarEnergyMaps.clear(); // Clear existing maps
       _currentPageIndex = 0;
     });
 
@@ -158,6 +162,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _allConnections = connectionsSnapshot.docs
           .map((doc) => BayConnection.fromFirestore(doc))
           .toList();
+
+      // NEW: Fetch BusbarEnergyMap configurations
+      final busbarEnergyMapsSnapshot = await FirebaseFirestore.instance
+          .collection('busbarEnergyMaps')
+          .where('substationId', isEqualTo: widget.substationId)
+          .get();
+      _busbarEnergyMaps = {
+        for (var doc in busbarEnergyMapsSnapshot.docs)
+          '${doc['busbarId']}-${doc['connectedBayId']}':
+              BusbarEnergyMap.fromFirestore(doc),
+      };
 
       final startOfStartDate = DateTime(
         _startDate.year,
@@ -246,9 +261,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             .where('frequency', isEqualTo: 'daily')
             .where(
               'readingTimestamp',
-              isGreaterThanOrEqualTo: startOfPreviousDay,
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startOfPreviousDay),
             )
-            .where('readingTimestamp', isLessThanOrEqualTo: endOfPreviousDay)
+            .where(
+              'readingTimestamp',
+              isLessThanOrEqualTo: Timestamp.fromDate(endOfPreviousDay),
+            )
             .get();
         previousDayToStartDateReadings = {
           for (var doc in previousDayToStartDateLogsheetsSnapshot.docs)
@@ -260,22 +278,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         // );
       }
 
-      // Initialize temporary storage for busbar flows
-      Map<String, Map<String, double>> temporaryBusFlows = {};
-      for (var busbar in _allBaysInSubstation.where(
-        (b) => b.bayType == 'Busbar',
-      )) {
-        temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
-      }
-
-      // Initialize abstract substation totals here
-      double currentAbstractSubstationTotalImp = 0;
-      double currentAbstractSubstationTotalExp = 0;
-
+      // Calculate energy for each bay first
       for (var bay in _allBaysInSubstation) {
         final double? mf = bay.multiplyingFactor;
-        double calculatedImpConsumed = 0.0; // Initialize to 0.0
-        double calculatedExpConsumed = 0.0; // Initialize to 0.0
+        double calculatedImpConsumed = 0.0;
+        double calculatedExpConsumed = 0.0;
 
         if (_startDate.isAtSameMomentAs(_endDate)) {
           final currentReadingLogsheet = endDayReadings[bay.id];
@@ -296,7 +303,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           double? prevImpValForCalculation;
           double? prevExpValForCalculation;
 
-          // Prefer previous day's document reading if available for previous value
           final double? prevImpValFromPreviousDocument = double.tryParse(
             previousReadingLogsheetDocument
                     ?.values['Current Day Reading (Import)']
@@ -313,7 +319,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           if (prevImpValFromPreviousDocument != null) {
             prevImpValForCalculation = prevImpValFromPreviousDocument;
           } else {
-            // Fallback to "Previous Day Reading" field in current day's document
             prevImpValForCalculation = double.tryParse(
               currentReadingLogsheet?.values['Previous Day Reading (Import)']
                       ?.toString() ??
@@ -324,7 +329,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           if (prevExpValFromPreviousDocument != null) {
             prevExpValForCalculation = prevExpValFromPreviousDocument;
           } else {
-            // Fallback to "Previous Day Reading" field in current day's document
             prevExpValForCalculation = double.tryParse(
               currentReadingLogsheet?.values['Previous Day Reading (Export)']
                       ?.toString() ??
@@ -338,7 +342,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             calculatedImpConsumed = max(
               0.0,
               (currImpVal - prevImpValForCalculation) * mf,
-            ); // Ensure non-negative consumption
+            );
           } else if (currImpVal != null && mf != null) {
             calculatedImpConsumed = currImpVal * mf;
           }
@@ -349,7 +353,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             calculatedExpConsumed = max(
               0.0,
               (currExpVal - prevExpValForCalculation) * mf,
-            ); // Ensure non-negative consumption
+            );
           } else if (currExpVal != null && mf != null) {
             calculatedExpConsumed = currExpVal * mf;
           }
@@ -403,103 +407,47 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             expConsumed: calculatedExpConsumed,
           );
         }
+      }
 
-        // --- BUSBAR ABSTRACT CALCULATION (Per your clarified logic) ---
-        // Process each bay's energy to correctly add to the connected busbar(s) import/export.
-        final connectedBayEnergyData = _bayEnergyData[bay.id];
-        if (connectedBayEnergyData == null)
-          continue; // Skip if no energy data for this bay
+      // Initialize temporary storage for busbar flows using the new mapping
+      Map<String, Map<String, double>> temporaryBusFlows = {};
+      for (var busbar in _allBaysInSubstation.where(
+        (b) => b.bayType == 'Busbar',
+      )) {
+        temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
+      }
 
-        final List<BayConnection>
-        relevantBusConnections = _allConnections.where((c) {
-          // Check if current 'bay' is involved and the other end is a 'Busbar'
-          final isCurrentBaySource = c.sourceBayId == bay.id;
-          final isCurrentBayTarget = c.targetBayId == bay.id;
-          final isOtherEndBus =
-              (_baysMap[c.sourceBayId]?.bayType == 'Busbar' &&
-                  isCurrentBayTarget) ||
-              (_baysMap[c.targetBayId]?.bayType == 'Busbar' &&
-                  isCurrentBaySource);
-          return isOtherEndBus;
-        }).toList();
+      // NEW: Calculate busbar energy based on BusbarEnergyMap
+      for (var entry in _busbarEnergyMaps.values) {
+        final Bay? connectedBay = _baysMap[entry.connectedBayId];
+        final BayEnergyData? connectedBayEnergy =
+            _bayEnergyData[entry.connectedBayId];
 
-        for (var connection in relevantBusConnections) {
-          String? connectedBusId;
-          Bay? connectedBus;
-
-          // Determine which end of the connection is the busbar
-          if (_baysMap[connection.sourceBayId]?.bayType == 'Busbar') {
-            connectedBusId = connection.sourceBayId;
-            connectedBus = _baysMap[connection.sourceBayId];
-          } else {
-            // connection.targetBayId must be the busbar
-            connectedBusId = connection.targetBayId;
-            connectedBus = _baysMap[connection.targetBayId];
+        if (connectedBay != null &&
+            connectedBayEnergy != null &&
+            temporaryBusFlows.containsKey(entry.busbarId)) {
+          // Add bay's import to busbar based on configuration
+          if (entry.importContribution == EnergyContributionType.busImport) {
+            temporaryBusFlows[entry.busbarId]!['import'] =
+                (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
+                (connectedBayEnergy.impConsumed ?? 0.0);
+          } else if (entry.importContribution ==
+              EnergyContributionType.busExport) {
+            temporaryBusFlows[entry.busbarId]!['export'] =
+                (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
+                (connectedBayEnergy.impConsumed ?? 0.0);
           }
 
-          if (connectedBusId != null && connectedBus != null) {
-            temporaryBusFlows.putIfAbsent(
-              connectedBusId,
-              () => {'import': 0.0, 'export': 0.0},
-            );
-
-            if (bay.bayType == 'Line') {
-              // Lines connected to a bus:
-              // If the line is the SOURCE of the connection to the bus (Line -> Bus), Line's Imp is Bus's Imp. Line's Exp is Bus's Exp.
-              // If the line is the TARGET of the connection from the bus (Bus -> Line), Line's Imp is Bus's Exp. Line's Exp is Bus's Imp.
-              if (connection.sourceBayId == bay.id) {
-                // Line -> Bus
-                temporaryBusFlows[connectedBusId]!['import'] =
-                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
-                    (connectedBayEnergyData.impConsumed ?? 0.0);
-                temporaryBusFlows[connectedBusId]!['export'] =
-                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
-                    (connectedBayEnergyData.expConsumed ?? 0.0);
-              } else {
-                // Bus -> Line
-                temporaryBusFlows[connectedBusId]!['export'] =
-                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
-                    (connectedBayEnergyData.impConsumed ?? 0.0);
-                temporaryBusFlows[connectedBusId]!['import'] =
-                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
-                    (connectedBayEnergyData.expConsumed ?? 0.0);
-              }
-            } else if (bay.bayType == 'Transformer') {
-              // Transformer Import (impConsumed) is from HV side. Transformer Export (expConsumed) is from LV side.
-              if (bay.hvBusId == connectedBusId) {
-                // This connection is to the HV bus
-                // Transformer's HV Imp. is power *leaving* the HV Bus (Bus Export)
-                temporaryBusFlows[connectedBusId]!['export'] =
-                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
-                    (connectedBayEnergyData.impConsumed ?? 0.0);
-                // Transformer's HV Exp. (if any, e.g. reactive or backfeed) is power *entering* the HV Bus (Bus Import)
-                temporaryBusFlows[connectedBusId]!['import'] =
-                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
-                    (connectedBayEnergyData.expConsumed ?? 0.0);
-              } else if (bay.lvBusId == connectedBusId) {
-                // This connection is to the LV bus
-                // IMPORTANT: Total import on the transformer LV side bus is the transformer export energy.
-                temporaryBusFlows[connectedBusId]!['import'] =
-                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
-                    (connectedBayEnergyData.expConsumed ??
-                        0.0); // LV Bus Import from Transformer Export
-                // Transformer's LV Imp. (if any, e.g. reactive or backfeed) is power *leaving* the LV Bus (Bus Export)
-                temporaryBusFlows[connectedBusId]!['export'] =
-                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
-                    (connectedBayEnergyData.impConsumed ??
-                        0.0); // LV Bus Export to Transformer Import
-              }
-            } else if (bay.bayType == 'Feeder') {
-              // Feeders primarily draw power FROM the bus (are loads).
-              // Feeder's Imp is power flowing FROM bus TO feeder => Bus's Export
-              temporaryBusFlows[connectedBusId]!['import'] =
-                  (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
-                  (connectedBayEnergyData.impConsumed ?? 0.0);
-              // Feeder's Exp is power flowing FROM feeder TO bus (local generation) => Bus's Import
-              temporaryBusFlows[connectedBusId]!['export'] =
-                  (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
-                  (connectedBayEnergyData.expConsumed ?? 0.0);
-            }
+          // Add bay's export to busbar based on configuration
+          if (entry.exportContribution == EnergyContributionType.busImport) {
+            temporaryBusFlows[entry.busbarId]!['import'] =
+                (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
+                (connectedBayEnergy.expConsumed ?? 0.0);
+          } else if (entry.exportContribution ==
+              EnergyContributionType.busExport) {
+            temporaryBusFlows[entry.busbarId]!['export'] =
+                (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
+                (connectedBayEnergy.expConsumed ?? 0.0);
           }
         }
       }
@@ -508,8 +456,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       for (var busbar in _allBaysInSubstation.where(
         (b) => b.bayType == 'Busbar',
       )) {
-        double busTotalImp = temporaryBusFlows[busbar.id]?['export'] ?? 0.0;
-        double busTotalExp = temporaryBusFlows[busbar.id]?['import'] ?? 0.0;
+        double busTotalImp = temporaryBusFlows[busbar.id]?['import'] ?? 0.0;
+        double busTotalExp = temporaryBusFlows[busbar.id]?['export'] ?? 0.0;
 
         double busDifference = busTotalImp - busTotalExp;
         double busLossPercentage = 0.0;
@@ -540,10 +488,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         (b) => b.bayType == 'Busbar',
       ); // Assuming last in sorted list is lowest voltage
 
-      currentAbstractSubstationTotalImp =
-          (_busEnergySummary[highestVoltageBus?.id]?['totalImp']) ?? 0.0;
-      currentAbstractSubstationTotalExp =
-          (_busEnergySummary[lowestVoltageBus?.id]?['totalExp']) ?? 0.0;
+      double currentAbstractSubstationTotalImp = 0;
+      double currentAbstractSubstationTotalExp = 0;
+
+      if (highestVoltageBus != null) {
+        currentAbstractSubstationTotalImp =
+            (_busEnergySummary[highestVoltageBus.id]?['totalImp']) ?? 0.0;
+      }
+      if (lowestVoltageBus != null) {
+        currentAbstractSubstationTotalExp =
+            (_busEnergySummary[lowestVoltageBus.id]?['totalExp']) ?? 0.0;
+      }
 
       double overallDifference =
           currentAbstractSubstationTotalImp - currentAbstractSubstationTotalExp;
@@ -595,6 +550,133 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
+  // NEW: Method to handle saving a single BusbarEnergyMap
+  Future<void> _saveBusbarEnergyMap(BusbarEnergyMap map) async {
+    try {
+      if (map.id == null) {
+        // Create new
+        await FirebaseFirestore.instance
+            .collection('busbarEnergyMaps')
+            .add(map.toFirestore());
+      } else {
+        // Update existing
+        await FirebaseFirestore.instance
+            .collection('busbarEnergyMaps')
+            .doc(map.id)
+            .update(map.toFirestore());
+      }
+      await _loadEnergyData(); // Reload data to reflect changes
+    } catch (e) {
+      print('Error saving BusbarEnergyMap: $e');
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to save energy map: $e',
+          isError: true,
+        );
+      }
+    }
+  }
+
+  // NEW: Method to handle deleting a single BusbarEnergyMap
+  Future<void> _deleteBusbarEnergyMap(String mapId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('busbarEnergyMaps')
+          .doc(mapId)
+          .delete();
+      await _loadEnergyData(); // Reload data to reflect changes
+    } catch (e) {
+      print('Error deleting BusbarEnergyMap: $e');
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to delete energy map: $e',
+          isError: true,
+        );
+      }
+    }
+  }
+
+  // NEW: Method to show the busbar selection dialog
+  void _showBusbarSelectionDialog() {
+    final List<Bay> busbars = _allBaysInSubstation
+        .where((bay) => bay.bayType == 'Busbar')
+        .toList();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Busbar'),
+          content: busbars.isEmpty
+              ? const Text('No busbars found in this substation.')
+              : SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: busbars.map((busbar) {
+                      return ListTile(
+                        title: Text('${busbar.voltageLevel} ${busbar.name}'),
+                        onTap: () {
+                          Navigator.pop(context); // Close selection dialog
+                          _showBusbarEnergyAssignmentDialog(
+                            busbar,
+                          ); // Open assignment dialog
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // EXISTING: Method to show the busbar energy assignment dialog (now called from selection dialog)
+  void _showBusbarEnergyAssignmentDialog(Bay busbar) {
+    // Filter connections to find bays connected to this specific busbar
+    final List<Bay> connectedBays = _allConnections
+        .where(
+          (conn) =>
+              conn.sourceBayId == busbar.id || conn.targetBayId == busbar.id,
+        )
+        .map((conn) {
+          final String otherBayId = conn.sourceBayId == busbar.id
+              ? conn.targetBayId
+              : conn.sourceBayId;
+          return _baysMap[otherBayId];
+        })
+        .whereType<Bay>() // Filter out nulls
+        .where((bay) => bay.bayType != 'Busbar') // Exclude other busbars
+        .toList();
+
+    // Prepare current maps for the dialog, only those relevant to this busbar
+    final Map<String, BusbarEnergyMap> currentBusbarMaps = {};
+    _busbarEnergyMaps.forEach((key, value) {
+      if (value.busbarId == busbar.id) {
+        currentBusbarMaps[value.connectedBayId] = value;
+      }
+    });
+
+    showDialog(
+      context: context,
+      builder: (context) => _BusbarEnergyAssignmentDialog(
+        busbar: busbar,
+        connectedBays: connectedBays,
+        currentUser: widget.currentUser,
+        currentMaps: currentBusbarMaps,
+        onSaveMap: _saveBusbarEnergyMap,
+        onDeleteMap: _deleteBusbarEnergyMap,
+      ),
+    );
+  }
+
   SldRenderData _buildBayRenderDataList(
     List<Bay> allBays,
     Map<String, Bay> baysMap,
@@ -613,7 +695,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     const double verticalBusbarSpacing = 200;
     const double topPadding = 80;
     const double sidePadding = 100;
-    const double busbarHitboxHeight = 20.0;
+    const double busbarHitboxHeight = 50.0; // INCREASED: from 20.0 to 50.0
     const double lineFeederHeight = 40.0;
 
     final List<Bay> busbars = allBays
@@ -643,7 +725,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         if (bay.hvBusId != null && bay.lvBusId != null) {
           final hvBus = baysMap[bay.hvBusId];
           final lvBus = baysMap[bay.lvBusId];
-          if (hvBus != null && lvBus != null) {
+          // NEW: Ensure both connected bays are actually 'Busbar' types
+          if (hvBus != null &&
+              lvBus != null &&
+              hvBus.bayType == 'Busbar' &&
+              lvBus.bayType == 'Busbar') {
             final double hvVoltage = _getVoltageLevelValue(hvBus.voltageLevel);
             final double lvVoltage = _getVoltageLevelValue(lvBus.voltageLevel);
 
@@ -657,6 +743,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 .putIfAbsent(key, () => {})
                 .putIfAbsent(hvBus.id, () => [])
                 .add(bay);
+          } else {
+            debugPrint(
+              'Transformer ${bay.name} (${bay.id}) linked to non-busbar or missing bus: HV=${bay.hvBusId}, LV=${bay.lvBusId}',
+            );
           }
         }
       } else if (bay.bayType != 'Busbar') {
@@ -665,7 +755,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           final bool targetIsBay = c.targetBayId == bay.id;
           final bool sourceIsBus = baysMap[c.sourceBayId]?.bayType == 'Busbar';
           final bool targetIsBus = baysMap[c.targetBayId]?.bayType == 'Busbar';
-          return (sourceIsBay && targetIsBus) || (targetIsBay && sourceIsBus);
+          return (sourceIsBay && targetIsBay) || (targetIsBay && sourceIsBus);
         });
 
         if (connectionToBus != null) {
@@ -711,31 +801,40 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       String hvBusId = busIdsInPair[0];
       String lvBusId = busIdsInPair[1];
 
+      // NEW: Add null check for busYPositions
+      if (!busYPositions.containsKey(hvBusId) ||
+          !busYPositions.containsKey(lvBusId)) {
+        debugPrint(
+          'Skipping transformer group for pair $pairKey: One or both bus IDs not found in busYPositions. This should ideally not happen if data is clean.',
+        );
+        continue; // Skip this transformer group if bus position is unknown
+      }
+
       final Bay? currentHvBus = baysMap[hvBusId];
       final Bay? currentLvBus = baysMap[lvBusId];
 
-      if (currentHvBus != null && currentLvBus != null) {
-        final double hvVoltageValue = _getVoltageLevelValue(
-          currentHvBus.voltageLevel,
-        );
-        final double lvVoltageValue = _getVoltageLevelValue(
-          currentLvBus.voltageLevel,
-        );
-
-        if (hvVoltageValue < lvVoltageValue) {
-          String temp = hvBusId;
-          hvBusId = lvBusId;
-          lvBusId = temp;
-        }
-      } else {
+      if (currentHvBus == null || currentLvBus == null) {
         debugPrint(
-          'Warning: One of the bus IDs (${hvBusId}, ${lvBusId}) in bus pair key ${pairKey} not found in baysMap.',
+          'Skipping transformer group for pair $pairKey: One or both bus objects not found in baysMap. This should ideally not happen if data is clean.',
         );
-        continue;
+        continue; // Should ideally not happen if busYPositions check passes, but extra safety
       }
 
-      final double hvBusY = busYPositions[hvBusId]!;
-      final double lvBusY = busYPositions[lvBusId]!;
+      final double hvVoltageValue = _getVoltageLevelValue(
+        currentHvBus.voltageLevel,
+      );
+      final double lvVoltageValue = _getVoltageLevelValue(
+        currentLvBus.voltageLevel,
+      );
+
+      if (hvVoltageValue < lvVoltageValue) {
+        String temp = hvBusId;
+        hvBusId = lvBusId;
+        lvBusId = temp;
+      }
+
+      final double hvBusY = busYPositions[hvBusId]!; // Now safe due to check
+      final double lvBusY = busYPositions[lvBusId]!; // Now safe due to check
 
       final List<Bay> transformers =
           transformersForPair[hvBusId] ?? transformersForPair[lvBusId] ?? [];
@@ -766,7 +865,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     for (var busbar in busbars) {
       final double busY = busYPositions[busbar.id]!;
 
-      final List<Bay> baysAbove = busbarToConnectedBaysAbove[busbar.id] ?? [];
+      final List<Bay> baysAbove = List.from(
+        busbarToConnectedBaysAbove[busbar.id] ?? [],
+      );
       double currentX = currentLaneXForOtherBays;
       for (var bay in baysAbove) {
         Offset finalOffset = (bay.xPosition != null && bay.yPosition != null)
@@ -784,7 +885,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
       maxOverallXForCanvas = max(maxOverallXForCanvas, currentX);
 
-      final List<Bay> baysBelow = busbarToConnectedBaysBelow[busbar.id] ?? [];
+      final List<Bay> baysBelow = List.from(
+        busbarToConnectedBaysBelow[busbar.id] ?? [],
+      );
       currentX = currentLaneXForOtherBays;
       for (var bay in baysBelow) {
         Offset finalOffset = (bay.xPosition != null && bay.yPosition != null)
@@ -793,7 +896,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
         final bayRect = Rect.fromLTWH(
           finalOffset.dx,
-          finalOffset.dy,
+          finalOffset
+              .dy, // CORRECTED: Changed from finalBayRects[bay.id]!.top to finalOffset.dy
           symbolWidth,
           lineFeederHeight,
         );
@@ -1074,6 +1178,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   minScale: 0.1,
                   maxScale: 4.0,
                   constrained: false,
+                  // REMOVED: GestureDetector for tapping on busbars directly
                   child: CustomPaint(
                     size: Size(canvasWidth, canvasHeight),
                     painter: SingleLineDiagramPainter(
@@ -1220,6 +1325,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 ),
               ],
             ),
+      floatingActionButton: FloatingActionButton(
+        // NEW: Floating Action Button
+        onPressed: _showBusbarSelectionDialog,
+        child: const Icon(
+          Icons.settings_input_antenna,
+        ), // Example icon for busbar settings
+        tooltip: 'Configure Busbar Energy',
+      ),
     );
   }
 
@@ -1252,6 +1365,210 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// NEW: Dialog for configuring busbar energy contributions (moved from previous partial update for completeness)
+class _BusbarEnergyAssignmentDialog extends StatefulWidget {
+  final Bay busbar;
+  final List<Bay> connectedBays;
+  final AppUser currentUser;
+  final Map<String, BusbarEnergyMap>
+  currentMaps; // Existing maps for this busbar
+  final Function(BusbarEnergyMap)
+  onSaveMap; // Callback to save/update a single map
+  final Function(String) onDeleteMap; // Callback to delete a map
+
+  const _BusbarEnergyAssignmentDialog({
+    required this.busbar,
+    required this.connectedBays,
+    required this.currentUser,
+    required this.currentMaps,
+    required this.onSaveMap,
+    required this.onDeleteMap,
+  });
+
+  @override
+  __BusbarEnergyAssignmentDialogState createState() =>
+      __BusbarEnergyAssignmentDialogState();
+}
+
+class __BusbarEnergyAssignmentDialogState
+    extends State<_BusbarEnergyAssignmentDialog> {
+  // Key: connectedBayId, Value: {import: EnergyContributionType, export: EnergyContributionType, originalMapId: String?}
+  final Map<String, Map<String, dynamic>> _bayContributionSelections = {};
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    for (var bay in widget.connectedBays) {
+      final existingMap =
+          widget.currentMaps[bay.id]; // Use bay.id as key in currentMaps
+      _bayContributionSelections[bay.id] = {
+        'import':
+            existingMap?.importContribution ?? EnergyContributionType.none,
+        'export':
+            existingMap?.exportContribution ?? EnergyContributionType.none,
+        'originalMapId': existingMap?.id,
+      };
+    }
+  }
+
+  Future<void> _saveAllContributions() async {
+    setState(() => _isSaving = true);
+    try {
+      for (var bayId in _bayContributionSelections.keys) {
+        final selection = _bayContributionSelections[bayId]!;
+        final originalMapId = selection['originalMapId'] as String?;
+        final importContrib = selection['import'] as EnergyContributionType;
+        final exportContrib = selection['export'] as EnergyContributionType;
+
+        if (importContrib == EnergyContributionType.none &&
+            exportContrib == EnergyContributionType.none) {
+          if (originalMapId != null) {
+            // If both are 'none' and there was an existing map, delete it
+            widget.onDeleteMap(originalMapId);
+          }
+        } else {
+          // Save or update the map
+          final newMap = BusbarEnergyMap(
+            id: originalMapId, // Will be null for new maps, used for updates
+            substationId: widget.busbar.substationId,
+            busbarId: widget.busbar.id,
+            connectedBayId: bayId,
+            importContribution: importContrib,
+            exportContribution: exportContrib,
+            createdBy: originalMapId != null
+                ? widget.currentUser.uid
+                : widget.currentUser.uid,
+            createdAt: originalMapId != null
+                ? Timestamp.now()
+                : Timestamp.now(), // For new maps, use now. For existing, use now for lastModifiedAt in toFirestore
+            lastModifiedAt: Timestamp.now(), // Always update last modified
+          );
+          widget.onSaveMap(newMap);
+        }
+      }
+      if (mounted) {
+        SnackBarUtils.showSnackBar(context, 'Busbar energy assignments saved!');
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to save assignments: $e',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Assign Energy Flow for ${widget.busbar.name}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Configure how energy from connected bays contributes to this busbar\'s import/export.',
+            ),
+            const SizedBox(height: 16),
+            if (widget.connectedBays.isEmpty)
+              const Text('No bays connected to this busbar.'),
+            ...widget.connectedBays.map((bay) {
+              final currentSelection = _bayContributionSelections[bay.id]!;
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${bay.name} (${bay.bayType})',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      // Import Contribution
+                      DropdownButtonFormField<EnergyContributionType>(
+                        decoration: const InputDecoration(
+                          labelText: 'Bay Import contributes to Busbar:',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        value: currentSelection['import'],
+                        items: EnergyContributionType.values.map((type) {
+                          return DropdownMenuItem(
+                            value: type,
+                            child: Text(
+                              type
+                                  .toString()
+                                  .split('.')
+                                  .last
+                                  .replaceAll('bus', 'Bus '),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            currentSelection['import'] = newValue;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      // Export Contribution
+                      DropdownButtonFormField<EnergyContributionType>(
+                        decoration: const InputDecoration(
+                          labelText: 'Bay Export contributes to Busbar:',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        value: currentSelection['export'],
+                        items: EnergyContributionType.values.map((type) {
+                          return DropdownMenuItem(
+                            value: type,
+                            child: Text(
+                              type
+                                  .toString()
+                                  .split('.')
+                                  .last
+                                  .replaceAll('bus', 'Bus '),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            currentSelection['export'] = newValue;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _isSaving ? null : _saveAllContributions,
+          child: _isSaving
+              ? const CircularProgressIndicator(strokeWidth: 2)
+              : const Text('Save Assignments'),
+        ),
+      ],
     );
   }
 }
