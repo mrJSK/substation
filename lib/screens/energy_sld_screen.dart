@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
-import 'package:collection/collection.dart'
-    as collection; // Modified import to use a prefix
+import 'package:collection/collection.dart' as collection;
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
@@ -16,7 +15,6 @@ import '../utils/snackbar_utils.dart';
 // Reusing components from substation_detail_screen.dart
 import 'substation_detail_screen.dart'; // To access SingleLineDiagramPainter and BayRenderData
 
-// NEW: BayEnergyData class moved to top-level
 class BayEnergyData {
   final String bayName;
   final double? prevImp;
@@ -39,15 +37,13 @@ class BayEnergyData {
   });
 }
 
-// NEW: SldRenderData class to encapsulate all rendering data
 class SldRenderData {
   final List<BayRenderData> bayRenderDataList;
   final Map<String, Rect> finalBayRects;
   final Map<String, Rect> busbarRects;
   final Map<String, Map<String, Offset>> busbarConnectionPoints;
-  final Map<String, BayEnergyData> bayEnergyData; // NEW: Add energy data
-  final Map<String, Map<String, double>>
-  busEnergySummary; // NEW: Add bus summary
+  final Map<String, BayEnergyData> bayEnergyData;
+  final Map<String, Map<String, double>> busEnergySummary;
 
   SldRenderData({
     required this.bayRenderDataList,
@@ -55,7 +51,7 @@ class SldRenderData {
     required this.busbarRects,
     required this.busbarConnectionPoints,
     required this.bayEnergyData,
-    required this.busEnergySummary, // NEW
+    required this.busEnergySummary,
   });
 }
 
@@ -77,10 +73,8 @@ class EnergySldScreen extends StatefulWidget {
 
 class _EnergySldScreenState extends State<EnergySldScreen> {
   bool _isLoading = true;
-  DateTime _startDate = DateTime.now().subtract(
-    const Duration(days: 1),
-  ); // Default to yesterday
-  DateTime _endDate = DateTime.now(); // Default to today
+  DateTime _startDate = DateTime.now().subtract(const Duration(days: 1));
+  DateTime _endDate = DateTime.now();
 
   List<Bay> _allBaysInSubstation = [];
   Map<String, Bay> _baysMap = {};
@@ -88,11 +82,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   Map<String, BayEnergyData> _bayEnergyData = {};
   Map<String, double> _abstractEnergyData = {};
-  Map<String, Map<String, double>> _busEnergySummary =
-      {}; // NEW state variable for bus totals
+  Map<String, Map<String, double>> _busEnergySummary = {};
 
   final TransformationController _transformationController =
       TransformationController();
+
+  int _currentPageIndex = 0;
 
   @override
   void initState() {
@@ -113,20 +108,31 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     super.dispose();
   }
 
+  // Helper function to extract numerical voltage value for sorting
+  double _getVoltageLevelValue(String voltageLevel) {
+    // Extracts numbers (and decimals) from a string like "132kV"
+    final regex = RegExp(r'(\d+(\.\d+)?)');
+    final match = regex.firstMatch(voltageLevel);
+    if (match != null) {
+      return double.tryParse(match.group(1)!) ?? 0.0;
+    }
+    return 0.0; // Default if no number is found
+  }
+
   Future<void> _loadEnergyData() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
       _bayEnergyData.clear();
       _abstractEnergyData.clear();
-      _busEnergySummary.clear(); // Clear bus summary
+      _busEnergySummary.clear();
       _allBaysInSubstation.clear();
       _baysMap.clear();
       _allConnections.clear();
+      _currentPageIndex = 0;
     });
 
     try {
-      // 1. Fetch Bays
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
@@ -135,9 +141,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _allBaysInSubstation = baysSnapshot.docs
           .map((doc) => Bay.fromFirestore(doc))
           .toList();
+
+      // Sort bays by voltage level (highest to lowest) to ensure consistent layout and abstract calculation priority
+      _allBaysInSubstation.sort((a, b) {
+        final double voltageA = _getVoltageLevelValue(a.voltageLevel);
+        final double voltageB = _getVoltageLevelValue(b.voltageLevel);
+        return voltageB.compareTo(voltageA); // Descending order
+      });
+
       _baysMap = {for (var bay in _allBaysInSubstation) bay.id: bay};
 
-      // 2. Fetch Connections
       final connectionsSnapshot = await FirebaseFirestore.instance
           .collection('bay_connections')
           .where('substationId', isEqualTo: widget.substationId)
@@ -146,7 +159,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           .map((doc) => BayConnection.fromFirestore(doc))
           .toList();
 
-      // 3. Fetch Logsheet Entries based on date range
       final startOfStartDate = DateTime(
         _startDate.year,
         _startDate.month,
@@ -179,10 +191,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       Map<String, LogsheetEntry> startDayReadings = {};
       Map<String, LogsheetEntry> endDayReadings = {};
-      Map<String, LogsheetEntry> previousDayToStartDateReadings =
-          {}; // For single day calculation
+      Map<String, LogsheetEntry> previousDayToStartDateReadings = {};
 
-      // Fetch readings for Start Date
       final startDayLogsheetsSnapshot = await FirebaseFirestore.instance
           .collection('logsheetEntries')
           .where('substationId', isEqualTo: widget.substationId)
@@ -195,9 +205,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           (doc.data() as Map<String, dynamic>)['bayId']:
               LogsheetEntry.fromFirestore(doc),
       };
-      print('DEBUG: Start Day Readings (for $_startDate): $startDayReadings');
+      // print('DEBUG: Start Day Readings (for $_startDate): $startDayReadings');
 
-      // Fetch readings for End Date
       if (!_startDate.isAtSameMomentAs(_endDate)) {
         final endDayLogsheetsSnapshot = await FirebaseFirestore.instance
             .collection('logsheetEntries')
@@ -211,12 +220,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             (doc.data() as Map<String, dynamic>)['bayId']:
                 LogsheetEntry.fromFirestore(doc),
         };
-        print('DEBUG: End Day Readings (for $_endDate): $endDayReadings');
+        // print('DEBUG: End Day Readings (for $_endDate): $endDayReadings');
       } else {
-        // If start date == end date, endDayReadings is just startDayReadings
         endDayReadings = startDayReadings;
-
-        // Also fetch previous day's reading for single day calculation
         final previousDay = _startDate.subtract(const Duration(days: 1));
         final startOfPreviousDay = DateTime(
           previousDay.year,
@@ -249,41 +255,32 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             (doc.data() as Map<String, dynamic>)['bayId']:
                 LogsheetEntry.fromFirestore(doc),
         };
-        print(
-          'DEBUG: Previous Day to Start Date Readings (for $previousDay): $previousDayToStartDateReadings',
-        );
+        // print(
+        //   'DEBUG: Previous Day to Start Date Readings (for $previousDay): $previousDayToStartDateReadings',
+        // );
       }
 
-      // 4. Process data for each bay
-      double abstractSubstationTotalImp =
-          0; // Renamed from totalImp for clarity
-      double abstractSubstationTotalExp =
-          0; // Renamed from totalExp for clarity
+      // Initialize temporary storage for busbar flows
+      Map<String, Map<String, double>> temporaryBusFlows = {};
+      for (var busbar in _allBaysInSubstation.where(
+        (b) => b.bayType == 'Busbar',
+      )) {
+        temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
+      }
 
-      Map<String, double> tempBusImports = {}; // Temp storage for bus imports
-      Map<String, double> tempBusExports = {}; // Temp storage for bus exports
+      // Initialize abstract substation totals here
+      double currentAbstractSubstationTotalImp = 0;
+      double currentAbstractSubstationTotalExp = 0;
 
       for (var bay in _allBaysInSubstation) {
         final double? mf = bay.multiplyingFactor;
-        double? calculatedImpConsumed;
-        double? calculatedExpConsumed;
+        double calculatedImpConsumed = 0.0; // Initialize to 0.0
+        double calculatedExpConsumed = 0.0; // Initialize to 0.0
 
         if (_startDate.isAtSameMomentAs(_endDate)) {
-          // Case: Single Day Consumption
-          final currentReadingLogsheet =
-              endDayReadings[bay
-                  .id]; // This is the reading for the selected single day
+          final currentReadingLogsheet = endDayReadings[bay.id];
           final previousReadingLogsheetDocument =
-              previousDayToStartDateReadings[bay
-                  .id]; // Document from day before selected single day
-
-          print('DEBUG: Single Day Calculation for Bay: ${bay.name}');
-          print(
-            'DEBUG: Current Reading (${DateFormat('dd-MMM-yyyy').format(_endDate)}): $currentReadingLogsheet',
-          );
-          print(
-            'DEBUG: Previous Reading Document (${DateFormat('dd-MMM-yyyy').format(_endDate.subtract(const Duration(days: 1)))}): $previousReadingLogsheetDocument',
-          );
+              previousDayToStartDateReadings[bay.id];
 
           final double? currImpVal = double.tryParse(
             currentReadingLogsheet?.values['Current Day Reading (Import)']
@@ -299,7 +296,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           double? prevImpValForCalculation;
           double? prevExpValForCalculation;
 
-          // First, try to get previous day's value from the *previous day's document*
+          // Prefer previous day's document reading if available for previous value
           final double? prevImpValFromPreviousDocument = double.tryParse(
             previousReadingLogsheetDocument
                     ?.values['Current Day Reading (Import)']
@@ -316,73 +313,46 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           if (prevImpValFromPreviousDocument != null) {
             prevImpValForCalculation = prevImpValFromPreviousDocument;
           } else {
-            // If no previous day's *document*, try to get "Previous Day Reading" *field* from current day's document
+            // Fallback to "Previous Day Reading" field in current day's document
             prevImpValForCalculation = double.tryParse(
               currentReadingLogsheet?.values['Previous Day Reading (Import)']
                       ?.toString() ??
                   '',
             );
-            if (prevImpValForCalculation != null) {
-              print(
-                'DEBUG: Used "Previous Day Reading (Import)" field from current day\'s logsheet for ${bay.name}',
-              );
-            }
           }
 
           if (prevExpValFromPreviousDocument != null) {
             prevExpValForCalculation = prevExpValFromPreviousDocument;
           } else {
-            // If no previous day's *document*, try to get "Previous Day Reading" *field* from current day's document
+            // Fallback to "Previous Day Reading" field in current day's document
             prevExpValForCalculation = double.tryParse(
               currentReadingLogsheet?.values['Previous Day Reading (Export)']
                       ?.toString() ??
                   '',
             );
-            if (prevExpValForCalculation != null) {
-              print(
-                'DEBUG: Used "Previous Day Reading (Export)" field from current day\'s logsheet for ${bay.name}',
-              );
-            }
           }
-
-          print(
-            'DEBUG: currImpVal: $currImpVal, prevImpValForCalculation: $prevImpValForCalculation',
-          );
-          print(
-            'DEBUG: currExpVal: $currExpVal, prevExpValForCalculation: $prevExpValForCalculation',
-          );
 
           if (currImpVal != null &&
               prevImpValForCalculation != null &&
               mf != null) {
-            calculatedImpConsumed =
-                (currImpVal - prevImpValForCalculation) * mf;
+            calculatedImpConsumed = max(
+              0.0,
+              (currImpVal - prevImpValForCalculation) * mf,
+            ); // Ensure non-negative consumption
           } else if (currImpVal != null && mf != null) {
-            // Fallback if no prev reading at all
             calculatedImpConsumed = currImpVal * mf;
-            print(
-              'DEBUG: No sufficient previous reading for ${bay.name}, showing current * MF as consumption.',
-            );
           }
 
           if (currExpVal != null &&
               prevExpValForCalculation != null &&
               mf != null) {
-            calculatedExpConsumed =
-                (currExpVal - prevExpValForCalculation) * mf;
+            calculatedExpConsumed = max(
+              0.0,
+              (currExpVal - prevExpValForCalculation) * mf,
+            ); // Ensure non-negative consumption
           } else if (currExpVal != null && mf != null) {
-            // Fallback
             calculatedExpConsumed = currExpVal * mf;
-            print(
-              'DEBUG: No sufficient previous reading for ${bay.name}, showing current * MF as consumption.',
-            );
           }
-          print(
-            'DEBUG: calculatedImpConsumed for ${bay.name}: $calculatedImpConsumed',
-          );
-          print(
-            'DEBUG: calculatedExpConsumed for ${bay.name}: $calculatedExpConsumed',
-          );
 
           _bayEnergyData[bay.id] = BayEnergyData(
             bayName: bay.name,
@@ -395,17 +365,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             expConsumed: calculatedExpConsumed,
           );
         } else {
-          // Case: Period Consumption
           final startReading = startDayReadings[bay.id];
           final endReading = endDayReadings[bay.id];
-
-          print('DEBUG: Period Calculation for Bay: ${bay.name}');
-          print(
-            'DEBUG: Start Reading (${DateFormat('dd-MMM-yyyy').format(_startDate)}): $startReading',
-          );
-          print(
-            'DEBUG: End Reading (${DateFormat('dd-MMM-yyyy').format(_endDate)}): $endReading',
-          );
 
           final double? startImpVal = double.tryParse(
             startReading?.values['Current Day Reading (Import)']?.toString() ??
@@ -424,26 +385,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 '',
           );
 
-          print('DEBUG: startImpVal: $startImpVal, endImpVal: $endImpVal');
-          print('DEBUG: startExpVal: $startExpVal, endExpVal: $endExpVal');
-
           if (startImpVal != null && endImpVal != null && mf != null) {
-            calculatedImpConsumed = (endImpVal - startImpVal) * mf;
+            calculatedImpConsumed = max(0.0, (endImpVal - startImpVal) * mf);
           }
           if (startExpVal != null && endExpVal != null && mf != null) {
-            calculatedExpConsumed = (endExpVal - startExpVal) * mf;
+            calculatedExpConsumed = max(0.0, (endExpVal - startExpVal) * mf);
           }
-          print(
-            'DEBUG: calculatedImpConsumed for ${bay.name}: $calculatedImpConsumed',
-          );
-          print(
-            'DEBUG: calculatedExpConsumed for ${bay.name}: $calculatedExpConsumed',
-          );
 
           _bayEnergyData[bay.id] = BayEnergyData(
             bayName: bay.name,
-            prevImp: startImpVal, // For display, prev is start of period
-            currImp: endImpVal, // For display, curr is end of period
+            prevImp: startImpVal,
+            currImp: endImpVal,
             prevExp: startExpVal,
             currExp: endExpVal,
             mf: mf,
@@ -452,84 +404,160 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           );
         }
 
-        // Aggregate for Abstract Substation Data (only for Lines and Feeders)
-        if (bay.bayType == 'Line' || bay.bayType == 'Feeder') {
-          if (calculatedImpConsumed != null)
-            abstractSubstationTotalImp += calculatedImpConsumed;
-          if (calculatedExpConsumed != null)
-            abstractSubstationTotalExp += calculatedExpConsumed;
-        }
-      }
+        // --- BUSBAR ABSTRACT CALCULATION (Per your clarified logic) ---
+        // Process each bay's energy to correctly add to the connected busbar(s) import/export.
+        final connectedBayEnergyData = _bayEnergyData[bay.id];
+        if (connectedBayEnergyData == null)
+          continue; // Skip if no energy data for this bay
 
-      // Populate _busEnergySummary
-      for (var busbar in _allBaysInSubstation.where(
-        (b) => b.bayType == 'Busbar',
-      )) {
-        double busTotalImp = 0.0;
-        double busTotalExp = 0.0;
+        final List<BayConnection>
+        relevantBusConnections = _allConnections.where((c) {
+          // Check if current 'bay' is involved and the other end is a 'Busbar'
+          final isCurrentBaySource = c.sourceBayId == bay.id;
+          final isCurrentBayTarget = c.targetBayId == bay.id;
+          final isOtherEndBus =
+              (_baysMap[c.sourceBayId]?.bayType == 'Busbar' &&
+                  isCurrentBayTarget) ||
+              (_baysMap[c.targetBayId]?.bayType == 'Busbar' &&
+                  isCurrentBaySource);
+          return isOtherEndBus;
+        }).toList();
 
-        // Find bays connected to this busbar
-        for (var connection in _allConnections) {
-          String? connectedBayId;
-          bool isSourceToBus =
-              false; // True if current bay is source, bus is target
-          bool isTargetToBus =
-              false; // True if current bay is target, bus is source
+        for (var connection in relevantBusConnections) {
+          String? connectedBusId;
+          Bay? connectedBus;
 
-          if (connection.sourceBayId == busbar.id) {
-            connectedBayId = connection.targetBayId;
-            isSourceToBus = true;
-          } else if (connection.targetBayId == busbar.id) {
-            connectedBayId = connection.sourceBayId;
-            isTargetToBus = true;
+          // Determine which end of the connection is the busbar
+          if (_baysMap[connection.sourceBayId]?.bayType == 'Busbar') {
+            connectedBusId = connection.sourceBayId;
+            connectedBus = _baysMap[connection.sourceBayId];
+          } else {
+            // connection.targetBayId must be the busbar
+            connectedBusId = connection.targetBayId;
+            connectedBus = _baysMap[connection.targetBayId];
           }
 
-          if (connectedBayId != null) {
-            final connectedBay = _baysMap[connectedBayId];
-            if (connectedBay != null &&
-                (connectedBay.bayType == 'Line' ||
-                    connectedBay.bayType == 'Feeder' ||
-                    connectedBay.bayType == 'Transformer')) {
-              final connectedBayEnergyData = _bayEnergyData[connectedBayId];
+          if (connectedBusId != null && connectedBus != null) {
+            temporaryBusFlows.putIfAbsent(
+              connectedBusId,
+              () => {'import': 0.0, 'export': 0.0},
+            );
 
-              if (connectedBayEnergyData != null) {
-                // Determine directionality relative to the bus for import/export
-                // Simplified logic: If a bay imports, it adds to bus import. If it exports, it adds to bus export.
-                // This might need more complex power flow logic depending on exact definitions.
-                if (connectedBayEnergyData.impConsumed != null &&
-                    connectedBayEnergyData.impConsumed! > 0) {
-                  busTotalImp += connectedBayEnergyData.impConsumed!;
-                }
-                if (connectedBayEnergyData.expConsumed != null &&
-                    connectedBayEnergyData.expConsumed! > 0) {
-                  busTotalExp += connectedBayEnergyData.expConsumed!;
-                }
+            if (bay.bayType == 'Line') {
+              // Lines connected to a bus:
+              // If the line is the SOURCE of the connection to the bus (Line -> Bus), Line's Imp is Bus's Imp. Line's Exp is Bus's Exp.
+              // If the line is the TARGET of the connection from the bus (Bus -> Line), Line's Imp is Bus's Exp. Line's Exp is Bus's Imp.
+              if (connection.sourceBayId == bay.id) {
+                // Line -> Bus
+                temporaryBusFlows[connectedBusId]!['import'] =
+                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
+                    (connectedBayEnergyData.impConsumed ?? 0.0);
+                temporaryBusFlows[connectedBusId]!['export'] =
+                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
+                    (connectedBayEnergyData.expConsumed ?? 0.0);
+              } else {
+                // Bus -> Line
+                temporaryBusFlows[connectedBusId]!['export'] =
+                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
+                    (connectedBayEnergyData.impConsumed ?? 0.0);
+                temporaryBusFlows[connectedBusId]!['import'] =
+                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
+                    (connectedBayEnergyData.expConsumed ?? 0.0);
               }
+            } else if (bay.bayType == 'Transformer') {
+              // Transformer Import (impConsumed) is from HV side. Transformer Export (expConsumed) is from LV side.
+              if (bay.hvBusId == connectedBusId) {
+                // This connection is to the HV bus
+                // Transformer's HV Imp. is power *leaving* the HV Bus (Bus Export)
+                temporaryBusFlows[connectedBusId]!['export'] =
+                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
+                    (connectedBayEnergyData.impConsumed ?? 0.0);
+                // Transformer's HV Exp. (if any, e.g. reactive or backfeed) is power *entering* the HV Bus (Bus Import)
+                temporaryBusFlows[connectedBusId]!['import'] =
+                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
+                    (connectedBayEnergyData.expConsumed ?? 0.0);
+              } else if (bay.lvBusId == connectedBusId) {
+                // This connection is to the LV bus
+                // IMPORTANT: Total import on the transformer LV side bus is the transformer export energy.
+                temporaryBusFlows[connectedBusId]!['import'] =
+                    (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
+                    (connectedBayEnergyData.expConsumed ??
+                        0.0); // LV Bus Import from Transformer Export
+                // Transformer's LV Imp. (if any, e.g. reactive or backfeed) is power *leaving* the LV Bus (Bus Export)
+                temporaryBusFlows[connectedBusId]!['export'] =
+                    (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
+                    (connectedBayEnergyData.impConsumed ??
+                        0.0); // LV Bus Export to Transformer Import
+              }
+            } else if (bay.bayType == 'Feeder') {
+              // Feeders primarily draw power FROM the bus (are loads).
+              // Feeder's Imp is power flowing FROM bus TO feeder => Bus's Export
+              temporaryBusFlows[connectedBusId]!['import'] =
+                  (temporaryBusFlows[connectedBusId]!['import'] ?? 0.0) +
+                  (connectedBayEnergyData.impConsumed ?? 0.0);
+              // Feeder's Exp is power flowing FROM feeder TO bus (local generation) => Bus's Import
+              temporaryBusFlows[connectedBusId]!['export'] =
+                  (temporaryBusFlows[connectedBusId]!['export'] ?? 0.0) +
+                  (connectedBayEnergyData.expConsumed ?? 0.0);
             }
           }
         }
+      }
+
+      // Finalize bus energy summaries based on the aggregated temporary flows
+      for (var busbar in _allBaysInSubstation.where(
+        (b) => b.bayType == 'Busbar',
+      )) {
+        double busTotalImp = temporaryBusFlows[busbar.id]?['export'] ?? 0.0;
+        double busTotalExp = temporaryBusFlows[busbar.id]?['import'] ?? 0.0;
+
+        double busDifference = busTotalImp - busTotalExp;
+        double busLossPercentage = 0.0;
+        if (busTotalImp > 0) {
+          // Avoid division by zero
+          busLossPercentage = (busDifference / busTotalImp) * 100;
+        }
+
         _busEnergySummary[busbar.id] = {
           'totalImp': busTotalImp,
           'totalExp': busTotalExp,
+          'difference': busDifference,
+          'lossPercentage': busLossPercentage,
         };
         print(
-          'DEBUG: Bus Energy Summary for ${busbar.name}: Imp=${busTotalImp}, Exp=${busTotalExp}',
+          'DEBUG: Bus Energy Summary for ${busbar.name}: Imp=${busTotalImp}, Exp=${busTotalExp}, Diff=${busDifference}, Loss=${busLossPercentage}%',
         );
       }
 
-      // 5. Calculate Abstract Data for overall substation
-      double difference =
-          abstractSubstationTotalImp - abstractSubstationTotalExp;
-      double lossPercentage = 0;
-      if (abstractSubstationTotalImp > 0) {
-        lossPercentage = (difference / abstractSubstationTotalImp) * 100;
+      // --- FINAL SUBSTATION ABSTRACT CALCULATION (Directly from Bus Abstracts as per PDF) ---
+      // The PDF implies: Substation Import = Import of the highest voltage bus
+      //                 Substation Export = Export of the lowest voltage bus
+
+      final highestVoltageBus = _allBaysInSubstation.firstWhereOrNull(
+        (b) => b.bayType == 'Busbar',
+      );
+      final lowestVoltageBus = _allBaysInSubstation.lastWhereOrNull(
+        (b) => b.bayType == 'Busbar',
+      ); // Assuming last in sorted list is lowest voltage
+
+      currentAbstractSubstationTotalImp =
+          (_busEnergySummary[highestVoltageBus?.id]?['totalImp']) ?? 0.0;
+      currentAbstractSubstationTotalExp =
+          (_busEnergySummary[lowestVoltageBus?.id]?['totalExp']) ?? 0.0;
+
+      double overallDifference =
+          currentAbstractSubstationTotalImp - currentAbstractSubstationTotalExp;
+      double overallLossPercentage = 0;
+      if (currentAbstractSubstationTotalImp > 0) {
+        overallLossPercentage =
+            (overallDifference / currentAbstractSubstationTotalImp) * 100;
       }
 
       _abstractEnergyData = {
-        'totalImp': abstractSubstationTotalImp,
-        'totalExp': abstractSubstationTotalExp,
-        'difference': difference,
-        'lossPercentage': lossPercentage,
+        'totalImp': currentAbstractSubstationTotalImp,
+        'totalExp': currentAbstractSubstationTotalExp,
+        'difference': overallDifference,
+        'lossPercentage': overallLossPercentage,
       };
     } catch (e) {
       print("Error loading energy data: $e");
@@ -567,13 +595,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Modified to return SldRenderData, now also takes bayEnergyData and busEnergySummary
   SldRenderData _buildBayRenderDataList(
     List<Bay> allBays,
     Map<String, Bay> baysMap,
     List<BayConnection> allConnections,
     Map<String, BayEnergyData> bayEnergyData,
-    Map<String, Map<String, double>> busEnergySummary, // NEW
+    Map<String, Map<String, double>> busEnergySummary,
   ) {
     final List<BayRenderData> bayRenderDataList = [];
     final Map<String, Rect> finalBayRects = {};
@@ -608,9 +635,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     final Map<String, Map<String, List<Bay>>> transformersByBusPair = {};
 
     for (var bay in allBays) {
-      // Filter to only include the required bay types for the energy SLD visual
       if (!['Busbar', 'Transformer', 'Line', 'Feeder'].contains(bay.bayType)) {
-        continue; // Skip other bay types from visual layout
+        continue;
       }
 
       if (bay.bayType == 'Transformer') {
@@ -618,16 +644,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           final hvBus = baysMap[bay.hvBusId];
           final lvBus = baysMap[bay.lvBusId];
           if (hvBus != null && lvBus != null) {
-            final double hvVoltage =
-                double.tryParse(
-                  hvBus.voltageLevel.replaceAll(RegExp(r'[^0-9.]'), ''),
-                ) ??
-                0;
-            final double lvVoltage =
-                double.tryParse(
-                  lvBus.voltageLevel.replaceAll(RegExp(r'[^0-9.]'), ''),
-                ) ??
-                0;
+            final double hvVoltage = _getVoltageLevelValue(hvBus.voltageLevel);
+            final double lvVoltage = _getVoltageLevelValue(lvBus.voltageLevel);
 
             String key = "";
             if (hvVoltage > lvVoltage) {
@@ -697,16 +715,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       final Bay? currentLvBus = baysMap[lvBusId];
 
       if (currentHvBus != null && currentLvBus != null) {
-        final double hvVoltageValue =
-            double.tryParse(
-              currentHvBus.voltageLevel.replaceAll(RegExp(r'[^0-9.]'), ''),
-            ) ??
-            0;
-        final double lvVoltageValue =
-            double.tryParse(
-              currentLvBus.voltageLevel.replaceAll(RegExp(r'[^0-9.]'), ''),
-            ) ??
-            0;
+        final double hvVoltageValue = _getVoltageLevelValue(
+          currentHvBus.voltageLevel,
+        );
+        final double lvVoltageValue = _getVoltageLevelValue(
+          currentLvBus.voltageLevel,
+        );
 
         if (hvVoltageValue < lvVoltageValue) {
           String temp = hvBusId;
@@ -837,8 +851,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       finalBayRects[busbar.id] = tappableRect;
     }
 
-    // After all layout calculations, populate bayRenderDataList
-    // ONLY for the allowed bay types
     final List<String> allowedVisualBayTypes = [
       'Busbar',
       'Transformer',
@@ -848,7 +860,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     for (var bay in allBays) {
       if (!allowedVisualBayTypes.contains(bay.bayType)) {
-        continue; // Skip adding other bay types to the render list
+        continue;
       }
       final Rect? rect = finalBayRects[bay.id];
       if (rect != null) {
@@ -861,19 +873,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             bottomCenter: rect.bottomCenter,
             leftCenter: rect.centerLeft,
             rightCenter: rect.centerRight,
-            // equipmentInstances will be empty for Energy SLD as it's not managed here
           ),
         );
       }
     }
 
-    // Recalculate busbar connection points based on their new fixed X positions
     for (var connection in allConnections) {
       final Bay? sourceBay = baysMap[connection.sourceBayId];
       final Bay? targetBay = baysMap[connection.targetBayId];
       if (sourceBay == null || targetBay == null) continue;
 
-      // Only add connection points if both source and target bays are allowed types
       if (!allowedVisualBayTypes.contains(sourceBay.bayType) ||
           !allowedVisualBayTypes.contains(targetBay.bayType)) {
         continue;
@@ -938,11 +947,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       busbarRects: busbarRects,
       busbarConnectionPoints: busbarConnectionPoints,
       bayEnergyData: bayEnergyData,
-      busEnergySummary: busEnergySummary, // Pass the bus summary
+      busEnergySummary: busEnergySummary,
     );
   }
 
-  // Dummy function for SingleLineDiagramPainter
   BayRenderData _createDummyBayRenderData() {
     return BayRenderData(
       bay: Bay(
@@ -960,6 +968,27 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       bottomCenter: Offset.zero,
       leftCenter: Offset.zero,
       rightCenter: Offset.zero,
+    );
+  }
+
+  Widget _buildPageIndicator(int pageCount, int currentPage) {
+    List<Widget> indicators = [];
+    for (int i = 0; i < pageCount; i++) {
+      indicators.add(
+        Container(
+          width: 8.0,
+          height: 8.0,
+          margin: const EdgeInsets.symmetric(horizontal: 4.0),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: currentPage == i ? Colors.blue : Colors.grey,
+          ),
+        ),
+      );
+    }
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: indicators,
     );
   }
 
@@ -991,37 +1020,43 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _baysMap,
       _allConnections,
       _bayEnergyData,
-      _busEnergySummary, // Pass bus summary
+      _busEnergySummary,
     );
 
-    double contentMaxX = sldRenderData.bayRenderDataList.isNotEmpty
-        ? sldRenderData.bayRenderDataList
-              .map((e) => e.rect.right + 100) // Add padding to the right
-              .reduce(max)
-        : 0;
-    double contentMaxY = sldRenderData.bayRenderDataList.isNotEmpty
-        ? sldRenderData.bayRenderDataList
-              .map((e) => e.rect.bottom + 100) // Add padding below
-              .reduce(max)
-        : 0;
-
-    const double abstractCardHeightEstimate = 180;
-    contentMaxY = max(contentMaxY, abstractCardHeightEstimate + 50);
-
-    double canvasWidth = max(
+    final double canvasWidth = max(
       MediaQuery.of(context).size.width,
-      contentMaxX + 50,
+      (sldRenderData.bayRenderDataList.isNotEmpty
+              ? sldRenderData.bayRenderDataList
+                    .map((e) => e.rect.right + 100)
+                    .reduce(max)
+              : 0) +
+          50,
     );
-    double canvasHeight = max(
+    final double canvasHeight = max(
       MediaQuery.of(context).size.height,
-      contentMaxY + 50,
+      (sldRenderData.bayRenderDataList.isNotEmpty
+              ? sldRenderData.bayRenderDataList
+                    .map((e) => e.rect.bottom + 100)
+                    .reduce(max)
+              : 0) +
+          50,
     );
+
+    const double abstractCardWidth = 400;
+    const double abstractCardHeight = 200;
+
+    final List<Bay> busbarsWithData = _allBaysInSubstation
+        .where(
+          (bay) =>
+              bay.bayType == 'Busbar' && _busEnergySummary.containsKey(bay.id),
+        )
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
           'Energy Account: ${widget.substationName} ($dateRangeText)',
-        ), // Updated title
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_today),
@@ -1052,54 +1087,132 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       debugDrawHitboxes: false,
                       selectedBayForMovementId: null,
                       bayEnergyData: sldRenderData.bayEnergyData,
-                      busEnergySummary:
-                          sldRenderData.busEnergySummary, // Pass bus summary
+                      busEnergySummary: sldRenderData.busEnergySummary,
                     ),
                   ),
                 ),
-                // Overlay for Abstract Data
                 Align(
                   alignment: Alignment.bottomRight,
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Card(
-                      elevation: 4,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Abstract of Substation',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const Divider(),
-                            _buildEnergyRow(
-                              'Total Import',
-                              _abstractEnergyData['totalImp'],
-                              'MWH',
-                              isAbstract: true,
-                            ),
-                            _buildEnergyRow(
-                              'Total Export',
-                              _abstractEnergyData['totalExp'],
-                              'MWH',
-                              isAbstract: true,
-                            ),
-                            _buildEnergyRow(
-                              'Difference',
-                              _abstractEnergyData['difference'],
-                              'MWH',
-                              isAbstract: true,
-                            ),
-                            _buildEnergyRow(
-                              'Loss Percentage',
-                              _abstractEnergyData['lossPercentage'],
-                              '%',
-                              isAbstract: true,
-                            ),
-                          ],
+                    child: SizedBox(
+                      width: abstractCardWidth,
+                      height: abstractCardHeight,
+                      child: Card(
+                        elevation: 4,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: PageView.builder(
+                                  itemCount: busbarsWithData.length + 1,
+                                  onPageChanged: (index) {
+                                    setState(() {
+                                      _currentPageIndex = index;
+                                    });
+                                  },
+                                  itemBuilder: (context, index) {
+                                    if (index == busbarsWithData.length) {
+                                      // Last page is the Abstract of Substation
+                                      return Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Abstract of Substation',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.titleSmall,
+                                          ),
+                                          const Divider(),
+                                          _buildEnergyRow(
+                                            'Total Import',
+                                            _abstractEnergyData['totalImp'],
+                                            'MWH',
+                                            isAbstract: true,
+                                          ),
+                                          _buildEnergyRow(
+                                            'Total Export',
+                                            _abstractEnergyData['totalExp'],
+                                            'MWH',
+                                            isAbstract: true,
+                                          ),
+                                          _buildEnergyRow(
+                                            'Difference',
+                                            _abstractEnergyData['difference'],
+                                            'MWH',
+                                            isAbstract: true,
+                                          ),
+                                          _buildEnergyRow(
+                                            'Loss Percentage',
+                                            _abstractEnergyData['lossPercentage'],
+                                            '%',
+                                            isAbstract: true,
+                                          ),
+                                        ],
+                                      );
+                                    } else {
+                                      // Busbar Abstract Pages
+                                      final busbar = busbarsWithData[index];
+                                      final busSummary =
+                                          _busEnergySummary[busbar.id];
+                                      return Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Abstract of Busbar:',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.titleSmall,
+                                          ),
+                                          Text(
+                                            '${busbar.voltageLevel} ${busbar.name}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                          ),
+                                          const Divider(),
+                                          _buildEnergyRow(
+                                            'Import',
+                                            busSummary?['totalImp'],
+                                            'MWH',
+                                          ),
+                                          _buildEnergyRow(
+                                            'Export',
+                                            busSummary?['totalExp'],
+                                            'MWH',
+                                          ),
+                                          _buildEnergyRow(
+                                            'Difference',
+                                            busSummary?['difference'],
+                                            'MWH',
+                                          ),
+                                          _buildEnergyRow(
+                                            'Loss',
+                                            busSummary?['lossPercentage'],
+                                            '%',
+                                          ),
+                                        ],
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                              _buildPageIndicator(
+                                busbarsWithData.length + 1,
+                                _currentPageIndex,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

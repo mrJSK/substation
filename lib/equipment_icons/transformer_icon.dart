@@ -15,7 +15,7 @@ abstract class EquipmentPainter extends CustomPainter {
 
   EquipmentPainter({
     required this.color,
-    this.strokeWidth = 2.0,
+    this.strokeWidth = 2.5,
     required this.equipmentSize,
   });
 }
@@ -52,17 +52,17 @@ class TransformerIconPainter extends EquipmentPainter {
       paint,
     );
 
-    // Input/Output lines (extend to the edges of the drawing area)
-    canvas.drawLine(
-      Offset(centerX - radius / 2, centerY - radius),
-      Offset(centerX - radius / 2, 0),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(centerX + radius / 2, centerY - radius),
-      Offset(centerX + radius + 10, 0),
-      paint,
-    ); // Slight offset for visual distinctness
+    // // Input/Output lines (extend to the edges of the drawing area)
+    // canvas.drawLine(
+    //   Offset(centerX - radius / 2, centerY - radius),
+    //   Offset(centerX - radius / 2, 0),
+    //   paint,
+    // );
+    // canvas.drawLine(
+    //   Offset(centerX + radius / 2, centerY - radius),
+    //   Offset(centerX + radius + 10, 0),
+    //   paint,
+    // ); // Slight offset for visual distinctness
     canvas.drawLine(
       Offset(centerX, centerY + radius),
       Offset(centerX, size.height),

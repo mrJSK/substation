@@ -106,6 +106,7 @@ class SingleLineDiagramPainter extends CustomPainter {
   final bool debugDrawHitboxes; // Added for debugging
   final String? selectedBayForMovementId; // To highlight the selected bay
   final Map<String, BayEnergyData> bayEnergyData; // NEW: Add energy data
+  final Map<String, Map<String, double>> busEnergySummary; // NEW: Require it
 
   SingleLineDiagramPainter({
     required this.bayRenderDataList,
@@ -118,8 +119,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         false, // Default to false, but we'll enable in _buildSLDView for testing
     this.selectedBayForMovementId, // Initialize new parameter
     required this.bayEnergyData,
-    required Map<String, Map<String, double>>
-    busEnergySummary, // NEW: Require it
+    required this.busEnergySummary, // NEW: Pass it down
   });
 
   Color _getBusbarColor(String voltageLevel) {
@@ -246,6 +246,7 @@ class SingleLineDiagramPainter extends CustomPainter {
             busbarDrawingRect.centerRight,
             busbarPaint,
           );
+          // Busbar name: Voltage Level and Bus Name
           _drawText(
             canvas,
             '${renderData.bay.voltageLevel} ${renderData.bay.name}',
@@ -340,7 +341,7 @@ class SingleLineDiagramPainter extends CustomPainter {
       // Check if this bay is currently selected for movement
       final bool isSelectedForMovement = bay.id == selectedBayForMovementId;
 
-      // Draw Bay's main symbol or placeholder
+      // Draw Bay's main symbol or placeholder AND their names
       if (bay.bayType == 'Transformer') {
         final painter = TransformerIconPainter(
           color: isSelectedForMovement
@@ -354,8 +355,29 @@ class SingleLineDiagramPainter extends CustomPainter {
         painter.paint(canvas, rect.size);
         canvas.restore();
 
-        final label = '${bay.capacity?.round() ?? ''}MVA TF\n${bay.name}';
-        _drawText(canvas, label, rect.bottomCenter, offsetY: 4);
+        // Transformer name: HV/LV CapacityMVA T/F, Make
+        final String transformerName =
+            '${bay.name} T/F, \n${bay.make ?? ''}'; // Modified name to include capacity
+
+        // Calculate size of transformer name to offset subsequent text
+        final Size transformerNameSize = _measureText(
+          transformerName,
+          fontSize: 9, // Must match the font size used for drawing
+          isBold: true,
+        );
+
+        _drawText(
+          canvas,
+          transformerName,
+          // Position to the left of the transformer symbol
+          rect.centerLeft,
+          offsetY:
+              -transformerNameSize.height / 2 -
+              10, // Adjust vertically to position above Imp/Exp/MF
+          isBold: true,
+          textAlign:
+              TextAlign.right, // Align text to the right for a clean block
+        );
       } else if (bay.bayType == 'Line') {
         final painter = LineIconPainter(
           color: isSelectedForMovement
@@ -368,9 +390,11 @@ class SingleLineDiagramPainter extends CustomPainter {
         canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
         painter.paint(canvas, rect.size);
         canvas.restore();
+        // Line name: Voltage Level Line Name Line
+        final String lineName = '${bay.voltageLevel} ${bay.name} Line';
         _drawText(
           canvas,
-          bay.name,
+          lineName,
           rect.topCenter,
           offsetY: -12,
           isBold: true,
@@ -387,6 +411,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
         painter.paint(canvas, rect.size);
         canvas.restore();
+        // Feeder name: only the bay.name
         _drawText(
           canvas,
           bay.name,
@@ -481,76 +506,171 @@ class SingleLineDiagramPainter extends CustomPainter {
         }
       }
 
-      // NEW: Draw energy data beside the bay
-      final energyData = bayEnergyData[bay.id];
-      if (energyData != null) {
-        // Smallest possible font size for labels
-        const double energyTextFontSize = 7.0;
+      // === NEW / MODIFIED: Draw energy data beside the bay ===
+      if (bay.bayType == 'Busbar') {
+        // For Busbars, use busEnergySummary and position to the right
+        final Map<String, double>? busSummary = busEnergySummary[bay.id];
+        if (busSummary != null) {
+          final double? totalImp = busSummary['totalImp'];
+          final double? totalExp = busSummary['totalExp'];
 
-        final String importText = energyData.impConsumed != null
-            ? 'Imp: ${energyData.impConsumed!.toStringAsFixed(2)}'
-            : 'Imp: N/A';
-        final String exportText = energyData.expConsumed != null
-            ? 'Exp: ${energyData.expConsumed!.toStringAsFixed(2)}'
-            : 'Exp: N/A';
+          final String importText = totalImp != null
+              ? 'Imp: ${totalImp.toStringAsFixed(2)} MWH'
+              : 'Imp: N/A MWH';
+          final String exportText = totalExp != null
+              ? 'Exp: ${totalExp.toStringAsFixed(2)} MWH'
+              : 'Exp: N/A MWH';
 
-        // Position the text next to the bay, slightly offset to avoid overlap with symbol/label.
-        // We can place it to the right of the bay's bounding box.
-        // Adjust these offsets to fine-tune placement.
-        Offset energyTextTopLeft;
+          const double energyTextFontSize = 9.0;
+          final double textHeight =
+              energyTextFontSize + 2; // Height of one line of text + spacing
 
-        // Smart positioning based on bay type or fixed position
-        if (bay.bayType == 'Transformer') {
-          // Place below transformer, slightly to the right to avoid label
-          energyTextTopLeft = Offset(
-            rect.left + rect.width * 0.1,
-            rect.bottom + 5,
+          // Position to the right of the busbar
+          Offset energyTextTopLeft = Offset(
+            busbarRects[bay.id]!.right + 10, // 10 pixels offset from right edge
+            busbarRects[bay.id]!.center.dy -
+                (textHeight * 1.5), // Center vertically relative to text block
           );
-        } else if (bay.bayType == 'Line') {
-          // Place above line, to the right
-          energyTextTopLeft = Offset(rect.right + 5, rect.top - 20);
-        } else if (bay.bayType == 'Feeder') {
-          // Place below feeder, to the right
-          energyTextTopLeft = Offset(rect.right + 5, rect.bottom + 5);
-        } else {
-          // Default: to the right of the bay's bounding box
-          energyTextTopLeft = Offset(rect.right + 5, rect.top);
-        }
 
-        _drawText(
-          canvas,
-          importText,
-          energyTextTopLeft,
-          textAlign: TextAlign.left,
-          fontSize: energyTextFontSize, // Use smaller font
-        );
-        _drawText(
-          canvas,
-          exportText,
-          Offset(
-            energyTextTopLeft.dx,
-            energyTextTopLeft.dy + energyTextFontSize + 2,
-          ), // Below import
-          textAlign: TextAlign.left,
-          fontSize: energyTextFontSize, // Use smaller font
-        );
-        _drawText(
-          canvas,
-          'MWH',
-          Offset(
-            energyTextTopLeft.dx,
-            energyTextTopLeft.dy + (energyTextFontSize + 2) * 2,
-          ), // Below export
-          textAlign: TextAlign.left,
-          fontSize: energyTextFontSize, // Use smaller font
-          isBold: true,
-        );
+          _drawText(
+            canvas,
+            importText,
+            energyTextTopLeft,
+            textAlign: TextAlign.left,
+            fontSize: energyTextFontSize,
+          );
+          _drawText(
+            canvas,
+            exportText,
+            Offset(energyTextTopLeft.dx, energyTextTopLeft.dy + textHeight),
+            textAlign: TextAlign.left,
+            fontSize: energyTextFontSize,
+          );
+        }
+      } else {
+        // Logic for other bay types (Line, Feeder, Transformer etc.)
+        final BayEnergyData? energyData = bayEnergyData[bay.id];
+        if (energyData != null) {
+          const double energyTextFontSize = 9.0;
+          // Calculate the height of the transformer's name label first
+          final String transformerName = '${bay.name} T/F, ${bay.make ?? ''}';
+          final Size transformerNameSize = _measureText(
+            transformerName,
+            fontSize: 9, // Assuming same font size as used for its rendering
+            isBold: true,
+          );
+          // Adjusted total height for the energy data block (3 lines)
+          final double energyBlockHeight = (energyTextFontSize + 2) * 3;
+
+          String importValue = energyData.impConsumed != null
+              ? energyData.impConsumed!.toStringAsFixed(2)
+              : 'N/A';
+          String exportValue = energyData.expConsumed != null
+              ? energyData.expConsumed!.toStringAsFixed(2)
+              : 'N/A';
+          String mfValue = energyData.mf != null
+              ? energyData.mf!.toStringAsFixed(2)
+              : 'N/A';
+
+          final String combinedText =
+              'Imp: $importValue \nExp: $exportValue \nMF: $mfValue';
+
+          Offset
+          textCenterOffset; // This will be the center of the combined text block
+          TextAlign alignment = TextAlign
+              .right; // Default alignment for combined text (for transformer)
+
+          if (bay.bayType == 'Transformer') {
+            // New position for the energy data: below the main transformer label, to the left
+            textCenterOffset = Offset(
+              rect.centerLeft.dx -
+                  70, // Align with the left edge of the symbol, plus offset
+              rect.centerLeft.dy +
+                  transformerNameSize.height / 2 +
+                  -5, // Vertically below the name
+            );
+            alignment = TextAlign.left;
+          } else if (bay.bayType == 'Line') {
+            // Position above the line's name
+            final lineNamePainter = TextPainter(
+              text: TextSpan(
+                text: '${bay.voltageLevel} ${bay.name} Line',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              textDirection: TextDirection.ltr,
+            )..layout(maxWidth: 200);
+
+            textCenterOffset = Offset(
+              rect.center.dx -
+                  (_measureText(
+                        combinedText,
+                        fontSize: energyTextFontSize,
+                      ).width /
+                      2), // Centered with the line
+              rect.top -
+                  lineNamePainter.height -
+                  energyBlockHeight - // Use energyBlockHeight for calculation
+                  5, // Above line name and icon
+            );
+            alignment = TextAlign.left;
+          } else if (bay.bayType == 'Feeder') {
+            // Position below the feeder's name
+            final feederNamePainter = TextPainter(
+              text: TextSpan(
+                text: bay.name,
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              textDirection: TextDirection.ltr,
+            )..layout(maxWidth: 100);
+
+            textCenterOffset = Offset(
+              rect.center.dx -
+                  (_measureText(
+                        combinedText,
+                        fontSize: energyTextFontSize,
+                      ).width /
+                      2), // Centered with the feeder
+              rect.bottom +
+                  feederNamePainter.height +
+                  5, // Below feeder name and icon
+            );
+            alignment = TextAlign.left;
+          } else {
+            // Default for other types (Capacitor Bank, Reactor, Bus Coupler, Battery) - right of icon
+            textCenterOffset = Offset(
+              rect.right +
+                  5 +
+                  (_measureText(
+                        combinedText,
+                        fontSize: energyTextFontSize,
+                      ).width /
+                      2),
+              rect.center.dy,
+            );
+            alignment = TextAlign.center;
+          }
+
+          // Draw the combined text
+          _drawText(
+            canvas,
+            combinedText,
+            textCenterOffset,
+            textAlign: alignment,
+            fontSize: energyTextFontSize,
+          );
+        }
       }
+      // === END NEW / MODIFIED ===
     }
 
     // DEBUGGING STEP: Draw hitboxes if debugDrawHitboxes is true
     if (debugDrawHitboxes) {
-      // Keeping this enabled if it helps debugging layout
       final debugHitboxPaint = Paint()
         ..color = Colors.red
             .withOpacity(0.3) // Semi-transparent red
@@ -561,7 +681,29 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
   }
 
-  // Modified _drawText to accept font size
+  // Helper to accurately measure text size
+  Size _measureText(String text, {double fontSize = 9, bool isBold = false}) {
+    final textPainter =
+        TextPainter(
+          text: TextSpan(
+            text: text,
+            style: TextStyle(
+              color: Colors.black87, // Match the color used for drawing
+              fontSize: fontSize,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          maxLines: 2, // Allow for two lines for transformer name
+          textAlign: TextAlign.right, // Match the alignment used for drawing
+          textDirection: TextDirection.ltr,
+        )..layout(
+          minWidth: 0,
+          maxWidth: 100, // Max width to match drawing constraints
+        );
+    return textPainter.size;
+  }
+
+  // Moved _drawText to accept font size
   void _drawText(
     Canvas canvas,
     String text,
@@ -570,6 +712,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     bool isBold = false,
     TextAlign textAlign = TextAlign.center,
     double fontSize = 9, // NEW: Default font size
+    double offsetX = 0, // Optional horizontal offset
   }) {
     final textStyle = TextStyle(
       color: Colors.black87,
@@ -583,8 +726,9 @@ class SingleLineDiagramPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
     textPainter.layout(
-      maxWidth: 100,
-    ); // Max width to allow text wrapping if needed
+      maxWidth:
+          100, // Keep a max width to allow text wrapping if needed for longer names
+    );
 
     double x = position.dx;
     if (textAlign == TextAlign.center) {
@@ -663,12 +807,11 @@ class SingleLineDiagramPainter extends CustomPainter {
         oldDelegate.busbarRects != busbarRects ||
         oldDelegate.busbarConnectionPoints != busbarConnectionPoints ||
         oldDelegate.bayEnergyData !=
-            bayEnergyData; // NEW: Repaint if energy data changes
+            bayEnergyData || // NEW: Repaint if energy data changes
+        oldDelegate.busEnergySummary !=
+            busEnergySummary; // NEW: Repaint if bus summary changes
   }
 }
-
-// ... (Rest of SubstationDetailScreen class remains unchanged, except for the import of energy_sld_screen.dart)
-// The _GenericIconPainter also remains unchanged.
 
 class SubstationDetailScreen extends StatefulWidget {
   final String substationId;
@@ -1030,10 +1173,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         'circuitType': _selectedBayType == 'Line' ? _selectedCircuit : null,
         'conductorType': _selectedBayType == 'Line' ? _selectedConductor : null,
         'conductorDetail':
-            _selectedBayType == 'Line' &&
-                _selectedConductor ==
-                    'Other' // Corrected here
-            ? _otherConductorController.text.trim()
+            _selectedBayType == 'Line' && _selectedConductor == 'Other'
+            ? (_otherConductorController.text.trim().isEmpty
+                  ? null
+                  : _otherConductorController.text.trim())
             : null,
         'erectionDate': _selectedBayType == 'Line' && _erectionDate != null
             ? Timestamp.fromDate(_erectionDate!)
@@ -1916,7 +2059,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
                   if (currentHvBus != null && currentLvBus != null) {
                     // Parse voltage levels safely for comparison
-                    final double hvVoltageValue =
+                    final double hvVoltage =
                         double.tryParse(
                           currentHvBus.voltageLevel.replaceAll(
                             RegExp(r'[^0-9.]'),
@@ -1924,7 +2067,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                           ),
                         ) ??
                         0;
-                    final double lvVoltageValue =
+                    final double lvVoltage =
                         double.tryParse(
                           currentLvBus.voltageLevel.replaceAll(
                             RegExp(r'[^0-9.]'),
@@ -1935,11 +2078,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
                     String key = "";
                     // Now the condition is clearly boolean
-                    if (hvVoltageValue < lvVoltageValue) {
-                      // Compare the actual double values
-                      String temp = hvBusId;
-                      hvBusId = lvBusId;
-                      lvBusId = temp;
+                    if (hvVoltage > lvVoltage) {
+                      key = "$hvBusId-$lvBusId";
+                    } else {
+                      key = "$lvBusId-$hvBusId";
                     }
                   } else {
                     // Handle cases where a bus ID in the pair key is invalid/missing in baysMap
@@ -2354,8 +2496,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                             true, // KEEP THIS TRUE FOR TESTING! Set to false later.
                         selectedBayForMovementId:
                             _selectedBayForMovementId, // Pass the selected ID to the painter
-                        bayEnergyData: const {},
-                        busEnergySummary: {}, // Pass empty map for main SLD
+                        bayEnergyData:
+                            const {}, // This is the main SLD, so no energy data here
+                        busEnergySummary:
+                            {}, // This is the main SLD, so no bus summary here
                       ),
                     ),
                   ),
