@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
-import 'package:collection/collection.dart'; // This import is correct for extension methods like firstWhereOrNull
+import 'package:collection/collection.dart';
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
@@ -11,12 +11,14 @@ import '../models/reading_models.dart';
 import '../models/logsheet_models.dart';
 import '../models/bay_connection_model.dart';
 import '../models/busbar_energy_map.dart';
-import '../models/hierarchy_models.dart'; // Import hierarchy models for both transmission and distribution
+import '../models/hierarchy_models.dart';
+import '../models/assessment_model.dart';
 import '../utils/snackbar_utils.dart';
 
 import '../painters/single_line_diagram_painter.dart';
+import '../widgets/energy_assessment_dialog.dart';
 
-// Data model for energy data associated with a bay (remains unchanged)
+// Data model for energy data associated with a bay
 class BayEnergyData {
   final String bayName;
   final double? prevImp;
@@ -26,6 +28,7 @@ class BayEnergyData {
   final double? mf;
   final double? impConsumed;
   final double? expConsumed;
+  final bool hasAssessment;
 
   BayEnergyData({
     required this.bayName,
@@ -36,18 +39,35 @@ class BayEnergyData {
     this.mf,
     this.impConsumed,
     this.expConsumed,
+    this.hasAssessment = false,
   });
+
+  BayEnergyData applyAssessment({
+    double? importAdjustment,
+    double? exportAdjustment,
+  }) {
+    double newImpConsumed = (impConsumed ?? 0.0) + (importAdjustment ?? 0.0);
+    double newExpConsumed = (expConsumed ?? 0.0) + (exportAdjustment ?? 0.0);
+    return BayEnergyData(
+      bayName: bayName,
+      prevImp: prevImp,
+      currImp: currImp,
+      prevExp: prevExp,
+      currExp: currExp,
+      mf: mf,
+      impConsumed: newImpConsumed,
+      expConsumed: newExpConsumed,
+      hasAssessment: true,
+    );
+  }
 }
 
-// REMOVED: FeederEnergyTableData (per-feeder data with all details is no longer directly displayed)
-// Instead, we'll aggregate data into a new model directly.
-
-// NEW: Data model for Aggregated Feeder Energy Table
+// Data model for Aggregated Feeder Energy Table
 class AggregatedFeederEnergyData {
   final String zoneName;
   final String circleName;
   final String divisionName;
-  final String distributionSubdivisionName; // New aggregate level
+  final String distributionSubdivisionName;
   double importedEnergy;
   double exportedEnergy;
 
@@ -60,12 +80,11 @@ class AggregatedFeederEnergyData {
     this.exportedEnergy = 0.0,
   });
 
-  // Unique key for grouping
   String get uniqueKey =>
       '$zoneName-$circleName-$divisionName-$distributionSubdivisionName';
 }
 
-// Data model for rendering the SLD with energy data (remains unchanged)
+// Data model for rendering the SLD with energy data
 class SldRenderData {
   final List<BayRenderData> bayRenderDataList;
   final Map<String, Rect> finalBayRects;
@@ -113,6 +132,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Map<String, double> _abstractEnergyData = {};
   Map<String, Map<String, double>> _busEnergySummary = {};
   Map<String, BusbarEnergyMap> _busbarEnergyMaps = {};
+  Map<String, Assessment> _latestAssessmentsPerBay =
+      {}; // Stores only the latest assessment per bay
 
   // Hierarchy maps for lookup (Transmission Hierarchy)
   Map<String, Zone> _zonesMap = {};
@@ -127,14 +148,15 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Map<String, DistributionDivision> _distributionDivisionsMap = {};
   Map<String, DistributionSubdivision> _distributionSubdivisionsMap = {};
 
-  // UPDATED: List for aggregated feeder table data
   List<AggregatedFeederEnergyData> _aggregatedFeederEnergyData = [];
+  List<Assessment> _allAssessmentsForDisplay =
+      []; // For displaying all assessment notes
 
   final TransformationController _transformationController =
       TransformationController();
 
-  int _currentPageIndex = 0; // For busbar/abstract page view
-  int _feederTablePageIndex = 0; // For feeder table page view
+  int _currentPageIndex = 0;
+  int _feederTablePageIndex = 0;
 
   @override
   void initState() {
@@ -155,15 +177,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     super.dispose();
   }
 
-  // Helper function to extract numerical voltage value for sorting
   double _getVoltageLevelValue(String voltageLevel) {
-    // Extracts numbers (and decimals) from a string like "132kV"
     final regex = RegExp(r'(\d+(\.\d+)?)');
     final match = regex.firstMatch(voltageLevel);
     if (match != null) {
       return double.tryParse(match.group(1)!) ?? 0.0;
     }
-    return 0.0; // Default if no number is found
+    return 0.0;
   }
 
   Future<void> _loadEnergyData() async {
@@ -177,13 +197,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _baysMap.clear();
       _allConnections.clear();
       _busbarEnergyMaps.clear();
-      _aggregatedFeederEnergyData.clear(); // UPDATED: Clear aggregated list
+      _latestAssessmentsPerBay.clear(); // Clear latest assessments map
+      _allAssessmentsForDisplay.clear(); // Clear all assessments for notes
+      _aggregatedFeederEnergyData.clear();
       _currentPageIndex = 0;
       _feederTablePageIndex = 0;
     });
 
     try {
-      // Fetch ALL Hierarchy Data (Transmission and Distribution)
       await _fetchTransmissionHierarchyData();
       await _fetchDistributionHierarchyData();
 
@@ -196,11 +217,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           .map((doc) => Bay.fromFirestore(doc))
           .toList();
 
-      // Sort bays by voltage level (highest to lowest) to ensure consistent layout and abstract calculation priority
       _allBaysInSubstation.sort((a, b) {
         final double voltageA = _getVoltageLevelValue(a.voltageLevel);
         final double voltageB = _getVoltageLevelValue(b.voltageLevel);
-        return voltageB.compareTo(voltageA); // Descending order
+        return voltageB.compareTo(voltageA);
       });
 
       _baysMap = {for (var bay in _allBaysInSubstation) bay.id: bay};
@@ -213,7 +233,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           .map((doc) => BayConnection.fromFirestore(doc))
           .toList();
 
-      // Fetch BusbarEnergyMap configurations
       final busbarEnergyMapsSnapshot = await FirebaseFirestore.instance
           .collection('busbarEnergyMaps')
           .where('substationId', isEqualTo: widget.substationId)
@@ -323,11 +342,50 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         };
       }
 
-      // Calculate energy for each bay first
+      // NEW: Fetch all assessments for the substation within the date range, ordered by timestamp
+      final assessmentsRawSnapshot = await FirebaseFirestore.instance
+          .collection('assessments')
+          .where('substationId', isEqualTo: widget.substationId)
+          .where(
+            'assessmentTimestamp',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfStartDate),
+          )
+          .where(
+            'assessmentTimestamp',
+            isLessThanOrEqualTo: Timestamp.fromDate(endOfEndDate),
+          )
+          .orderBy(
+            'assessmentTimestamp',
+            descending: true,
+          ) // Get most recent first
+          .get();
+
+      _allAssessmentsForDisplay = []; // Reset for notes section
+      _latestAssessmentsPerBay.clear(); // Reset for applying adjustments
+
+      for (var doc in assessmentsRawSnapshot.docs) {
+        final assessment = Assessment.fromFirestore(doc);
+        _allAssessmentsForDisplay.add(assessment); // Add all for notes display
+
+        // Store only the latest assessment per bay (due to orderBy descending, the first one encountered is the latest)
+        if (!_latestAssessmentsPerBay.containsKey(assessment.bayId)) {
+          _latestAssessmentsPerBay[assessment.bayId] = assessment;
+        }
+      }
+      // Sort assessments for display by most recent first
+      _allAssessmentsForDisplay.sort(
+        (a, b) => b.assessmentTimestamp.compareTo(a.assessmentTimestamp),
+      );
+
+      // Calculate energy for each bay
       for (var bay in _allBaysInSubstation) {
         final double? mf = bay.multiplyingFactor;
         double calculatedImpConsumed = 0.0;
         double calculatedExpConsumed = 0.0;
+
+        bool bayHasAssessmentForPeriod = _latestAssessmentsPerBay.containsKey(
+          bay.id,
+        );
 
         if (_startDate.isAtSameMomentAs(_endDate)) {
           final currentReadingLogsheet = endDayReadings[bay.id];
@@ -381,28 +439,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             );
           }
 
-          if (currImpVal != null &&
-              prevImpValForCalculation != null &&
-              mf != null) {
-            calculatedImpConsumed = max(
-              0.0,
-              (currImpVal - prevImpValForCalculation) * mf,
-            );
-          } else if (currImpVal != null && mf != null) {
-            calculatedImpConsumed = currImpVal * mf;
-          }
-
-          if (currExpVal != null &&
-              prevExpValForCalculation != null &&
-              mf != null) {
-            calculatedExpConsumed = max(
-              0.0,
-              (currExpVal - prevExpValForCalculation) * mf,
-            );
-          } else if (currExpVal != null && mf != null) {
-            calculatedExpConsumed = currExpVal * mf;
-          }
-
           _bayEnergyData[bay.id] = BayEnergyData(
             bayName: bay.name,
             prevImp: prevImpValForCalculation,
@@ -412,6 +448,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             mf: mf,
             impConsumed: calculatedImpConsumed,
             expConsumed: calculatedExpConsumed,
+            hasAssessment: bayHasAssessmentForPeriod,
           );
         } else {
           final startReading = startDayReadings[bay.id];
@@ -450,11 +487,21 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             mf: mf,
             impConsumed: calculatedImpConsumed,
             expConsumed: calculatedExpConsumed,
+            hasAssessment: bayHasAssessmentForPeriod,
           );
+        }
+
+        // Apply latest assessment if available for this bay (only one per bay from _latestAssessmentsPerBay)
+        final latestAssessment = _latestAssessmentsPerBay[bay.id];
+        if (latestAssessment != null) {
+          _bayEnergyData[bay.id] = _bayEnergyData[bay.id]!.applyAssessment(
+            importAdjustment: latestAssessment.importAdjustment,
+            exportAdjustment: latestAssessment.exportAdjustment,
+          );
+          debugPrint('Applied assessment for ${bay.name}');
         }
       }
 
-      // Initialize temporary storage for busbar flows using the new mapping
       Map<String, Map<String, double>> temporaryBusFlows = {};
       for (var busbar in _allBaysInSubstation.where(
         (b) => b.bayType == 'Busbar',
@@ -462,7 +509,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
       }
 
-      // Calculate busbar energy based on BusbarEnergyMap
       for (var entry in _busbarEnergyMaps.values) {
         final Bay? connectedBay = _baysMap[entry.connectedBayId];
         final BayEnergyData? connectedBayEnergy =
@@ -471,7 +517,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         if (connectedBay != null &&
             connectedBayEnergy != null &&
             temporaryBusFlows.containsKey(entry.busbarId)) {
-          // Add bay's import to busbar based on configuration
           if (entry.importContribution == EnergyContributionType.busImport) {
             temporaryBusFlows[entry.busbarId]!['import'] =
                 (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
@@ -483,7 +528,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 (connectedBayEnergy.impConsumed ?? 0.0);
           }
 
-          // Add bay's export to busbar based on configuration
           if (entry.exportContribution == EnergyContributionType.busImport) {
             temporaryBusFlows[entry.busbarId]!['import'] =
                 (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
@@ -497,7 +541,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         }
       }
 
-      // Finalize bus energy summaries based on the aggregated temporary flows
       for (var busbar in _allBaysInSubstation.where(
         (b) => b.bayType == 'Busbar',
       )) {
@@ -507,7 +550,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         double busDifference = busTotalImp - busTotalExp;
         double busLossPercentage = 0.0;
         if (busTotalImp > 0) {
-          // Avoid division by zero
           busLossPercentage = (busDifference / busTotalImp) * 100;
         }
 
@@ -522,7 +564,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         );
       }
 
-      // --- FINAL SUBSTATION ABSTRACT CALCULATION (Directly from Bus Abstracts as per PDF) ---
       final highestVoltageBus = _allBaysInSubstation.firstWhereOrNull(
         (b) => b.bayType == 'Busbar',
       );
@@ -557,15 +598,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         'lossPercentage': overallLossPercentage,
       };
 
-      // UPDATED: Aggregate feeder energy data by Distribution Hierarchy
-      // Use a temporary map to sum values
       final Map<String, AggregatedFeederEnergyData> tempAggregatedData = {};
 
       for (var bay in _allBaysInSubstation) {
         if (bay.bayType == 'Feeder') {
           final energyData = _bayEnergyData[bay.id];
           if (energyData != null) {
-            // Retrieve Distribution Hierarchy details for grouping
             final DistributionSubdivision? distSubdivision =
                 _distributionSubdivisionsMap[bay.distributionSubdivisionId];
             final DistributionDivision? distDivision =
@@ -584,7 +622,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             final String groupKey =
                 '$zoneName-$circleName-$divisionName-$distSubdivisionName';
 
-            // Get or create the aggregated entry
             final aggregatedEntry = tempAggregatedData.putIfAbsent(
               groupKey,
               () => AggregatedFeederEnergyData(
@@ -595,7 +632,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               ),
             );
 
-            // Add energies
             aggregatedEntry.importedEnergy += (energyData.impConsumed ?? 0.0);
             aggregatedEntry.exportedEnergy += (energyData.expConsumed ?? 0.0);
           }
@@ -604,7 +640,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       _aggregatedFeederEnergyData = tempAggregatedData.values.toList();
 
-      // Sort the aggregated data for consistent display and visual merging
       _aggregatedFeederEnergyData.sort((a, b) {
         int result = a.zoneName.compareTo(b.zoneName);
         if (result != 0) return result;
@@ -637,7 +672,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Helper to fetch all Transmission hierarchy data needed for lookup (remains unchanged)
   Future<void> _fetchTransmissionHierarchyData() async {
     _zonesMap.clear();
     _circlesMap.clear();
@@ -684,7 +718,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     };
   }
 
-  // UPDATED: Helper to fetch all Distribution hierarchy data needed for lookup including Subdivision
   Future<void> _fetchDistributionHierarchyData() async {
     _distributionZonesMap.clear();
     _distributionCirclesMap.clear();
@@ -728,7 +761,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2000),
-      lastDate: DateTime.now(), // Only allow past and current dates
+      lastDate: DateTime.now(),
       initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
     );
 
@@ -742,22 +775,19 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Method to handle saving a single BusbarEnergyMap (remains unchanged)
   Future<void> _saveBusbarEnergyMap(BusbarEnergyMap map) async {
     try {
       if (map.id == null) {
-        // Create new
         await FirebaseFirestore.instance
             .collection('busbarEnergyMaps')
             .add(map.toFirestore());
       } else {
-        // Update existing
         await FirebaseFirestore.instance
             .collection('busbarEnergyMaps')
             .doc(map.id)
             .update(map.toFirestore());
       }
-      await _loadEnergyData(); // Reload data to reflect changes
+      await _loadEnergyData();
     } catch (e) {
       print('Error saving BusbarEnergyMap: $e');
       if (mounted) {
@@ -770,14 +800,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Method to handle deleting a single BusbarEnergyMap (remains unchanged)
   Future<void> _deleteBusbarEnergyMap(String mapId) async {
     try {
       await FirebaseFirestore.instance
           .collection('busbarEnergyMaps')
           .doc(mapId)
           .delete();
-      await _loadEnergyData(); // Reload data to reflect changes
+      await _loadEnergyData();
     } catch (e) {
       print('Error deleting BusbarEnergyMap: $e');
       if (mounted) {
@@ -790,7 +819,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Method to show the busbar selection dialog (remains unchanged)
   void _showBusbarSelectionDialog() {
     final List<Bay> busbars = _allBaysInSubstation
         .where((bay) => bay.bayType == 'Busbar')
@@ -810,10 +838,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       return ListTile(
                         title: Text('${busbar.voltageLevel} ${busbar.name}'),
                         onTap: () {
-                          Navigator.pop(context); // Close selection dialog
-                          _showBusbarEnergyAssignmentDialog(
-                            busbar,
-                          ); // Open assignment dialog
+                          Navigator.pop(context);
+                          _showBusbarEnergyAssignmentDialog(busbar);
                         },
                       );
                     }).toList(),
@@ -830,9 +856,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // Method to show the busbar energy assignment dialog (now called from selection dialog) (remains unchanged)
   void _showBusbarEnergyAssignmentDialog(Bay busbar) {
-    // Filter connections to find bays connected to this specific busbar
     final List<Bay> connectedBays = _allConnections
         .where(
           (conn) =>
@@ -844,11 +868,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               : conn.sourceBayId;
           return _baysMap[otherBayId];
         })
-        .whereType<Bay>() // Filter out nulls
-        .where((bay) => bay.bayType != 'Busbar') // Exclude other busbars
+        .whereType<Bay>()
+        .where((bay) => bay.bayType != 'Busbar')
         .toList();
 
-    // Prepare current maps for the dialog, only those relevant to this busbar
     final Map<String, BusbarEnergyMap> currentBusbarMaps = {};
     _busbarEnergyMaps.forEach((key, value) {
       if (value.busbarId == busbar.id) {
@@ -866,6 +889,71 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         onSaveMap: _saveBusbarEnergyMap,
         onDeleteMap: _deleteBusbarEnergyMap,
       ),
+    );
+  }
+
+  // Method to show the energy assessment dialog for a specific bay
+  // This is called AFTER the bay selection dialog.
+  void _showEnergyAssessmentDialog(Bay bay, BayEnergyData? energyData) {
+    showDialog(
+      context: context,
+      builder: (context) => EnergyAssessmentDialog(
+        bay: bay,
+        currentUser: widget.currentUser,
+        currentEnergyData: energyData,
+        onSaveAssessment: _loadEnergyData,
+        latestExistingAssessment:
+            _latestAssessmentsPerBay[bay
+                .id], // Pass the latest assessment if found
+      ),
+    );
+  }
+
+  // NEW: Method to show a dialog for selecting a bay for assessment
+  void _showBaySelectionForAssessment() {
+    final List<Bay> assessableBays = _allBaysInSubstation
+        .where((bay) => ['Feeder', 'Line', 'Transformer'].contains(bay.bayType))
+        .toList();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Bay for Assessment'),
+          content: assessableBays.isEmpty
+              ? const Text('No assessable bays found in this substation.')
+              : SizedBox(
+                  // Added SizedBox for width constraint
+                  width:
+                      MediaQuery.of(context).size.width *
+                      0.7, // Adjust width as needed
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: assessableBays.map((bay) {
+                        return ListTile(
+                          title: Text('${bay.name} (${bay.bayType})'),
+                          onTap: () {
+                            Navigator.pop(context); // Close selection dialog
+                            _showEnergyAssessmentDialog(
+                              bay,
+                              _bayEnergyData[bay
+                                  .id], // Pass current energy data
+                            );
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1340,7 +1428,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     const double abstractCardWidth = 400;
     const double abstractCardHeight = 200;
-    const double feederTableHeight = 300; // Height for the feeder table
+    const double feederTableHeight = 300;
 
     final List<Bay> busbarsWithData = _allBaysInSubstation
         .where(
@@ -1416,7 +1504,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                                         },
                                         itemBuilder: (context, index) {
                                           if (index == busbarsWithData.length) {
-                                            // Last page is the Abstract of Substation
                                             return Column(
                                               mainAxisSize: MainAxisSize.min,
                                               crossAxisAlignment:
@@ -1456,7 +1543,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                                               ],
                                             );
                                           } else {
-                                            // Busbar Abstract Pages
                                             final busbar =
                                                 busbarsWithData[index];
                                             final busSummary =
@@ -1564,9 +1650,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                             currentPageData = _aggregatedFeederEnergyData
                                 .sublist(startIndex, endIndex);
 
-                            // Keep track of previous values for merging cells
-                            AggregatedFeederEnergyData? previousRowData;
-
                             return SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
                               child: DataTable(
@@ -1579,27 +1662,29 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                                   DataColumn(label: Text('Export (MWH)')),
                                 ],
                                 rows: currentPageData.mapIndexed((index, data) {
-                                  // Determine if current cell should be merged
+                                  final AggregatedFeederEnergyData?
+                                  prevDataOverall = (startIndex + index > 0)
+                                      ? _aggregatedFeederEnergyData[startIndex +
+                                            index -
+                                            1]
+                                      : null;
+
                                   final bool mergeZone =
-                                      index > 0 &&
-                                      data.zoneName ==
-                                          previousRowData?.zoneName;
+                                      (prevDataOverall != null) &&
+                                      data.zoneName == prevDataOverall.zoneName;
                                   final bool mergeCircle =
                                       mergeZone &&
                                       data.circleName ==
-                                          previousRowData?.circleName;
+                                          prevDataOverall.circleName;
                                   final bool mergeDivision =
                                       mergeCircle &&
                                       data.divisionName ==
-                                          previousRowData?.divisionName;
+                                          prevDataOverall.divisionName;
                                   final bool mergeSubdivision =
                                       mergeDivision &&
                                       data.distributionSubdivisionName ==
-                                          previousRowData
-                                              ?.distributionSubdivisionName;
-
-                                  // Update previousRowData for the next iteration
-                                  previousRowData = data;
+                                          prevDataOverall
+                                              .distributionSubdivisionName;
 
                                   return DataRow(
                                     cells: [
@@ -1657,12 +1742,77 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     ],
                   ),
                 ),
+                // Section to display assessment notes
+                if (_allAssessmentsForDisplay.isNotEmpty)
+                  Container(
+                    height: 150,
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Recent Assessment Notes:',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const Divider(),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: _allAssessmentsForDisplay.length,
+                            itemBuilder: (context, index) {
+                              final assessment =
+                                  _allAssessmentsForDisplay[index];
+                              final Bay? assessedBay =
+                                  _baysMap[assessment.bayId];
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4.0,
+                                ),
+                                child: Text(
+                                  '• ${assessedBay?.name ?? 'Unknown Bay'} on ${DateFormat('dd-MMM-yyyy HH:mm').format(assessment.assessmentTimestamp.toDate())}: ${assessment.reason}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showBusbarSelectionDialog,
-        child: const Icon(Icons.settings_input_antenna),
-        tooltip: 'Configure Busbar Energy',
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (BuildContext context) {
+              return SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    ListTile(
+                      leading: const Icon(Icons.settings_input_antenna),
+                      title: const Text('Configure Busbar Energy'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showBusbarSelectionDialog();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.assessment),
+                      title: const Text('Add Energy Assessment'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showBaySelectionForAssessment();
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+        child: const Icon(Icons.menu),
+        tooltip: 'Menu Options',
       ),
     );
   }
@@ -1705,11 +1855,9 @@ class _BusbarEnergyAssignmentDialog extends StatefulWidget {
   final Bay busbar;
   final List<Bay> connectedBays;
   final AppUser currentUser;
-  final Map<String, BusbarEnergyMap>
-  currentMaps; // Existing maps for this busbar
-  final Function(BusbarEnergyMap)
-  onSaveMap; // Callback to save/update a single map
-  final Function(String) onDeleteMap; // Callback to delete a map
+  final Map<String, BusbarEnergyMap> currentMaps;
+  final Function(BusbarEnergyMap) onSaveMap;
+  final Function(String) onDeleteMap;
 
   const _BusbarEnergyAssignmentDialog({
     required this.busbar,
@@ -1727,7 +1875,6 @@ class _BusbarEnergyAssignmentDialog extends StatefulWidget {
 
 class __BusbarEnergyAssignmentDialogState
     extends State<_BusbarEnergyAssignmentDialog> {
-  // Key: connectedBayId, Value: {import: EnergyContributionType, export: EnergyContributionType, originalMapId: String?}
   final Map<String, Map<String, dynamic>> _bayContributionSelections = {};
   bool _isSaving = false;
 
@@ -1735,8 +1882,7 @@ class __BusbarEnergyAssignmentDialogState
   void initState() {
     super.initState();
     for (var bay in widget.connectedBays) {
-      final existingMap =
-          widget.currentMaps[bay.id]; // Use bay.id as key in currentMaps
+      final existingMap = widget.currentMaps[bay.id];
       _bayContributionSelections[bay.id] = {
         'import':
             existingMap?.importContribution ?? EnergyContributionType.none,
@@ -1759,13 +1905,11 @@ class __BusbarEnergyAssignmentDialogState
         if (importContrib == EnergyContributionType.none &&
             exportContrib == EnergyContributionType.none) {
           if (originalMapId != null) {
-            // If both are 'none' and there was an existing map, delete it
             widget.onDeleteMap(originalMapId);
           }
         } else {
-          // Save or update the map
           final newMap = BusbarEnergyMap(
-            id: originalMapId, // Will be null for new maps, used for updates
+            id: originalMapId,
             substationId: widget.busbar.substationId,
             busbarId: widget.busbar.id,
             connectedBayId: bayId,
@@ -1776,8 +1920,8 @@ class __BusbarEnergyAssignmentDialogState
                 : widget.currentUser.uid,
             createdAt: originalMapId != null
                 ? Timestamp.now()
-                : Timestamp.now(), // For new maps, use now. For existing, use now for lastModifiedAt in toFirestore
-            lastModifiedAt: Timestamp.now(), // Always update last modified
+                : Timestamp.now(),
+            lastModifiedAt: Timestamp.now(),
           );
           widget.onSaveMap(newMap);
         }

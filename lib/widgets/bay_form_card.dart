@@ -18,7 +18,8 @@ class BayFormCard extends StatefulWidget {
   final AppUser currentUser;
   final Function() onSaveSuccess;
   final Function() onCancel;
-  final List<Bay> availableBusbars;
+  final List<Bay>
+  availableBusbars; // Passed from parent (SubstationDetailScreen)
 
   const BayFormCard({
     super.key,
@@ -69,8 +70,10 @@ class _BayFormCardState extends State<BayFormCard> {
   String? _selectedBayType;
   bool _isGovernmentFeeder = false;
   String? _selectedFeederType;
-  String? _selectedBusbarId;
+  String?
+  _selectedBusbarId; // This holds the ID of the connected busbar for non-transformer bays
   bool _isSavingBay = false;
+  bool _isLoadingConnections = false; // NEW: Loading state for connections
 
   // State for Distribution Hierarchy selection for Feeders
   String? _selectedDistributionZoneId;
@@ -132,8 +135,7 @@ class _BayFormCardState extends State<BayFormCard> {
   @override
   void initState() {
     super.initState();
-    _fetchDistributionHierarchyData();
-    _initializeFormFields();
+    _loadInitialDataForForm(); // Call new method to load all data
   }
 
   @override
@@ -153,6 +155,19 @@ class _BayFormCardState extends State<BayFormCard> {
     _manufacturingDateController.dispose();
     _erectionDateController.dispose();
     super.dispose();
+  }
+
+  // NEW method to load all initial data needed for the form
+  Future<void> _loadInitialDataForForm() async {
+    setState(() {
+      _isLoadingConnections = true; // Set loading state for connections
+    });
+    await _fetchDistributionHierarchyData(); // This also calls setState internally
+    // widget.availableBusbars is passed from parent and should be ready.
+    _initializeFormFields();
+    setState(() {
+      _isLoadingConnections = false; // Clear loading state
+    });
   }
 
   void _initializeFormFields() {
@@ -188,8 +203,20 @@ class _BayFormCardState extends State<BayFormCard> {
         _selectedLvVoltage = bay.lvVoltage;
         _makeController.text = bay.make ?? '';
         _capacityController.text = bay.capacity?.toString() ?? '';
-        _selectedHvBusId = bay.hvBusId;
-        _selectedLvBusId = bay.lvBusId;
+        // Only set if the HV bus ID exists in the available busbars
+        if (bay.hvBusId != null &&
+            widget.availableBusbars.any((b) => b.id == bay.hvBusId)) {
+          _selectedHvBusId = bay.hvBusId;
+        } else {
+          _selectedHvBusId = null; // Clear if not found
+        }
+        // Only set if the LV bus ID exists in the available busbars
+        if (bay.lvBusId != null &&
+            widget.availableBusbars.any((b) => b.id == bay.lvBusId)) {
+          _selectedLvBusId = bay.lvBusId;
+        } else {
+          _selectedLvBusId = null; // Clear if not found
+        }
         if (bay.manufacturingDate != null) {
           _manufacturingDate = bay.manufacturingDate!.toDate();
           _manufacturingDateController.text = _manufacturingDate!
@@ -211,6 +238,83 @@ class _BayFormCardState extends State<BayFormCard> {
         _selectedDistributionCircleId = bay.distributionCircleId;
         _selectedDistributionDivisionId = bay.distributionDivisionId;
         _selectedDistributionSubdivisionId = bay.distributionSubdivisionId;
+      }
+
+      // NEW FIX: For non-transformer, non-busbar, non-battery bays, fetch and set their single connected busbar
+      if (bay.id.isNotEmpty &&
+          bay.bayType != 'Busbar' &&
+          bay.bayType != 'Transformer' &&
+          bay.bayType != 'Battery') {
+        _fetchAndSetSingleBusbarConnection(bay.id);
+      }
+    }
+  }
+
+  // NEW: Method to fetch and set the single busbar connection for non-transformer bays
+  Future<void> _fetchAndSetSingleBusbarConnection(String bayId) async {
+    setState(() {
+      _isLoadingConnections = true; // Indicate loading for this specific fetch
+    });
+    try {
+      final connectionsSnapshot = await FirebaseFirestore.instance
+          .collection('bay_connections')
+          .where(
+            Filter.or(
+              Filter('sourceBayId', isEqualTo: bayId),
+              Filter('targetBayId', isEqualTo: bayId),
+            ),
+          )
+          .get();
+
+      if (connectionsSnapshot.docs.isNotEmpty) {
+        final connectionDoc = connectionsSnapshot.docs.first;
+        final String? connectedBusId;
+
+        // Determine which side is the busbar from the connection and if it's in the available list
+        if (connectionDoc.data().containsKey('targetBayId') &&
+            widget.availableBusbars.any(
+              (b) => b.id == connectionDoc['targetBayId'],
+            )) {
+          connectedBusId = connectionDoc['targetBayId'] as String;
+        } else if (connectionDoc.data().containsKey('sourceBayId') &&
+            widget.availableBusbars.any(
+              (b) => b.id == connectionDoc['sourceBayId'],
+            )) {
+          connectedBusId = connectionDoc['sourceBayId'] as String;
+        } else {
+          connectedBusId =
+              null; // Busbar might not be in available list or connection is invalid
+        }
+
+        if (connectedBusId != null) {
+          if (mounted) {
+            setState(() {
+              _selectedBusbarId = connectedBusId;
+            });
+          }
+        }
+      } else {
+        // If no connection found, ensure _selectedBusbarId is null
+        if (mounted) {
+          setState(() {
+            _selectedBusbarId = null;
+          });
+        }
+      }
+    } catch (e) {
+      print("Error fetching single busbar connection: $e");
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          "Error loading bay connections: $e",
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingConnections = false; // Clear loading state
+        });
       }
     }
   }
@@ -253,7 +357,7 @@ class _BayFormCardState extends State<BayFormCard> {
         doc.id: DistributionSubdivision.fromFirestore(doc),
     };
 
-    setState(() {}); // Rebuild to update dropdowns with fetched data
+    setState(() {});
   }
 
   Future<void> _saveBay() async {
@@ -271,6 +375,18 @@ class _BayFormCardState extends State<BayFormCard> {
       SnackBarUtils.showSnackBar(
         context,
         'Please connect both HV and LV sides of the transformer to a busbar.',
+        isError: true,
+      );
+      return;
+    }
+    // Re-added check for non-transformer/non-busbar bays if _selectedBusbarId is null
+    if (_selectedBayType != 'Busbar' &&
+        _selectedBayType != 'Transformer' &&
+        _selectedBayType != 'Battery' &&
+        _selectedBusbarId == null) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please connect to a Busbar for this bay type.',
         isError: true,
       );
       return;
@@ -305,112 +421,152 @@ class _BayFormCardState extends State<BayFormCard> {
     }
 
     try {
-      final bayData = {
-        'name': _bayNameController.text.trim(),
-        'substationId': widget.substationId,
-        'voltageLevel': _selectedBayType == 'Transformer'
-            ? _selectedHvVoltage
-            : _selectedVoltageLevel,
-        'bayType': _selectedBayType!,
-        'description': _descriptionController.text.trim().isEmpty
-            ? null
-            : _descriptionController.text.trim(),
-        'bayNumber': _bayNumberController.text.trim().isEmpty
-            ? null
-            : _bayNumberController.text.trim(),
-        'multiplyingFactor': _multiplyingFactorController.text.isNotEmpty
-            ? double.tryParse(_multiplyingFactorController.text.trim())
-            : null,
-        'isGovernmentFeeder': _selectedBayType == 'Feeder'
-            ? _isGovernmentFeeder
-            : null,
-        'feederType': _selectedBayType == 'Feeder' ? _selectedFeederType : null,
-        'lineLength': _selectedBayType == 'Line'
-            ? double.tryParse(_lineLengthController.text.trim())
-            : null,
-        'circuitType': _selectedBayType == 'Line' ? _selectedCircuit : null,
-        'conductorType': _selectedBayType == 'Line' ? _selectedConductor : null,
-        'conductorDetail':
-            _selectedBayType == 'Line' && _selectedConductor == 'Other'
-            ? (_otherConductorController.text.trim().isEmpty
-                  ? null
-                  : _otherConductorController.text.trim())
-            : null,
-        'erectionDate': _selectedBayType == 'Line' && _erectionDate != null
-            ? Timestamp.fromDate(_erectionDate!)
-            : null,
-        'hvVoltage': _selectedBayType == 'Transformer'
-            ? _selectedHvVoltage
-            : null,
-        'lvVoltage': _selectedBayType == 'Transformer'
-            ? _selectedLvVoltage
-            : null,
-        'make':
-            _selectedBayType == 'Transformer' && _makeController.text.isNotEmpty
-            ? _makeController.text.trim()
-            : null,
-        'capacity':
-            _selectedBayType == 'Transformer' &&
-                _capacityController.text.isNotEmpty
-            ? double.tryParse(_capacityController.text.trim())
-            : null,
-        'manufacturingDate':
-            _selectedBayType == 'Transformer' && _manufacturingDate != null
-            ? Timestamp.fromDate(_manufacturingDate!)
-            : null,
-        'hvBusId': _selectedBayType == 'Transformer' ? _selectedHvBusId : null,
-        'lvBusId': _selectedBayType == 'Transformer' ? _selectedLvBusId : null,
-        'commissioningDate':
-            (_selectedBayType == 'Line' || _selectedBayType == 'Transformer') &&
-                _commissioningDate != null
-            ? Timestamp.fromDate(_commissioningDate!)
-            : null,
-        // Save Distribution Hierarchy IDs if it's a Feeder
-        'distributionZoneId': _selectedBayType == 'Feeder'
-            ? _selectedDistributionZoneId
-            : null,
-        'distributionCircleId': _selectedBayType == 'Feeder'
-            ? _selectedDistributionCircleId
-            : null,
-        'distributionDivisionId': _selectedBayType == 'Feeder'
-            ? _selectedDistributionDivisionId
-            : null,
-        'distributionSubdivisionId': _selectedBayType == 'Feeder'
-            ? _selectedDistributionSubdivisionId
-            : null,
-      };
+      final String? bayName = _bayNameController.text.trim();
+      final String? description = _descriptionController.text.trim().isEmpty
+          ? null
+          : _descriptionController.text.trim();
+      final String? landmark = _landmarkController.text.trim().isEmpty
+          ? null
+          : _landmarkController.text.trim();
+      final String? contactNumber = _contactNumberController.text.trim().isEmpty
+          ? null
+          : _contactNumberController.text.trim();
+      final String? contactPerson = _contactPersonController.text.trim().isEmpty
+          ? null
+          : _contactPersonController.text.trim();
+      final String? bayNumber = _bayNumberController.text.trim().isEmpty
+          ? null
+          : _bayNumberController.text.trim();
+      final double? multiplyingFactor =
+          _multiplyingFactorController.text.isNotEmpty
+          ? double.tryParse(_multiplyingFactorController.text.trim())
+          : null;
+      final bool? isGovernmentFeeder = _selectedBayType == 'Feeder'
+          ? _isGovernmentFeeder
+          : null;
+      final String? feederType = _selectedBayType == 'Feeder'
+          ? _selectedFeederType
+          : null;
+      final double? lineLength = _selectedBayType == 'Line'
+          ? double.tryParse(_lineLengthController.text.trim())
+          : null;
+      final String? circuitType = _selectedBayType == 'Line'
+          ? _selectedCircuit
+          : null;
+      final String? conductorType = _selectedBayType == 'Line'
+          ? _selectedConductor
+          : null;
+      final String? conductorDetail =
+          _selectedBayType == 'Line' && _selectedConductor == 'Other'
+          ? (_otherConductorController.text.trim().isEmpty
+                ? null
+                : _otherConductorController.text.trim())
+          : null;
+      final Timestamp? erectionDate =
+          _selectedBayType == 'Line' && _erectionDate != null
+          ? Timestamp.fromDate(_erectionDate!)
+          : null;
+      final String? hvVoltage = _selectedBayType == 'Transformer'
+          ? _selectedHvVoltage
+          : null;
+      final String? lvVoltage = _selectedBayType == 'Transformer'
+          ? _selectedLvVoltage
+          : null;
+      final String? make =
+          _selectedBayType == 'Transformer' && _makeController.text.isNotEmpty
+          ? _makeController.text.trim()
+          : null;
+      final double? capacity =
+          _selectedBayType == 'Transformer' &&
+              _capacityController.text.isNotEmpty
+          ? double.tryParse(_capacityController.text.trim())
+          : null;
+      final Timestamp? manufacturingDate =
+          _selectedBayType == 'Transformer' && _manufacturingDate != null
+          ? Timestamp.fromDate(_manufacturingDate!)
+          : null;
+      final String? hvBusId = _selectedBayType == 'Transformer'
+          ? _selectedHvBusId
+          : null;
+      final String? lvBusId = _selectedBayType == 'Transformer'
+          ? _selectedLvBusId
+          : null;
+      final Timestamp? commissioningDateVal =
+          (_selectedBayType == 'Line' || _selectedBayType == 'Transformer') &&
+              _commissioningDate != null
+          ? Timestamp.fromDate(_commissioningDate!)
+          : null;
+      final String? distributionZoneId = _selectedBayType == 'Feeder'
+          ? _selectedDistributionZoneId
+          : null;
+      final String? distributionCircleId = _selectedBayType == 'Feeder'
+          ? _selectedDistributionCircleId
+          : null;
+      final String? distributionDivisionId = _selectedBayType == 'Feeder'
+          ? _selectedDistributionDivisionId
+          : null;
+      final String? distributionSubdivisionId = _selectedBayType == 'Feeder'
+          ? _selectedDistributionSubdivisionId
+          : null;
 
       if (widget.bayToEdit != null) {
-        final bayId = widget.bayToEdit!.id;
-        // Preserve existing position when editing other properties
-        bayData['xPosition'] = widget.bayToEdit!.xPosition;
-        bayData['yPosition'] = widget.bayToEdit!.yPosition;
+        final Bay existingBay = widget.bayToEdit!;
+
+        final updatedBay = existingBay.copyWith(
+          name: bayName,
+          voltageLevel: _selectedBayType == 'Transformer'
+              ? hvVoltage
+              : _selectedVoltageLevel,
+          bayType: _selectedBayType!,
+          description: description,
+          landmark: landmark,
+          contactNumber: contactNumber,
+          contactPerson: contactPerson,
+          isGovernmentFeeder: isGovernmentFeeder,
+          feederType: feederType,
+          multiplyingFactor: multiplyingFactor,
+          bayNumber: bayNumber,
+          lineLength: lineLength,
+          circuitType: circuitType,
+          conductorType: conductorType,
+          conductorDetail: conductorDetail,
+          erectionDate: erectionDate,
+          hvVoltage: hvVoltage,
+          lvVoltage: lvVoltage,
+          make: make,
+          capacity: capacity,
+          manufacturingDate: manufacturingDate,
+          hvBusId: hvBusId,
+          lvBusId: lvBusId,
+          commissioningDate: commissioningDateVal,
+          distributionZoneId: distributionZoneId,
+          distributionCircleId: distributionCircleId,
+          distributionDivisionId: distributionDivisionId,
+          distributionSubdivisionId: distributionSubdivisionId,
+        );
 
         await FirebaseFirestore.instance
             .collection('bays')
-            .doc(bayId)
-            .update(bayData);
+            .doc(updatedBay.id)
+            .update(updatedBay.toFirestore());
 
-        // Manage connections based on current and new bay types
         final batch = FirebaseFirestore.instance.batch();
 
-        // Always delete existing connections for the bay being edited to simplify updates
         final existingConnectionsSnapshot = await FirebaseFirestore.instance
             .collection('bay_connections')
             .where('substationId', isEqualTo: widget.substationId)
             .where(
               Filter.or(
-                Filter('sourceBayId', isEqualTo: bayId),
-                Filter('targetBayId', isEqualTo: bayId),
+                Filter('sourceBayId', isEqualTo: existingBay.id),
+                Filter('targetBayId', isEqualTo: existingBay.id),
               ),
             )
             .get();
         for (var doc in existingConnectionsSnapshot.docs) {
           batch.delete(doc.reference);
         }
-        await batch.commit(); // Commit deletions first
+        await batch.commit();
 
-        // Add new connections based on the updated bay type and selections
         if (_selectedBayType == 'Transformer') {
           if (_selectedHvBusId != null) {
             await FirebaseFirestore.instance
@@ -418,9 +574,8 @@ class _BayFormCardState extends State<BayFormCard> {
                 .add(
                   BayConnection(
                     substationId: widget.substationId,
-                    sourceBayId:
-                        _selectedHvBusId!, // Bus connects to HV side of TF
-                    targetBayId: bayId,
+                    sourceBayId: _selectedHvBusId!,
+                    targetBayId: existingBay.id,
                     createdBy: firebaseUser.uid,
                     createdAt: Timestamp.now(),
                   ).toFirestore(),
@@ -432,42 +587,76 @@ class _BayFormCardState extends State<BayFormCard> {
                 .add(
                   BayConnection(
                     substationId: widget.substationId,
-                    sourceBayId: bayId, // LV side of TF connects to Bus
+                    sourceBayId: existingBay.id,
                     targetBayId: _selectedLvBusId!,
                     createdBy: firebaseUser.uid,
                     createdAt: Timestamp.now(),
                   ).toFirestore(),
                 );
           }
-        } else if (_selectedBayType != 'Busbar' && _selectedBusbarId != null) {
-          // For other bays (Line, Feeder, etc.) that connect to a single busbar
+        } else if (_selectedBayType != 'Busbar' &&
+            _selectedBayType != 'Battery' &&
+            _selectedBusbarId != null) {
           await FirebaseFirestore.instance
               .collection('bay_connections')
               .add(
                 BayConnection(
                   substationId: widget.substationId,
-                  sourceBayId: _selectedBusbarId!, // Bus connects to bay
-                  targetBayId: bayId,
+                  sourceBayId: _selectedBusbarId!,
+                  targetBayId: existingBay.id,
                   createdBy: firebaseUser.uid,
                   createdAt: Timestamp.now(),
                 ).toFirestore(),
               );
         }
-        // If the bay becomes a Busbar or another type that doesn't connect, no new connections are added here.
 
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Bay updated successfully!');
           widget.onSaveSuccess();
         }
       } else {
-        // This is for adding a new bay
         final newBayRef = FirebaseFirestore.instance.collection('bays').doc();
-        bayData['createdBy'] = firebaseUser.uid;
-        bayData['createdAt'] = Timestamp.now();
-        // New bays don't have a position yet, so these will be null initially
-        bayData['xPosition'] = null;
-        bayData['yPosition'] = null;
-        await newBayRef.set(bayData);
+
+        final newBay = Bay(
+          id: newBayRef.id,
+          name: bayName!,
+          substationId: widget.substationId,
+          voltageLevel: _selectedBayType == 'Transformer'
+              ? hvVoltage!
+              : _selectedVoltageLevel!,
+          bayType: _selectedBayType!,
+          createdBy: firebaseUser.uid,
+          createdAt: Timestamp.now(),
+          description: description,
+          landmark: landmark,
+          contactNumber: contactNumber,
+          contactPerson: contactPerson,
+          isGovernmentFeeder: isGovernmentFeeder,
+          feederType: feederType,
+          multiplyingFactor: multiplyingFactor,
+          bayNumber: bayNumber,
+          lineLength: lineLength,
+          circuitType: circuitType,
+          conductorType: conductorType,
+          conductorDetail: conductorDetail,
+          erectionDate: erectionDate,
+          hvVoltage: hvVoltage,
+          lvVoltage: lvVoltage,
+          make: make,
+          capacity: capacity,
+          manufacturingDate: manufacturingDate,
+          hvBusId: hvBusId,
+          lvBusId: lvBusId,
+          commissioningDate: commissioningDateVal,
+          xPosition: null,
+          yPosition: null,
+          distributionZoneId: distributionZoneId,
+          distributionCircleId: distributionCircleId,
+          distributionDivisionId: distributionDivisionId,
+          distributionSubdivisionId: distributionSubdivisionId,
+        );
+
+        await newBayRef.set(newBay.toFirestore());
 
         if (_selectedBayType == 'Transformer') {
           if (_selectedHvBusId != null) {
@@ -496,7 +685,9 @@ class _BayFormCardState extends State<BayFormCard> {
                   ).toFirestore(),
                 );
           }
-        } else if (_selectedBayType != 'Busbar' && _selectedBusbarId != null) {
+        } else if (_selectedBayType != 'Busbar' &&
+            _selectedBayType != 'Battery' &&
+            _selectedBusbarId != null) {
           await FirebaseFirestore.instance
               .collection('bay_connections')
               .add(
@@ -510,17 +701,14 @@ class _BayFormCardState extends State<BayFormCard> {
               );
         }
 
-        final createdBayDoc = await newBayRef.get();
-        await _createDefaultReadingAssignment(
-          Bay.fromFirestore(createdBayDoc),
-          firebaseUser.uid,
-        );
+        await _createDefaultReadingAssignment(newBay, firebaseUser.uid);
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Bay created successfully!');
           widget.onSaveSuccess();
         }
       }
     } catch (e) {
+      print('Error saving bay: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -573,7 +761,6 @@ class _BayFormCardState extends State<BayFormCard> {
     /* Placeholder for default reading assignment creation */
   }
 
-  // Helper to build distribution hierarchy dropdowns
   Widget _buildDistributionHierarchyDropdown<T extends HierarchyItem>({
     required String label,
     required String collectionName,
@@ -584,9 +771,8 @@ class _BayFormCardState extends State<BayFormCard> {
     required T Function(DocumentSnapshot) fromFirestore,
     required String? Function(T?) validator,
     required Map<String, T> lookupMap,
-    required String addHierarchyType, // e.g., 'DistributionZone'
+    required String addHierarchyType,
   }) {
-    // Only show if selected bay type is 'Feeder'
     if (_selectedBayType != 'Feeder') {
       return const SizedBox.shrink();
     }
@@ -602,13 +788,12 @@ class _BayFormCardState extends State<BayFormCard> {
       child: DropdownSearch<T>(
         selectedItem: currentValue != null ? lookupMap[currentValue] : null,
         itemAsString: (T item) => item.name,
-        compareFn: (item1, item2) =>
-            item1.id == item2.id, // FIX: Added compareFn
+        compareFn: (item1, item2) => item1.id == item2.id,
         asyncItems: (String filter) async {
           if (parentId != null &&
               parentIdFieldName.isNotEmpty &&
               parentId.isEmpty) {
-            return []; // Don't fetch if parent is not selected
+            return [];
           }
           final snapshot = await query.get();
           return snapshot.docs
@@ -621,7 +806,6 @@ class _BayFormCardState extends State<BayFormCard> {
         },
         onChanged: (newValue) {
           onChanged(newValue?.id);
-          // Clear child selections when a parent changes
           if (collectionName == 'distributionZones') {
             setState(() {
               _selectedDistributionCircleId = null;
@@ -684,7 +868,6 @@ class _BayFormCardState extends State<BayFormCard> {
                           ),
                         );
                         if (newCreatedItem != null) {
-                          // Manually update the map after creation
                           if (newCreatedItem is DistributionZone) {
                             lookupMap[newCreatedItem.id] = newCreatedItem as T;
                           } else if (newCreatedItem is DistributionCircle) {
@@ -695,12 +878,9 @@ class _BayFormCardState extends State<BayFormCard> {
                               is DistributionSubdivision) {
                             lookupMap[newCreatedItem.id] = newCreatedItem as T;
                           }
-                          // Manually call onChanged to select the new item
                           onChanged(newCreatedItem.id);
-                          // Rebuild the dropdown to show the new item
                           setState(() {});
-                          if (mounted)
-                            Navigator.pop(context); // Close the popup
+                          if (mounted) Navigator.pop(context);
                         }
                       },
                       icon: const Icon(Icons.add),
@@ -801,38 +981,6 @@ class _BayFormCardState extends State<BayFormCard> {
             const SizedBox(height: 16),
             if (_selectedBayType != null &&
                 _selectedBayType != 'Busbar' &&
-                _selectedBayType != 'Battery') ...[
-              TextFormField(
-                controller: _bayNumberController,
-                decoration: const InputDecoration(
-                  labelText: 'Bay Number (Optional)',
-                  prefixIcon: Icon(Icons.tag),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _multiplyingFactorController,
-                decoration: const InputDecoration(
-                  labelText: 'Multiplying Factor',
-                  prefixIcon: Icon(Icons.clear),
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                validator: (v) {
-                  if (v == null || v.isEmpty) {
-                    return 'Multiplying Factor is required';
-                  }
-                  if (double.tryParse(v) == null) {
-                    return 'Please enter a valid number';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-            if (_selectedBayType != null &&
-                _selectedBayType != 'Busbar' &&
                 _selectedBayType != 'Transformer' &&
                 _selectedBayType != 'Battery') ...[
               DropdownButtonFormField<String>(
@@ -847,8 +995,6 @@ class _BayFormCardState extends State<BayFormCard> {
                     )
                     .toList(),
                 onChanged: (v) => setState(() => _selectedBusbarId = v),
-                validator: (v) =>
-                    widget.bayToEdit == null && v == null ? 'Required' : null,
               ),
               const SizedBox(height: 16),
             ],
@@ -1066,7 +1212,9 @@ class _BayFormCardState extends State<BayFormCard> {
             ),
             const SizedBox(height: 32),
             Center(
-              child: _isSavingBay
+              child:
+                  _isSavingBay ||
+                      _isLoadingConnections // NEW: Disable save button if connections are loading
                   ? const CircularProgressIndicator()
                   : ElevatedButton.icon(
                       onPressed: _saveBay,
@@ -1096,7 +1244,6 @@ class _BayFormCardState extends State<BayFormCard> {
     );
   }
 
-  // Extracted method for building feeder distribution hierarchy fields
   List<Widget> _buildFeederDistributionHierarchyFields() {
     return [
       SwitchListTile(
@@ -1168,7 +1315,6 @@ class _BayFormCardState extends State<BayFormCard> {
         lookupMap: _distributionDivisionsMap,
         addHierarchyType: 'DistributionDivision',
       ),
-      // Dropdown for Distribution Subdivision
       _buildDistributionHierarchyDropdown<DistributionSubdivision>(
         label: 'Distribution Subdivision',
         collectionName: 'distributionSubdivisions',
