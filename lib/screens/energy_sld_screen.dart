@@ -7,15 +7,16 @@ import 'package:collection/collection.dart'; // This import is correct for exten
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
-import '../models/reading_models.dart'; // Assuming this is correct from user's project
+import '../models/reading_models.dart';
 import '../models/logsheet_models.dart';
 import '../models/bay_connection_model.dart';
-import '../models/busbar_energy_map.dart'; // NEW: Import the new model
+import '../models/busbar_energy_map.dart';
+import '../models/hierarchy_models.dart'; // Import hierarchy models for both transmission and distribution
 import '../utils/snackbar_utils.dart';
 
-// Reusing components from substation_detail_screen.dart
-import 'substation_detail_screen.dart'; // To access SingleLineDiagramPainter and BayRenderData
+import '../painters/single_line_diagram_painter.dart';
 
+// Data model for energy data associated with a bay (remains unchanged)
 class BayEnergyData {
   final String bayName;
   final double? prevImp;
@@ -38,6 +39,33 @@ class BayEnergyData {
   });
 }
 
+// REMOVED: FeederEnergyTableData (per-feeder data with all details is no longer directly displayed)
+// Instead, we'll aggregate data into a new model directly.
+
+// NEW: Data model for Aggregated Feeder Energy Table
+class AggregatedFeederEnergyData {
+  final String zoneName;
+  final String circleName;
+  final String divisionName;
+  final String distributionSubdivisionName; // New aggregate level
+  double importedEnergy;
+  double exportedEnergy;
+
+  AggregatedFeederEnergyData({
+    required this.zoneName,
+    required this.circleName,
+    required this.divisionName,
+    required this.distributionSubdivisionName,
+    this.importedEnergy = 0.0,
+    this.exportedEnergy = 0.0,
+  });
+
+  // Unique key for grouping
+  String get uniqueKey =>
+      '$zoneName-$circleName-$divisionName-$distributionSubdivisionName';
+}
+
+// Data model for rendering the SLD with energy data (remains unchanged)
 class SldRenderData {
   final List<BayRenderData> bayRenderDataList;
   final Map<String, Rect> finalBayRects;
@@ -84,13 +112,29 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Map<String, BayEnergyData> _bayEnergyData = {};
   Map<String, double> _abstractEnergyData = {};
   Map<String, Map<String, double>> _busEnergySummary = {};
-  Map<String, BusbarEnergyMap> _busbarEnergyMaps =
-      {}; // NEW: busbarId-connectedBayId -> BusbarEnergyMap
+  Map<String, BusbarEnergyMap> _busbarEnergyMaps = {};
+
+  // Hierarchy maps for lookup (Transmission Hierarchy)
+  Map<String, Zone> _zonesMap = {};
+  Map<String, Circle> _circlesMap = {};
+  Map<String, Division> _divisionsMap = {};
+  Map<String, Subdivision> _subdivisionsMap = {};
+  Map<String, Substation> _substationsMap = {};
+
+  // Maps for Distribution Hierarchy lookup
+  Map<String, DistributionZone> _distributionZonesMap = {};
+  Map<String, DistributionCircle> _distributionCirclesMap = {};
+  Map<String, DistributionDivision> _distributionDivisionsMap = {};
+  Map<String, DistributionSubdivision> _distributionSubdivisionsMap = {};
+
+  // UPDATED: List for aggregated feeder table data
+  List<AggregatedFeederEnergyData> _aggregatedFeederEnergyData = [];
 
   final TransformationController _transformationController =
       TransformationController();
 
-  int _currentPageIndex = 0;
+  int _currentPageIndex = 0; // For busbar/abstract page view
+  int _feederTablePageIndex = 0; // For feeder table page view
 
   @override
   void initState() {
@@ -132,11 +176,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _allBaysInSubstation.clear();
       _baysMap.clear();
       _allConnections.clear();
-      _busbarEnergyMaps.clear(); // Clear existing maps
+      _busbarEnergyMaps.clear();
+      _aggregatedFeederEnergyData.clear(); // UPDATED: Clear aggregated list
       _currentPageIndex = 0;
+      _feederTablePageIndex = 0;
     });
 
     try {
+      // Fetch ALL Hierarchy Data (Transmission and Distribution)
+      await _fetchTransmissionHierarchyData();
+      await _fetchDistributionHierarchyData();
+
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
@@ -163,7 +213,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           .map((doc) => BayConnection.fromFirestore(doc))
           .toList();
 
-      // NEW: Fetch BusbarEnergyMap configurations
+      // Fetch BusbarEnergyMap configurations
       final busbarEnergyMapsSnapshot = await FirebaseFirestore.instance
           .collection('busbarEnergyMaps')
           .where('substationId', isEqualTo: widget.substationId)
@@ -220,7 +270,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           (doc.data() as Map<String, dynamic>)['bayId']:
               LogsheetEntry.fromFirestore(doc),
       };
-      // print('DEBUG: Start Day Readings (for $_startDate): $startDayReadings');
 
       if (!_startDate.isAtSameMomentAs(_endDate)) {
         final endDayLogsheetsSnapshot = await FirebaseFirestore.instance
@@ -235,7 +284,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             (doc.data() as Map<String, dynamic>)['bayId']:
                 LogsheetEntry.fromFirestore(doc),
         };
-        // print('DEBUG: End Day Readings (for $_endDate): $endDayReadings');
       } else {
         endDayReadings = startDayReadings;
         final previousDay = _startDate.subtract(const Duration(days: 1));
@@ -273,9 +321,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             (doc.data() as Map<String, dynamic>)['bayId']:
                 LogsheetEntry.fromFirestore(doc),
         };
-        // print(
-        //   'DEBUG: Previous Day to Start Date Readings (for $previousDay): $previousDayToStartDateReadings',
-        // );
       }
 
       // Calculate energy for each bay first
@@ -417,7 +462,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
       }
 
-      // NEW: Calculate busbar energy based on BusbarEnergyMap
+      // Calculate busbar energy based on BusbarEnergyMap
       for (var entry in _busbarEnergyMaps.values) {
         final Bay? connectedBay = _baysMap[entry.connectedBayId];
         final BayEnergyData? connectedBayEnergy =
@@ -478,15 +523,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
 
       // --- FINAL SUBSTATION ABSTRACT CALCULATION (Directly from Bus Abstracts as per PDF) ---
-      // The PDF implies: Substation Import = Import of the highest voltage bus
-      //                 Substation Export = Export of the lowest voltage bus
-
       final highestVoltageBus = _allBaysInSubstation.firstWhereOrNull(
         (b) => b.bayType == 'Busbar',
       );
       final lowestVoltageBus = _allBaysInSubstation.lastWhereOrNull(
         (b) => b.bayType == 'Busbar',
-      ); // Assuming last in sorted list is lowest voltage
+      );
 
       double currentAbstractSubstationTotalImp = 0;
       double currentAbstractSubstationTotalExp = 0;
@@ -514,6 +556,69 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         'difference': overallDifference,
         'lossPercentage': overallLossPercentage,
       };
+
+      // UPDATED: Aggregate feeder energy data by Distribution Hierarchy
+      // Use a temporary map to sum values
+      final Map<String, AggregatedFeederEnergyData> tempAggregatedData = {};
+
+      for (var bay in _allBaysInSubstation) {
+        if (bay.bayType == 'Feeder') {
+          final energyData = _bayEnergyData[bay.id];
+          if (energyData != null) {
+            // Retrieve Distribution Hierarchy details for grouping
+            final DistributionSubdivision? distSubdivision =
+                _distributionSubdivisionsMap[bay.distributionSubdivisionId];
+            final DistributionDivision? distDivision =
+                _distributionDivisionsMap[distSubdivision
+                    ?.distributionDivisionId];
+            final DistributionCircle? distCircle =
+                _distributionCirclesMap[distDivision?.distributionCircleId];
+            final DistributionZone? distZone =
+                _distributionZonesMap[distCircle?.distributionZoneId];
+
+            final String zoneName = distZone?.name ?? 'N/A';
+            final String circleName = distCircle?.name ?? 'N/A';
+            final String divisionName = distDivision?.name ?? 'N/A';
+            final String distSubdivisionName = distSubdivision?.name ?? 'N/A';
+
+            final String groupKey =
+                '$zoneName-$circleName-$divisionName-$distSubdivisionName';
+
+            // Get or create the aggregated entry
+            final aggregatedEntry = tempAggregatedData.putIfAbsent(
+              groupKey,
+              () => AggregatedFeederEnergyData(
+                zoneName: zoneName,
+                circleName: circleName,
+                divisionName: divisionName,
+                distributionSubdivisionName: distSubdivisionName,
+              ),
+            );
+
+            // Add energies
+            aggregatedEntry.importedEnergy += (energyData.impConsumed ?? 0.0);
+            aggregatedEntry.exportedEnergy += (energyData.expConsumed ?? 0.0);
+          }
+        }
+      }
+
+      _aggregatedFeederEnergyData = tempAggregatedData.values.toList();
+
+      // Sort the aggregated data for consistent display and visual merging
+      _aggregatedFeederEnergyData.sort((a, b) {
+        int result = a.zoneName.compareTo(b.zoneName);
+        if (result != 0) return result;
+
+        result = a.circleName.compareTo(b.circleName);
+        if (result != 0) return result;
+
+        result = a.divisionName.compareTo(b.divisionName);
+        if (result != 0) return result;
+
+        return a.distributionSubdivisionName.compareTo(
+          b.distributionSubdivisionName,
+        );
+      });
     } catch (e) {
       print("Error loading energy data: $e");
       if (mounted) {
@@ -530,6 +635,93 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         });
       }
     }
+  }
+
+  // Helper to fetch all Transmission hierarchy data needed for lookup (remains unchanged)
+  Future<void> _fetchTransmissionHierarchyData() async {
+    _zonesMap.clear();
+    _circlesMap.clear();
+    _divisionsMap.clear();
+    _subdivisionsMap.clear();
+    _substationsMap.clear();
+
+    final zonesSnapshot = await FirebaseFirestore.instance
+        .collection('zones')
+        .get();
+    _zonesMap = {
+      for (var doc in zonesSnapshot.docs) doc.id: Zone.fromFirestore(doc),
+    };
+
+    final circlesSnapshot = await FirebaseFirestore.instance
+        .collection('circles')
+        .get();
+    _circlesMap = {
+      for (var doc in circlesSnapshot.docs) doc.id: Circle.fromFirestore(doc),
+    };
+
+    final divisionsSnapshot = await FirebaseFirestore.instance
+        .collection('divisions')
+        .get();
+    _divisionsMap = {
+      for (var doc in divisionsSnapshot.docs)
+        doc.id: Division.fromFirestore(doc),
+    };
+
+    final subdivisionsSnapshot = await FirebaseFirestore.instance
+        .collection('subdivisions')
+        .get();
+    _subdivisionsMap = {
+      for (var doc in subdivisionsSnapshot.docs)
+        doc.id: Subdivision.fromFirestore(doc),
+    };
+
+    final substationsSnapshot = await FirebaseFirestore.instance
+        .collection('substations')
+        .get();
+    _substationsMap = {
+      for (var doc in substationsSnapshot.docs)
+        doc.id: Substation.fromFirestore(doc),
+    };
+  }
+
+  // UPDATED: Helper to fetch all Distribution hierarchy data needed for lookup including Subdivision
+  Future<void> _fetchDistributionHierarchyData() async {
+    _distributionZonesMap.clear();
+    _distributionCirclesMap.clear();
+    _distributionDivisionsMap.clear();
+    _distributionSubdivisionsMap.clear();
+
+    final zonesSnapshot = await FirebaseFirestore.instance
+        .collection('distributionZones')
+        .get();
+    _distributionZonesMap = {
+      for (var doc in zonesSnapshot.docs)
+        doc.id: DistributionZone.fromFirestore(doc),
+    };
+
+    final circlesSnapshot = await FirebaseFirestore.instance
+        .collection('distributionCircles')
+        .get();
+    _distributionCirclesMap = {
+      for (var doc in circlesSnapshot.docs)
+        doc.id: DistributionCircle.fromFirestore(doc),
+    };
+
+    final divisionsSnapshot = await FirebaseFirestore.instance
+        .collection('distributionDivisions')
+        .get();
+    _distributionDivisionsMap = {
+      for (var doc in divisionsSnapshot.docs)
+        doc.id: DistributionDivision.fromFirestore(doc),
+    };
+
+    final subdivisionsSnapshot = await FirebaseFirestore.instance
+        .collection('distributionSubdivisions')
+        .get();
+    _distributionSubdivisionsMap = {
+      for (var doc in subdivisionsSnapshot.docs)
+        doc.id: DistributionSubdivision.fromFirestore(doc),
+    };
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -550,7 +742,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // NEW: Method to handle saving a single BusbarEnergyMap
+  // Method to handle saving a single BusbarEnergyMap (remains unchanged)
   Future<void> _saveBusbarEnergyMap(BusbarEnergyMap map) async {
     try {
       if (map.id == null) {
@@ -578,7 +770,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // NEW: Method to handle deleting a single BusbarEnergyMap
+  // Method to handle deleting a single BusbarEnergyMap (remains unchanged)
   Future<void> _deleteBusbarEnergyMap(String mapId) async {
     try {
       await FirebaseFirestore.instance
@@ -598,7 +790,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // NEW: Method to show the busbar selection dialog
+  // Method to show the busbar selection dialog (remains unchanged)
   void _showBusbarSelectionDialog() {
     final List<Bay> busbars = _allBaysInSubstation
         .where((bay) => bay.bayType == 'Busbar')
@@ -638,7 +830,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // EXISTING: Method to show the busbar energy assignment dialog (now called from selection dialog)
+  // Method to show the busbar energy assignment dialog (now called from selection dialog) (remains unchanged)
   void _showBusbarEnergyAssignmentDialog(Bay busbar) {
     // Filter connections to find bays connected to this specific busbar
     final List<Bay> connectedBays = _allConnections
@@ -695,7 +887,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     const double verticalBusbarSpacing = 200;
     const double topPadding = 80;
     const double sidePadding = 100;
-    const double busbarHitboxHeight = 50.0; // INCREASED: from 20.0 to 50.0
+    const double busbarHitboxHeight = 50.0;
     const double lineFeederHeight = 40.0;
 
     final List<Bay> busbars = allBays
@@ -725,7 +917,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         if (bay.hvBusId != null && bay.lvBusId != null) {
           final hvBus = baysMap[bay.hvBusId];
           final lvBus = baysMap[bay.lvBusId];
-          // NEW: Ensure both connected bays are actually 'Busbar' types
           if (hvBus != null &&
               lvBus != null &&
               hvBus.bayType == 'Busbar' &&
@@ -1032,7 +1223,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         }
       } else if (targetBay.bayType == 'Busbar' &&
           sourceBay.bayType != 'Busbar') {
-        final Rect? sourceRect = finalBayRects[sourceBay.id];
+        final sourceRect = finalBayRects[sourceBay.id];
         final double? busY = busYPositions[targetBay.id];
         if (sourceRect != null && busY != null) {
           busbarConnectionPoints.putIfAbsent(
@@ -1077,7 +1268,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   Widget _buildPageIndicator(int pageCount, int currentPage) {
     List<Widget> indicators = [];
-    for (int i = 0; i < pageCount; i++) {
+    final actualPageCount = pageCount > 0 ? pageCount : 1;
+    for (int i = 0; i < actualPageCount; i++) {
       indicators.add(
         Container(
           width: 8.0,
@@ -1148,6 +1340,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     const double abstractCardWidth = 400;
     const double abstractCardHeight = 200;
+    const double feederTableHeight = 300; // Height for the feeder table
 
     final List<Bay> busbarsWithData = _allBaysInSubstation
         .where(
@@ -1170,167 +1363,305 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Stack(
+          : Column(
               children: [
-                InteractiveViewer(
-                  transformationController: _transformationController,
-                  boundaryMargin: const EdgeInsets.all(double.infinity),
-                  minScale: 0.1,
-                  maxScale: 4.0,
-                  constrained: false,
-                  // REMOVED: GestureDetector for tapping on busbars directly
-                  child: CustomPaint(
-                    size: Size(canvasWidth, canvasHeight),
-                    painter: SingleLineDiagramPainter(
-                      bayRenderDataList: sldRenderData.bayRenderDataList,
-                      bayConnections: _allConnections,
-                      baysMap: _baysMap,
-                      createDummyBayRenderData: _createDummyBayRenderData,
-                      busbarRects: sldRenderData.busbarRects,
-                      busbarConnectionPoints:
-                          sldRenderData.busbarConnectionPoints,
-                      debugDrawHitboxes: false,
-                      selectedBayForMovementId: null,
-                      bayEnergyData: sldRenderData.bayEnergyData,
-                      busEnergySummary: sldRenderData.busEnergySummary,
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: SizedBox(
-                      width: abstractCardWidth,
-                      height: abstractCardHeight,
-                      child: Card(
-                        elevation: 4,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: PageView.builder(
-                                  itemCount: busbarsWithData.length + 1,
-                                  onPageChanged: (index) {
-                                    setState(() {
-                                      _currentPageIndex = index;
-                                    });
-                                  },
-                                  itemBuilder: (context, index) {
-                                    if (index == busbarsWithData.length) {
-                                      // Last page is the Abstract of Substation
-                                      return Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Abstract of Substation',
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.titleSmall,
-                                          ),
-                                          const Divider(),
-                                          _buildEnergyRow(
-                                            'Total Import',
-                                            _abstractEnergyData['totalImp'],
-                                            'MWH',
-                                            isAbstract: true,
-                                          ),
-                                          _buildEnergyRow(
-                                            'Total Export',
-                                            _abstractEnergyData['totalExp'],
-                                            'MWH',
-                                            isAbstract: true,
-                                          ),
-                                          _buildEnergyRow(
-                                            'Difference',
-                                            _abstractEnergyData['difference'],
-                                            'MWH',
-                                            isAbstract: true,
-                                          ),
-                                          _buildEnergyRow(
-                                            'Loss Percentage',
-                                            _abstractEnergyData['lossPercentage'],
-                                            '%',
-                                            isAbstract: true,
-                                          ),
-                                        ],
-                                      );
-                                    } else {
-                                      // Busbar Abstract Pages
-                                      final busbar = busbarsWithData[index];
-                                      final busSummary =
-                                          _busEnergySummary[busbar.id];
-                                      return Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Abstract of Busbar:',
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.titleSmall,
-                                          ),
-                                          Text(
-                                            '${busbar.voltageLevel} ${busbar.name}',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                          ),
-                                          const Divider(),
-                                          _buildEnergyRow(
-                                            'Import',
-                                            busSummary?['totalImp'],
-                                            'MWH',
-                                          ),
-                                          _buildEnergyRow(
-                                            'Export',
-                                            busSummary?['totalExp'],
-                                            'MWH',
-                                          ),
-                                          _buildEnergyRow(
-                                            'Difference',
-                                            busSummary?['difference'],
-                                            'MWH',
-                                          ),
-                                          _buildEnergyRow(
-                                            'Loss',
-                                            busSummary?['lossPercentage'],
-                                            '%',
-                                          ),
-                                        ],
-                                      );
-                                    }
-                                  },
-                                ),
-                              ),
-                              _buildPageIndicator(
-                                busbarsWithData.length + 1,
-                                _currentPageIndex,
-                              ),
-                            ],
+                Expanded(
+                  child: Stack(
+                    children: [
+                      InteractiveViewer(
+                        transformationController: _transformationController,
+                        boundaryMargin: const EdgeInsets.all(double.infinity),
+                        minScale: 0.1,
+                        maxScale: 4.0,
+                        constrained: false,
+                        child: CustomPaint(
+                          size: Size(canvasWidth, canvasHeight),
+                          painter: SingleLineDiagramPainter(
+                            bayRenderDataList: sldRenderData.bayRenderDataList,
+                            bayConnections: _allConnections,
+                            baysMap: _baysMap,
+                            createDummyBayRenderData: _createDummyBayRenderData,
+                            busbarRects: sldRenderData.busbarRects,
+                            busbarConnectionPoints:
+                                sldRenderData.busbarConnectionPoints,
+                            debugDrawHitboxes: false,
+                            selectedBayForMovementId: null,
+                            bayEnergyData: sldRenderData.bayEnergyData,
+                            busEnergySummary: sldRenderData.busEnergySummary,
                           ),
                         ),
                       ),
-                    ),
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: SizedBox(
+                            width: abstractCardWidth,
+                            height: abstractCardHeight,
+                            child: Card(
+                              elevation: 4,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: PageView.builder(
+                                        itemCount: busbarsWithData.length + 1,
+                                        onPageChanged: (index) {
+                                          setState(() {
+                                            _currentPageIndex = index;
+                                          });
+                                        },
+                                        itemBuilder: (context, index) {
+                                          if (index == busbarsWithData.length) {
+                                            // Last page is the Abstract of Substation
+                                            return Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Abstract of Substation',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.titleSmall,
+                                                ),
+                                                const Divider(),
+                                                _buildEnergyRow(
+                                                  'Total Import',
+                                                  _abstractEnergyData['totalImp'],
+                                                  'MWH',
+                                                  isAbstract: true,
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Total Export',
+                                                  _abstractEnergyData['totalExp'],
+                                                  'MWH',
+                                                  isAbstract: true,
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Difference',
+                                                  _abstractEnergyData['difference'],
+                                                  'MWH',
+                                                  isAbstract: true,
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Loss Percentage',
+                                                  _abstractEnergyData['lossPercentage'],
+                                                  '%',
+                                                  isAbstract: true,
+                                                ),
+                                              ],
+                                            );
+                                          } else {
+                                            // Busbar Abstract Pages
+                                            final busbar =
+                                                busbarsWithData[index];
+                                            final busSummary =
+                                                _busEnergySummary[busbar.id];
+                                            return Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Abstract of Busbar:',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.titleSmall,
+                                                ),
+                                                Text(
+                                                  '${busbar.voltageLevel} ${busbar.name}',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                ),
+                                                const Divider(),
+                                                _buildEnergyRow(
+                                                  'Import',
+                                                  busSummary?['totalImp'],
+                                                  'MWH',
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Export',
+                                                  busSummary?['totalExp'],
+                                                  'MWH',
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Difference',
+                                                  busSummary?['difference'],
+                                                  'MWH',
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Loss',
+                                                  busSummary?['lossPercentage'],
+                                                  '%',
+                                                ),
+                                              ],
+                                            );
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    _buildPageIndicator(
+                                      busbarsWithData.length + 1,
+                                      _currentPageIndex,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Feeder Energy Table Section
+                Container(
+                  height: feederTableHeight,
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Feeder Energy Supplied by Distribution Hierarchy',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const Divider(),
+                      Expanded(
+                        child: PageView.builder(
+                          itemCount:
+                              (_aggregatedFeederEnergyData.length / 5)
+                                  .ceil()
+                                  .toInt() +
+                              (_aggregatedFeederEnergyData.isEmpty ? 1 : 0),
+                          onPageChanged: (index) {
+                            setState(() {
+                              _feederTablePageIndex = index;
+                            });
+                          },
+                          itemBuilder: (context, pageIndex) {
+                            if (_aggregatedFeederEnergyData.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  'No aggregated feeder energy data available for this date range.',
+                                ),
+                              );
+                            }
+
+                            final int startIndex = pageIndex * 5;
+                            final int endIndex = (startIndex + 5).clamp(
+                              0,
+                              _aggregatedFeederEnergyData.length,
+                            );
+                            final List<AggregatedFeederEnergyData>
+                            currentPageData = _aggregatedFeederEnergyData
+                                .sublist(startIndex, endIndex);
+
+                            // Keep track of previous values for merging cells
+                            AggregatedFeederEnergyData? previousRowData;
+
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                columns: const [
+                                  DataColumn(label: Text('D-Zone')),
+                                  DataColumn(label: Text('D-Circle')),
+                                  DataColumn(label: Text('D-Division')),
+                                  DataColumn(label: Text('D-Subdivision')),
+                                  DataColumn(label: Text('Import (MWH)')),
+                                  DataColumn(label: Text('Export (MWH)')),
+                                ],
+                                rows: currentPageData.mapIndexed((index, data) {
+                                  // Determine if current cell should be merged
+                                  final bool mergeZone =
+                                      index > 0 &&
+                                      data.zoneName ==
+                                          previousRowData?.zoneName;
+                                  final bool mergeCircle =
+                                      mergeZone &&
+                                      data.circleName ==
+                                          previousRowData?.circleName;
+                                  final bool mergeDivision =
+                                      mergeCircle &&
+                                      data.divisionName ==
+                                          previousRowData?.divisionName;
+                                  final bool mergeSubdivision =
+                                      mergeDivision &&
+                                      data.distributionSubdivisionName ==
+                                          previousRowData
+                                              ?.distributionSubdivisionName;
+
+                                  // Update previousRowData for the next iteration
+                                  previousRowData = data;
+
+                                  return DataRow(
+                                    cells: [
+                                      DataCell(
+                                        Text(mergeZone ? '' : data.zoneName),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          mergeCircle ? '' : data.circleName,
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          mergeDivision
+                                              ? ''
+                                              : data.divisionName,
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          mergeSubdivision
+                                              ? ''
+                                              : data.distributionSubdivisionName,
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          data.importedEnergy.toStringAsFixed(
+                                            2,
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          data.exportedEnergy.toStringAsFixed(
+                                            2,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      if (_aggregatedFeederEnergyData.isNotEmpty)
+                        _buildPageIndicator(
+                          (_aggregatedFeederEnergyData.length / 5)
+                              .ceil()
+                              .toInt(),
+                          _feederTablePageIndex,
+                        ),
+                    ],
                   ),
                 ),
               ],
             ),
       floatingActionButton: FloatingActionButton(
-        // NEW: Floating Action Button
         onPressed: _showBusbarSelectionDialog,
-        child: const Icon(
-          Icons.settings_input_antenna,
-        ), // Example icon for busbar settings
+        child: const Icon(Icons.settings_input_antenna),
         tooltip: 'Configure Busbar Energy',
       ),
     );
@@ -1369,7 +1700,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 }
 
-// NEW: Dialog for configuring busbar energy contributions (moved from previous partial update for completeness)
+// Dialog for configuring busbar energy contributions (remains unchanged)
 class _BusbarEnergyAssignmentDialog extends StatefulWidget {
   final Bay busbar;
   final List<Bay> connectedBays;

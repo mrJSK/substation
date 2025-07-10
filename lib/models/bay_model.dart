@@ -20,7 +20,7 @@ class Bay {
   // --- Universal Bay Number ---
   final String? bayNumber;
 
-  // --- Fields for Line bay type ---
+  // --- Fields for Line bay type ---\
   final double? lineLength;
   final String? circuitType;
   final String? conductorType;
@@ -33,15 +33,22 @@ class Bay {
   final String? make;
   final double? capacity; // In MVA
   final Timestamp? manufacturingDate;
-  final String? hvBusId; // NEW: For HV bus connection
-  final String? lvBusId; // NEW: For LV bus connection
+  final String? hvBusId; // For HV bus connection
+  final String? lvBusId; // For LV bus connection
 
   // --- SHARED: Used by Line, Transformer, etc. ---
   final Timestamp? commissioningDate;
 
-  // --- NEW: Fields for custom position ---
+  // --- Fields for custom position ---
   final double? xPosition;
   final double? yPosition;
+
+  // Fields for Distribution Hierarchy (specifically for Feeder bays)
+  final String? distributionZoneId;
+  final String? distributionCircleId;
+  final String? distributionDivisionId;
+  final String?
+  distributionSubdivisionId; // NEW: Added Distribution Subdivision ID
 
   Bay({
     required this.id,
@@ -74,6 +81,10 @@ class Bay {
     this.commissioningDate,
     this.xPosition,
     this.yPosition,
+    this.distributionZoneId,
+    this.distributionCircleId,
+    this.distributionDivisionId,
+    this.distributionSubdivisionId, // NEW: Add to constructor
   });
 
   factory Bay.fromFirestore(DocumentSnapshot doc) {
@@ -109,6 +120,12 @@ class Bay {
       commissioningDate: data['commissioningDate'],
       xPosition: (data['xPosition'] as num?)?.toDouble(),
       yPosition: (data['yPosition'] as num?)?.toDouble(),
+      distributionZoneId: data['distributionZoneId'] as String?,
+      distributionCircleId: data['distributionCircleId'] as String?,
+      distributionDivisionId: data['distributionDivisionId'] as String?,
+      distributionSubdivisionId:
+          data['distributionSubdivisionId']
+              as String?, // NEW: Read from Firestore
     );
   }
 
@@ -143,6 +160,11 @@ class Bay {
       'commissioningDate': commissioningDate,
       'xPosition': xPosition,
       'yPosition': yPosition,
+      'distributionZoneId': distributionZoneId,
+      'distributionCircleId': distributionCircleId,
+      'distributionDivisionId': distributionDivisionId,
+      'distributionSubdivisionId':
+          distributionSubdivisionId, // NEW: Write to Firestore
     };
   }
 
@@ -177,6 +199,10 @@ class Bay {
     Timestamp? commissioningDate,
     double? xPosition,
     double? yPosition,
+    String? distributionZoneId,
+    String? distributionCircleId,
+    String? distributionDivisionId,
+    String? distributionSubdivisionId, // NEW: Add to copyWith
   }) {
     return Bay(
       id: id ?? this.id,
@@ -209,6 +235,12 @@ class Bay {
       commissioningDate: commissioningDate ?? this.commissioningDate,
       xPosition: xPosition ?? this.xPosition,
       yPosition: yPosition ?? this.yPosition,
+      distributionZoneId: distributionZoneId ?? this.distributionZoneId,
+      distributionCircleId: distributionCircleId ?? this.distributionCircleId,
+      distributionDivisionId:
+          distributionDivisionId ?? this.distributionDivisionId,
+      distributionSubdivisionId:
+          distributionSubdivisionId ?? this.distributionSubdivisionId, // NEW
     );
   }
 }
