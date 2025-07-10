@@ -1,5 +1,5 @@
-// lib/models/bay_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 class Bay {
   final String id;
@@ -16,39 +16,29 @@ class Bay {
   final bool? isGovernmentFeeder;
   final String? feederType;
   final double? multiplyingFactor;
-
-  // --- Universal Bay Number ---
   final String? bayNumber;
-
-  // --- Fields for Line bay type ---\
   final double? lineLength;
   final String? circuitType;
   final String? conductorType;
-  final String? conductorDetail; // For "Other" conductor type
+  final String? conductorDetail;
   final Timestamp? erectionDate;
-
-  // --- Fields for Transformer bay type ---
   final String? hvVoltage;
   final String? lvVoltage;
   final String? make;
-  final double? capacity; // In MVA
+  final double? capacity;
   final Timestamp? manufacturingDate;
-  final String? hvBusId; // For HV bus connection
-  final String? lvBusId; // For LV bus connection
-
-  // --- SHARED: Used by Line, Transformer, etc. ---
+  final String? hvBusId;
+  final String? lvBusId;
   final Timestamp? commissioningDate;
-
-  // --- Fields for custom position ---
   final double? xPosition;
   final double? yPosition;
-
-  // Fields for Distribution Hierarchy (specifically for Feeder bays)
+  final double? busbarLength;
+  final Offset? textOffset;
+  final Offset? energyTextOffset; // New field for energy text
   final String? distributionZoneId;
   final String? distributionCircleId;
   final String? distributionDivisionId;
-  final String?
-  distributionSubdivisionId; // NEW: Added Distribution Subdivision ID
+  final String? distributionSubdivisionId;
 
   Bay({
     required this.id,
@@ -81,10 +71,13 @@ class Bay {
     this.commissioningDate,
     this.xPosition,
     this.yPosition,
+    this.busbarLength,
+    this.textOffset,
+    this.energyTextOffset, // Add to constructor
     this.distributionZoneId,
     this.distributionCircleId,
     this.distributionDivisionId,
-    this.distributionSubdivisionId, // NEW: Add to constructor
+    this.distributionSubdivisionId,
   });
 
   factory Bay.fromFirestore(DocumentSnapshot doc) {
@@ -120,12 +113,23 @@ class Bay {
       commissioningDate: data['commissioningDate'],
       xPosition: (data['xPosition'] as num?)?.toDouble(),
       yPosition: (data['yPosition'] as num?)?.toDouble(),
+      busbarLength: (data['busbarLength'] as num?)?.toDouble(),
+      textOffset: data['textOffset'] != null
+          ? Offset(
+              (data['textOffset']['dx'] as num).toDouble(),
+              (data['textOffset']['dy'] as num).toDouble(),
+            )
+          : null,
+      energyTextOffset: data['energyTextOffset'] != null
+          ? Offset(
+              (data['energyTextOffset']['dx'] as num).toDouble(),
+              (data['energyTextOffset']['dy'] as num).toDouble(),
+            )
+          : null,
       distributionZoneId: data['distributionZoneId'] as String?,
       distributionCircleId: data['distributionCircleId'] as String?,
       distributionDivisionId: data['distributionDivisionId'] as String?,
-      distributionSubdivisionId:
-          data['distributionSubdivisionId']
-              as String?, // NEW: Read from Firestore
+      distributionSubdivisionId: data['distributionSubdivisionId'] as String?,
     );
   }
 
@@ -160,11 +164,17 @@ class Bay {
       'commissioningDate': commissioningDate,
       'xPosition': xPosition,
       'yPosition': yPosition,
+      'busbarLength': busbarLength,
+      'textOffset': textOffset != null
+          ? {'dx': textOffset!.dx, 'dy': textOffset!.dy}
+          : null,
+      'energyTextOffset': energyTextOffset != null
+          ? {'dx': energyTextOffset!.dx, 'dy': energyTextOffset!.dy}
+          : null,
       'distributionZoneId': distributionZoneId,
       'distributionCircleId': distributionCircleId,
       'distributionDivisionId': distributionDivisionId,
-      'distributionSubdivisionId':
-          distributionSubdivisionId, // NEW: Write to Firestore
+      'distributionSubdivisionId': distributionSubdivisionId,
     };
   }
 
@@ -199,10 +209,13 @@ class Bay {
     Timestamp? commissioningDate,
     double? xPosition,
     double? yPosition,
+    double? busbarLength,
+    Offset? textOffset,
+    Offset? energyTextOffset,
     String? distributionZoneId,
     String? distributionCircleId,
     String? distributionDivisionId,
-    String? distributionSubdivisionId, // NEW: Add to copyWith
+    String? distributionSubdivisionId,
   }) {
     return Bay(
       id: id ?? this.id,
@@ -235,12 +248,15 @@ class Bay {
       commissioningDate: commissioningDate ?? this.commissioningDate,
       xPosition: xPosition ?? this.xPosition,
       yPosition: yPosition ?? this.yPosition,
+      busbarLength: busbarLength ?? this.busbarLength,
+      textOffset: textOffset ?? this.textOffset,
+      energyTextOffset: energyTextOffset ?? this.energyTextOffset,
       distributionZoneId: distributionZoneId ?? this.distributionZoneId,
       distributionCircleId: distributionCircleId ?? this.distributionCircleId,
       distributionDivisionId:
           distributionDivisionId ?? this.distributionDivisionId,
       distributionSubdivisionId:
-          distributionSubdivisionId ?? this.distributionSubdivisionId, // NEW
+          distributionSubdivisionId ?? this.distributionSubdivisionId,
     );
   }
 }

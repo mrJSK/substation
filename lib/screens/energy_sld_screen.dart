@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
 import 'package:collection/collection.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 
 // PDF & Capture related imports
 import 'package:pdf/pdf.dart';
@@ -13,7 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:widgets_to_image/widgets_to_image.dart'; // NEW: Import widgets_to_image
+import 'package:widgets_to_image/widgets_to_image.dart';
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
@@ -176,7 +177,9 @@ class SldRenderData {
         for (var renderData in bayRenderDataList)
           renderData.bay.id: {
             'x': renderData.bay.xPosition,
-            'y': renderData.bay.yPosition,
+            'y': renderData
+                .bay
+                .yPosition, // Corrected from renderData.bay.yPosition
           },
       },
       'bayEnergyData': {
@@ -230,6 +233,8 @@ class SldRenderData {
               bottomCenter: Offset(x ?? 0, y ?? 0),
               leftCenter: Offset(x ?? 0, y ?? 0),
               rightCenter: Offset(x ?? 0, y ?? 0),
+              textOffset: Offset(x ?? 0, y ?? 0),
+              busbarLength: 0.0,
             ),
           );
         }
@@ -269,6 +274,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   bool _isLoading = true;
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 1));
   DateTime _endDate = DateTime.now();
+  bool _showTables = true; // NEW: State for table visibility
 
   List<Bay> _allBaysInSubstation = [];
   Map<String, Bay> _baysMap = {};
@@ -481,7 +487,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             .where('substationId', isEqualTo: widget.substationId)
             .where('frequency', isEqualTo: 'daily')
             .where('readingTimestamp', isGreaterThanOrEqualTo: startOfStartDate)
-            .where('readingTimestamp', isLessThanOrEqualTo: endOfStartDate)
+            .where(
+              'readingTimestamp',
+              isLessThanOrEqualTo: endOfEndDate,
+            ) // Changed to endOfEndDate to cover the range
             .get();
         startDayReadings = {
           for (var doc in startDayLogsheetsSnapshot.docs)
@@ -489,6 +498,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 LogsheetEntry.fromFirestore(doc),
         };
 
+        // If start and end dates are different, fetch end day readings specifically
         if (!_startDate.isAtSameMomentAs(_endDate)) {
           final endDayLogsheetsSnapshot = await FirebaseFirestore.instance
               .collection('logsheetEntries')
@@ -503,6 +513,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   LogsheetEntry.fromFirestore(doc),
           };
         } else {
+          // If start and end dates are the same, endDayReadings is startDayReadings
+          // And we need to fetch readings for the previous day to calculate consumption for that single day
           endDayReadings = startDayReadings;
           final previousDay = _startDate.subtract(const Duration(days: 1));
           final startOfPreviousDay = DateTime(
@@ -639,6 +651,23 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 currentReadingLogsheet?.values['Previous Day Reading (Export)']
                         ?.toString() ??
                     '',
+              );
+            }
+
+            if (currImpVal != null &&
+                prevImpValForCalculation != null &&
+                mf != null) {
+              calculatedImpConsumed = max(
+                0.0,
+                (currImpVal - prevImpValForCalculation) * mf,
+              );
+            }
+            if (currExpVal != null &&
+                prevExpValForCalculation != null &&
+                mf != null) {
+              calculatedExpConsumed = max(
+                0.0,
+                (currExpVal - prevExpValForCalculation) * mf,
               );
             }
 
@@ -1320,14 +1349,35 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     // Prepare data for PDF
     final Map<String, dynamic> currentAbstractEnergyData = _abstractEnergyData;
-    final Map<String, dynamic> currentBusEnergySummaryData = _busEnergySummary;
+    final Map<String, Map<String, double>> currentBusEnergySummaryData =
+        _busEnergySummary;
     final List<AggregatedFeederEnergyData> currentAggregatedFeederData =
         _aggregatedFeederEnergyData;
-    final List<Assessment> currentAssessmentsForDisplay =
-        _allAssessmentsForDisplay;
-    final Map<String, String> currentBayNamesLookup = {
-      for (var bay in _allBaysInSubstation) bay.id: bay.name,
-    };
+    // For live view, use _allAssessmentsForDisplay. For saved view, _loadedAssessmentsSummary
+    final List<Map<String, dynamic>> assessmentsForPdf = _isViewingSavedSld
+        ? _loadedAssessmentsSummary
+        : _allAssessmentsForDisplay
+              .map(
+                (e) => {
+                  ...e.toFirestore(),
+                  'bayName': _baysMap[e.bayId]?.name ?? 'N/A',
+                },
+              )
+              .toList();
+
+    // Use a unified map for bay names, prioritizing the loaded one if available, otherwise live
+    final Map<String, String> currentBayNamesLookup;
+    if (_isViewingSavedSld &&
+        _loadedSldParameters != null &&
+        _loadedSldParameters!.containsKey('bayNamesLookup')) {
+      currentBayNamesLookup = Map<String, String>.from(
+        _loadedSldParameters!['bayNamesLookup'],
+      );
+    } else {
+      currentBayNamesLookup = {
+        for (var bay in _allBaysInSubstation) bay.id: bay.name,
+      };
+    }
 
     pdf.addPage(
       pw.MultiPage(
@@ -1375,13 +1425,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       ),
                     ),
                     pw.SizedBox(height: 10),
-                    // Constrain image size to fit within PDF page width
+                    // Constrain image size to fit within PDF page width and a reasonable max height
+                    // The image will be scaled down to fit the available width, and its height will adjust proportionally.
+                    // A sufficiently large image might span multiple pages, which MultiPage handles.
                     pw.Image(
                       sldPdfImage,
                       fit: pw.BoxFit.contain,
                       width: PdfPageFormat.a4.width - (3 * PdfPageFormat.cm),
                     ),
-                    pw.SizedBox(height: 20),
+                    pw.SizedBox(
+                      height: 30,
+                    ), // Increased spacing to prevent overlap
                   ],
                 ),
               )
@@ -1520,7 +1574,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 border: pw.Border(bottom: pw.BorderSide()),
               ),
             ),
-            if (currentAssessmentsForDisplay.isNotEmpty)
+            if (assessmentsForPdf.isNotEmpty)
               pw.Table.fromTextArray(
                 context: context,
                 headers: <String>[
@@ -1530,10 +1584,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   'Reason',
                   'Timestamp',
                 ],
-                data: currentAssessmentsForDisplay.map((assessment) {
+                data: assessmentsForPdf.map((assessmentMap) {
+                  final Assessment assessment = Assessment.fromMap(
+                    assessmentMap,
+                  );
                   return <String>[
-                    _baysMap[assessment.bayId]?.name ??
-                        'N/A', // Use live bayName from _baysMap
+                    assessmentMap['bayName'] ?? 'N/A', // Use stored bayName
                     assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A',
                     assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A',
                     assessment.reason,
@@ -1692,7 +1748,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           final bool targetIsBay = c.targetBayId == bay.id;
           final bool sourceIsBus = baysMap[c.sourceBayId]?.bayType == 'Busbar';
           final bool targetIsBus = baysMap[c.targetBayId]?.bayType == 'Busbar';
-          return (sourceIsBay && targetIsBay) || (targetIsBay && sourceIsBus);
+          return (sourceIsBay && targetIsBus) || (targetIsBay && sourceIsBus);
         });
 
         if (connectionToBus != null) {
@@ -1914,14 +1970,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             bottomCenter: rect.bottomCenter,
             leftCenter: rect.centerLeft,
             rightCenter: rect.centerRight,
+            textOffset: Offset.zero,
+            busbarLength: 0.0,
           ),
         );
       }
     }
 
     for (var connection in allConnections) {
-      final Bay? sourceBay = baysMap[connection.sourceBayId];
-      final Bay? targetBay = baysMap[connection.targetBayId];
+      final sourceBay = baysMap[connection.sourceBayId];
+      final targetBay = baysMap[connection.targetBayId];
       if (sourceBay == null || targetBay == null) continue;
 
       if (!allowedVisualBayTypes.contains(sourceBay.bayType) ||
@@ -2009,6 +2067,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       bottomCenter: Offset.zero,
       leftCenter: Offset.zero,
       rightCenter: Offset.zero,
+      textOffset: Offset.zero,
+      busbarLength: 0.0,
     );
   }
 
@@ -2085,10 +2145,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
 
     const double abstractCardWidth = 400;
-    const double abstractCardHeight = 250;
+    const double abstractCardHeight = 200; // Adjusted for better fit in UI
     const double feederTableHeight = 300;
-    const double assessmentTableHeight =
-        250; // NEW: Height for assessment table
+    const double assessmentTableHeight = 250;
 
     final List<Bay> busbarsWithData = _allBaysInSubstation
         .where(
@@ -2110,18 +2169,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 ? 'Date range cannot be changed for saved SLD'
                 : 'Change Date Range',
           ),
-          if (!_isViewingSavedSld) // Show save button only for live SLD
-            IconButton(
-              icon: const Icon(Icons.save),
-              onPressed: _saveSld,
-              tooltip: 'Save Current SLD View',
-            ),
-          // NEW: Share/Print button for current SLD view
-          IconButton(
-            icon: const Icon(Icons.print),
-            onPressed: _shareCurrentSldAsPdf, // Call the new PDF function
-            tooltip: 'Share/Print PDF of current SLD',
-          ),
         ],
       ),
       body: _isLoading
@@ -2129,12 +2176,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           : Column(
               children: [
                 Expanded(
-                  child: WidgetsToImage(
-                    // NEW: Use WidgetsToImage to capture the SLD drawing
-                    controller: _widgetsToImageController, // Link to controller
-                    child: Stack(
-                      children: [
-                        InteractiveViewer(
+                  child: Stack(
+                    children: [
+                      WidgetsToImage(
+                        controller: _widgetsToImageController,
+                        child: InteractiveViewer(
                           transformationController: _transformationController,
                           boundaryMargin: const EdgeInsets.all(double.infinity),
                           minScale: 0.1,
@@ -2159,433 +2205,457 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                             ),
                           ),
                         ),
-                        // The abstract card is part of the Stack, so it will be captured with the SLD.
-                        Align(
-                          alignment: Alignment.bottomRight,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: SizedBox(
-                              width: abstractCardWidth,
-                              height: abstractCardHeight,
-                              child: Card(
-                                elevation: 4,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12.0),
-                                  child: Column(
-                                    // mainAxisSize: MainAxisSize.min, // <-- REMOVED THIS LINE TO FIX OVERFLOW
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: PageView.builder(
-                                          itemCount: busbarsWithData.length + 1,
-                                          onPageChanged: (index) {
-                                            setState(() {
-                                              _currentPageIndex = index;
-                                            });
-                                          },
-                                          itemBuilder: (context, index) {
-                                            if (index ==
-                                                busbarsWithData.length) {
-                                              return Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Abstract of Substation',
-                                                    style: Theme.of(
-                                                      context,
-                                                    ).textTheme.titleSmall,
-                                                  ),
-                                                  const Divider(),
-                                                  _buildEnergyRow(
-                                                    'Total Import',
-                                                    _abstractEnergyData['totalImp'],
-                                                    'MWH',
-                                                    isAbstract: true,
-                                                  ),
-                                                  _buildEnergyRow(
-                                                    'Total Export',
-                                                    _abstractEnergyData['totalExp'],
-                                                    'MWH',
-                                                    isAbstract: true,
-                                                  ),
-                                                  _buildEnergyRow(
-                                                    'Difference',
-                                                    _abstractEnergyData['difference'],
-                                                    'MWH',
-                                                    isAbstract: true,
-                                                  ),
-                                                  _buildEnergyRow(
-                                                    'Loss Percentage',
-                                                    _abstractEnergyData['lossPercentage'],
-                                                    '%',
-                                                    isAbstract: true,
-                                                  ),
-                                                ],
-                                              );
-                                            } else {
-                                              final busbar =
-                                                  busbarsWithData[index];
-                                              final busSummary =
-                                                  _busEnergySummary[busbar.id];
-                                              return Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Abstract of Busbar:',
-                                                    style: Theme.of(
-                                                      context,
-                                                    ).textTheme.titleSmall,
-                                                  ),
-                                                  Text(
-                                                    '${busbar.voltageLevel} ${busbar.name}',
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .bodyMedium
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                  ),
-                                                  const Divider(),
-                                                  _buildEnergyRow(
-                                                    'Import',
-                                                    busSummary?['totalImp'],
-                                                    'MWH',
-                                                  ),
-                                                  _buildEnergyRow(
-                                                    'Export',
-                                                    busSummary?['totalExp'],
-                                                    'MWH',
-                                                  ),
-                                                  _buildEnergyRow(
-                                                    'Difference',
-                                                    busSummary?['difference'],
-                                                    'MWH',
-                                                  ),
-                                                  _buildEnergyRow(
-                                                    'Loss',
-                                                    busSummary?['lossPercentage'],
-                                                    '%',
-                                                  ),
-                                                ],
-                                              );
-                                            }
-                                          },
-                                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: SizedBox(
+                            width: abstractCardWidth,
+                            height: abstractCardHeight,
+                            child: Card(
+                              elevation: 4,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: PageView.builder(
+                                        itemCount: busbarsWithData.length + 1,
+                                        onPageChanged: (index) {
+                                          setState(() {
+                                            _currentPageIndex = index;
+                                          });
+                                        },
+                                        itemBuilder: (context, index) {
+                                          if (index == busbarsWithData.length) {
+                                            return Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Abstract of Substation',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.titleSmall,
+                                                ),
+                                                const Divider(),
+                                                _buildEnergyRow(
+                                                  'Total Import',
+                                                  _abstractEnergyData['totalImp'],
+                                                  'MWH',
+                                                  isAbstract: true,
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Total Export',
+                                                  _abstractEnergyData['totalExp'],
+                                                  'MWH',
+                                                  isAbstract: true,
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Difference',
+                                                  _abstractEnergyData['difference'],
+                                                  'MWH',
+                                                  isAbstract: true,
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Loss Percentage',
+                                                  _abstractEnergyData['lossPercentage'],
+                                                  '%',
+                                                  isAbstract: true,
+                                                ),
+                                              ],
+                                            );
+                                          } else {
+                                            final busbar =
+                                                busbarsWithData[index];
+                                            final busSummary =
+                                                _busEnergySummary[busbar.id];
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Abstract of Busbar:',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.titleSmall,
+                                                ),
+                                                Text(
+                                                  '${busbar.voltageLevel} ${busbar.name}',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                ),
+                                                const Divider(),
+                                                _buildEnergyRow(
+                                                  'Import',
+                                                  busSummary?['totalImp'],
+                                                  'MWH',
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Export',
+                                                  busSummary?['totalExp'],
+                                                  'MWH',
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Difference',
+                                                  busSummary?['difference'],
+                                                  'MWH',
+                                                ),
+                                                _buildEnergyRow(
+                                                  'Loss',
+                                                  busSummary?['lossPercentage'],
+                                                  '%',
+                                                ),
+                                              ],
+                                            );
+                                          }
+                                        },
                                       ),
-                                      _buildPageIndicator(
-                                        busbarsWithData.length + 1,
-                                        _currentPageIndex,
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                    _buildPageIndicator(
+                                      busbarsWithData.length + 1,
+                                      _currentPageIndex,
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-                // Feeder Energy Table Section
-                Container(
-                  height: feederTableHeight,
-                  padding: const EdgeInsets.all(8.0),
+                // THIS IS THE CORRECTED SECTION
+                Visibility(
+                  visible: _showTables,
                   child: Column(
                     children: [
-                      Text(
-                        'Feeder Energy Supplied by Distribution Hierarchy',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const Divider(),
-                      Expanded(
-                        child: PageView.builder(
-                          itemCount:
-                              (_aggregatedFeederEnergyData.length / 5)
-                                  .ceil()
-                                  .toInt() +
-                              (_aggregatedFeederEnergyData.isEmpty ? 1 : 0),
-                          onPageChanged: (index) {
-                            setState(() {
-                              _feederTablePageIndex = index;
-                            });
-                          },
-                          itemBuilder: (context, pageIndex) {
-                            if (_aggregatedFeederEnergyData.isEmpty) {
-                              return const Center(
-                                child: Text(
-                                  'No aggregated feeder energy data available for this date range.',
-                                ),
-                              );
-                            }
-
-                            final int startIndex = pageIndex * 5;
-                            final int endIndex = (startIndex + 5).clamp(
-                              0,
-                              _aggregatedFeederEnergyData.length,
-                            );
-                            final List<AggregatedFeederEnergyData>
-                            currentPageData = _aggregatedFeederEnergyData
-                                .sublist(startIndex, endIndex);
-
-                            return SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: DataTable(
-                                columns: const [
-                                  DataColumn(label: Text('D-Zone')),
-                                  DataColumn(label: Text('D-Circle')),
-                                  DataColumn(label: Text('D-Division')),
-                                  DataColumn(label: Text('D-Subdivision')),
-                                  DataColumn(label: Text('Import (MWH)')),
-                                  DataColumn(label: Text('Export (MWH)')),
-                                ],
-                                rows: currentPageData.mapIndexed((index, data) {
-                                  final AggregatedFeederEnergyData?
-                                  prevDataOverall = (startIndex + index > 0)
-                                      ? _aggregatedFeederEnergyData[startIndex +
-                                            index -
-                                            1]
-                                      : null;
-
-                                  final bool mergeZone =
-                                      (prevDataOverall != null) &&
-                                      data.zoneName == prevDataOverall.zoneName;
-                                  final bool mergeCircle =
-                                      mergeZone &&
-                                      data.circleName ==
-                                          prevDataOverall.circleName;
-                                  final bool mergeDivision =
-                                      mergeCircle &&
-                                      data.divisionName ==
-                                          prevDataOverall.divisionName;
-                                  final bool mergeSubdivision =
-                                      mergeDivision &&
-                                      data.distributionSubdivisionName ==
-                                          prevDataOverall
-                                              .distributionSubdivisionName;
-
-                                  return DataRow(
-                                    cells: [
-                                      DataCell(
-                                        Text(mergeZone ? '' : data.zoneName),
+                      // Feeder Energy Table
+                      Container(
+                        height: feederTableHeight,
+                        padding: const EdgeInsets.all(8.0),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Feeder Energy Supplied by Distribution Hierarchy',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const Divider(),
+                            Expanded(
+                              child: PageView.builder(
+                                itemCount:
+                                    (_aggregatedFeederEnergyData.length / 5)
+                                        .ceil()
+                                        .toInt() +
+                                    (_aggregatedFeederEnergyData.isEmpty
+                                        ? 1
+                                        : 0),
+                                onPageChanged: (index) {
+                                  setState(() {
+                                    _feederTablePageIndex = index;
+                                  });
+                                },
+                                itemBuilder: (context, pageIndex) {
+                                  if (_aggregatedFeederEnergyData.isEmpty) {
+                                    return const Center(
+                                      child: Text(
+                                        'No aggregated feeder energy data available for this date range.',
                                       ),
-                                      DataCell(
-                                        Text(
-                                          mergeCircle ? '' : data.circleName,
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Text(
-                                          mergeDivision
-                                              ? ''
-                                              : data.divisionName,
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Text(
-                                          mergeSubdivision
-                                              ? ''
-                                              : data.distributionSubdivisionName,
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Text(
-                                          data.importedEnergy.toStringAsFixed(
-                                            2,
-                                          ),
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Text(
-                                          data.exportedEnergy.toStringAsFixed(
-                                            2,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                    );
+                                  }
+                                  final int startIndex = pageIndex * 5;
+                                  final int endIndex = (startIndex + 5).clamp(
+                                    0,
+                                    _aggregatedFeederEnergyData.length,
                                   );
-                                }).toList(),
+                                  final List<AggregatedFeederEnergyData>
+                                  currentPageData = _aggregatedFeederEnergyData
+                                      .sublist(startIndex, endIndex);
+                                  return SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: DataTable(
+                                      columns: const [
+                                        DataColumn(label: Text('D-Zone')),
+                                        DataColumn(label: Text('D-Circle')),
+                                        DataColumn(label: Text('D-Division')),
+                                        DataColumn(
+                                          label: Text('D-Subdivision'),
+                                        ),
+                                        DataColumn(label: Text('Import (MWH)')),
+                                        DataColumn(label: Text('Export (MWH)')),
+                                      ],
+                                      rows: currentPageData.mapIndexed((
+                                        index,
+                                        data,
+                                      ) {
+                                        final AggregatedFeederEnergyData?
+                                        prevDataOverall =
+                                            (startIndex + index > 0)
+                                            ? _aggregatedFeederEnergyData[startIndex +
+                                                  index -
+                                                  1]
+                                            : null;
+                                        final bool mergeZone =
+                                            (prevDataOverall != null) &&
+                                            data.zoneName ==
+                                                prevDataOverall.zoneName;
+                                        final bool mergeCircle =
+                                            mergeZone &&
+                                            data.circleName ==
+                                                prevDataOverall.circleName;
+                                        final bool mergeDivision =
+                                            mergeCircle &&
+                                            data.divisionName ==
+                                                prevDataOverall.divisionName;
+                                        final bool mergeSubdivision =
+                                            mergeDivision &&
+                                            data.distributionSubdivisionName ==
+                                                prevDataOverall
+                                                    .distributionSubdivisionName;
+                                        return DataRow(
+                                          cells: [
+                                            DataCell(
+                                              Text(
+                                                mergeZone ? '' : data.zoneName,
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                mergeCircle
+                                                    ? ''
+                                                    : data.circleName,
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                mergeDivision
+                                                    ? ''
+                                                    : data.divisionName,
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                mergeSubdivision
+                                                    ? ''
+                                                    : data.distributionSubdivisionName,
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                data.importedEnergy
+                                                    .toStringAsFixed(2),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                data.exportedEnergy
+                                                    .toStringAsFixed(2),
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      }).toList(),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
+                            ),
+                            if (_aggregatedFeederEnergyData.isNotEmpty)
+                              _buildPageIndicator(
+                                (_aggregatedFeederEnergyData.length / 5)
+                                    .ceil()
+                                    .toInt(),
+                                _feederTablePageIndex,
+                              ),
+                          ],
                         ),
                       ),
-                      if (_aggregatedFeederEnergyData.isNotEmpty)
-                        _buildPageIndicator(
-                          (_aggregatedFeederEnergyData.length / 5)
-                              .ceil()
-                              .toInt(),
-                          _feederTablePageIndex,
+                      // Assessment Table using collection-if
+                      if (_isViewingSavedSld &&
+                          _loadedAssessmentsSummary.isNotEmpty)
+                        Container(
+                          height: assessmentTableHeight,
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Assessments for this Period:',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                              const Divider(),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
+                                    columns: const [
+                                      DataColumn(label: Text('Bay Name')),
+                                      DataColumn(label: Text('Import Adj.')),
+                                      DataColumn(label: Text('Export Adj.')),
+                                      DataColumn(label: Text('Reason')),
+                                      DataColumn(label: Text('Timestamp')),
+                                    ],
+                                    rows: _loadedAssessmentsSummary.map((
+                                      assessmentMap,
+                                    ) {
+                                      final Assessment assessment =
+                                          Assessment.fromMap(assessmentMap);
+                                      final String assessedBayName =
+                                          assessmentMap['bayName'] ?? 'N/A';
+                                      return DataRow(
+                                        cells: [
+                                          DataCell(Text(assessedBayName)),
+                                          DataCell(
+                                            Text(
+                                              assessment.importAdjustment !=
+                                                      null
+                                                  ? assessment.importAdjustment!
+                                                        .toStringAsFixed(2)
+                                                  : 'N/A',
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              assessment.exportAdjustment !=
+                                                      null
+                                                  ? assessment.exportAdjustment!
+                                                        .toStringAsFixed(2)
+                                                  : 'N/A',
+                                            ),
+                                          ),
+                                          DataCell(Text(assessment.reason)),
+                                          DataCell(
+                                            Text(
+                                              DateFormat(
+                                                'dd-MMM-yyyy HH:mm',
+                                              ).format(
+                                                assessment.assessmentTimestamp
+                                                    .toDate(),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (_isViewingSavedSld &&
+                          _loadedAssessmentsSummary.isEmpty)
+                        Container(
+                          height: assessmentTableHeight,
+                          alignment: Alignment.center,
+                          child: Text(
+                            'No assessments were made for this period in the saved SLD.',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontStyle: FontStyle.italic),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      else if (!_isViewingSavedSld &&
+                          _allAssessmentsForDisplay.isNotEmpty)
+                        Container(
+                          height: 150,
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Recent Assessment Notes:',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const Divider(),
+                              Expanded(
+                                child: ListView.builder(
+                                  itemCount: _allAssessmentsForDisplay.length,
+                                  itemBuilder: (context, index) {
+                                    final assessment =
+                                        _allAssessmentsForDisplay[index];
+                                    final Bay? assessedBay =
+                                        _baysMap[assessment.bayId];
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 4.0,
+                                      ),
+                                      child: Text(
+                                        '• ${assessedBay?.name ?? 'Unknown Bay'} on ${DateFormat('dd-MMM-yyyy HH:mm').format(assessment.assessmentTimestamp.toDate())}: ${assessment.reason}',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                     ],
                   ),
                 ),
-                // NEW: Section to display assessment notes in a table format
-                if (_isViewingSavedSld && _loadedAssessmentsSummary.isNotEmpty)
-                  Container(
-                    height: assessmentTableHeight,
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Assessments for this Period:',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const Divider(),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: DataTable(
-                              columns: const [
-                                DataColumn(label: Text('Bay Name')),
-                                DataColumn(label: Text('Import Adj.')),
-                                DataColumn(label: Text('Export Adj.')),
-                                DataColumn(label: Text('Reason')),
-                                DataColumn(label: Text('Timestamp')),
-                              ],
-                              rows: _loadedAssessmentsSummary.map((
-                                assessmentMap,
-                              ) {
-                                final Assessment assessment =
-                                    Assessment.fromMap(
-                                      assessmentMap,
-                                      id: assessmentMap['id'] as String?,
-                                    ); // Pass id explicitly
-                                // Use the bayName stored in the map directly
-                                final String assessedBayName =
-                                    assessmentMap['bayName'] ?? 'N/A';
-                                return DataRow(
-                                  cells: [
-                                    DataCell(Text(assessedBayName)),
-                                    DataCell(
-                                      Text(
-                                        assessment.importAdjustment != null
-                                            ? assessment.importAdjustment!
-                                                  .toStringAsFixed(2)
-                                            : 'N/A',
-                                      ),
-                                    ),
-                                    DataCell(
-                                      Text(
-                                        assessment.exportAdjustment != null
-                                            ? assessment.exportAdjustment!
-                                                  .toStringAsFixed(2)
-                                            : 'N/A',
-                                      ),
-                                    ),
-                                    DataCell(Text(assessment.reason)),
-                                    DataCell(
-                                      Text(
-                                        DateFormat('dd-MMM-yyyy HH:mm').format(
-                                          assessment.assessmentTimestamp
-                                              .toDate(),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (_isViewingSavedSld &&
-                    _loadedAssessmentsSummary.isEmpty)
-                  Container(
-                    height: assessmentTableHeight,
-                    alignment: Alignment.center,
-                    child: Text(
-                      'No assessments were made for this period in the saved SLD.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontStyle: FontStyle.italic,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                else if (!_isViewingSavedSld &&
-                    _allAssessmentsForDisplay.isNotEmpty)
-                  Container(
-                    height: 150,
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Recent Assessment Notes:',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const Divider(),
-                        Expanded(
-                          child: ListView.builder(
-                            itemCount: _allAssessmentsForDisplay.length,
-                            itemBuilder: (context, index) {
-                              final assessment =
-                                  _allAssessmentsForDisplay[index];
-                              final Bay? assessedBay =
-                                  _baysMap[assessment.bayId];
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4.0,
-                                ),
-                                child: Text(
-                                  '• ${assessedBay?.name ?? 'Unknown Bay'} on ${DateFormat('dd-MMM-yyyy HH:mm').format(assessment.assessmentTimestamp.toDate())}: ${assessment.reason}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _isViewingSavedSld
-            ? null
-            : () {
-                // NEW: Disable FAB for saved SLD view
-                showModalBottomSheet(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return SafeArea(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          ListTile(
-                            leading: const Icon(Icons.settings_input_antenna),
-                            title: const Text('Configure Busbar Energy'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showBusbarSelectionDialog();
-                            },
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.assessment),
-                            title: const Text('Add Energy Assessment'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showBaySelectionForAssessment();
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-        child: const Icon(Icons.menu),
-        tooltip: _isViewingSavedSld
-            ? 'Options not available for saved SLD'
-            : 'Menu Options',
+      floatingActionButton: SpeedDial(
+        icon: Icons.menu,
+        activeIcon: Icons.close,
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        overlayColor: Colors.black,
+        overlayOpacity: 0.5,
+        spacing: 12,
+        spaceBetweenChildren: 12,
+        children: [
+          SpeedDialChild(
+            child: const Icon(Icons.save),
+            backgroundColor: _isViewingSavedSld ? Colors.grey : Colors.green,
+            label: 'Save SLD',
+            onTap: _isViewingSavedSld ? null : _saveSld,
+          ),
+          SpeedDialChild(
+            child: const Icon(Icons.print),
+            backgroundColor: Colors.blue,
+            label: 'Print/Share SLD',
+            onTap: _shareCurrentSldAsPdf,
+          ),
+          SpeedDialChild(
+            child: Icon(_showTables ? Icons.visibility_off : Icons.visibility),
+            backgroundColor: Colors.orange,
+            label: _showTables ? 'Hide Tables' : 'Show Tables',
+            onTap: () {
+              setState(() {
+                _showTables = !_showTables;
+              });
+            },
+          ),
+          SpeedDialChild(
+            child: const Icon(Icons.settings_input_antenna),
+            backgroundColor: Colors.purple,
+            label: 'Configure Busbar Energy',
+            onTap: _isViewingSavedSld
+                ? null
+                : () => _showBusbarSelectionDialog(),
+          ),
+          SpeedDialChild(
+            child: const Icon(Icons.assessment),
+            backgroundColor: Colors.red,
+            label: 'Add Energy Assessment',
+            onTap: _isViewingSavedSld
+                ? null
+                : () => _showBaySelectionForAssessment(),
+          ),
+        ],
       ),
     );
   }
@@ -2688,10 +2758,12 @@ class __BusbarEnergyAssignmentDialogState
             connectedBayId: bayId,
             importContribution: importContrib,
             exportContribution: exportContrib,
-            createdBy: widget.currentUser.uid,
+            createdBy: originalMapId != null
+                ? widget.currentUser.uid
+                : widget.currentUser.uid,
             createdAt: originalMapId != null
                 ? Timestamp.now()
-                : Timestamp.now(), // Use existing or current timestamp
+                : Timestamp.now(),
             lastModifiedAt: Timestamp.now(),
           );
           widget.onSaveMap(newMap);

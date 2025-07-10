@@ -1,24 +1,27 @@
-// lib/screens/substation_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:collection/collection.dart'; // Import for firstWhereOrNull
-import 'dart:math'; // Ensure this is imported for 'max'
+import 'package:collection/collection.dart';
+import 'dart:math';
 
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
 import '../models/bay_connection_model.dart';
-import '../models/equipment_model.dart'; // For EquipmentInstance model
+import '../models/equipment_model.dart';
+// NOTE: Make sure you have a single, unified BayRenderData model definition
+// and import it here. For example:
+// import '../models/bay_render_data.dart';
 import '../utils/snackbar_utils.dart';
-import '../screens/bay_equipment_management_screen.dart'; // To manage equipment list
+import '../screens/bay_equipment_management_screen.dart';
 import '../screens/bay_reading_assignment_screen.dart';
-import 'energy_sld_screen.dart'; // Import EnergySldScreen for BayEnergyData and SldRenderData
+import 'energy_sld_screen.dart';
 
-// Import the new split files
-import '../widgets/bay_form_card.dart'; // NEW: Import the BayFormCard widget
-import '../painters/single_line_diagram_painter.dart'; // NEW: Import the SingleLineDiagramPainter
+import '../widgets/bay_form_card.dart';
+import '../painters/single_line_diagram_painter.dart';
 
 enum BayDetailViewMode { list, add, edit }
+
+enum MovementMode { bay, text }
 
 class SubstationDetailScreen extends StatefulWidget {
   final String substationId;
@@ -43,24 +46,25 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   final TransformationController _transformationController =
       TransformationController();
 
-  // New state variables for movement
-  Map<String, Offset> _bayPositions = {}; // Stores x,y for each bay ID
-  String?
-  _selectedBayForMovementId; // ID of the bay currently selected for movement
-  static const double _movementStep =
-      10.0; // How many pixels to move per button press
+  Map<String, Offset> _bayPositions = {};
+  Map<String, Offset> _textOffsets = {};
+  Map<String, double> _busbarLengths = {};
 
-  // This variable needs to be accessible in _buildMovementControls, so it must be a class member
+  String? _selectedBayForMovementId;
+  MovementMode _movementMode = MovementMode.bay;
+
+  static const double _movementStep = 10.0;
+  static const double _busbarLengthStep = 20.0;
+
   List<BayRenderData> _currentBayRenderDataList = [];
 
-  // Variables for form data that might be needed by BayFormCard
   List<Bay> _availableBusbars = [];
-  bool _isLoadingBusbars = true; // New loading state for busbars
+  bool _isLoadingBusbars = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchBusbarsInSubstation(); // Fetch busbars initially
+    _fetchBusbarsInSubstation();
   }
 
   @override
@@ -86,6 +90,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
       bottomCenter: Offset.zero,
       leftCenter: Offset.zero,
       rightCenter: Offset.zero,
+      textOffset: Offset.zero,
+      busbarLength: 0.0,
     );
   }
 
@@ -123,18 +129,15 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     setState(() {
       _viewMode = mode;
       _bayToEdit = bay;
-      _selectedBayForMovementId = null; // Exit movement mode
+      _selectedBayForMovementId = null;
     });
     if (mode != BayDetailViewMode.list) {
-      // If going to add/edit, ensure busbars are fresh for the form
       _fetchBusbarsInSubstation();
     }
   }
 
   void _onBayFormSaveSuccess() {
     _setViewMode(BayDetailViewMode.list);
-    // You might want to refresh main SLD data here if it's not reactive
-    // via streams already. StreamBuilder handles it automatically usually.
   }
 
   @override
@@ -182,8 +185,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   if (_selectedBayForMovementId != null) {
                     setState(() {
                       _selectedBayForMovementId = null;
-                      _bayPositions
-                          .clear(); // Clear local positions to re-read from Firestore
+                      _bayPositions.clear();
                     });
                     SnackBarUtils.showSnackBar(
                       context,
@@ -204,7 +206,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 currentUser: widget.currentUser,
                 onSaveSuccess: _onBayFormSaveSuccess,
                 onCancel: () => _setViewMode(BayDetailViewMode.list),
-                availableBusbars: _availableBusbars, // Pass busbars here
+                availableBusbars: _availableBusbars,
               ),
         floatingActionButton:
             (_viewMode == BayDetailViewMode.list &&
@@ -223,6 +225,13 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   }
 
   Widget _buildMovementControls() {
+    final selectedBay = _getBayRenderData(
+      _selectedBayForMovementId!,
+      _currentBayRenderDataList,
+    )?.bay;
+
+    if (selectedBay == null) return const SizedBox.shrink();
+
     return Container(
       padding: const EdgeInsets.all(8.0),
       color: Colors.blueGrey.shade800,
@@ -230,8 +239,21 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Moving: ${_getBayRenderData(_selectedBayForMovementId!, _currentBayRenderDataList)?.bay.name ?? "Bay"}',
+            'Editing: ${selectedBay.name}',
             style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 10),
+          SegmentedButton<MovementMode>(
+            segments: const [
+              ButtonSegment(value: MovementMode.bay, label: Text('Move Bay')),
+              ButtonSegment(value: MovementMode.text, label: Text('Move Text')),
+            ],
+            selected: {_movementMode},
+            onSelectionChanged: (newSelection) {
+              setState(() {
+                _movementMode = newSelection.first;
+              });
+            },
           ),
           const SizedBox(height: 10),
           Row(
@@ -240,94 +262,98 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               IconButton(
                 icon: const Icon(Icons.arrow_back),
                 color: Colors.white,
-                onPressed: () {
-                  setState(() {
-                    final currentOffset =
-                        _bayPositions[_selectedBayForMovementId];
-                    if (currentOffset != null) {
-                      _bayPositions[_selectedBayForMovementId!] = Offset(
-                        currentOffset.dx - _movementStep,
-                        currentOffset.dy,
-                      );
-                    }
-                  });
-                },
+                onPressed: () => _moveSelectedItem(-_movementStep, 0),
               ),
               Column(
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_upward),
                     color: Colors.white,
-                    onPressed: () {
-                      setState(() {
-                        final currentOffset =
-                            _bayPositions[_selectedBayForMovementId];
-                        if (currentOffset != null) {
-                          _bayPositions[_selectedBayForMovementId!] = Offset(
-                            currentOffset.dx,
-                            currentOffset.dy - _movementStep,
-                          );
-                        }
-                      });
-                    },
+                    onPressed: () => _moveSelectedItem(0, -_movementStep),
                   ),
                   IconButton(
                     icon: const Icon(Icons.arrow_downward),
                     color: Colors.white,
-                    onPressed: () {
-                      setState(() {
-                        final currentOffset =
-                            _bayPositions[_selectedBayForMovementId];
-                        if (currentOffset != null) {
-                          _bayPositions[_selectedBayForMovementId!] = Offset(
-                            currentOffset.dx,
-                            currentOffset.dy + _movementStep,
-                          );
-                        }
-                      });
-                    },
+                    onPressed: () => _moveSelectedItem(0, _movementStep),
                   ),
                 ],
               ),
               IconButton(
                 icon: const Icon(Icons.arrow_forward),
                 color: Colors.white,
-                onPressed: () {
-                  setState(() {
-                    final currentOffset =
-                        _bayPositions[_selectedBayForMovementId];
-                    if (currentOffset != null) {
-                      _bayPositions[_selectedBayForMovementId!] = Offset(
-                        currentOffset.dx + _movementStep,
-                        currentOffset.dy,
-                      );
-                    }
-                  });
-                },
+                onPressed: () => _moveSelectedItem(_movementStep, 0),
               ),
             ],
           ),
+          if (selectedBay.bayType == 'Busbar') ...[
+            const SizedBox(height: 10),
+            const Text('Busbar Length', style: TextStyle(color: Colors.white)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove),
+                  color: Colors.white,
+                  onPressed: () => _adjustBusbarLength(-_busbarLengthStep),
+                ),
+                Text(
+                  _busbarLengths[selectedBay.id]?.toStringAsFixed(0) ?? 'Auto',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  color: Colors.white,
+                  onPressed: () => _adjustBusbarLength(_busbarLengthStep),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           ElevatedButton(
             onPressed: () async {
-              if (_selectedBayForMovementId != null &&
-                  _bayPositions.containsKey(_selectedBayForMovementId!)) {
-                await _updateBayPositionInFirestore(
-                  _selectedBayForMovementId!,
-                  _bayPositions[_selectedBayForMovementId!]!,
-                );
-              }
+              await _saveChangesToFirestore();
               setState(() {
                 _selectedBayForMovementId = null;
-                _bayPositions
-                    .clear(); // Clear local cache to re-read from Firestore on next load
+                _bayPositions.clear();
+                _textOffsets.clear();
+                _busbarLengths.clear();
               });
             },
-            child: const Text('Done Moving & Save'),
+            child: const Text('Done & Save'),
           ),
         ],
       ),
     );
+  }
+
+  void _moveSelectedItem(double dx, double dy) {
+    setState(() {
+      if (_movementMode == MovementMode.bay) {
+        final currentOffset =
+            _bayPositions[_selectedBayForMovementId] ?? Offset.zero;
+        _bayPositions[_selectedBayForMovementId!] = Offset(
+          currentOffset.dx + dx,
+          currentOffset.dy + dy,
+        );
+      } else {
+        final currentOffset =
+            _textOffsets[_selectedBayForMovementId] ?? Offset.zero;
+        _textOffsets[_selectedBayForMovementId!] = Offset(
+          currentOffset.dx + dx,
+          currentOffset.dy + dy,
+        );
+      }
+    });
+  }
+
+  void _adjustBusbarLength(double change) {
+    setState(() {
+      final currentLength = _busbarLengths[_selectedBayForMovementId!] ?? 100.0;
+      _busbarLengths[_selectedBayForMovementId!] = max(
+        20.0,
+        currentLength + change,
+      );
+    });
   }
 
   void _showBaySymbolActions(
@@ -343,19 +369,14 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           title: Text('Edit Bay Details'),
         ),
       ),
-    ];
-
-    if (bay.bayType != 'Busbar') {
-      menuItems.add(
-        const PopupMenuItem<String>(
-          value: 'move',
-          child: ListTile(
-            leading: Icon(Icons.open_with),
-            title: Text('Move Bay'),
-          ),
+      const PopupMenuItem<String>(
+        value: 'adjust',
+        child: ListTile(
+          leading: Icon(Icons.open_with),
+          title: Text('Adjust Position/Size'),
         ),
-      );
-    }
+      ),
+    ];
 
     if (bay.bayType != 'Busbar') {
       menuItems.add(
@@ -407,13 +428,21 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     ).then((value) {
       if (value == 'edit') {
         _setViewMode(BayDetailViewMode.edit, bay: bay);
-      } else if (value == 'move') {
+      } else if (value == 'adjust') {
         setState(() {
           _selectedBayForMovementId = bay.id;
+          _bayPositions[bay.id] = Offset(
+            bay.xPosition ?? 0,
+            bay.yPosition ?? 0,
+          );
+          _textOffsets[bay.id] = bay.textOffset ?? Offset.zero;
+          if (bay.bayType == 'Busbar') {
+            _busbarLengths[bay.id] = bay.busbarLength ?? 200.0;
+          }
         });
         SnackBarUtils.showSnackBar(
           context,
-          'Selected "${bay.name}" for movement. Use controls below.',
+          'Selected "${bay.name}". Use controls below to adjust.',
         );
       } else if (value == 'manage_equipment') {
         Navigator.of(context).push(
@@ -421,8 +450,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             builder: (context) => BayEquipmentManagementScreen(
               bayId: bay.id,
               bayName: bay.name,
-              substationId: widget.substationId, // Pass substationId
-              currentUser: widget.currentUser, // Pass currentUser
+              substationId: widget.substationId,
+              currentUser: widget.currentUser,
             ),
           ),
         );
@@ -453,21 +482,39 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     }
   }
 
-  Future<void> _updateBayPositionInFirestore(
-    String bayId,
-    Offset newPosition,
-  ) async {
+  Future<void> _saveChangesToFirestore() async {
+    if (_selectedBayForMovementId == null) return;
+
+    final bayId = _selectedBayForMovementId!;
     try {
-      await FirebaseFirestore.instance.collection('bays').doc(bayId).update({
-        'xPosition': newPosition.dx,
-        'yPosition': newPosition.dy,
-      });
-      SnackBarUtils.showSnackBar(context, 'Bay position saved!');
+      final updateData = <String, dynamic>{};
+
+      if (_bayPositions.containsKey(bayId)) {
+        updateData['xPosition'] = _bayPositions[bayId]!.dx;
+        updateData['yPosition'] = _bayPositions[bayId]!.dy;
+      }
+      if (_textOffsets.containsKey(bayId)) {
+        updateData['textOffset'] = {
+          'dx': _textOffsets[bayId]!.dx,
+          'dy': _textOffsets[bayId]!.dy,
+        };
+      }
+      if (_busbarLengths.containsKey(bayId)) {
+        updateData['busbarLength'] = _busbarLengths[bayId];
+      }
+
+      if (updateData.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('bays')
+            .doc(bayId)
+            .update(updateData);
+        SnackBarUtils.showSnackBar(context, 'Changes saved successfully!');
+      }
     } catch (e) {
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to save bay position: $e',
+          'Failed to save changes: $e',
           isError: true,
         );
       }
@@ -563,11 +610,19 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             .toList();
         final baysMap = {for (var bay in allBays) bay.id: bay};
 
-        // Initialize _bayPositions from Firestore data on initial load
-        if (_selectedBayForMovementId == null && _bayPositions.isEmpty) {
+        if (_selectedBayForMovementId == null) {
+          _bayPositions.clear();
+          _textOffsets.clear();
+          _busbarLengths.clear();
           for (var bay in allBays) {
             if (bay.xPosition != null && bay.yPosition != null) {
               _bayPositions[bay.id] = Offset(bay.xPosition!, bay.yPosition!);
+            }
+            if (bay.textOffset != null) {
+              _textOffsets[bay.id] = bay.textOffset!;
+            }
+            if (bay.bayType == 'Busbar' && bay.busbarLength != null) {
+              _busbarLengths[bay.id] = bay.busbarLength!;
             }
           }
         }
@@ -592,7 +647,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     .toList() ??
                 [];
 
-            // Fetch all equipment instances for this substation
             return StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('equipmentInstances')
@@ -687,10 +741,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                             .putIfAbsent(key, () => {})
                             .putIfAbsent(hvBus.id, () => [])
                             .add(bay);
-                      } else {
-                        debugPrint(
-                          'Transformer ${bay.name} (${bay.id}) linked to non-busbar or missing bus: HV=${bay.hvBusId}, LV=${bay.lvBusId}',
-                        );
                       }
                     }
                   } else if (bay.bayType != 'Busbar') {
@@ -757,9 +807,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
                   if (!busYPositions.containsKey(hvBusId) ||
                       !busYPositions.containsKey(lvBusId)) {
-                    debugPrint(
-                      'Skipping transformer group for pair $pairKey: One or both bus IDs not found in busYPositions.',
-                    );
                     continue;
                   }
 
@@ -767,9 +814,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   final Bay? currentLvBus = baysMap[lvBusId];
 
                   if (currentHvBus == null || currentLvBus == null) {
-                    debugPrint(
-                      'Skipping transformer group for pair $pairKey: One or both bus objects not found in baysMap.',
-                    );
                     continue;
                   }
 
@@ -930,17 +974,20 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     symbolWidth * 2,
                   ).toDouble();
 
+                  final double busbarWidth =
+                      _busbarLengths[busbar.id] ?? effectiveBusWidth;
+
                   final Rect drawingRect = Rect.fromLTWH(
                     sidePadding,
                     busY,
-                    effectiveBusWidth,
+                    busbarWidth,
                     0,
                   );
                   busbarRects[busbar.id] = drawingRect;
 
                   final Rect tappableRect = Rect.fromCenter(
-                    center: Offset(sidePadding + effectiveBusWidth / 2, busY),
-                    width: effectiveBusWidth,
+                    center: Offset(sidePadding + busbarWidth / 2, busY),
+                    width: busbarWidth,
                     height: busbarHitboxHeight,
                   );
                   finalBayRects[busbar.id] = tappableRect;
@@ -968,8 +1015,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                         bottomCenter: rect.bottomCenter,
                         leftCenter: rect.centerLeft,
                         rightCenter: rect.centerRight,
-                        equipmentInstances:
-                            equipmentByBayId[bay.id] ?? [], // Pass equipment
+                        equipmentInstances: equipmentByBayId[bay.id] ?? [],
+                        textOffset: _textOffsets[bay.id] ?? Offset.zero,
+                        busbarLength: _busbarLengths[bay.id] ?? 0.0,
                       ),
                     );
                   }
@@ -1081,25 +1129,11 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                       );
 
                       if (tappedBay.bay.id != 'dummy') {
-                        debugPrint(
-                          'Tapped Bay: ${tappedBay.bay.name} at ${scenePosition}',
-                        );
                         if (_selectedBayForMovementId == null) {
-                          _setViewMode(
-                            BayDetailViewMode.edit,
-                            bay: tappedBay.bay,
-                          );
-                        }
-                      } else {
-                        debugPrint('Tapped: No Bay found at ${scenePosition}');
-                        if (_selectedBayForMovementId != null) {
-                          setState(() {
-                            _selectedBayForMovementId = null;
-                            _bayPositions.clear();
-                          });
-                          SnackBarUtils.showSnackBar(
+                          _showBaySymbolActions(
                             context,
-                            'Movement cancelled. Position not saved.',
+                            tappedBay.bay,
+                            details.globalPosition,
                           );
                         }
                       }
@@ -1119,17 +1153,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                         orElse: _createDummyBayRenderData,
                       );
                       if (tappedBay.bay.id != 'dummy') {
-                        debugPrint(
-                          'Long Pressed Bay: ${tappedBay.bay.name} at ${scenePosition}',
-                        );
                         _showBaySymbolActions(
                           context,
                           tappedBay.bay,
                           details.globalPosition,
-                        );
-                      } else {
-                        debugPrint(
-                          'Long pressed: No Bay found at ${scenePosition}',
                         );
                       }
                     },
@@ -1145,7 +1172,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                         debugDrawHitboxes: true,
                         selectedBayForMovementId: _selectedBayForMovementId,
                         bayEnergyData: const {},
-                        busEnergySummary: {},
+                        busEnergySummary: const {},
                       ),
                     ),
                   ),
@@ -1158,7 +1185,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
   }
 
-  // Helper function to extract numerical voltage value for sorting
   double _getVoltageLevelValue(String voltageLevel) {
     final regex = RegExp(r'(\d+(\.\d+)?)');
     final match = regex.firstMatch(voltageLevel);

@@ -37,7 +37,9 @@ class BayRenderData {
     required this.bottomCenter,
     required this.leftCenter,
     required this.rightCenter,
-    this.equipmentInstances = const [], // Initialize
+    this.equipmentInstances = const [],
+    required Offset textOffset,
+    required double busbarLength, // Initialize
   });
 }
 

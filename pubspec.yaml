@@ -59,6 +59,7 @@ dependencies:
   printing: ^5.14.2
   share_plus: ^11.0.0
   widgets_to_image: ^2.0.1
+  flutter_speed_dial: ^7.0.0
 
 dev_dependencies:
   flutter_test:
