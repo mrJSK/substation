@@ -39,6 +39,25 @@ class Assessment {
     );
   }
 
+  /// Factory constructor to create an Assessment from a Map<String, dynamic>.
+  /// Useful for deserializing data that isn't directly from a Firestore DocumentSnapshot.
+  factory Assessment.fromMap(Map<String, dynamic> map, {String? id}) {
+    return Assessment(
+      id:
+          id ??
+          map['id'] ??
+          '', // Use provided id, or from map, or empty string
+      substationId: map['substationId'] ?? '',
+      bayId: map['bayId'] ?? '',
+      assessmentTimestamp: map['assessmentTimestamp'] ?? Timestamp.now(),
+      importAdjustment: (map['importAdjustment'] as num?)?.toDouble(),
+      exportAdjustment: (map['exportAdjustment'] as num?)?.toDouble(),
+      reason: map['reason'] ?? '',
+      createdBy: map['createdBy'] ?? '',
+      createdAt: map['createdAt'] ?? Timestamp.now(),
+    );
+  }
+
   Map<String, dynamic> toFirestore() {
     return {
       'substationId': substationId,

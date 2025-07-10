@@ -5,6 +5,16 @@ import 'package:intl/intl.dart';
 import 'dart:math';
 import 'package:collection/collection.dart';
 
+// PDF & Capture related imports
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:widgets_to_image/widgets_to_image.dart'; // NEW: Import widgets_to_image
+
 import '../models/bay_model.dart';
 import '../models/user_model.dart';
 import '../models/reading_models.dart';
@@ -13,6 +23,7 @@ import '../models/bay_connection_model.dart';
 import '../models/busbar_energy_map.dart';
 import '../models/hierarchy_models.dart';
 import '../models/assessment_model.dart';
+import '../models/saved_sld_model.dart';
 import '../utils/snackbar_utils.dart';
 
 import '../painters/single_line_diagram_painter.dart';
@@ -60,6 +71,36 @@ class BayEnergyData {
       hasAssessment: true,
     );
   }
+
+  // Convert to Map for serialization
+  Map<String, dynamic> toMap() {
+    return {
+      'bayName': bayName,
+      'prevImp': prevImp,
+      'currImp': currImp,
+      'prevExp': prevExp,
+      'currExp': currExp,
+      'mf': mf,
+      'impConsumed': impConsumed,
+      'expConsumed': expConsumed,
+      'hasAssessment': hasAssessment,
+    };
+  }
+
+  // Create from Map for deserialization
+  factory BayEnergyData.fromMap(Map<String, dynamic> map) {
+    return BayEnergyData(
+      bayName: map['bayName'],
+      prevImp: (map['prevImp'] as num?)?.toDouble(),
+      currImp: (map['currImp'] as num?)?.toDouble(),
+      prevExp: (map['prevExp'] as num?)?.toDouble(),
+      currExp: (map['currExp'] as num?)?.toDouble(),
+      mf: (map['mf'] as num?)?.toDouble(),
+      impConsumed: (map['impConsumed'] as num?)?.toDouble(),
+      expConsumed: (map['expConsumed'] as num?)?.toDouble(),
+      hasAssessment: map['hasAssessment'] ?? false,
+    );
+  }
 }
 
 // Data model for Aggregated Feeder Energy Table
@@ -82,14 +123,38 @@ class AggregatedFeederEnergyData {
 
   String get uniqueKey =>
       '$zoneName-$circleName-$divisionName-$distributionSubdivisionName';
+
+  Map<String, dynamic> toMap() {
+    return {
+      'zoneName': zoneName,
+      'circleName': circleName,
+      'divisionName': divisionName,
+      'distributionSubdivisionName': distributionSubdivisionName,
+      'importedEnergy': importedEnergy,
+      'exportedEnergy': exportedEnergy,
+    };
+  }
+
+  factory AggregatedFeederEnergyData.fromMap(Map<String, dynamic> map) {
+    return AggregatedFeederEnergyData(
+      zoneName: map['zoneName'],
+      circleName: map['circleName'],
+      divisionName: map['divisionName'],
+      distributionSubdivisionName: map['distributionSubdivisionName'],
+      importedEnergy: (map['importedEnergy'] as num?)?.toDouble() ?? 0.0,
+      exportedEnergy: (map['exportedEnergy'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
 }
 
 // Data model for rendering the SLD with energy data
 class SldRenderData {
   final List<BayRenderData> bayRenderDataList;
-  final Map<String, Rect> finalBayRects;
-  final Map<String, Rect> busbarRects;
-  final Map<String, Map<String, Offset>> busbarConnectionPoints;
+  final Map<String, Rect>
+  finalBayRects; // Not serializable, handled dynamically
+  final Map<String, Rect> busbarRects; // Not serializable, handled dynamically
+  final Map<String, Map<String, Offset>>
+  busbarConnectionPoints; // Not serializable, handled dynamically
   final Map<String, BayEnergyData> bayEnergyData;
   final Map<String, Map<String, double>> busEnergySummary;
 
@@ -101,18 +166,99 @@ class SldRenderData {
     required this.bayEnergyData,
     required this.busEnergySummary,
   });
+
+  // Convert to Map for serialization (excluding Rects and Offsets)
+  Map<String, dynamic> toMap() {
+    return {
+      // bayRenderDataList contains Bay objects which are serializable through toFirestore()
+      // For sldParameters, we only need the bay IDs and their coordinates
+      'bayPositions': {
+        for (var renderData in bayRenderDataList)
+          renderData.bay.id: {
+            'x': renderData.bay.xPosition,
+            'y': renderData.bay.yPosition,
+          },
+      },
+      'bayEnergyData': {
+        for (var entry in bayEnergyData.entries) entry.key: entry.value.toMap(),
+      },
+      'busEnergySummary': busEnergySummary,
+    };
+  }
+
+  // Create from Map for deserialization (re-generating Rects and Offsets will happen dynamically)
+  factory SldRenderData.fromMap(
+    Map<String, dynamic> map,
+    Map<String, Bay> baysMap,
+  ) {
+    Map<String, BayEnergyData> deserializedBayEnergyData = {
+      for (var entry in (map['bayEnergyData'] as Map<String, dynamic>).entries)
+        entry.key: BayEnergyData.fromMap(entry.value as Map<String, dynamic>),
+    };
+
+    Map<String, Map<String, double>> deserializedBusEnergySummary = {
+      for (var entry
+          in (map['busEnergySummary'] as Map<String, dynamic>).entries)
+        entry.key: Map<String, double>.from(entry.value),
+    };
+
+    // Reconstruct bayRenderDataList with positions
+    List<BayRenderData> deserializedBayRenderDataList = [];
+    if (map['bayPositions'] != null) {
+      (map['bayPositions'] as Map<String, dynamic>).forEach((
+        bayId,
+        positionData,
+      ) {
+        final Bay? originalBay = baysMap[bayId];
+        if (originalBay != null) {
+          final double? x = (positionData['x'] as num?)?.toDouble();
+          final double? y = (positionData['y'] as num?)?.toDouble();
+
+          // Create a new Bay object with the saved position
+          final Bay bayWithPosition = originalBay.copyWith(
+            xPosition: x,
+            yPosition: y,
+          );
+
+          // Dummy rects for now, they will be recalculated by _buildBayRenderDataList
+          deserializedBayRenderDataList.add(
+            BayRenderData(
+              bay: bayWithPosition,
+              rect: Rect.zero,
+              center: Offset(x ?? 0, y ?? 0),
+              topCenter: Offset(x ?? 0, y ?? 0),
+              bottomCenter: Offset(x ?? 0, y ?? 0),
+              leftCenter: Offset(x ?? 0, y ?? 0),
+              rightCenter: Offset(x ?? 0, y ?? 0),
+            ),
+          );
+        }
+      });
+    }
+
+    return SldRenderData(
+      bayRenderDataList: deserializedBayRenderDataList,
+      finalBayRects: {}, // Will be dynamically generated
+      busbarRects: {}, // Will be dynamically generated
+      busbarConnectionPoints: {}, // Will be dynamically generated
+      bayEnergyData: deserializedBayEnergyData,
+      busEnergySummary: deserializedBusEnergySummary,
+    );
+  }
 }
 
 class EnergySldScreen extends StatefulWidget {
   final String substationId;
   final String substationName;
   final AppUser currentUser;
+  final SavedSld? savedSld; // NEW: Optional parameter for saved SLD
 
   const EnergySldScreen({
     super.key,
     required this.substationId,
     required this.substationName,
     required this.currentUser,
+    this.savedSld, // NEW: Add to constructor
   });
 
   @override
@@ -158,16 +304,36 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   int _currentPageIndex = 0;
   int _feederTablePageIndex = 0;
 
+  // NEW: Flag to indicate if we are viewing a saved SLD
+  bool _isViewingSavedSld = false;
+  // NEW: Data loaded from a saved SLD
+  Map<String, dynamic>? _loadedSldParameters;
+  List<Map<String, dynamic>> _loadedAssessmentsSummary = [];
+
+  // WidgetsToImageController for capturing the SLD widget
+  final WidgetsToImageController _widgetsToImageController =
+      WidgetsToImageController(); // NEW: Controller for WidgetsToImage
+
   @override
   void initState() {
     super.initState();
     print(
       'DEBUG: EnergySldScreen initState - substationId: ${widget.substationId}',
     );
-    if (widget.substationId.isNotEmpty) {
-      _loadEnergyData();
+
+    _isViewingSavedSld = widget.savedSld != null;
+    if (_isViewingSavedSld) {
+      _startDate = widget.savedSld!.startDate.toDate();
+      _endDate = widget.savedSld!.endDate.toDate();
+      _loadedSldParameters = widget.savedSld!.sldParameters;
+      _loadedAssessmentsSummary = widget.savedSld!.assessmentsSummary;
+      _loadEnergyData(fromSaved: true); // Load from saved SLD
     } else {
-      _isLoading = false;
+      if (widget.substationId.isNotEmpty) {
+        _loadEnergyData(); // Load live data
+      } else {
+        _isLoading = false;
+      }
     }
   }
 
@@ -186,7 +352,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     return 0.0;
   }
 
-  Future<void> _loadEnergyData() async {
+  Future<void> _loadEnergyData({bool fromSaved = false}) async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
@@ -233,427 +399,468 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           .map((doc) => BayConnection.fromFirestore(doc))
           .toList();
 
-      final busbarEnergyMapsSnapshot = await FirebaseFirestore.instance
-          .collection('busbarEnergyMaps')
-          .where('substationId', isEqualTo: widget.substationId)
-          .get();
-      _busbarEnergyMaps = {
-        for (var doc in busbarEnergyMapsSnapshot.docs)
-          '${doc['busbarId']}-${doc['connectedBayId']}':
-              BusbarEnergyMap.fromFirestore(doc),
-      };
-
-      final startOfStartDate = DateTime(
-        _startDate.year,
-        _startDate.month,
-        _startDate.day,
-      );
-      final endOfStartDate = DateTime(
-        _startDate.year,
-        _startDate.month,
-        _startDate.day,
-        23,
-        59,
-        59,
-        999,
-      );
-
-      final startOfEndDate = DateTime(
-        _endDate.year,
-        _endDate.month,
-        _endDate.day,
-      );
-      final endOfEndDate = DateTime(
-        _endDate.year,
-        _endDate.month,
-        _endDate.day,
-        23,
-        59,
-        59,
-        999,
-      );
-
-      Map<String, LogsheetEntry> startDayReadings = {};
-      Map<String, LogsheetEntry> endDayReadings = {};
-      Map<String, LogsheetEntry> previousDayToStartDateReadings = {};
-
-      final startDayLogsheetsSnapshot = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where('substationId', isEqualTo: widget.substationId)
-          .where('frequency', isEqualTo: 'daily')
-          .where('readingTimestamp', isGreaterThanOrEqualTo: startOfStartDate)
-          .where('readingTimestamp', isLessThanOrEqualTo: endOfStartDate)
-          .get();
-      startDayReadings = {
-        for (var doc in startDayLogsheetsSnapshot.docs)
-          (doc.data() as Map<String, dynamic>)['bayId']:
-              LogsheetEntry.fromFirestore(doc),
-      };
-
-      if (!_startDate.isAtSameMomentAs(_endDate)) {
-        final endDayLogsheetsSnapshot = await FirebaseFirestore.instance
-            .collection('logsheetEntries')
-            .where('substationId', isEqualTo: widget.substationId)
-            .where('frequency', isEqualTo: 'daily')
-            .where('readingTimestamp', isGreaterThanOrEqualTo: startOfEndDate)
-            .where('readingTimestamp', isLessThanOrEqualTo: endOfEndDate)
-            .get();
-        endDayReadings = {
-          for (var doc in endDayLogsheetsSnapshot.docs)
-            (doc.data() as Map<String, dynamic>)['bayId']:
-                LogsheetEntry.fromFirestore(doc),
+      if (fromSaved && _loadedSldParameters != null) {
+        // NEW: Load data from saved SLD parameters
+        debugPrint('Loading energy data from SAVED SLD.');
+        _bayEnergyData = {
+          for (var entry
+              in (_loadedSldParameters!['bayEnergyData']
+                      as Map<String, dynamic>)
+                  .entries)
+            entry.key: BayEnergyData.fromMap(
+              entry.value as Map<String, dynamic>,
+            ),
         };
-      } else {
-        endDayReadings = startDayReadings;
-        final previousDay = _startDate.subtract(const Duration(days: 1));
-        final startOfPreviousDay = DateTime(
-          previousDay.year,
-          previousDay.month,
-          previousDay.day,
+        _busEnergySummary = Map<String, Map<String, double>>.from(
+          (_loadedSldParameters!['busEnergySummary'] as Map<String, dynamic>)
+              .map(
+                (key, value) => MapEntry(key, Map<String, double>.from(value)),
+              ),
         );
-        final endOfPreviousDay = DateTime(
-          previousDay.year,
-          previousDay.month,
-          previousDay.day,
+        _abstractEnergyData = Map<String, double>.from(
+          _loadedSldParameters!['abstractEnergyData'] as Map<String, dynamic>,
+        );
+        _aggregatedFeederEnergyData =
+            (_loadedSldParameters!['aggregatedFeederEnergyData']
+                    as List<dynamic>?)
+                ?.map((e) => AggregatedFeederEnergyData.fromMap(e))
+                .toList() ??
+            [];
+        _allAssessmentsForDisplay = _loadedAssessmentsSummary
+            .map((e) => Assessment.fromMap(e))
+            .toList(); // Deserialize summary for display
+      } else {
+        // Continue with live data fetching and calculation
+        debugPrint('Loading LIVE energy data.');
+        final busbarEnergyMapsSnapshot = await FirebaseFirestore.instance
+            .collection('busbarEnergyMaps')
+            .where('substationId', isEqualTo: widget.substationId)
+            .get();
+        _busbarEnergyMaps = {
+          for (var doc in busbarEnergyMapsSnapshot.docs)
+            '${doc['busbarId']}-${doc['connectedBayId']}':
+                BusbarEnergyMap.fromFirestore(doc),
+        };
+
+        final startOfStartDate = DateTime(
+          _startDate.year,
+          _startDate.month,
+          _startDate.day,
+        );
+        final endOfStartDate = DateTime(
+          _startDate.year,
+          _startDate.month,
+          _startDate.day,
           23,
           59,
           59,
           999,
         );
 
-        final previousDayToStartDateLogsheetsSnapshot = await FirebaseFirestore
-            .instance
+        final startOfEndDate = DateTime(
+          _endDate.year,
+          _endDate.month,
+          _endDate.day,
+        );
+        final endOfEndDate = DateTime(
+          _endDate.year,
+          _endDate.month,
+          _endDate.day,
+          23,
+          59,
+          59,
+          999,
+        );
+
+        Map<String, LogsheetEntry> startDayReadings = {};
+        Map<String, LogsheetEntry> endDayReadings = {};
+        Map<String, LogsheetEntry> previousDayToStartDateReadings = {};
+
+        final startDayLogsheetsSnapshot = await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .where('substationId', isEqualTo: widget.substationId)
             .where('frequency', isEqualTo: 'daily')
-            .where(
-              'readingTimestamp',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(startOfPreviousDay),
-            )
-            .where(
-              'readingTimestamp',
-              isLessThanOrEqualTo: Timestamp.fromDate(endOfPreviousDay),
-            )
+            .where('readingTimestamp', isGreaterThanOrEqualTo: startOfStartDate)
+            .where('readingTimestamp', isLessThanOrEqualTo: endOfStartDate)
             .get();
-        previousDayToStartDateReadings = {
-          for (var doc in previousDayToStartDateLogsheetsSnapshot.docs)
+        startDayReadings = {
+          for (var doc in startDayLogsheetsSnapshot.docs)
             (doc.data() as Map<String, dynamic>)['bayId']:
                 LogsheetEntry.fromFirestore(doc),
         };
-      }
 
-      // NEW: Fetch all assessments for the substation within the date range, ordered by timestamp
-      final assessmentsRawSnapshot = await FirebaseFirestore.instance
-          .collection('assessments')
-          .where('substationId', isEqualTo: widget.substationId)
-          .where(
-            'assessmentTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfStartDate),
-          )
-          .where(
-            'assessmentTimestamp',
-            isLessThanOrEqualTo: Timestamp.fromDate(endOfEndDate),
-          )
-          .orderBy(
-            'assessmentTimestamp',
-            descending: true,
-          ) // Get most recent first
-          .get();
-
-      _allAssessmentsForDisplay = []; // Reset for notes section
-      _latestAssessmentsPerBay.clear(); // Reset for applying adjustments
-
-      for (var doc in assessmentsRawSnapshot.docs) {
-        final assessment = Assessment.fromFirestore(doc);
-        _allAssessmentsForDisplay.add(assessment); // Add all for notes display
-
-        // Store only the latest assessment per bay (due to orderBy descending, the first one encountered is the latest)
-        if (!_latestAssessmentsPerBay.containsKey(assessment.bayId)) {
-          _latestAssessmentsPerBay[assessment.bayId] = assessment;
-        }
-      }
-      // Sort assessments for display by most recent first
-      _allAssessmentsForDisplay.sort(
-        (a, b) => b.assessmentTimestamp.compareTo(a.assessmentTimestamp),
-      );
-
-      // Calculate energy for each bay
-      for (var bay in _allBaysInSubstation) {
-        final double? mf = bay.multiplyingFactor;
-        double calculatedImpConsumed = 0.0;
-        double calculatedExpConsumed = 0.0;
-
-        bool bayHasAssessmentForPeriod = _latestAssessmentsPerBay.containsKey(
-          bay.id,
-        );
-
-        if (_startDate.isAtSameMomentAs(_endDate)) {
-          final currentReadingLogsheet = endDayReadings[bay.id];
-          final previousReadingLogsheetDocument =
-              previousDayToStartDateReadings[bay.id];
-
-          final double? currImpVal = double.tryParse(
-            currentReadingLogsheet?.values['Current Day Reading (Import)']
-                    ?.toString() ??
-                '',
-          );
-          final double? currExpVal = double.tryParse(
-            currentReadingLogsheet?.values['Current Day Reading (Export)']
-                    ?.toString() ??
-                '',
-          );
-
-          double? prevImpValForCalculation;
-          double? prevExpValForCalculation;
-
-          final double? prevImpValFromPreviousDocument = double.tryParse(
-            previousReadingLogsheetDocument
-                    ?.values['Current Day Reading (Import)']
-                    ?.toString() ??
-                '',
-          );
-          final double? prevExpValFromPreviousDocument = double.tryParse(
-            previousReadingLogsheetDocument
-                    ?.values['Current Day Reading (Export)']
-                    ?.toString() ??
-                '',
-          );
-
-          if (prevImpValFromPreviousDocument != null) {
-            prevImpValForCalculation = prevImpValFromPreviousDocument;
-          } else {
-            prevImpValForCalculation = double.tryParse(
-              currentReadingLogsheet?.values['Previous Day Reading (Import)']
-                      ?.toString() ??
-                  '',
-            );
-          }
-
-          if (prevExpValFromPreviousDocument != null) {
-            prevExpValForCalculation = prevExpValFromPreviousDocument;
-          } else {
-            prevExpValForCalculation = double.tryParse(
-              currentReadingLogsheet?.values['Previous Day Reading (Export)']
-                      ?.toString() ??
-                  '',
-            );
-          }
-
-          _bayEnergyData[bay.id] = BayEnergyData(
-            bayName: bay.name,
-            prevImp: prevImpValForCalculation,
-            currImp: currImpVal,
-            prevExp: prevExpValForCalculation,
-            currExp: currExpVal,
-            mf: mf,
-            impConsumed: calculatedImpConsumed,
-            expConsumed: calculatedExpConsumed,
-            hasAssessment: bayHasAssessmentForPeriod,
-          );
+        if (!_startDate.isAtSameMomentAs(_endDate)) {
+          final endDayLogsheetsSnapshot = await FirebaseFirestore.instance
+              .collection('logsheetEntries')
+              .where('substationId', isEqualTo: widget.substationId)
+              .where('frequency', isEqualTo: 'daily')
+              .where('readingTimestamp', isGreaterThanOrEqualTo: startOfEndDate)
+              .where('readingTimestamp', isLessThanOrEqualTo: endOfEndDate)
+              .get();
+          endDayReadings = {
+            for (var doc in endDayLogsheetsSnapshot.docs)
+              (doc.data() as Map<String, dynamic>)['bayId']:
+                  LogsheetEntry.fromFirestore(doc),
+          };
         } else {
-          final startReading = startDayReadings[bay.id];
-          final endReading = endDayReadings[bay.id];
-
-          final double? startImpVal = double.tryParse(
-            startReading?.values['Current Day Reading (Import)']?.toString() ??
-                '',
+          endDayReadings = startDayReadings;
+          final previousDay = _startDate.subtract(const Duration(days: 1));
+          final startOfPreviousDay = DateTime(
+            previousDay.year,
+            previousDay.month,
+            previousDay.day,
           );
-          final double? startExpVal = double.tryParse(
-            startReading?.values['Current Day Reading (Export)']?.toString() ??
-                '',
-          );
-          final double? endImpVal = double.tryParse(
-            endReading?.values['Current Day Reading (Import)']?.toString() ??
-                '',
-          );
-          final double? endExpVal = double.tryParse(
-            endReading?.values['Current Day Reading (Export)']?.toString() ??
-                '',
+          final endOfPreviousDay = DateTime(
+            previousDay.year,
+            previousDay.month,
+            previousDay.day,
+            23,
+            59,
+            59,
+            999,
           );
 
-          if (startImpVal != null && endImpVal != null && mf != null) {
-            calculatedImpConsumed = max(0.0, (endImpVal - startImpVal) * mf);
-          }
-          if (startExpVal != null && endExpVal != null && mf != null) {
-            calculatedExpConsumed = max(0.0, (endExpVal - startExpVal) * mf);
-          }
-
-          _bayEnergyData[bay.id] = BayEnergyData(
-            bayName: bay.name,
-            prevImp: startImpVal,
-            currImp: endImpVal,
-            prevExp: startExpVal,
-            currExp: endExpVal,
-            mf: mf,
-            impConsumed: calculatedImpConsumed,
-            expConsumed: calculatedExpConsumed,
-            hasAssessment: bayHasAssessmentForPeriod,
-          );
+          final previousDayToStartDateLogsheetsSnapshot =
+              await FirebaseFirestore.instance
+                  .collection('logsheetEntries')
+                  .where('substationId', isEqualTo: widget.substationId)
+                  .where('frequency', isEqualTo: 'daily')
+                  .where(
+                    'readingTimestamp',
+                    isGreaterThanOrEqualTo: Timestamp.fromDate(
+                      startOfPreviousDay,
+                    ),
+                  )
+                  .where(
+                    'readingTimestamp',
+                    isLessThanOrEqualTo: Timestamp.fromDate(endOfPreviousDay),
+                  )
+                  .get();
+          previousDayToStartDateReadings = {
+            for (var doc in previousDayToStartDateLogsheetsSnapshot.docs)
+              (doc.data() as Map<String, dynamic>)['bayId']:
+                  LogsheetEntry.fromFirestore(doc),
+          };
         }
 
-        // Apply latest assessment if available for this bay (only one per bay from _latestAssessmentsPerBay)
-        final latestAssessment = _latestAssessmentsPerBay[bay.id];
-        if (latestAssessment != null) {
-          _bayEnergyData[bay.id] = _bayEnergyData[bay.id]!.applyAssessment(
-            importAdjustment: latestAssessment.importAdjustment,
-            exportAdjustment: latestAssessment.exportAdjustment,
-          );
-          debugPrint('Applied assessment for ${bay.name}');
-        }
-      }
+        // Fetch all assessments for the substation within the date range, ordered by timestamp
+        final assessmentsRawSnapshot = await FirebaseFirestore.instance
+            .collection('assessments')
+            .where('substationId', isEqualTo: widget.substationId)
+            .where(
+              'assessmentTimestamp',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startOfStartDate),
+            )
+            .where(
+              'assessmentTimestamp',
+              isLessThanOrEqualTo: Timestamp.fromDate(endOfEndDate),
+            )
+            .orderBy(
+              'assessmentTimestamp',
+              descending: true,
+            ) // Get most recent first
+            .get();
 
-      Map<String, Map<String, double>> temporaryBusFlows = {};
-      for (var busbar in _allBaysInSubstation.where(
-        (b) => b.bayType == 'Busbar',
-      )) {
-        temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
-      }
+        _allAssessmentsForDisplay = []; // Reset for notes section
+        _latestAssessmentsPerBay.clear(); // Reset for applying adjustments
 
-      for (var entry in _busbarEnergyMaps.values) {
-        final Bay? connectedBay = _baysMap[entry.connectedBayId];
-        final BayEnergyData? connectedBayEnergy =
-            _bayEnergyData[entry.connectedBayId];
+        for (var doc in assessmentsRawSnapshot.docs) {
+          final assessment = Assessment.fromFirestore(doc);
+          _allAssessmentsForDisplay.add(
+            assessment,
+          ); // Add all for notes display
 
-        if (connectedBay != null &&
-            connectedBayEnergy != null &&
-            temporaryBusFlows.containsKey(entry.busbarId)) {
-          if (entry.importContribution == EnergyContributionType.busImport) {
-            temporaryBusFlows[entry.busbarId]!['import'] =
-                (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
-                (connectedBayEnergy.impConsumed ?? 0.0);
-          } else if (entry.importContribution ==
-              EnergyContributionType.busExport) {
-            temporaryBusFlows[entry.busbarId]!['export'] =
-                (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
-                (connectedBayEnergy.impConsumed ?? 0.0);
-          }
-
-          if (entry.exportContribution == EnergyContributionType.busImport) {
-            temporaryBusFlows[entry.busbarId]!['import'] =
-                (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
-                (connectedBayEnergy.expConsumed ?? 0.0);
-          } else if (entry.exportContribution ==
-              EnergyContributionType.busExport) {
-            temporaryBusFlows[entry.busbarId]!['export'] =
-                (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
-                (connectedBayEnergy.expConsumed ?? 0.0);
+          // Store only the latest assessment per bay (due to orderBy descending, the first one encountered is the latest)
+          if (!_latestAssessmentsPerBay.containsKey(assessment.bayId)) {
+            _latestAssessmentsPerBay[assessment.bayId] = assessment;
           }
         }
-      }
-
-      for (var busbar in _allBaysInSubstation.where(
-        (b) => b.bayType == 'Busbar',
-      )) {
-        double busTotalImp = temporaryBusFlows[busbar.id]?['import'] ?? 0.0;
-        double busTotalExp = temporaryBusFlows[busbar.id]?['export'] ?? 0.0;
-
-        double busDifference = busTotalImp - busTotalExp;
-        double busLossPercentage = 0.0;
-        if (busTotalImp > 0) {
-          busLossPercentage = (busDifference / busTotalImp) * 100;
-        }
-
-        _busEnergySummary[busbar.id] = {
-          'totalImp': busTotalImp,
-          'totalExp': busTotalExp,
-          'difference': busDifference,
-          'lossPercentage': busLossPercentage,
-        };
-        print(
-          'DEBUG: Bus Energy Summary for ${busbar.name}: Imp=${busTotalImp}, Exp=${busTotalExp}, Diff=${busDifference}, Loss=${busLossPercentage}%',
+        // Sort assessments for display by most recent first
+        _allAssessmentsForDisplay.sort(
+          (a, b) => b.assessmentTimestamp.compareTo(a.assessmentTimestamp),
         );
-      }
 
-      final highestVoltageBus = _allBaysInSubstation.firstWhereOrNull(
-        (b) => b.bayType == 'Busbar',
-      );
-      final lowestVoltageBus = _allBaysInSubstation.lastWhereOrNull(
-        (b) => b.bayType == 'Busbar',
-      );
+        // Calculate energy for each bay
+        for (var bay in _allBaysInSubstation) {
+          final double? mf = bay.multiplyingFactor;
+          double calculatedImpConsumed = 0.0;
+          double calculatedExpConsumed = 0.0;
 
-      double currentAbstractSubstationTotalImp = 0;
-      double currentAbstractSubstationTotalExp = 0;
+          bool bayHasAssessmentForPeriod = _latestAssessmentsPerBay.containsKey(
+            bay.id,
+          );
 
-      if (highestVoltageBus != null) {
-        currentAbstractSubstationTotalImp =
-            (_busEnergySummary[highestVoltageBus.id]?['totalImp']) ?? 0.0;
-      }
-      if (lowestVoltageBus != null) {
-        currentAbstractSubstationTotalExp =
-            (_busEnergySummary[lowestVoltageBus.id]?['totalExp']) ?? 0.0;
-      }
+          if (_startDate.isAtSameMomentAs(_endDate)) {
+            final currentReadingLogsheet = endDayReadings[bay.id];
+            final previousReadingLogsheetDocument =
+                previousDayToStartDateReadings[bay.id];
 
-      double overallDifference =
-          currentAbstractSubstationTotalImp - currentAbstractSubstationTotalExp;
-      double overallLossPercentage = 0;
-      if (currentAbstractSubstationTotalImp > 0) {
-        overallLossPercentage =
-            (overallDifference / currentAbstractSubstationTotalImp) * 100;
-      }
-
-      _abstractEnergyData = {
-        'totalImp': currentAbstractSubstationTotalImp,
-        'totalExp': currentAbstractSubstationTotalExp,
-        'difference': overallDifference,
-        'lossPercentage': overallLossPercentage,
-      };
-
-      final Map<String, AggregatedFeederEnergyData> tempAggregatedData = {};
-
-      for (var bay in _allBaysInSubstation) {
-        if (bay.bayType == 'Feeder') {
-          final energyData = _bayEnergyData[bay.id];
-          if (energyData != null) {
-            final DistributionSubdivision? distSubdivision =
-                _distributionSubdivisionsMap[bay.distributionSubdivisionId];
-            final DistributionDivision? distDivision =
-                _distributionDivisionsMap[distSubdivision
-                    ?.distributionDivisionId];
-            final DistributionCircle? distCircle =
-                _distributionCirclesMap[distDivision?.distributionCircleId];
-            final DistributionZone? distZone =
-                _distributionZonesMap[distCircle?.distributionZoneId];
-
-            final String zoneName = distZone?.name ?? 'N/A';
-            final String circleName = distCircle?.name ?? 'N/A';
-            final String divisionName = distDivision?.name ?? 'N/A';
-            final String distSubdivisionName = distSubdivision?.name ?? 'N/A';
-
-            final String groupKey =
-                '$zoneName-$circleName-$divisionName-$distSubdivisionName';
-
-            final aggregatedEntry = tempAggregatedData.putIfAbsent(
-              groupKey,
-              () => AggregatedFeederEnergyData(
-                zoneName: zoneName,
-                circleName: circleName,
-                divisionName: divisionName,
-                distributionSubdivisionName: distSubdivisionName,
-              ),
+            final double? currImpVal = double.tryParse(
+              currentReadingLogsheet?.values['Current Day Reading (Import)']
+                      ?.toString() ??
+                  '',
+            );
+            final double? currExpVal = double.tryParse(
+              currentReadingLogsheet?.values['Current Day Reading (Export)']
+                      ?.toString() ??
+                  '',
             );
 
-            aggregatedEntry.importedEnergy += (energyData.impConsumed ?? 0.0);
-            aggregatedEntry.exportedEnergy += (energyData.expConsumed ?? 0.0);
+            double? prevImpValForCalculation;
+            double? prevExpValForCalculation;
+
+            final double? prevImpValFromPreviousDocument = double.tryParse(
+              previousReadingLogsheetDocument
+                      ?.values['Current Day Reading (Import)']
+                      ?.toString() ??
+                  '',
+            );
+            final double? prevExpValFromPreviousDocument = double.tryParse(
+              previousReadingLogsheetDocument
+                      ?.values['Current Day Reading (Export)']
+                      ?.toString() ??
+                  '',
+            );
+
+            if (prevImpValFromPreviousDocument != null) {
+              prevImpValForCalculation = prevImpValFromPreviousDocument;
+            } else {
+              prevImpValForCalculation = double.tryParse(
+                currentReadingLogsheet?.values['Previous Day Reading (Import)']
+                        ?.toString() ??
+                    '',
+              );
+            }
+
+            if (prevExpValFromPreviousDocument != null) {
+              prevExpValForCalculation = prevExpValFromPreviousDocument;
+            } else {
+              prevExpValForCalculation = double.tryParse(
+                currentReadingLogsheet?.values['Previous Day Reading (Export)']
+                        ?.toString() ??
+                    '',
+              );
+            }
+
+            _bayEnergyData[bay.id] = BayEnergyData(
+              bayName: bay.name,
+              prevImp: prevImpValForCalculation,
+              currImp: currImpVal,
+              prevExp: prevExpValForCalculation,
+              currExp: currExpVal,
+              mf: mf,
+              impConsumed: calculatedImpConsumed,
+              expConsumed: calculatedExpConsumed,
+              hasAssessment: bayHasAssessmentForPeriod,
+            );
+          } else {
+            final startReading = startDayReadings[bay.id];
+            final endReading = endDayReadings[bay.id];
+
+            final double? startImpVal = double.tryParse(
+              startReading?.values['Current Day Reading (Import)']
+                      ?.toString() ??
+                  '',
+            );
+            final double? startExpVal = double.tryParse(
+              startReading?.values['Current Day Reading (Export)']
+                      ?.toString() ??
+                  '',
+            );
+            final double? endImpVal = double.tryParse(
+              endReading?.values['Current Day Reading (Import)']?.toString() ??
+                  '',
+            );
+            final double? endExpVal = double.tryParse(
+              endReading?.values['Current Day Reading (Export)']?.toString() ??
+                  '',
+            );
+
+            if (startImpVal != null && endImpVal != null && mf != null) {
+              calculatedImpConsumed = max(0.0, (endImpVal - startImpVal) * mf);
+            }
+            if (startExpVal != null && endExpVal != null && mf != null) {
+              calculatedExpConsumed = max(0.0, (endExpVal - startExpVal) * mf);
+            }
+
+            _bayEnergyData[bay.id] = BayEnergyData(
+              bayName: bay.name,
+              prevImp: startImpVal,
+              currImp: endImpVal,
+              prevExp: startExpVal,
+              currExp: endExpVal,
+              mf: mf,
+              impConsumed: calculatedImpConsumed,
+              expConsumed: calculatedExpConsumed,
+              hasAssessment: bayHasAssessmentForPeriod,
+            );
+          }
+
+          // Apply latest assessment if available for this bay (only one per bay from _latestAssessmentsPerBay)
+          final latestAssessment = _latestAssessmentsPerBay[bay.id];
+          if (latestAssessment != null) {
+            _bayEnergyData[bay.id] = _bayEnergyData[bay.id]!.applyAssessment(
+              importAdjustment: latestAssessment.importAdjustment,
+              exportAdjustment: latestAssessment.exportAdjustment,
+            );
+            debugPrint('Applied assessment for ${bay.name}');
           }
         }
-      }
 
-      _aggregatedFeederEnergyData = tempAggregatedData.values.toList();
+        Map<String, Map<String, double>> temporaryBusFlows = {};
+        for (var busbar in _allBaysInSubstation.where(
+          (b) => b.bayType == 'Busbar',
+        )) {
+          temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
+        }
 
-      _aggregatedFeederEnergyData.sort((a, b) {
-        int result = a.zoneName.compareTo(b.zoneName);
-        if (result != 0) return result;
+        for (var entry in _busbarEnergyMaps.values) {
+          final Bay? connectedBay = _baysMap[entry.connectedBayId];
+          final BayEnergyData? connectedBayEnergy =
+              _bayEnergyData[entry.connectedBayId];
 
-        result = a.circleName.compareTo(b.circleName);
-        if (result != 0) return result;
+          if (connectedBay != null &&
+              connectedBayEnergy != null &&
+              temporaryBusFlows.containsKey(entry.busbarId)) {
+            if (entry.importContribution == EnergyContributionType.busImport) {
+              temporaryBusFlows[entry.busbarId]!['import'] =
+                  (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
+                  (connectedBayEnergy.impConsumed ?? 0.0);
+            } else if (entry.importContribution ==
+                EnergyContributionType.busExport) {
+              temporaryBusFlows[entry.busbarId]!['export'] =
+                  (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
+                  (connectedBayEnergy.impConsumed ?? 0.0);
+            }
 
-        result = a.divisionName.compareTo(b.divisionName);
-        if (result != 0) return result;
+            if (entry.exportContribution == EnergyContributionType.busImport) {
+              temporaryBusFlows[entry.busbarId]!['import'] =
+                  (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
+                  (connectedBayEnergy.expConsumed ?? 0.0);
+            } else if (entry.exportContribution ==
+                EnergyContributionType.busExport) {
+              temporaryBusFlows[entry.busbarId]!['export'] =
+                  (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
+                  (connectedBayEnergy.expConsumed ?? 0.0);
+            }
+          }
+        }
 
-        return a.distributionSubdivisionName.compareTo(
-          b.distributionSubdivisionName,
+        for (var busbar in _allBaysInSubstation.where(
+          (b) => b.bayType == 'Busbar',
+        )) {
+          double busTotalImp = temporaryBusFlows[busbar.id]?['import'] ?? 0.0;
+          double busTotalExp = temporaryBusFlows[busbar.id]?['export'] ?? 0.0;
+
+          double busDifference = busTotalImp - busTotalExp;
+          double busLossPercentage = 0.0;
+          if (busTotalImp > 0) {
+            busLossPercentage = (busDifference / busTotalImp) * 100;
+          }
+
+          _busEnergySummary[busbar.id] = {
+            'totalImp': busTotalImp,
+            'totalExp': busTotalExp,
+            'difference': busDifference,
+            'lossPercentage': busLossPercentage,
+          };
+          print(
+            'DEBUG: Bus Energy Summary for ${busbar.name}: Imp=${busTotalImp}, Exp=${busTotalExp}, Diff=${busDifference}, Loss=${busLossPercentage}%',
+          );
+        }
+
+        final highestVoltageBus = _allBaysInSubstation.firstWhereOrNull(
+          (b) => b.bayType == 'Busbar',
         );
-      });
+        final lowestVoltageBus = _allBaysInSubstation.lastWhereOrNull(
+          (b) => b.bayType == 'Busbar',
+        );
+
+        double currentAbstractSubstationTotalImp = 0;
+        double currentAbstractSubstationTotalExp = 0;
+
+        if (highestVoltageBus != null) {
+          currentAbstractSubstationTotalImp =
+              (_busEnergySummary[highestVoltageBus.id]?['totalImp']) ?? 0.0;
+        }
+        if (lowestVoltageBus != null) {
+          currentAbstractSubstationTotalExp =
+              (_busEnergySummary[lowestVoltageBus.id]?['totalExp']) ?? 0.0;
+        }
+
+        double overallDifference =
+            currentAbstractSubstationTotalImp -
+            currentAbstractSubstationTotalExp;
+        double overallLossPercentage = 0;
+        if (currentAbstractSubstationTotalImp > 0) {
+          overallLossPercentage =
+              (overallDifference / currentAbstractSubstationTotalImp) * 100;
+        }
+
+        _abstractEnergyData = {
+          'totalImp': currentAbstractSubstationTotalImp,
+          'totalExp': currentAbstractSubstationTotalExp,
+          'difference': overallDifference,
+          'lossPercentage': overallLossPercentage,
+        };
+
+        final Map<String, AggregatedFeederEnergyData> tempAggregatedData = {};
+
+        for (var bay in _allBaysInSubstation) {
+          if (bay.bayType == 'Feeder') {
+            final energyData = _bayEnergyData[bay.id];
+            if (energyData != null) {
+              final DistributionSubdivision? distSubdivision =
+                  _distributionSubdivisionsMap[bay.distributionSubdivisionId];
+              final DistributionDivision? distDivision =
+                  _distributionDivisionsMap[distSubdivision
+                      ?.distributionDivisionId];
+              final DistributionCircle? distCircle =
+                  _distributionCirclesMap[distDivision?.distributionCircleId];
+              final DistributionZone? distZone =
+                  _distributionZonesMap[distCircle?.distributionZoneId];
+
+              final String zoneName = distZone?.name ?? 'N/A';
+              final String circleName = distCircle?.name ?? 'N/A';
+              final String divisionName = distDivision?.name ?? 'N/A';
+              final String distSubdivisionName = distSubdivision?.name ?? 'N/A';
+
+              final String groupKey =
+                  '$zoneName-$circleName-$divisionName-$distSubdivisionName';
+
+              final aggregatedEntry = tempAggregatedData.putIfAbsent(
+                groupKey,
+                () => AggregatedFeederEnergyData(
+                  zoneName: zoneName,
+                  circleName: circleName,
+                  divisionName: divisionName,
+                  distributionSubdivisionName: distSubdivisionName,
+                ),
+              );
+
+              aggregatedEntry.importedEnergy += (energyData.impConsumed ?? 0.0);
+              aggregatedEntry.exportedEnergy += (energyData.expConsumed ?? 0.0);
+            }
+          }
+        }
+
+        _aggregatedFeederEnergyData = tempAggregatedData.values.toList();
+
+        _aggregatedFeederEnergyData.sort((a, b) {
+          int result = a.zoneName.compareTo(b.zoneName);
+          if (result != 0) return result;
+
+          result = a.circleName.compareTo(b.circleName);
+          if (result != 0) return result;
+
+          result = a.divisionName.compareTo(b.divisionName);
+          if (result != 0) return result;
+
+          return a.distributionSubdivisionName.compareTo(
+            b.distributionSubdivisionName,
+          );
+        });
+      }
     } catch (e) {
       print("Error loading energy data: $e");
       if (mounted) {
@@ -758,6 +965,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    if (_isViewingSavedSld) return; // Cannot change date range for saved SLD
+
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2000),
@@ -776,6 +985,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Future<void> _saveBusbarEnergyMap(BusbarEnergyMap map) async {
+    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+
     try {
       if (map.id == null) {
         await FirebaseFirestore.instance
@@ -801,6 +1012,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Future<void> _deleteBusbarEnergyMap(String mapId) async {
+    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+
     try {
       await FirebaseFirestore.instance
           .collection('busbarEnergyMaps')
@@ -820,6 +1033,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _showBusbarSelectionDialog() {
+    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+
     final List<Bay> busbars = _allBaysInSubstation
         .where((bay) => bay.bayType == 'Busbar')
         .toList();
@@ -857,6 +1072,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _showBusbarEnergyAssignmentDialog(Bay busbar) {
+    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+
     final List<Bay> connectedBays = _allConnections
         .where(
           (conn) =>
@@ -895,6 +1112,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   // Method to show the energy assessment dialog for a specific bay
   // This is called AFTER the bay selection dialog.
   void _showEnergyAssessmentDialog(Bay bay, BayEnergyData? energyData) {
+    if (_isViewingSavedSld) return; // Cannot add assessments to saved SLD
+
     showDialog(
       context: context,
       builder: (context) => EnergyAssessmentDialog(
@@ -911,6 +1130,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   // NEW: Method to show a dialog for selecting a bay for assessment
   void _showBaySelectionForAssessment() {
+    if (_isViewingSavedSld) return; // Cannot add assessments to saved SLD
+
     final List<Bay> assessableBays = _allBaysInSubstation
         .where((bay) => ['Feeder', 'Line', 'Transformer'].contains(bay.bayType))
         .toList();
@@ -955,6 +1176,443 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         );
       },
     );
+  }
+
+  // NEW: Method to save the current SLD state
+  Future<void> _saveSld() async {
+    if (_isViewingSavedSld) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Cannot re-save a loaded historical SLD. Please go to a live SLD to save.',
+        isError: true,
+      );
+      return;
+    }
+
+    TextEditingController sldNameController = TextEditingController();
+    final String? sldName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save SLD As...'),
+        content: TextField(
+          controller: sldNameController,
+          decoration: const InputDecoration(hintText: "Enter SLD name"),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (sldNameController.text.trim().isEmpty) {
+                SnackBarUtils.showSnackBar(
+                  context,
+                  'SLD name cannot be empty!',
+                  isError: true,
+                );
+              } else {
+                Navigator.pop(context, sldNameController.text.trim());
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (sldName == null || sldName.isEmpty) return;
+
+    setState(() {
+      _isLoading = true; // Show loading indicator during saving
+    });
+
+    try {
+      // Serialize current state for sldParameters
+      final Map<String, dynamic> currentSldParameters = {
+        'bayPositions': {
+          for (var bay in _allBaysInSubstation)
+            bay.id: {'x': bay.xPosition, 'y': bay.yPosition},
+        },
+        'bayEnergyData': {
+          for (var entry in _bayEnergyData.entries)
+            entry.key: entry.value.toMap(),
+        },
+        'busEnergySummary': _busEnergySummary,
+        'abstractEnergyData': _abstractEnergyData,
+        'aggregatedFeederEnergyData': _aggregatedFeederEnergyData
+            .map((e) => e.toMap())
+            .toList(),
+        // NEW: Add a map for bayId to bayName lookup for all bays
+        'bayNamesLookup': {
+          for (var bay in _allBaysInSubstation) bay.id: bay.name,
+        },
+      };
+
+      // Serialize current assessments for assessmentsSummary
+      final List<Map<String, dynamic>> currentAssessmentsSummary =
+          _allAssessmentsForDisplay
+              .map(
+                (assessment) => {
+                  ...assessment.toFirestore(),
+                  // Add bayName to the summary for easier PDF generation
+                  'bayName': _baysMap[assessment.bayId]?.name ?? 'N/A',
+                },
+              )
+              .toList();
+
+      final newSavedSld = SavedSld(
+        name: sldName,
+        substationId: widget.substationId,
+        substationName: widget.substationName,
+        startDate: Timestamp.fromDate(_startDate),
+        endDate: Timestamp.fromDate(_endDate),
+        createdBy: widget.currentUser.uid,
+        createdAt: Timestamp.now(),
+        sldParameters: currentSldParameters,
+        assessmentsSummary: currentAssessmentsSummary,
+      );
+
+      await FirebaseFirestore.instance
+          .collection('savedSlds')
+          .add(newSavedSld.toFirestore());
+
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'SLD "${sldName}" saved successfully!',
+        );
+      }
+    } catch (e) {
+      print('Error saving SLD: $e');
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to save SLD: $e',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Function to generate PDF content from the current SLD state
+  Future<Uint8List> _generatePdfFromCurrentSld() async {
+    final pdf = pw.Document();
+
+    // Capture the SLD diagram widget as an image using widgets_to_image
+    // You can adjust pixelRatio for higher quality images in PDF
+    // Ensure the widget wrapped by WidgetsToImage is fully rendered before capture.
+    final Uint8List? sldImageBytes = await _widgetsToImageController.capturePng(
+      pixelRatio: 3.0,
+    );
+
+    pw.MemoryImage? sldPdfImage;
+    if (sldImageBytes != null) {
+      sldPdfImage = pw.MemoryImage(sldImageBytes);
+    }
+
+    // Prepare data for PDF
+    final Map<String, dynamic> currentAbstractEnergyData = _abstractEnergyData;
+    final Map<String, dynamic> currentBusEnergySummaryData = _busEnergySummary;
+    final List<AggregatedFeederEnergyData> currentAggregatedFeederData =
+        _aggregatedFeederEnergyData;
+    final List<Assessment> currentAssessmentsForDisplay =
+        _allAssessmentsForDisplay;
+    final Map<String, String> currentBayNamesLookup = {
+      for (var bay in _allBaysInSubstation) bay.id: bay.name,
+    };
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.copyWith(
+          marginBottom: 1.5 * PdfPageFormat.cm,
+          marginTop: 1.5 * PdfPageFormat.cm,
+          marginLeft: 1.5 * PdfPageFormat.cm,
+          marginRight: 1.5 * PdfPageFormat.cm,
+        ),
+        header: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                'Substation Energy Account Report',
+                style: pw.TextStyle(
+                  fontSize: 18,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.Text(
+                '${widget.substationName}',
+                style: pw.TextStyle(fontSize: 14),
+              ),
+              pw.Text(
+                'Period: ${DateFormat('dd-MMM-yyyy').format(_startDate)} to ${DateFormat('dd-MMM-yyyy').format(_endDate)}',
+                style: pw.TextStyle(fontSize: 12),
+              ),
+              pw.Divider(),
+            ],
+          );
+        },
+        build: (pw.Context context) {
+          return [
+            // Section: SLD Drawing
+            if (sldPdfImage != null)
+              pw.Center(
+                child: pw.Column(
+                  children: [
+                    pw.Text(
+                      'Single Line Diagram',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    // Constrain image size to fit within PDF page width
+                    pw.Image(
+                      sldPdfImage,
+                      fit: pw.BoxFit.contain,
+                      width: PdfPageFormat.a4.width - (3 * PdfPageFormat.cm),
+                    ),
+                    pw.SizedBox(height: 20),
+                  ],
+                ),
+              )
+            else
+              pw.Text(
+                'SLD Diagram could not be captured.',
+                style: pw.TextStyle(color: PdfColors.red),
+              ),
+
+            // Section: Abstract of Substation Energy
+            pw.Header(
+              level: 0,
+              text: 'Abstract of Substation Energy',
+              decoration: pw.BoxDecoration(
+                border: pw.Border(bottom: pw.BorderSide()),
+              ),
+            ),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                _buildPdfEnergyRow(
+                  'Total Import',
+                  currentAbstractEnergyData['totalImp'],
+                  'MWH',
+                ),
+                _buildPdfEnergyRow(
+                  'Total Export',
+                  currentAbstractEnergyData['totalExp'],
+                  'MWH',
+                ),
+                _buildPdfEnergyRow(
+                  'Difference',
+                  currentAbstractEnergyData['difference'],
+                  'MWH',
+                ),
+                _buildPdfEnergyRow(
+                  'Loss Percentage',
+                  currentAbstractEnergyData['lossPercentage'],
+                  '%',
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+
+            // Section: Abstract of Busbars
+            if (currentBusEnergySummaryData.isNotEmpty) ...[
+              pw.Header(
+                level: 0,
+                text: 'Abstract of Busbars',
+                decoration: pw.BoxDecoration(
+                  border: pw.Border(bottom: pw.BorderSide()),
+                ),
+              ),
+              for (var entry in currentBusEnergySummaryData.entries)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 10),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Busbar: ${currentBayNamesLookup[entry.key] ?? entry.key}',
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                      _buildPdfEnergyRow(
+                        'Import',
+                        entry.value['totalImp'],
+                        'MWH',
+                      ),
+                      _buildPdfEnergyRow(
+                        'Export',
+                        entry.value['totalExp'],
+                        'MWH',
+                      ),
+                      _buildPdfEnergyRow(
+                        'Difference',
+                        entry.value['difference'],
+                        'MWH',
+                      ),
+                      _buildPdfEnergyRow(
+                        'Loss',
+                        entry.value['lossPercentage'],
+                        '%',
+                      ),
+                    ],
+                  ),
+                ),
+              pw.SizedBox(height: 20),
+            ],
+
+            // Section: Feeder Energy Supplied by Distribution Hierarchy
+            pw.Header(
+              level: 0,
+              text: 'Feeder Energy Supplied by Distribution Hierarchy',
+              decoration: pw.BoxDecoration(
+                border: pw.Border(bottom: pw.BorderSide()),
+              ),
+            ),
+            if (currentAggregatedFeederData.isNotEmpty)
+              pw.Table.fromTextArray(
+                context: context,
+                headers: <String>[
+                  'D-Zone',
+                  'D-Circle',
+                  'D-Division',
+                  'D-Subdivision',
+                  'Import (MWH)',
+                  'Export (MWH)',
+                ],
+                data: currentAggregatedFeederData.map((data) {
+                  return <String>[
+                    data.zoneName,
+                    data.circleName,
+                    data.divisionName,
+                    data.distributionSubdivisionName,
+                    data.importedEnergy.toStringAsFixed(2),
+                    data.exportedEnergy.toStringAsFixed(2),
+                  ];
+                }).toList(),
+                border: pw.TableBorder.all(width: 0.5),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                cellAlignment: pw.Alignment.centerLeft,
+                cellPadding: const pw.EdgeInsets.all(4),
+              )
+            else
+              pw.Text('No aggregated feeder energy data available.'),
+            pw.SizedBox(height: 20),
+
+            // Section: Assessments
+            pw.Header(
+              level: 0,
+              text: 'Assessments for this Period',
+              decoration: pw.BoxDecoration(
+                border: pw.Border(bottom: pw.BorderSide()),
+              ),
+            ),
+            if (currentAssessmentsForDisplay.isNotEmpty)
+              pw.Table.fromTextArray(
+                context: context,
+                headers: <String>[
+                  'Bay Name',
+                  'Import Adj.',
+                  'Export Adj.',
+                  'Reason',
+                  'Timestamp',
+                ],
+                data: currentAssessmentsForDisplay.map((assessment) {
+                  return <String>[
+                    _baysMap[assessment.bayId]?.name ??
+                        'N/A', // Use live bayName from _baysMap
+                    assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A',
+                    assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A',
+                    assessment.reason,
+                    DateFormat(
+                      'dd-MMM-yyyy HH:mm',
+                    ).format(assessment.assessmentTimestamp.toDate()),
+                  ];
+                }).toList(),
+                border: pw.TableBorder.all(width: 0.5),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                cellAlignment: pw.Alignment.centerLeft,
+                cellPadding: const pw.EdgeInsets.all(4),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(2),
+                  1: const pw.FlexColumnWidth(1.2),
+                  2: const pw.FlexColumnWidth(1.2),
+                  3: const pw.FlexColumnWidth(3),
+                  4: const pw.FlexColumnWidth(2),
+                },
+              )
+            else
+              pw.Text('No assessments were made for this period.'),
+          ];
+        },
+      ),
+    );
+
+    return await pdf.save();
+  }
+
+  // Helper for building energy rows in PDF
+  pw.Widget _buildPdfEnergyRow(String label, dynamic value, String unit) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2.0),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text('$label:', style: const pw.TextStyle(fontSize: 10)),
+          pw.Text(
+            value != null ? '${value.toStringAsFixed(2)} $unit' : 'N/A',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Function to handle PDF generation and sharing for the currently displayed SLD
+  Future<void> _shareCurrentSldAsPdf() async {
+    try {
+      SnackBarUtils.showSnackBar(context, 'Generating PDF...');
+      final Uint8List pdfBytes = await _generatePdfFromCurrentSld();
+
+      final output = await getTemporaryDirectory();
+      final String filename =
+          '${widget.substationName.replaceAll(RegExp(r'[^\w\s.-]'), '_')}_energy_report_${DateFormat('yyyyMMdd').format(_endDate)}.pdf';
+      final file = File('${output.path}/$filename');
+      await file.writeAsBytes(pdfBytes);
+
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], subject: 'Energy SLD Report: ${widget.substationName}');
+
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'PDF generated and shared successfully!',
+        );
+      }
+    } catch (e) {
+      print("Error generating/sharing PDF: $e");
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to generate/share PDF: $e',
+          isError: true,
+        );
+      }
+    }
   }
 
   SldRenderData _buildBayRenderDataList(
@@ -1427,8 +2085,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
 
     const double abstractCardWidth = 400;
-    const double abstractCardHeight = 200;
+    const double abstractCardHeight = 250;
     const double feederTableHeight = 300;
+    const double assessmentTableHeight =
+        250; // NEW: Height for assessment table
 
     final List<Bay> busbarsWithData = _allBaysInSubstation
         .where(
@@ -1445,7 +2105,22 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_today),
-            onPressed: () => _selectDate(context),
+            onPressed: _isViewingSavedSld ? null : () => _selectDate(context),
+            tooltip: _isViewingSavedSld
+                ? 'Date range cannot be changed for saved SLD'
+                : 'Change Date Range',
+          ),
+          if (!_isViewingSavedSld) // Show save button only for live SLD
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: _saveSld,
+              tooltip: 'Save Current SLD View',
+            ),
+          // NEW: Share/Print button for current SLD view
+          IconButton(
+            icon: const Icon(Icons.print),
+            onPressed: _shareCurrentSldAsPdf, // Call the new PDF function
+            tooltip: 'Share/Print PDF of current SLD',
           ),
         ],
       ),
@@ -1454,159 +2129,167 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           : Column(
               children: [
                 Expanded(
-                  child: Stack(
-                    children: [
-                      InteractiveViewer(
-                        transformationController: _transformationController,
-                        boundaryMargin: const EdgeInsets.all(double.infinity),
-                        minScale: 0.1,
-                        maxScale: 4.0,
-                        constrained: false,
-                        child: CustomPaint(
-                          size: Size(canvasWidth, canvasHeight),
-                          painter: SingleLineDiagramPainter(
-                            bayRenderDataList: sldRenderData.bayRenderDataList,
-                            bayConnections: _allConnections,
-                            baysMap: _baysMap,
-                            createDummyBayRenderData: _createDummyBayRenderData,
-                            busbarRects: sldRenderData.busbarRects,
-                            busbarConnectionPoints:
-                                sldRenderData.busbarConnectionPoints,
-                            debugDrawHitboxes: false,
-                            selectedBayForMovementId: null,
-                            bayEnergyData: sldRenderData.bayEnergyData,
-                            busEnergySummary: sldRenderData.busEnergySummary,
+                  child: WidgetsToImage(
+                    // NEW: Use WidgetsToImage to capture the SLD drawing
+                    controller: _widgetsToImageController, // Link to controller
+                    child: Stack(
+                      children: [
+                        InteractiveViewer(
+                          transformationController: _transformationController,
+                          boundaryMargin: const EdgeInsets.all(double.infinity),
+                          minScale: 0.1,
+                          maxScale: 4.0,
+                          constrained: false,
+                          child: CustomPaint(
+                            size: Size(canvasWidth, canvasHeight),
+                            painter: SingleLineDiagramPainter(
+                              bayRenderDataList:
+                                  sldRenderData.bayRenderDataList,
+                              bayConnections: _allConnections,
+                              baysMap: _baysMap,
+                              createDummyBayRenderData:
+                                  _createDummyBayRenderData,
+                              busbarRects: sldRenderData.busbarRects,
+                              busbarConnectionPoints:
+                                  sldRenderData.busbarConnectionPoints,
+                              debugDrawHitboxes: false,
+                              selectedBayForMovementId: null,
+                              bayEnergyData: sldRenderData.bayEnergyData,
+                              busEnergySummary: sldRenderData.busEnergySummary,
+                            ),
                           ),
                         ),
-                      ),
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: SizedBox(
-                            width: abstractCardWidth,
-                            height: abstractCardHeight,
-                            child: Card(
-                              elevation: 4,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: PageView.builder(
-                                        itemCount: busbarsWithData.length + 1,
-                                        onPageChanged: (index) {
-                                          setState(() {
-                                            _currentPageIndex = index;
-                                          });
-                                        },
-                                        itemBuilder: (context, index) {
-                                          if (index == busbarsWithData.length) {
-                                            return Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'Abstract of Substation',
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.titleSmall,
-                                                ),
-                                                const Divider(),
-                                                _buildEnergyRow(
-                                                  'Total Import',
-                                                  _abstractEnergyData['totalImp'],
-                                                  'MWH',
-                                                  isAbstract: true,
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Total Export',
-                                                  _abstractEnergyData['totalExp'],
-                                                  'MWH',
-                                                  isAbstract: true,
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Difference',
-                                                  _abstractEnergyData['difference'],
-                                                  'MWH',
-                                                  isAbstract: true,
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Loss Percentage',
-                                                  _abstractEnergyData['lossPercentage'],
-                                                  '%',
-                                                  isAbstract: true,
-                                                ),
-                                              ],
-                                            );
-                                          } else {
-                                            final busbar =
-                                                busbarsWithData[index];
-                                            final busSummary =
-                                                _busEnergySummary[busbar.id];
-                                            return Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'Abstract of Busbar:',
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.titleSmall,
-                                                ),
-                                                Text(
-                                                  '${busbar.voltageLevel} ${busbar.name}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                ),
-                                                const Divider(),
-                                                _buildEnergyRow(
-                                                  'Import',
-                                                  busSummary?['totalImp'],
-                                                  'MWH',
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Export',
-                                                  busSummary?['totalExp'],
-                                                  'MWH',
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Difference',
-                                                  busSummary?['difference'],
-                                                  'MWH',
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Loss',
-                                                  busSummary?['lossPercentage'],
-                                                  '%',
-                                                ),
-                                              ],
-                                            );
-                                          }
-                                        },
+                        // The abstract card is part of the Stack, so it will be captured with the SLD.
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: SizedBox(
+                              width: abstractCardWidth,
+                              height: abstractCardHeight,
+                              child: Card(
+                                elevation: 4,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: Column(
+                                    // mainAxisSize: MainAxisSize.min, // <-- REMOVED THIS LINE TO FIX OVERFLOW
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: PageView.builder(
+                                          itemCount: busbarsWithData.length + 1,
+                                          onPageChanged: (index) {
+                                            setState(() {
+                                              _currentPageIndex = index;
+                                            });
+                                          },
+                                          itemBuilder: (context, index) {
+                                            if (index ==
+                                                busbarsWithData.length) {
+                                              return Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    'Abstract of Substation',
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.titleSmall,
+                                                  ),
+                                                  const Divider(),
+                                                  _buildEnergyRow(
+                                                    'Total Import',
+                                                    _abstractEnergyData['totalImp'],
+                                                    'MWH',
+                                                    isAbstract: true,
+                                                  ),
+                                                  _buildEnergyRow(
+                                                    'Total Export',
+                                                    _abstractEnergyData['totalExp'],
+                                                    'MWH',
+                                                    isAbstract: true,
+                                                  ),
+                                                  _buildEnergyRow(
+                                                    'Difference',
+                                                    _abstractEnergyData['difference'],
+                                                    'MWH',
+                                                    isAbstract: true,
+                                                  ),
+                                                  _buildEnergyRow(
+                                                    'Loss Percentage',
+                                                    _abstractEnergyData['lossPercentage'],
+                                                    '%',
+                                                    isAbstract: true,
+                                                  ),
+                                                ],
+                                              );
+                                            } else {
+                                              final busbar =
+                                                  busbarsWithData[index];
+                                              final busSummary =
+                                                  _busEnergySummary[busbar.id];
+                                              return Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    'Abstract of Busbar:',
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.titleSmall,
+                                                  ),
+                                                  Text(
+                                                    '${busbar.voltageLevel} ${busbar.name}',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                  ),
+                                                  const Divider(),
+                                                  _buildEnergyRow(
+                                                    'Import',
+                                                    busSummary?['totalImp'],
+                                                    'MWH',
+                                                  ),
+                                                  _buildEnergyRow(
+                                                    'Export',
+                                                    busSummary?['totalExp'],
+                                                    'MWH',
+                                                  ),
+                                                  _buildEnergyRow(
+                                                    'Difference',
+                                                    busSummary?['difference'],
+                                                    'MWH',
+                                                  ),
+                                                  _buildEnergyRow(
+                                                    'Loss',
+                                                    busSummary?['lossPercentage'],
+                                                    '%',
+                                                  ),
+                                                ],
+                                              );
+                                            }
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                    _buildPageIndicator(
-                                      busbarsWithData.length + 1,
-                                      _currentPageIndex,
-                                    ),
-                                  ],
+                                      _buildPageIndicator(
+                                        busbarsWithData.length + 1,
+                                        _currentPageIndex,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 // Feeder Energy Table Section
@@ -1742,8 +2425,93 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     ],
                   ),
                 ),
-                // Section to display assessment notes
-                if (_allAssessmentsForDisplay.isNotEmpty)
+                // NEW: Section to display assessment notes in a table format
+                if (_isViewingSavedSld && _loadedAssessmentsSummary.isNotEmpty)
+                  Container(
+                    height: assessmentTableHeight,
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Assessments for this Period:',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const Divider(),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: DataTable(
+                              columns: const [
+                                DataColumn(label: Text('Bay Name')),
+                                DataColumn(label: Text('Import Adj.')),
+                                DataColumn(label: Text('Export Adj.')),
+                                DataColumn(label: Text('Reason')),
+                                DataColumn(label: Text('Timestamp')),
+                              ],
+                              rows: _loadedAssessmentsSummary.map((
+                                assessmentMap,
+                              ) {
+                                final Assessment assessment =
+                                    Assessment.fromMap(
+                                      assessmentMap,
+                                      id: assessmentMap['id'] as String?,
+                                    ); // Pass id explicitly
+                                // Use the bayName stored in the map directly
+                                final String assessedBayName =
+                                    assessmentMap['bayName'] ?? 'N/A';
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text(assessedBayName)),
+                                    DataCell(
+                                      Text(
+                                        assessment.importAdjustment != null
+                                            ? assessment.importAdjustment!
+                                                  .toStringAsFixed(2)
+                                            : 'N/A',
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        assessment.exportAdjustment != null
+                                            ? assessment.exportAdjustment!
+                                                  .toStringAsFixed(2)
+                                            : 'N/A',
+                                      ),
+                                    ),
+                                    DataCell(Text(assessment.reason)),
+                                    DataCell(
+                                      Text(
+                                        DateFormat('dd-MMM-yyyy HH:mm').format(
+                                          assessment.assessmentTimestamp
+                                              .toDate(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_isViewingSavedSld &&
+                    _loadedAssessmentsSummary.isEmpty)
+                  Container(
+                    height: assessmentTableHeight,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'No assessments were made for this period in the saved SLD.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else if (!_isViewingSavedSld &&
+                    _allAssessmentsForDisplay.isNotEmpty)
                   Container(
                     height: 150,
                     padding: const EdgeInsets.all(8.0),
@@ -1781,38 +2549,43 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               ],
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            builder: (BuildContext context) {
-              return SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    ListTile(
-                      leading: const Icon(Icons.settings_input_antenna),
-                      title: const Text('Configure Busbar Energy'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showBusbarSelectionDialog();
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.assessment),
-                      title: const Text('Add Energy Assessment'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showBaySelectionForAssessment();
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+        onPressed: _isViewingSavedSld
+            ? null
+            : () {
+                // NEW: Disable FAB for saved SLD view
+                showModalBottomSheet(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return SafeArea(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          ListTile(
+                            leading: const Icon(Icons.settings_input_antenna),
+                            title: const Text('Configure Busbar Energy'),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _showBusbarSelectionDialog();
+                            },
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.assessment),
+                            title: const Text('Add Energy Assessment'),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _showBaySelectionForAssessment();
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
         child: const Icon(Icons.menu),
-        tooltip: 'Menu Options',
+        tooltip: _isViewingSavedSld
+            ? 'Options not available for saved SLD'
+            : 'Menu Options',
       ),
     );
   }
@@ -1915,12 +2688,10 @@ class __BusbarEnergyAssignmentDialogState
             connectedBayId: bayId,
             importContribution: importContrib,
             exportContribution: exportContrib,
-            createdBy: originalMapId != null
-                ? widget.currentUser.uid
-                : widget.currentUser.uid,
+            createdBy: widget.currentUser.uid,
             createdAt: originalMapId != null
                 ? Timestamp.now()
-                : Timestamp.now(),
+                : Timestamp.now(), // Use existing or current timestamp
             lastModifiedAt: Timestamp.now(),
           );
           widget.onSaveMap(newMap);

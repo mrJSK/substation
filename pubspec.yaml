@@ -39,7 +39,6 @@ dependencies:
   path_provider: ^2.1.2 # To find common locations on the filesystem
   path: ^1.8.3 # For cross-platform path manipulation
   csv: ^5.1.1 # For generating CSV reports
-  share_plus: ^7.0.2 # For sharing files (CSV, images)
   image: ^4.1.7 # For image manipulation (overlaying text on photos)
   intl: ^0.18.1 # For internationalization, used for date/time formatting
   permission_handler: ^11.3.0 # For requesting runtime permissions (camera, location, storage)
@@ -56,6 +55,10 @@ dependencies:
   flutter_svg: ^2.2.0
   dropdown_search: ^5.0.6
   audioplayers: ^6.5.0
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  share_plus: ^11.0.0
+  widgets_to_image: ^2.0.1
 
 dev_dependencies:
   flutter_test:

@@ -14,6 +14,7 @@ import '../screens/equipment_hierarchy_selection_screen.dart';
 import '../screens/substation_detail_screen.dart';
 import '../screens/admin/reading_template_management_screen.dart';
 import '../screens/energy_sld_screen.dart'; // NEW: Import the new screen
+import '../screens/saved_sld_list_screen.dart'; // NEW: Import SavedSldListScreen
 
 import '../utils/snackbar_utils.dart';
 import 'substation_user_dashboard_screen.dart'; // NEW: Import the new substation user dashboard
@@ -310,6 +311,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
                 },
               ),
+              // NEW: Link to Saved SLD List Screen for Admin
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('View Saved SLDs'),
+                onTap: () {
+                  Navigator.of(context).pop(); // Close the drawer
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          SavedSldListScreen(currentUser: widget.appUser),
+                    ),
+                  );
+                },
+              ),
               const Divider(),
             ],
             // NEW: Energy SLD entry for SubstationUser & SubdivisionManager
@@ -372,6 +387,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       isError: true,
                     );
                   }
+                },
+              ),
+              // NEW: Link to Saved SLD List Screen for SubstationUser and SubdivisionManager
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('View Saved SLDs'),
+                onTap: () {
+                  Navigator.of(context).pop(); // Close the drawer
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          SavedSldListScreen(currentUser: widget.appUser),
+                    ),
+                  );
                 },
               ),
             ],
