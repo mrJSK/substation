@@ -537,117 +537,165 @@ class SingleLineDiagramPainter extends CustomPainter {
         final BayEnergyData? energyData = bayEnergyData[bay.id];
         if (energyData != null) {
           const double energyTextFontSize = 9.0;
-          // Calculate the height of the transformer's name label first
-          final String transformerName = '${bay.name} T/F, ${bay.make ?? ''}';
-          final Size transformerNameSize = _measureText(
-            transformerName,
-            fontSize: 9, // Assuming same font size as used for its rendering
-            isBold: true,
-          );
-          // Adjusted total height for the energy data block (3 lines)
-          final double energyBlockHeight = (energyTextFontSize + 2) * 3;
+          const double lineHeight = 1.2; // Multiplier for line spacing
+          const double valueOffsetFromLabel =
+              35; // Adjust as needed for alignment
 
-          String importValue = energyData.impConsumed != null
-              ? energyData.impConsumed!.toStringAsFixed(2)
-              : 'N/A';
-          String exportValue = energyData.expConsumed != null
-              ? energyData.expConsumed!.toStringAsFixed(2)
-              : 'N/A';
-          String mfValue = energyData.mf != null
-              ? energyData.mf!.toStringAsFixed(2)
-              : 'N/A';
-
-          final String combinedText =
-              'Imp: $importValue \nExp: $exportValue \nMF: $mfValue';
-
-          Offset
-          textCenterOffset; // This will be the center of the combined text block
-          TextAlign alignment = TextAlign
-              .right; // Default alignment for combined text (for transformer)
+          Offset baseTextOffset;
+          TextAlign alignment = TextAlign.left; // Default to left alignment
 
           if (bay.bayType == 'Transformer') {
-            // New position for the energy data: below the main transformer label, to the left
-            textCenterOffset = Offset(
-              rect.centerLeft.dx -
-                  70, // Align with the left edge of the symbol, plus offset
-              rect.centerLeft.dy +
-                  transformerNameSize.height / 2 +
-                  -5, // Vertically below the name
+            baseTextOffset = Offset(
+              rect.centerLeft.dx - 100,
+              rect.center.dy - 20,
             );
-            alignment = TextAlign.left;
           } else if (bay.bayType == 'Line') {
-            // Position above the line's name
-            final lineNamePainter = TextPainter(
-              text: TextSpan(
-                text: '${bay.voltageLevel} ${bay.name} Line',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              textDirection: TextDirection.ltr,
-            )..layout(maxWidth: 200);
-
-            textCenterOffset = Offset(
-              rect.center.dx -
-                  (_measureText(
-                        combinedText,
-                        fontSize: energyTextFontSize,
-                      ).width /
-                      2), // Centered with the line
-              rect.top -
-                  lineNamePainter.height -
-                  energyBlockHeight - // Use energyBlockHeight for calculation
-                  5, // Above line name and icon
-            );
-            alignment = TextAlign.left;
+            baseTextOffset = Offset(rect.center.dx - 50, rect.top - 80);
           } else if (bay.bayType == 'Feeder') {
-            // Position below the feeder's name
-            final feederNamePainter = TextPainter(
-              text: TextSpan(
-                text: bay.name,
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              textDirection: TextDirection.ltr,
-            )..layout(maxWidth: 100);
-
-            textCenterOffset = Offset(
-              rect.center.dx -
-                  (_measureText(
-                        combinedText,
-                        fontSize: energyTextFontSize,
-                      ).width /
-                      2), // Centered with the feeder
-              rect.bottom +
-                  feederNamePainter.height +
-                  5, // Below feeder name and icon
-            );
-            alignment = TextAlign.left;
+            baseTextOffset = Offset(rect.center.dx - 50, rect.bottom + 10);
           } else {
-            // Default for other types (Capacitor Bank, Reactor, Bus Coupler, Battery) - right of icon
-            textCenterOffset = Offset(
-              rect.right +
-                  5 +
-                  (_measureText(
-                        combinedText,
-                        fontSize: energyTextFontSize,
-                      ).width /
-                      2),
-              rect.center.dy,
-            );
-            alignment = TextAlign.center;
+            // Generic for other types
+            baseTextOffset = Offset(rect.right + 5, rect.center.dy - 20);
           }
 
-          // Draw the combined text
+          // Table Headers
           _drawText(
             canvas,
-            combinedText,
-            textCenterOffset,
-            textAlign: alignment,
+            'Readings:',
+            baseTextOffset.translate(0, 0),
             fontSize: energyTextFontSize,
+            isBold: true,
+            textAlign: alignment,
+          );
+
+          // Row 1: Previous Import & Current Import
+          _drawText(
+            canvas,
+            'P.Imp:',
+            baseTextOffset.translate(0, 1 * lineHeight * energyTextFontSize),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+          _drawText(
+            canvas,
+            energyData.prevImp?.toStringAsFixed(2) ?? 'N/A',
+            baseTextOffset.translate(
+              valueOffsetFromLabel,
+              1 * lineHeight * energyTextFontSize,
+            ),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+
+          _drawText(
+            canvas,
+            'C.Imp:',
+            baseTextOffset.translate(0, 2 * lineHeight * energyTextFontSize),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+          _drawText(
+            canvas,
+            energyData.currImp?.toStringAsFixed(2) ?? 'N/A',
+            baseTextOffset.translate(
+              valueOffsetFromLabel,
+              2 * lineHeight * energyTextFontSize,
+            ),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+
+          // Row 2: Previous Export & Current Export
+          _drawText(
+            canvas,
+            'P.Exp:',
+            baseTextOffset.translate(0, 3 * lineHeight * energyTextFontSize),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+          _drawText(
+            canvas,
+            energyData.prevExp?.toStringAsFixed(2) ?? 'N/A',
+            baseTextOffset.translate(
+              valueOffsetFromLabel,
+              3 * lineHeight * energyTextFontSize,
+            ),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+
+          _drawText(
+            canvas,
+            'C.Exp:',
+            baseTextOffset.translate(0, 4 * lineHeight * energyTextFontSize),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+          _drawText(
+            canvas,
+            energyData.currExp?.toStringAsFixed(2) ?? 'N/A',
+            baseTextOffset.translate(
+              valueOffsetFromLabel,
+              4 * lineHeight * energyTextFontSize,
+            ),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+
+          // Row 3: MF
+          _drawText(
+            canvas,
+            'MF:',
+            baseTextOffset.translate(0, 5 * lineHeight * energyTextFontSize),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+          _drawText(
+            canvas,
+            energyData.mf?.toStringAsFixed(2) ?? 'N/A',
+            baseTextOffset.translate(
+              valueOffsetFromLabel,
+              5 * lineHeight * energyTextFontSize,
+            ),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+
+          // Row 4: Calculated Import/Export Consumed
+          _drawText(
+            canvas,
+            'Imp(C):',
+            baseTextOffset.translate(0, 6 * lineHeight * energyTextFontSize),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+          _drawText(
+            canvas,
+            energyData.impConsumed?.toStringAsFixed(2) ?? 'N/A',
+            baseTextOffset.translate(
+              valueOffsetFromLabel,
+              6 * lineHeight * energyTextFontSize,
+            ),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+
+          _drawText(
+            canvas,
+            'Exp(C):',
+            baseTextOffset.translate(0, 7 * lineHeight * energyTextFontSize),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
+          );
+          _drawText(
+            canvas,
+            energyData.expConsumed?.toStringAsFixed(2) ?? 'N/A',
+            baseTextOffset.translate(
+              valueOffsetFromLabel,
+              7 * lineHeight * energyTextFontSize,
+            ),
+            fontSize: energyTextFontSize,
+            textAlign: alignment,
           );
         }
       }
@@ -687,7 +735,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     return textPainter.size;
   }
 
-  // Moved _drawText to accept font size
+  // Moved _drawText to accept font size and offsetX
   void _drawText(
     Canvas canvas,
     String text,
@@ -714,7 +762,7 @@ class SingleLineDiagramPainter extends CustomPainter {
           100, // Keep a max width to allow text wrapping if needed for longer names
     );
 
-    double x = position.dx;
+    double x = position.dx + offsetX; // Apply offsetX
     if (textAlign == TextAlign.center) {
       x -= textPainter.width / 2;
     } else if (textAlign == TextAlign.right) {

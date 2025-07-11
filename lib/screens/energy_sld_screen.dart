@@ -158,6 +158,10 @@ class SldRenderData {
   busbarConnectionPoints; // Not serializable, handled dynamically
   final Map<String, BayEnergyData> bayEnergyData;
   final Map<String, Map<String, double>> busEnergySummary;
+  final Map<String, dynamic>
+  abstractEnergyData; // NEW: Added abstract energy data
+  final List<AggregatedFeederEnergyData>
+  aggregatedFeederEnergyData; // NEW: Aggregated feeder data
 
   SldRenderData({
     required this.bayRenderDataList,
@@ -166,6 +170,8 @@ class SldRenderData {
     required this.busbarConnectionPoints,
     required this.bayEnergyData,
     required this.busEnergySummary,
+    required this.abstractEnergyData, // NEW: Required in constructor
+    required this.aggregatedFeederEnergyData, // NEW: Required in constructor
   });
 
   // Convert to Map for serialization (excluding Rects and Offsets)
@@ -186,6 +192,11 @@ class SldRenderData {
         for (var entry in bayEnergyData.entries) entry.key: entry.value.toMap(),
       },
       'busEnergySummary': busEnergySummary,
+      'abstractEnergyData':
+          abstractEnergyData, // NEW: Include abstract energy data
+      'aggregatedFeederEnergyData': aggregatedFeederEnergyData
+          .map((e) => e.toMap())
+          .toList(), // NEW: Include aggregated feeder data
     };
   }
 
@@ -194,16 +205,30 @@ class SldRenderData {
     Map<String, dynamic> map,
     Map<String, Bay> baysMap,
   ) {
-    Map<String, BayEnergyData> deserializedBayEnergyData = {
-      for (var entry in (map['bayEnergyData'] as Map<String, dynamic>).entries)
-        entry.key: BayEnergyData.fromMap(entry.value as Map<String, dynamic>),
-    };
+    Map<String, Map<String, double>> deserializedBayEnergyData =
+        (map['bayEnergyData'] as Map<String, dynamic>?)?.map(
+          (key, value) => MapEntry(key, Map<String, double>.from(value)),
+        ) ??
+        {};
 
-    Map<String, Map<String, double>> deserializedBusEnergySummary = {
-      for (var entry
-          in (map['busEnergySummary'] as Map<String, dynamic>).entries)
-        entry.key: Map<String, double>.from(entry.value),
-    };
+    Map<String, Map<String, double>> deserializedBusEnergySummary =
+        (map['busEnergySummary'] as Map<String, dynamic>?)?.map(
+          (key, value) => MapEntry(key, Map<String, double>.from(value)),
+        ) ??
+        {};
+
+    Map<String, dynamic> deserializedAbstractEnergyData =
+        Map<String, dynamic>.from(map['abstractEnergyData'] ?? {});
+
+    List<AggregatedFeederEnergyData> deserializedAggregatedFeederEnergyData =
+        (map['aggregatedFeederEnergyData'] as List<dynamic>?)
+            ?.map(
+              (e) => AggregatedFeederEnergyData.fromMap(
+                e as Map<String, dynamic>? ?? {},
+              ),
+            ) // ADDED: null check for e
+            .toList() ??
+        [];
 
     // Reconstruct bayRenderDataList with positions
     List<BayRenderData> deserializedBayRenderDataList = [];
@@ -246,8 +271,10 @@ class SldRenderData {
       finalBayRects: {}, // Will be dynamically generated
       busbarRects: {}, // Will be dynamically generated
       busbarConnectionPoints: {}, // Will be dynamically generated
-      bayEnergyData: deserializedBayEnergyData,
+      bayEnergyData: {},
       busEnergySummary: deserializedBusEnergySummary,
+      abstractEnergyData: deserializedAbstractEnergyData, // NEW
+      aggregatedFeederEnergyData: deserializedAggregatedFeederEnergyData, // NEW
     );
   }
 }
@@ -412,28 +439,41 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       if (fromSaved && _loadedSldParameters != null) {
         // NEW: Load data from saved SLD parameters
         debugPrint('Loading energy data from SAVED SLD.');
-        _bayEnergyData = {
-          for (var entry
-              in (_loadedSldParameters!['bayEnergyData']
-                      as Map<String, dynamic>)
-                  .entries)
-            entry.key: BayEnergyData.fromMap(
-              entry.value as Map<String, dynamic>,
-            ),
-        };
+        _bayEnergyData =
+            (_loadedSldParameters!['bayEnergyData'] as Map<String, dynamic>?)
+                ?.map<String, BayEnergyData>(
+                  (key, value) => MapEntry(
+                    key,
+                    BayEnergyData.fromMap(value as Map<String, dynamic>),
+                  ),
+                ) ??
+            {};
         _busEnergySummary = Map<String, Map<String, double>>.from(
-          (_loadedSldParameters!['busEnergySummary'] as Map<String, dynamic>)
-              .map(
-                (key, value) => MapEntry(key, Map<String, double>.from(value)),
-              ),
+          (_loadedSldParameters!['busEnergySummary']
+                      as Map<String, dynamic>?) // Removed '!'
+                  ?.map(
+                    (key, value) => MapEntry(
+                      key,
+                      Map<String, double>.from(
+                        value as Map<String, dynamic>? ?? {},
+                      ), // Added null check for 'value' here
+                    ),
+                  ) ??
+              {},
         );
         _abstractEnergyData = Map<String, double>.from(
-          _loadedSldParameters!['abstractEnergyData'] as Map<String, dynamic>,
+          _loadedSldParameters!['abstractEnergyData'] // Removed '!'
+                  as Map<String, dynamic>? ??
+              {},
         );
         _aggregatedFeederEnergyData =
-            (_loadedSldParameters!['aggregatedFeederEnergyData']
+            (_loadedSldParameters!['aggregatedFeederEnergyData'] // Removed '!'
                     as List<dynamic>?)
-                ?.map((e) => AggregatedFeederEnergyData.fromMap(e))
+                ?.map(
+                  (e) => AggregatedFeederEnergyData.fromMap(
+                    e as Map<String, dynamic>? ?? {},
+                  ),
+                ) // Added null check for 'e' here
                 .toList() ??
             [];
         _allAssessmentsForDisplay = _loadedAssessmentsSummary
@@ -1342,9 +1382,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     // 1. Save current transformation and reset for capture
     _originalTransformation = Matrix4.copy(_transformationController.value);
 
-    // Calculate fitting transformation for the capture size (1200x800)
-    const double captureWidth = 1200;
-    const double captureHeight = 800;
+    // Calculate fitting transformation for the capture size (210x297)
+    const double captureWidth = 210; // A4 size in mm
+    const double captureHeight = 297; // A4 size in mm
 
     // Calculate the diagram's actual content size
     final SldRenderData currentSldRenderData = _buildBayRenderDataList(
@@ -1452,6 +1492,194 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       };
     }
 
+    // NEW: Prepare data for the Abstract Energy Table (based on screenshot)
+    // Identify unique bus voltage levels in the substation
+    final List<String> uniqueBusVoltages =
+        _allBaysInSubstation
+            .where((bay) => bay.bayType == 'Busbar')
+            .map((bay) => bay.voltageLevel)
+            .toSet()
+            .toList()
+          ..sort(
+            (a, b) =>
+                _getVoltageLevelValue(b).compareTo(_getVoltageLevelValue(a)),
+          ); // Sort descending
+
+    // Collect all unique distribution subdivision names from the aggregated feeder data
+    final List<String> uniqueDistributionSubdivisionNames =
+        currentAggregatedFeederData
+            .map((data) => data.distributionSubdivisionName)
+            .toSet()
+            .toList()
+          ..sort(); // Sort alphabetically for consistent order
+
+    // Construct the headers for the new abstract table
+    List<String> abstractTableHeaders = [
+      '',
+    ]; // Empty top-left cell for Imp./Exp./Diff./%Loss
+    for (String voltage in uniqueBusVoltages) {
+      abstractTableHeaders.add('$voltage BUS');
+    }
+    abstractTableHeaders.add('ABSTRACT OF S/S');
+
+    // Dynamically add columns for each unique distribution subdivision found in the data
+    for (String subDivisionName in uniqueDistributionSubdivisionNames) {
+      abstractTableHeaders.add(subDivisionName);
+    }
+    abstractTableHeaders.add('TOTAL'); // Overall total column
+
+    List<List<String>> abstractTableData = [];
+
+    // Rows for Imp., Exp., Diff., % Loss
+    final List<String> rowLabels = ['Imp.', 'Exp.', 'Diff.', '% Loss'];
+
+    for (int i = 0; i < rowLabels.length; i++) {
+      List<String> row = [rowLabels[i]];
+      double rowTotalSummable =
+          0.0; // Sum of values that can be directly added for 'TOTAL' column
+
+      // Process Bus Voltage Columns
+      for (String voltage in uniqueBusVoltages) {
+        final busbarsOfThisVoltage = _allBaysInSubstation.where(
+          (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
+        );
+        double totalForThisBusVoltageImp = 0.0;
+        double totalForThisBusVoltageExp = 0.0;
+        double totalForThisBusVoltageDiff = 0.0;
+
+        for (var busbar in busbarsOfThisVoltage) {
+          final busSummary = currentBusEnergySummaryData[busbar.id];
+          if (busSummary != null) {
+            totalForThisBusVoltageImp += busSummary['totalImp'] ?? 0.0;
+            totalForThisBusVoltageExp += busSummary['totalExp'] ?? 0.0;
+            totalForThisBusVoltageDiff += busSummary['difference'] ?? 0.0;
+          }
+        }
+
+        // Add to row based on label
+        if (rowLabels[i] == 'Imp.') {
+          row.add(totalForThisBusVoltageImp.toStringAsFixed(2));
+          rowTotalSummable += totalForThisBusVoltageImp;
+        } else if (rowLabels[i] == 'Exp.') {
+          row.add(totalForThisBusVoltageExp.toStringAsFixed(2));
+          rowTotalSummable += totalForThisBusVoltageExp;
+        } else if (rowLabels[i] == 'Diff.') {
+          row.add(totalForThisBusVoltageDiff.toStringAsFixed(2));
+          rowTotalSummable += totalForThisBusVoltageDiff;
+        } else if (rowLabels[i] == '% Loss') {
+          String lossValue = 'N/A';
+          if (totalForThisBusVoltageImp > 0) {
+            lossValue =
+                ((totalForThisBusVoltageDiff / totalForThisBusVoltageImp) * 100)
+                    .toStringAsFixed(2);
+          }
+          row.add(lossValue);
+        }
+      }
+
+      // Add Abstract of S/S data
+      if (rowLabels[i] == 'Imp.') {
+        row.add(
+          (currentAbstractEnergyData['totalImp'] ?? 0.0).toStringAsFixed(2),
+        );
+        rowTotalSummable += (currentAbstractEnergyData['totalImp'] ?? 0.0);
+      } else if (rowLabels[i] == 'Exp.') {
+        row.add(
+          (currentAbstractEnergyData['totalExp'] ?? 0.0).toStringAsFixed(2),
+        );
+        rowTotalSummable += (currentAbstractEnergyData['totalExp'] ?? 0.0);
+      } else if (rowLabels[i] == 'Diff.') {
+        row.add(
+          (currentAbstractEnergyData['difference'] ?? 0.0).toStringAsFixed(2),
+        );
+        rowTotalSummable += (currentAbstractEnergyData['difference'] ?? 0.0);
+      } else if (rowLabels[i] == '% Loss') {
+        row.add(
+          (currentAbstractEnergyData['lossPercentage'] ?? 0.0).toStringAsFixed(
+            2,
+          ),
+        );
+      }
+
+      // Process dynamically generated feeder columns (e.g., 'Akbapur Subdivision', 'Ghaziabad Division')
+      for (String subDivisionName in uniqueDistributionSubdivisionNames) {
+        double currentFeederImp = 0.0;
+        double currentFeederExp = 0.0;
+        double currentFeederDiff = 0.0;
+
+        // Sum up energy for all entries that belong to this specific subdivision name
+        for (var feederData in currentAggregatedFeederData.where(
+          (data) => data.distributionSubdivisionName == subDivisionName,
+        )) {
+          currentFeederImp += feederData.importedEnergy;
+          currentFeederExp += feederData.exportedEnergy;
+          currentFeederDiff +=
+              (feederData.importedEnergy - feederData.exportedEnergy);
+        }
+
+        if (rowLabels[i] == 'Imp.') {
+          row.add(currentFeederImp.toStringAsFixed(2));
+          rowTotalSummable += currentFeederImp;
+        } else if (rowLabels[i] == 'Exp.') {
+          row.add(currentFeederExp.toStringAsFixed(2));
+          rowTotalSummable += currentFeederExp;
+        } else if (rowLabels[i] == 'Diff.') {
+          row.add(currentFeederDiff.toStringAsFixed(2));
+          rowTotalSummable += currentFeederDiff;
+        } else if (rowLabels[i] == '% Loss') {
+          String lossValue = 'N/A';
+          if (currentFeederImp > 0) {
+            lossValue = ((currentFeederDiff / currentFeederImp) * 100)
+                .toStringAsFixed(2);
+          }
+          row.add(lossValue);
+        }
+      }
+
+      // Calculate and add the 'TOTAL' column for the row
+      if (rowLabels[i] == '% Loss') {
+        double overallTotalImp = 0.0;
+        double overallTotalDiff = 0.0;
+
+        // Add from Abstract of S/S
+        overallTotalImp += (currentAbstractEnergyData['totalImp'] ?? 0.0);
+        overallTotalDiff += (currentAbstractEnergyData['difference'] ?? 0.0);
+
+        // Add from Bus Voltages
+        for (String voltage in uniqueBusVoltages) {
+          final busbarsOfThisVoltage = _allBaysInSubstation.where(
+            (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
+          );
+          for (var busbar in busbarsOfThisVoltage) {
+            final busSummary = currentBusEnergySummaryData[busbar.id];
+            if (busSummary != null) {
+              overallTotalImp += busSummary['totalImp'] ?? 0.0;
+              overallTotalDiff += busSummary['difference'] ?? 0.0;
+            }
+          }
+        }
+
+        // Add from all unique distribution subdivisions
+        for (var feederData in currentAggregatedFeederData) {
+          // Iterate through all original aggregated data
+          overallTotalImp += feederData.importedEnergy;
+          overallTotalDiff +=
+              (feederData.importedEnergy - feederData.exportedEnergy);
+        }
+
+        String overallLossPercentage = 'N/A';
+        if (overallTotalImp > 0) {
+          overallLossPercentage = ((overallTotalDiff / overallTotalImp) * 100)
+              .toStringAsFixed(2);
+        }
+        row.add(overallLossPercentage);
+      } else {
+        row.add(rowTotalSummable.toStringAsFixed(2));
+      }
+
+      abstractTableData.add(row);
+    }
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.copyWith(
@@ -1485,7 +1713,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         },
         build: (pw.Context context) {
           return [
-            // Section: SLD Drawing
+            // MODIFIED: SLD Drawing section moved to the top
             if (sldPdfImage != null)
               pw.Center(
                 child: pw.Column(
@@ -1498,17 +1726,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       ),
                     ),
                     pw.SizedBox(height: 10),
-                    // Constrain image size to fit within PDF page width and a reasonable max height
-                    // The image will be scaled down to fit the available width, and its height will adjust proportionally.
-                    // A sufficiently large image might span multiple pages, which MultiPage handles.
                     pw.Image(
                       sldPdfImage,
                       fit: pw.BoxFit.contain,
                       width: PdfPageFormat.a4.width - (3 * PdfPageFormat.cm),
                     ),
-                    pw.SizedBox(
-                      height: 30,
-                    ), // Increased spacing to prevent overlap
+                    pw.SizedBox(height: 30),
                   ],
                 ),
               )
@@ -1518,90 +1741,50 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 style: pw.TextStyle(color: PdfColors.red),
               ),
 
-            // Section: Abstract of Substation Energy
+            // NEW SECTION: Consolidated Energy Abstract (now comes after SLD)
             pw.Header(
               level: 0,
-              text: 'Abstract of Substation Energy',
+              text: 'Consolidated Energy Abstract',
               decoration: pw.BoxDecoration(
                 border: pw.Border(bottom: pw.BorderSide()),
               ),
             ),
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                _buildPdfEnergyRow(
-                  'Total Import',
-                  currentAbstractEnergyData['totalImp'],
-                  'MWH',
-                ),
-                _buildPdfEnergyRow(
-                  'Total Export',
-                  currentAbstractEnergyData['totalExp'],
-                  'MWH',
-                ),
-                _buildPdfEnergyRow(
-                  'Difference',
-                  currentAbstractEnergyData['difference'],
-                  'MWH',
-                ),
-                _buildPdfEnergyRow(
-                  'Loss Percentage',
-                  currentAbstractEnergyData['lossPercentage'],
-                  '%',
-                ),
-              ],
+            pw.Table.fromTextArray(
+              context: context,
+              headers: abstractTableHeaders,
+              data: abstractTableData,
+              border: pw.TableBorder.all(width: 0.5),
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 8,
+              ),
+              cellAlignment: pw.Alignment.center,
+              cellPadding: const pw.EdgeInsets.all(3),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.2), // For Imp, Exp, etc.
+                for (int i = 0; i < uniqueBusVoltages.length; i++)
+                  i + 1: const pw.FlexColumnWidth(1.0), // For each bus voltage
+                uniqueBusVoltages.length + 1: const pw.FlexColumnWidth(
+                  1.2,
+                ), // Abstract of S/S
+                // Dynamically added feeder columns - these indices will depend on uniqueDistributionSubdivisionNames.length
+                for (
+                  int i = 0;
+                  i < uniqueDistributionSubdivisionNames.length;
+                  i++
+                )
+                  (uniqueBusVoltages.length + 2 + i): const pw.FlexColumnWidth(
+                    1.0,
+                  ),
+                (uniqueBusVoltages.length +
+                        2 +
+                        uniqueDistributionSubdivisionNames.length):
+                    const pw.FlexColumnWidth(1.2), // TOTAL
+              },
             ),
             pw.SizedBox(height: 20),
 
-            // Section: Abstract of Busbars
-            if (currentBusEnergySummaryData.isNotEmpty) ...[
-              pw.Header(
-                level: 0,
-                text: 'Abstract of Busbars',
-                decoration: pw.BoxDecoration(
-                  border: pw.Border(bottom: pw.BorderSide()),
-                ),
-              ),
-              for (var entry in currentBusEnergySummaryData.entries)
-                pw.Padding(
-                  padding: const pw.EdgeInsets.only(bottom: 10),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'Busbar: ${currentBayNamesLookup[entry.key] ?? entry.key}',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 11,
-                        ),
-                      ),
-                      _buildPdfEnergyRow(
-                        'Import',
-                        entry.value['totalImp'],
-                        'MWH',
-                      ),
-                      _buildPdfEnergyRow(
-                        'Export',
-                        entry.value['totalExp'],
-                        'MWH',
-                      ),
-                      _buildPdfEnergyRow(
-                        'Difference',
-                        entry.value['difference'],
-                        'MWH',
-                      ),
-                      _buildPdfEnergyRow(
-                        'Loss',
-                        entry.value['lossPercentage'],
-                        '%',
-                      ),
-                    ],
-                  ),
-                ),
-              pw.SizedBox(height: 20),
-            ],
-
-            // Section: Feeder Energy Supplied by Distribution Hierarchy
+            // Section: Feeder Energy Supplied by Distribution Hierarchy (remains after abstract table)
             pw.Header(
               level: 0,
               text: 'Feeder Energy Supplied by Distribution Hierarchy',
@@ -1639,7 +1822,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               pw.Text('No aggregated feeder energy data available.'),
             pw.SizedBox(height: 20),
 
-            // Section: Assessments
+            // Section: Assessments (remains at the end)
             pw.Header(
               level: 0,
               text: 'Assessments for this Period',
@@ -2120,6 +2303,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       busbarConnectionPoints: busbarConnectionPoints,
       bayEnergyData: bayEnergyData,
       busEnergySummary: busEnergySummary,
+      abstractEnergyData: _abstractEnergyData, // Pass abstract data
+      aggregatedFeederEnergyData:
+          _aggregatedFeederEnergyData, // Pass aggregated feeder data
     );
   }
 

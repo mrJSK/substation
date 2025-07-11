@@ -6,6 +6,8 @@ class Assessment {
   final String substationId;
   final String bayId;
   final Timestamp assessmentTimestamp; // When the assessment was made
+  final Timestamp?
+  effectiveEndDate; // New field for the assessment's effective end date
   final double? importAdjustment; // Positive or negative value
   final double? exportAdjustment; // Positive or negative value
   final String reason; // Mandatory note/reason for assessment
@@ -17,6 +19,7 @@ class Assessment {
     required this.substationId,
     required this.bayId,
     required this.assessmentTimestamp,
+    this.effectiveEndDate, // Include new field in constructor
     this.importAdjustment,
     this.exportAdjustment,
     required this.reason,
@@ -31,6 +34,8 @@ class Assessment {
       substationId: data['substationId'] ?? '',
       bayId: data['bayId'] ?? '',
       assessmentTimestamp: data['assessmentTimestamp'] ?? Timestamp.now(),
+      effectiveEndDate:
+          data['effectiveEndDate'] as Timestamp?, // Parse new field
       importAdjustment: (data['importAdjustment'] as num?)?.toDouble(),
       exportAdjustment: (data['exportAdjustment'] as num?)?.toDouble(),
       reason: data['reason'] ?? '',
@@ -49,12 +54,19 @@ class Assessment {
           '', // Use provided id, or from map, or empty string
       substationId: map['substationId'] ?? '',
       bayId: map['bayId'] ?? '',
-      assessmentTimestamp: map['assessmentTimestamp'] ?? Timestamp.now(),
+      assessmentTimestamp: map['assessmentTimestamp'] is Timestamp
+          ? map['assessmentTimestamp']
+          : Timestamp.now(), // Handle different timestamp types if necessary
+      effectiveEndDate: map['effectiveEndDate'] is Timestamp
+          ? map['effectiveEndDate']
+          : null, // Parse new field from map
       importAdjustment: (map['importAdjustment'] as num?)?.toDouble(),
       exportAdjustment: (map['exportAdjustment'] as num?)?.toDouble(),
       reason: map['reason'] ?? '',
       createdBy: map['createdBy'] ?? '',
-      createdAt: map['createdAt'] ?? Timestamp.now(),
+      createdAt: map['createdAt'] is Timestamp
+          ? map['createdAt']
+          : Timestamp.now(), // Handle different timestamp types if necessary
     );
   }
 
@@ -63,6 +75,8 @@ class Assessment {
       'substationId': substationId,
       'bayId': bayId,
       'assessmentTimestamp': assessmentTimestamp,
+      'effectiveEndDate':
+          effectiveEndDate, // Include new field in Firestore map
       'importAdjustment': importAdjustment,
       'exportAdjustment': exportAdjustment,
       'reason': reason,
