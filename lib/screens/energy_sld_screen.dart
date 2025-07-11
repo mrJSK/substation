@@ -320,6 +320,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   final WidgetsToImageController _widgetsToImageController =
       WidgetsToImageController(); // NEW: Controller for WidgetsToImage
 
+  // NEW: State to control rendering size for PDF capture
+  bool _isCapturingPdf = false;
+  Matrix4? _originalTransformation; // To store and restore transformation
+
   @override
   void initState() {
     super.initState();
@@ -1335,12 +1339,81 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Future<Uint8List> _generatePdfFromCurrentSld() async {
     final pdf = pw.Document();
 
-    // Capture the SLD diagram widget as an image using widgets_to_image
-    // You can adjust pixelRatio for higher quality images in PDF
-    // Ensure the widget wrapped by WidgetsToImage is fully rendered before capture.
-    final Uint8List? sldImageBytes = await _widgetsToImageController.capturePng(
-      pixelRatio: 3.0,
+    // 1. Save current transformation and reset for capture
+    _originalTransformation = Matrix4.copy(_transformationController.value);
+
+    // Calculate fitting transformation for the capture size (1200x800)
+    const double captureWidth = 1200;
+    const double captureHeight = 800;
+
+    // Calculate the diagram's actual content size
+    final SldRenderData currentSldRenderData = _buildBayRenderDataList(
+      _allBaysInSubstation,
+      _baysMap,
+      _allConnections,
+      _bayEnergyData,
+      _busEnergySummary,
     );
+    final double diagramContentWidth = max(
+      1.0, // Ensure it's not zero to prevent division by zero
+      (currentSldRenderData.bayRenderDataList.isNotEmpty
+              ? currentSldRenderData.bayRenderDataList
+                    .map((e) => e.rect.right + 100)
+                    .reduce(max)
+              : 0) +
+          50,
+    );
+    final double diagramContentHeight = max(
+      1.0, // Ensure it's not zero
+      (currentSldRenderData.bayRenderDataList.isNotEmpty
+              ? currentSldRenderData.bayRenderDataList
+                    .map((e) => e.rect.bottom + 100)
+                    .reduce(max)
+              : 0) +
+          50,
+    );
+
+    // Determine scale to fit entire diagram into capture box
+    final double scaleX = captureWidth / diagramContentWidth;
+    final double scaleY = captureHeight / diagramContentHeight;
+    final double fitScale = min(
+      scaleX,
+      scaleY,
+    ); // Use smaller scale to ensure everything fits
+
+    // Calculate translation to center the scaled diagram
+    final double scaledDiagramWidth = diagramContentWidth * fitScale;
+    final double scaledDiagramHeight = diagramContentHeight * fitScale;
+
+    final double translateX = (captureWidth - scaledDiagramWidth) / 2;
+    final double translateY = (captureHeight - scaledDiagramHeight) / 2;
+
+    // Apply the fitting transformation
+    _transformationController.value = Matrix4.identity()
+      ..translate(translateX, translateY)
+      ..scale(fitScale);
+
+    // Set flag to indicate PDF capture mode
+    setState(() {
+      _isCapturingPdf = true;
+    });
+
+    // Allow the UI to rebuild with the constrained size and new transformation
+    await WidgetsBinding
+        .instance
+        .endOfFrame; // Await end of the current frame rendering
+
+    final Uint8List? sldImageBytes = await _widgetsToImageController.capturePng(
+      pixelRatio: 3.0, // High quality capture
+    );
+
+    // Reset flag after capture is complete
+    setState(() {
+      _isCapturingPdf = false;
+    });
+
+    // 2. Restore original transformation
+    _transformationController.value = _originalTransformation!;
 
     pw.MemoryImage? sldPdfImage;
     if (sldImageBytes != null) {
@@ -2180,31 +2253,83 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     children: [
                       WidgetsToImage(
                         controller: _widgetsToImageController,
-                        child: InteractiveViewer(
-                          transformationController: _transformationController,
-                          boundaryMargin: const EdgeInsets.all(double.infinity),
-                          minScale: 0.1,
-                          maxScale: 4.0,
-                          constrained: false,
-                          child: CustomPaint(
-                            size: Size(canvasWidth, canvasHeight),
-                            painter: SingleLineDiagramPainter(
-                              bayRenderDataList:
-                                  sldRenderData.bayRenderDataList,
-                              bayConnections: _allConnections,
-                              baysMap: _baysMap,
-                              createDummyBayRenderData:
-                                  _createDummyBayRenderData,
-                              busbarRects: sldRenderData.busbarRects,
-                              busbarConnectionPoints:
-                                  sldRenderData.busbarConnectionPoints,
-                              debugDrawHitboxes: false,
-                              selectedBayForMovementId: null,
-                              bayEnergyData: sldRenderData.bayEnergyData,
-                              busEnergySummary: sldRenderData.busEnergySummary,
-                            ),
-                          ),
-                        ),
+                        child:
+                            _isCapturingPdf // <--- NEW CONDITIONAL LOGIC
+                            ? SizedBox(
+                                // Fixed size for PDF capture
+                                width: 1200, // Reasonable width for PDF output
+                                height: 800, // Reasonable height for PDF output
+                                child: InteractiveViewer(
+                                  // For PDF capture, make the viewer constrained
+                                  transformationController:
+                                      _transformationController,
+                                  boundaryMargin: EdgeInsets
+                                      .zero, // No infinite margin during capture
+                                  minScale:
+                                      1.0, // Scale will be set by transformationController.value
+                                  maxScale: 1.0,
+                                  constrained:
+                                      true, // Crucial: force child to fit parent bounds
+                                  child: CustomPaint(
+                                    // The size here will be the fixed capture size
+                                    size: const Size(
+                                      1200,
+                                      800,
+                                    ), // IMPORTANT: Use fixed size here
+                                    painter: SingleLineDiagramPainter(
+                                      bayRenderDataList:
+                                          sldRenderData.bayRenderDataList,
+                                      bayConnections: _allConnections,
+                                      baysMap: _baysMap,
+                                      createDummyBayRenderData:
+                                          _createDummyBayRenderData,
+                                      busbarRects: sldRenderData.busbarRects,
+                                      busbarConnectionPoints:
+                                          sldRenderData.busbarConnectionPoints,
+                                      debugDrawHitboxes: false,
+                                      selectedBayForMovementId: null,
+                                      bayEnergyData:
+                                          sldRenderData.bayEnergyData,
+                                      busEnergySummary:
+                                          sldRenderData.busEnergySummary,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : InteractiveViewer(
+                                // Original, unconstrained InteractiveViewer for normal display
+                                transformationController:
+                                    _transformationController,
+                                boundaryMargin: const EdgeInsets.all(
+                                  double.infinity,
+                                ), // Allow free movement
+                                minScale: 0.1,
+                                maxScale: 4.0,
+                                constrained:
+                                    false, // Not constrained for interactive use
+                                child: CustomPaint(
+                                  size: Size(
+                                    canvasWidth,
+                                    canvasHeight,
+                                  ), // Uses calculated content size
+                                  painter: SingleLineDiagramPainter(
+                                    bayRenderDataList:
+                                        sldRenderData.bayRenderDataList,
+                                    bayConnections: _allConnections,
+                                    baysMap: _baysMap,
+                                    createDummyBayRenderData:
+                                        _createDummyBayRenderData,
+                                    busbarRects: sldRenderData.busbarRects,
+                                    busbarConnectionPoints:
+                                        sldRenderData.busbarConnectionPoints,
+                                    debugDrawHitboxes: false,
+                                    selectedBayForMovementId: null,
+                                    bayEnergyData: sldRenderData.bayEnergyData,
+                                    busEnergySummary:
+                                        sldRenderData.busEnergySummary,
+                                  ),
+                                ),
+                              ),
                       ),
                       Align(
                         alignment: Alignment.bottomRight,
