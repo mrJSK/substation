@@ -122,7 +122,7 @@ class _TrippingShutdownOverviewScreenState
       for (var entry in fetchedEntries) {
         final Bay? bay = _baysMap[entry.bayId];
         if (bay != null) {
-          final String bayType = bay.bayType;
+          final String bayType = bay.bayType.toString();
           _groupedEntriesByBayType.putIfAbsent(bayType, () => []).add(entry);
         } else {
           _groupedEntriesByBayType

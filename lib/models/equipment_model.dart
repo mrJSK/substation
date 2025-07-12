@@ -1,5 +1,7 @@
 // lib/models/equipment_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart'; // Import for Offset and Size
+import './sld_models.dart'; // NEW: Import SLD models
 
 /// Defines the possible data types for custom fields associated with equipment templates.
 enum CustomFieldDataType {
@@ -174,6 +176,9 @@ class MasterEquipmentTemplate {
   /// Date when the equipment was commissioned (optional basic detail).
   final Timestamp? dateOfCommissioning;
 
+  // NEW: Default SLD Node properties for this MasterEquipment type (for new requirement)
+  final Map<String, dynamic>? defaultSldNodeProperties;
+
   /// Creates a [MasterEquipmentTemplate] instance.
   MasterEquipmentTemplate({
     this.id,
@@ -187,6 +192,7 @@ class MasterEquipmentTemplate {
     this.make,
     this.dateOfManufacture,
     this.dateOfCommissioning,
+    this.defaultSldNodeProperties, // NEW: Add to constructor
   });
 
   /// Creates a [MasterEquipmentTemplate] instance from a Firestore [DocumentSnapshot].
@@ -208,6 +214,10 @@ class MasterEquipmentTemplate {
       make: data['make'] as String?,
       dateOfManufacture: data['dateOfManufacture'] as Timestamp?,
       dateOfCommissioning: data['dateOfCommissioning'] as Timestamp?,
+      // NEW: Deserialize defaultSldNodeProperties
+      defaultSldNodeProperties:
+          (data['defaultSldNodeProperties'] as Map<String, dynamic>?)
+              ?.cast<String, dynamic>(),
     );
   }
 
@@ -226,6 +236,8 @@ class MasterEquipmentTemplate {
       'make': make,
       'dateOfManufacture': dateOfManufacture,
       'dateOfCommissioning': dateOfCommissioning,
+      // NEW: Serialize defaultSldNodeProperties
+      'defaultSldNodeProperties': defaultSldNodeProperties,
     };
   }
 
@@ -242,6 +254,8 @@ class MasterEquipmentTemplate {
     String? make,
     Timestamp? dateOfManufacture,
     Timestamp? dateOfCommissioning,
+    // NEW: Add defaultSldNodeProperties to copyWith
+    Map<String, dynamic>? defaultSldNodeProperties,
   }) {
     return MasterEquipmentTemplate(
       id: id ?? this.id,
@@ -256,6 +270,9 @@ class MasterEquipmentTemplate {
       make: make ?? this.make,
       dateOfManufacture: dateOfManufacture ?? this.dateOfManufacture,
       dateOfCommissioning: dateOfCommissioning ?? this.dateOfCommissioning,
+      // NEW: Use null-aware operator for copyWith
+      defaultSldNodeProperties:
+          defaultSldNodeProperties ?? this.defaultSldNodeProperties,
     );
   }
 }
@@ -427,6 +444,102 @@ class EquipmentInstance {
       positionIndex:
           positionIndex ??
           this.positionIndex, // Use null-aware operator for copyWith
+    );
+  }
+
+  // NEW: Helper method to create an SldNode from this EquipmentInstance
+  SldNode toSldNode({
+    required Offset position,
+    Size? size,
+    Map<String, dynamic>? additionalProperties,
+    MasterEquipmentTemplate?
+    masterTemplate, // Pass template to get default SLD props
+  }) {
+    final SldNodeShape nodeShape =
+        SldNodeShape.custom; // Equipment usually has custom icons
+    final double defaultWidth = masterTemplate?.defaultWidth ?? 60;
+    final double defaultHeight = masterTemplate?.defaultHeight ?? 60;
+
+    // Define common connection points, these can be more specific per equipment type
+    // These should ideally come from the MasterEquipmentTemplate.defaultSldNodeProperties
+    // or be dynamically generated based on symbolKey/equipmentTypeName.
+    final Map<String, SldConnectionPoint> defaultConnectionPoints = {
+      'top': SldConnectionPoint(
+        id: 'top',
+        localOffset: Offset(defaultWidth / 2, 0),
+        direction: ConnectionDirection.north,
+      ),
+      'bottom': SldConnectionPoint(
+        id: 'bottom',
+        localOffset: Offset(defaultWidth / 2, defaultHeight),
+        direction: ConnectionDirection.south,
+      ),
+      'left': SldConnectionPoint(
+        id: 'left',
+        localOffset: Offset(0, defaultHeight / 2),
+        direction: ConnectionDirection.west,
+      ),
+      'right': SldConnectionPoint(
+        id: 'right',
+        localOffset: Offset(defaultWidth, defaultHeight / 2),
+        direction: ConnectionDirection.east,
+      ),
+    };
+
+    final finalSize = size ?? Size(defaultWidth, defaultHeight);
+
+    // Merge properties: existing customFieldValues, template defaults, and any additional
+    final Map<String, dynamic> mergedProperties = {
+      'name':
+          customFieldValues['name'] ??
+          equipmentTypeName, // Use custom field name or type
+      'equipmentType':
+          equipmentTypeName, // Key for painter selection in SldNodeWidget
+      'symbolKey': symbolKey, // Key for painter in SldNodeWidget
+      'serialNumber':
+          customFieldValues['serialNumber'] ??
+          '', // Example: pull serial number from custom fields
+      'make': make,
+      'status': status,
+      // Add other relevant properties you want accessible via SldNode.properties
+      // from the original EquipmentInstance.
+
+      // Merge custom field values directly
+      ...customFieldValues,
+
+      // Apply default SLD node properties from MasterEquipmentTemplate
+      ...(masterTemplate?.defaultSldNodeProperties ?? {}),
+
+      // Apply any additional properties passed directly to this method (highest priority)
+      ...(additionalProperties ?? {}),
+    };
+
+    // Use connection points from defaultSldNodeProperties if available, otherwise use generic ones
+    Map<String, SldConnectionPoint> finalConnectionPoints =
+        defaultConnectionPoints;
+    if (masterTemplate?.defaultSldNodeProperties != null &&
+        masterTemplate!.defaultSldNodeProperties!.containsKey(
+          'connectionPoints',
+        )) {
+      finalConnectionPoints =
+          (masterTemplate.defaultSldNodeProperties!['connectionPoints']
+                  as Map<String, dynamic>)
+              .map(
+                (key, value) => MapEntry(
+                  key,
+                  SldConnectionPoint.fromJson(value as Map<String, dynamic>),
+                ),
+              );
+    }
+
+    return SldNode(
+      position: position,
+      size: finalSize,
+      nodeShape: SldNodeShape.custom, // Most equipment will be custom shapes
+      properties: mergedProperties,
+      associatedEquipmentId: id, // Link back to this EquipmentInstance
+      bayId: bayId, // Also link to the bay it belongs to
+      connectionPoints: finalConnectionPoints,
     );
   }
 }

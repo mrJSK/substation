@@ -6,7 +6,7 @@ import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart'; // Contains StateModel and CityModel
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart'; // Required for Consumer and Provider.of
-import '../../models/bay_model.dart';
+import '../../models/bay_model.dart'; // Import Bay model
 
 class _AddEditHierarchyItemForm extends StatefulWidget {
   final String itemType;
@@ -118,7 +118,9 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
         final bay = widget.itemToEdit as Bay;
         multiplyingFactorController.text =
             bay.multiplyingFactor?.toString() ?? '';
-        selectedBayType = bay.bayType;
+        // FIX: Convert BayType enum to String
+        selectedBayType = BayType.values[bay.bayType.index]
+            .toString(); // Directly assigned string type
         selectedVoltageLevel = bay.voltageLevel;
       }
 

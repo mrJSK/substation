@@ -41,6 +41,16 @@ class CityModel {
 class AppStateData extends ChangeNotifier {
   // Singleton instance
   static final AppStateData _instance = AppStateData._internal();
+  ThemeMode _themeMode = ThemeMode.light; // Default to light mode
+
+  ThemeMode get themeMode => _themeMode;
+
+  void toggleTheme() {
+    _themeMode = _themeMode == ThemeMode.light
+        ? ThemeMode.dark
+        : ThemeMode.light;
+    notifyListeners(); // Notify listeners that the theme has changed
+  }
 
   factory AppStateData() {
     return _instance;

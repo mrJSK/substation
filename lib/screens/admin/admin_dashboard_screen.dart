@@ -2,11 +2,11 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import 'admin_hierarchy_screen.dart';
+import 'bay_relationship_management_screen.dart';
 import 'master_equipment_management_screen.dart';
 import 'user_management_screen.dart';
 import 'reading_template_management_screen.dart';
 import '../equipment_hierarchy_selection_screen.dart';
-import 'bay_relationship_management_screen.dart'; // Import the new screen
 
 class AdminDashboardScreen extends StatelessWidget {
   final AppUser adminUser;

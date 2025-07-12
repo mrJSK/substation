@@ -1,11 +1,9 @@
 // lib/painters/single_line_diagram_painter.dart
+import 'dart:ui' as ui show StrokeJoin, PathMetrics, PathMetric;
+
 import 'package:flutter/material.dart';
-import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/bay_model.dart';
-import '../models/bay_connection_model.dart';
-import '../models/equipment_model.dart';
-import '../screens/energy_sld_screen.dart'; // For BayEnergyData
+import 'dart:math'; // For min/max
+import 'package:cloud_firestore/cloud_firestore.dart'; // For Timestamp (if still used, but usually via model)
 
 // Import your custom equipment icon painters
 import '../equipment_icons/transformer_icon.dart';
@@ -19,36 +17,26 @@ import '../equipment_icons/ground_icon.dart';
 import '../equipment_icons/isolator_icon.dart';
 import '../equipment_icons/pt_icon.dart';
 
-class BayRenderData {
-  final Bay bay;
-  final Rect rect;
-  final Offset center;
-  final Offset topCenter;
-  final Offset bottomCenter;
-  final Offset leftCenter;
-  final Offset rightCenter;
-  final List<EquipmentInstance> equipmentInstances;
-  final Offset textOffset;
-  final double
-  busbarLength; // Added this property as it was used in constructor but not declared.
+// NEW: Import SLD models and EnergyAccountService for data structures
+import '../models/sld_models.dart';
+import '../models/bay_model.dart'; // For BayType enum access
+import '../services/energy_account_services.dart'; // For BayEnergyData, AggregatedFeederEnergyData, SldRenderData
 
-  BayRenderData({
-    required this.bay,
-    required this.rect,
-    required this.center,
-    required this.topCenter,
-    required this.bottomCenter,
-    required this.leftCenter,
-    required this.rightCenter,
-    this.equipmentInstances = const [],
-    required this.textOffset,
-    required this.busbarLength, // Initialize
-  });
-}
+// NOTE: BayRenderData class definition is now in energy_account_services.dart
+// You should remove its definition from here if it exists here to avoid duplication.
+// Assuming it is removed from here as per previous refactor.
 
 class _GenericIconPainter extends CustomPainter {
   final Color color;
-  _GenericIconPainter({required this.color});
+  final Size equipmentSize; // Needed for consistent signature
+  final Size symbolSize; // Needed for consistent signature
+
+  _GenericIconPainter({
+    required this.color,
+    required this.equipmentSize,
+    required this.symbolSize,
+  });
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -81,57 +69,53 @@ class _GenericIconPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _GenericIconPainter oldDelegate) =>
-      oldDelegate.color != color;
+      oldDelegate.color != color ||
+      oldDelegate.equipmentSize != equipmentSize ||
+      oldDelegate.symbolSize != symbolSize;
 }
 
 class SingleLineDiagramPainter extends CustomPainter {
-  final List<BayRenderData> bayRenderDataList;
-  final List<BayConnection> bayConnections;
-  final Map<String, Bay> baysMap;
-  final BayRenderData Function() createDummyBayRenderData;
-  final Map<String, Rect> busbarRects;
-  final Map<String, Map<String, Offset>> busbarConnectionPoints;
-  final bool debugDrawHitboxes;
-  final String? selectedBayForMovementId;
+  // NEW: Directly accept SldData and related energy/bay maps
+  final SldData sldData;
+  final Map<String, Bay> baysMap; // To get original Bay object for full data
   final Map<String, BayEnergyData> bayEnergyData;
   final Map<String, Map<String, double>> busEnergySummary;
-  final Size? contentBounds; // NEW: Added contentBounds for PDF scaling
-  final Offset?
-  originOffsetForPdf; // NEW: Added originOffsetForPdf for PDF translation
+  final ColorScheme colorScheme; // For theme-aware drawing
+  final Size? contentBounds; // For PDF scaling/translation
+  final Offset? originOffsetForPdf; // For PDF translation
+
+  // Removed: bayRenderDataList, bayConnections, busbarRects, busbarConnectionPoints, createDummyBayRenderData, debugDrawHitboxes, selectedBayForMovementId
+  // These are now derived from sldData or are no longer directly used by the painter's logic for drawing.
 
   SingleLineDiagramPainter({
-    required this.bayRenderDataList,
-    required this.bayConnections,
+    required this.sldData,
     required this.baysMap,
-    required this.createDummyBayRenderData,
-    required this.busbarRects,
-    required this.busbarConnectionPoints,
-    this.debugDrawHitboxes = false,
-    this.selectedBayForMovementId,
     required this.bayEnergyData,
     required this.busEnergySummary,
-    this.contentBounds, // NEW: Include in constructor
-    this.originOffsetForPdf, // NEW: Include in constructor
+    required this.colorScheme,
+    this.contentBounds,
+    this.originOffsetForPdf,
   });
 
   Color _getBusbarColor(String voltageLevel) {
     final double voltage =
         double.tryParse(voltageLevel.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+    final isDarkMode = colorScheme.brightness == Brightness.dark;
 
     if (voltage >= 765) {
-      return Colors.red.shade700;
+      return isDarkMode ? Colors.red.shade400 : Colors.red.shade700;
     } else if (voltage >= 400) {
-      return Colors.orange.shade700;
+      return isDarkMode ? Colors.orange.shade400 : Colors.orange.shade700;
     } else if (voltage >= 220) {
-      return Colors.blue.shade700;
+      return isDarkMode ? Colors.blue.shade400 : Colors.blue.shade700;
     } else if (voltage >= 132) {
-      return Colors.purple.shade700;
+      return isDarkMode ? Colors.purple.shade400 : Colors.purple.shade700;
     } else if (voltage >= 33) {
-      return Colors.green.shade700;
+      return isDarkMode ? Colors.green.shade400 : Colors.green.shade700;
     } else if (voltage >= 11) {
-      return Colors.teal.shade700;
+      return isDarkMode ? Colors.teal.shade400 : Colors.teal.shade700;
     } else {
-      return Colors.black;
+      return isDarkMode ? Colors.white70 : Colors.black;
     }
   }
 
@@ -162,7 +146,7 @@ class SingleLineDiagramPainter extends CustomPainter {
           equipmentSize: size,
           symbolSize: size,
         );
-      case 'ground':
+      case 'earth switch': // Assuming 'ground' maps to 'earth switch'
         return GroundIconPainter(
           color: color,
           equipmentSize: size,
@@ -174,7 +158,7 @@ class SingleLineDiagramPainter extends CustomPainter {
           equipmentSize: size,
           symbolSize: size,
         );
-      case 'voltage transformer':
+      case 'potential transformer':
       case 'pt':
         return PotentialTransformerIconPainter(
           color: color,
@@ -194,18 +178,33 @@ class SingleLineDiagramPainter extends CustomPainter {
           symbolSize: size,
         );
       case 'busbar':
+        // Busbar is drawn directly as a line, not typically via icon painter for its main shape
         return BusbarIconPainter(
           color: color,
           equipmentSize: size,
           symbolSize: size,
         );
       default:
-        return _GenericIconPainter(color: color);
+        return _GenericIconPainter(
+          color: color,
+          equipmentSize: size,
+          symbolSize: size,
+        );
     }
   }
 
   @override
   void paint(Canvas canvas, Size size) {
+    final isDarkMode = colorScheme.brightness == Brightness.dark;
+    final defaultLineColor = isDarkMode ? Colors.white70 : Colors.black87;
+    final defaultTextColor = isDarkMode ? Colors.white70 : Colors.black87;
+    final energyTextColor = isDarkMode
+        ? colorScheme.secondary
+        : Colors.green.shade700;
+    final busSummaryTextColor = isDarkMode
+        ? colorScheme.tertiary
+        : Colors.purple.shade700;
+
     // NEW: Apply scaling and translation for PDF capture
     if (contentBounds != null &&
         contentBounds!.width > 0 &&
@@ -233,12 +232,12 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
 
     final linePaint = Paint()
-      ..color = Colors.black87
+      ..color = defaultLineColor
       ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke;
 
     final thickLinePaint = Paint()
-      ..color = Colors.black87
+      ..color = defaultLineColor
       ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke;
 
@@ -247,466 +246,229 @@ class SingleLineDiagramPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     final connectionDotPaint = Paint()
-      ..color = Colors.black
+      ..color = defaultLineColor
       ..style = PaintingStyle.fill;
 
-    // 1. Draw Busbars with voltage-based colors
-    for (var renderData in bayRenderDataList) {
-      if (renderData.bay.bayType == 'Busbar') {
-        final busbarDrawingRect = busbarRects[renderData.bay.id];
-        if (busbarDrawingRect != null) {
-          busbarPaint.color = _getBusbarColor(renderData.bay.voltageLevel);
+    // 1. Draw SldEdges (Connections) first, so they are behind nodes
+    for (var element in sldData.elements.values) {
+      if (element is SldEdge) {
+        final sourceNode = sldData.nodes[element.sourceNodeId];
+        final targetNode = sldData.nodes[element.targetNodeId];
+        if (sourceNode == null || targetNode == null) continue;
 
-          canvas.drawLine(
-            busbarDrawingRect.centerLeft,
-            busbarDrawingRect.centerRight,
-            busbarPaint,
-          );
-          // Busbar name: Voltage Level and Bus Name
-          // Use the textOffset from renderData for busbar name
-          _drawText(
-            canvas,
-            '${renderData.bay.voltageLevel} ${renderData.bay.name}',
-            Offset(busbarDrawingRect.left - 8, busbarDrawingRect.center.dy) +
-                renderData.textOffset,
-            textAlign: TextAlign.right,
-          );
-        }
-      }
-    }
+        final sourcePoint =
+            sourceNode.position +
+            (sourceNode
+                    .connectionPoints[element.sourceConnectionPointId]
+                    ?.localOffset ??
+                Offset.zero);
+        final targetPoint =
+            targetNode.position +
+            (targetNode
+                    .connectionPoints[element.targetConnectionPointId]
+                    ?.localOffset ??
+                Offset.zero);
 
-    // 2. Draw Connections
-    for (var connection in bayConnections) {
-      final sourceBay = baysMap[connection.sourceBayId];
-      final targetBay = baysMap[connection.targetBayId];
-      if (sourceBay == null || targetBay == null) continue;
+        // Use edge's color and thickness
+        final currentLinePaint = Paint()
+          ..color = element
+              .lineColor // Use edge's defined color
+          ..strokeWidth = element.lineWidth
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = _mapSldLineJoinToStrokeJoin(element.lineJoin);
 
-      final sourceRenderData = bayRenderDataList.firstWhere(
-        (d) => d.bay.id == sourceBay.id,
-        orElse: createDummyBayRenderData,
-      );
-      final targetRenderData = bayRenderDataList.firstWhere(
-        (d) => d.bay.id == targetBay.id,
-        orElse: createDummyBayRenderData,
-      );
-      if (sourceRenderData.bay.id == 'dummy' ||
-          targetRenderData.bay.id == 'dummy')
-        continue;
-
-      Offset startPoint;
-      Offset endPoint;
-
-      // Determine connection points based on bay types and calculated positions
-      if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Transformer') {
-        startPoint =
-            busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
-            sourceRenderData.center;
-        endPoint = targetRenderData.topCenter;
-      } else if (sourceBay.bayType == 'Transformer' &&
-          targetBay.bayType == 'Busbar') {
-        startPoint = sourceRenderData.bottomCenter;
-        endPoint =
-            busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
-            targetRenderData.center;
-      } else if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Line') {
-        startPoint =
-            busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
-            sourceRenderData.center;
-        endPoint = targetRenderData.bottomCenter;
-      } else if (sourceBay.bayType == 'Line' && targetBay.bayType == 'Busbar') {
-        startPoint = sourceRenderData.bottomCenter;
-        endPoint =
-            busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
-            targetRenderData.center;
-      } else if (sourceBay.bayType == 'Busbar' &&
-          targetBay.bayType == 'Feeder') {
-        startPoint =
-            busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
-            sourceRenderData.center;
-        endPoint = targetRenderData.topCenter;
-      } else if (sourceBay.bayType == 'Feeder' &&
-          targetBay.bayType == 'Busbar') {
-        startPoint = sourceRenderData.topCenter;
-        endPoint =
-            busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
-            targetRenderData.center;
-      } else {
-        startPoint = sourceRenderData.bottomCenter;
-        endPoint = targetRenderData.topCenter;
-      }
-
-      _drawConnectionLine(
-        canvas,
-        startPoint,
-        endPoint,
-        linePaint,
-        connectionDotPaint,
-        sourceBay.bayType,
-        targetBay.bayType,
-        busbarConnectionPoints,
-        connection.sourceBayId,
-        connection.targetBayId,
-      );
-    }
-
-    // 3. Draw Symbols and Labels (and potentially sub-equipment)
-    for (var renderData in bayRenderDataList) {
-      final bay = renderData.bay;
-      final rect = renderData.rect;
-
-      final bool isSelectedForMovement = bay.id == selectedBayForMovementId;
-
-      if (bay.bayType == 'Transformer') {
-        final painter = TransformerIconPainter(
-          color: isSelectedForMovement ? Colors.green : Colors.blue,
-          equipmentSize: rect.size,
-          symbolSize: rect.size,
-        );
-        canvas.save();
-        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
-        painter.paint(canvas, rect.size);
-        canvas.restore();
-
-        final String transformerName = '${bay.name} T/F, \n${bay.make ?? ''}';
-
-        final Size transformerNameSize = _measureText(
-          transformerName,
-          fontSize: 9,
-          isBold: true,
-        );
-
-        _drawText(
-          canvas,
-          transformerName,
-          rect.centerLeft + renderData.textOffset,
-          offsetY: -transformerNameSize.height / 2 - 20,
-          isBold: true,
-          textAlign: TextAlign.right,
-        );
-      } else if (bay.bayType == 'Line') {
-        final painter = LineIconPainter(
-          color: isSelectedForMovement ? Colors.green : Colors.black87,
-          equipmentSize: rect.size,
-          symbolSize: rect.size,
-        );
-        canvas.save();
-        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
-        painter.paint(canvas, rect.size);
-        canvas.restore();
-        final String lineName = '${bay.voltageLevel} ${bay.name} Line';
-        _drawText(
-          canvas,
-          lineName,
-          rect.topCenter + renderData.textOffset,
-          offsetY: -12,
-          isBold: true,
-        );
-      } else if (bay.bayType == 'Feeder') {
-        final painter = FeederIconPainter(
-          color: isSelectedForMovement ? Colors.green : Colors.black87,
-          equipmentSize: rect.size,
-          symbolSize: rect.size,
-        );
-        canvas.save();
-        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
-        painter.paint(canvas, rect.size);
-        canvas.restore();
-        _drawText(
-          canvas,
-          bay.name,
-          rect.bottomCenter + renderData.textOffset,
-          offsetY: 4,
-          isBold: true,
-        );
-      } else if (bay.bayType != 'Busbar') {
-        canvas.drawRect(
-          rect,
-          Paint()
-            ..color = isSelectedForMovement
-                ? Colors.lightGreen.shade100
-                : Colors.orange.shade100
-            ..style = PaintingStyle.fill,
-        );
-        canvas.drawRect(
-          rect,
-          Paint()
-            ..color = isSelectedForMovement ? Colors.green : Colors.black
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = isSelectedForMovement ? 2.0 : 1.0,
-        );
-        _drawText(
-          canvas,
-          bay.name,
-          rect.center + renderData.textOffset,
-          isBold: true,
-        );
-      }
-
-      if (renderData.equipmentInstances.isNotEmpty &&
-          selectedBayForMovementId == null) {
-        const double subIconSize = 25;
-        const double subIconSpacing = 5;
-
-        final double availableWidth = rect.width - (2 * subIconSpacing);
-        final double startX = rect.left + subIconSpacing;
-        double currentY =
-            rect.top +
-            (bay.bayType == 'Line' || bay.bayType == 'Feeder' ? 20 : 0);
-
-        final List<EquipmentInstance> sortedEquipment =
-            List.from(renderData.equipmentInstances)..sort(
-              (a, b) =>
-                  (a.positionIndex ?? 999).compareTo(b.positionIndex ?? 999),
-            );
-
-        for (var equipment in sortedEquipment) {
-          if (currentY + subIconSize > rect.bottom) {
-            break;
+        final Path path = Path();
+        path.moveTo(sourcePoint.dx, sourcePoint.dy);
+        if (element.pathPoints.isNotEmpty) {
+          for (var p in element.pathPoints) {
+            path.lineTo(p.dx, p.dy);
           }
+        }
+        path.lineTo(targetPoint.dx, targetPoint.dy);
 
-          final Offset iconTopLeft = Offset(
-            startX + (availableWidth - subIconSize) / 2,
-            currentY,
-          );
-          final Rect subIconRect = Rect.fromLTWH(
-            iconTopLeft.dx,
-            iconTopLeft.dy,
-            subIconSize,
-            subIconSize,
-          );
+        if (element.isDashed) {
+          _drawDashedLine(canvas, path, currentLinePaint);
+        } else {
+          canvas.drawPath(path, currentLinePaint);
+        }
 
-          final subPainter = _getSymbolPainter(
-            equipment.symbolKey,
-            Colors.black87,
-            subIconRect.size,
-          );
-          canvas.save();
-          canvas.translate(subIconRect.topLeft.dx, subIconRect.topLeft.dy);
-          subPainter.paint(canvas, subIconRect.size);
-          canvas.restore();
+        // Draw connection dots if connected to busbar
+        if (sourceNode.properties['bayTypeString'] ==
+            BayType.Busbar.toString().split('.').last) {
+          canvas.drawCircle(sourcePoint, 4.0, connectionDotPaint);
+        }
+        if (targetNode.properties['bayTypeString'] ==
+            BayType.Busbar.toString().split('.').last) {
+          canvas.drawCircle(targetPoint, 4.0, connectionDotPaint);
+        }
 
-          _drawText(
-            canvas,
-            equipment.symbolKey.split(' ').first,
-            subIconRect.bottomCenter,
-            offsetY: 2,
-            isBold: true,
-            textAlign: TextAlign.center,
-          );
-
-          currentY += subIconSize + subIconSpacing;
+        // Draw arrowheads for transformer connections
+        if ((sourceNode.properties['bayTypeString'] ==
+                    BayType.Busbar.toString().split('.').last &&
+                targetNode.properties['bayTypeString'] ==
+                    BayType.Transformer.toString().split('.').last &&
+                element.properties['connectionType'] == 'HV_BUS_CONNECTION') ||
+            (sourceNode.properties['bayTypeString'] ==
+                    BayType.Transformer.toString().split('.').last &&
+                targetNode.properties['bayTypeString'] ==
+                    BayType.Busbar.toString().split('.').last &&
+                element.properties['connectionType'] == 'LV_BUS_CONNECTION')) {
+          _drawArrowhead(canvas, sourcePoint, targetPoint, currentLinePaint);
         }
       }
+    }
 
-      // Draw energy data beside the bay
-      if (bay.bayType == 'Busbar') {
-        final Map<String, double>? busSummary = busEnergySummary[bay.id];
-        if (busSummary != null) {
-          final double? totalImp = busSummary['totalImp'];
-          final double? totalExp = busSummary['totalExp'];
+    // 2. Draw SldNodes (Bays and Equipment symbols) and Labels
+    for (var element in sldData.elements.values) {
+      if (element is SldNode) {
+        final bay = baysMap[element.associatedBayId ?? element.id];
+        if (bay == null) continue; // Should not happen if data is consistent
 
-          final String importText = totalImp != null
-              ? 'Imp: ${totalImp.toStringAsFixed(2)} MWH'
-              : 'Imp: N/A MWH';
-          final String exportText = totalExp != null
-              ? 'Exp: ${totalExp.toStringAsFixed(2)} MWH'
-              : 'Exp: N/A MWH';
+        final rect = Rect.fromLTWH(
+          element.position.dx,
+          element.position.dy,
+          element.size.width,
+          element.size.height,
+        );
 
-          const double energyTextFontSize = 9.0;
-          final double textHeight = energyTextFontSize + 2;
+        // Use node's properties for drawing colors, fallback to theme
+        final nodeFillColor =
+            element.fillColor ??
+            (isDarkMode
+                ? colorScheme.surfaceVariant.withOpacity(0.2)
+                : Colors.blue.withOpacity(0.1));
+        final nodeStrokeColor =
+            element.strokeColor ??
+            (isDarkMode ? colorScheme.primary.withOpacity(0.6) : Colors.blue);
 
-          Offset energyTextTopLeft = Offset(
-            busbarRects[bay.id]!.right - 80,
-            busbarRects[bay.id]!.center.dy - (textHeight * 2.5),
+        // Draw main bay background/outline (if not busbar, as busbar is a line)
+        if (element.properties['bayTypeString'] !=
+            BayType.Busbar.toString().split('.').last) {
+          canvas.drawRect(
+            rect,
+            Paint()
+              ..color = nodeFillColor
+              ..style = PaintingStyle.fill,
           );
-
-          _drawText(
-            canvas,
-            importText,
-            energyTextTopLeft,
-            textAlign: TextAlign.left,
-            fontSize: energyTextFontSize,
-            isBold: true,
-          );
-          _drawText(
-            canvas,
-            exportText,
-            Offset(energyTextTopLeft.dx, energyTextTopLeft.dy + textHeight),
-            textAlign: TextAlign.left,
-            fontSize: energyTextFontSize,
-            isBold: true,
+          canvas.drawRect(
+            rect,
+            Paint()
+              ..color = nodeStrokeColor
+              ..strokeWidth = element.strokeWidth
+              ..style = PaintingStyle.stroke,
           );
         }
-      } else {
+
+        // Draw Equipment Symbol (using SymbolKey from SldNode properties)
+        final String symbolKey =
+            element.properties['symbolKey'] ??
+            element.properties['bayTypeString'] ??
+            'generic';
+        final Color symbolColor = isDarkMode
+            ? Colors.white
+            : Colors.black87; // Symbol color for PDF
+        final CustomPainter symbolPainter = _getSymbolPainter(
+          symbolKey,
+          symbolColor,
+          element.size,
+        );
+
+        canvas.save();
+        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
+        symbolPainter.paint(canvas, rect.size);
+        canvas.restore();
+
+        // Draw Bay/Node Name (main label for the node)
+        final String displayName =
+            element.properties['bayNameFormatted'] ??
+            element.properties['name'] ??
+            'N/A';
+        final Offset nameTextOffset = Offset(
+          (element.properties['textOffsetDx'] as num?)?.toDouble() ??
+              (element.size.width / 2),
+          (element.properties['textOffsetDy'] as num?)?.toDouble() ?? 0.0,
+        );
+        _drawText(
+          canvas,
+          displayName,
+          rect.topLeft + nameTextOffset,
+          fontSize: 12,
+          isBold: true,
+          textAlign: TextAlign.center,
+          color: defaultTextColor, // Use theme-aware text color
+        );
+
+        // Draw Energy Data for Bays
         final BayEnergyData? energyData = bayEnergyData[bay.id];
-        if (energyData != null) {
-          const double energyTextFontSize = 9.0;
-          const double lineHeight = 1.2;
-          const double valueOffsetFromLabel = 40;
-
-          Offset baseTextOffset;
-          TextAlign alignment = TextAlign.left;
-
-          if (bay.bayType == 'Transformer') {
-            baseTextOffset = Offset(
-              rect.centerLeft.dx - 60,
-              rect.center.dy - 5,
-            );
-          } else if (bay.bayType == 'Line') {
-            baseTextOffset = Offset(rect.center.dx - 75, rect.top + 10);
-          } else if (bay.bayType == 'Feeder') {
-            baseTextOffset = Offset(rect.center.dx - 70, rect.bottom - 35);
-          } else {
-            baseTextOffset = Offset(rect.right + 15, rect.center.dy - 20);
-          }
-
-          _drawText(
-            canvas,
-            'Readings:',
-            baseTextOffset.translate(0, 0),
-            fontSize: energyTextFontSize,
-            isBold: true,
-            textAlign: alignment,
-          );
-
-          _drawText(
-            canvas,
-            'P.Imp:',
-            baseTextOffset.translate(0, 1 * lineHeight * energyTextFontSize),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
+        if (energyData != null && energyData.impConsumed != null) {
+          final String energyText =
+              'Imp: ${energyData.impConsumed!.toStringAsFixed(2)} MWH';
+          final Offset energyTextOffset = Offset(
+            (element.properties['energyTextOffsetDx'] as num?)?.toDouble() ??
+                (element.size.width / 2),
+            (element.properties['energyTextOffsetDy'] as num?)?.toDouble() ??
+                element.size.height,
           );
           _drawText(
             canvas,
-            energyData.prevImp?.toStringAsFixed(2) ?? 'N/A',
-            baseTextOffset.translate(
-              valueOffsetFromLabel,
-              1 * lineHeight * energyTextFontSize,
-            ),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-
-          _drawText(
-            canvas,
-            'C.Imp:',
-            baseTextOffset.translate(0, 2 * lineHeight * energyTextFontSize),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-          _drawText(
-            canvas,
-            energyData.currImp?.toStringAsFixed(2) ?? 'N/A',
-            baseTextOffset.translate(
-              valueOffsetFromLabel,
-              2 * lineHeight * energyTextFontSize,
-            ),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-
-          _drawText(
-            canvas,
-            'P.Exp:',
-            baseTextOffset.translate(0, 3 * lineHeight * energyTextFontSize),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-          _drawText(
-            canvas,
-            energyData.prevExp?.toStringAsFixed(2) ?? 'N/A',
-            baseTextOffset.translate(
-              valueOffsetFromLabel,
-              3 * lineHeight * energyTextFontSize,
-            ),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-
-          _drawText(
-            canvas,
-            'C.Exp:',
-            baseTextOffset.translate(0, 4 * lineHeight * energyTextFontSize),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-          _drawText(
-            canvas,
-            energyData.currExp?.toStringAsFixed(2) ?? 'N/A',
-            baseTextOffset.translate(
-              valueOffsetFromLabel,
-              4 * lineHeight * energyTextFontSize,
-            ),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-
-          _drawText(
-            canvas,
-            'MF:',
-            baseTextOffset.translate(0, 5 * lineHeight * energyTextFontSize),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-          _drawText(
-            canvas,
-            energyData.mf?.toStringAsFixed(2) ?? 'N/A',
-            baseTextOffset.translate(
-              valueOffsetFromLabel,
-              5 * lineHeight * energyTextFontSize,
-            ),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-
-          _drawText(
-            canvas,
-            'Imp(C):',
-            baseTextOffset.translate(0, 6 * lineHeight * energyTextFontSize),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-            isBold: true,
-          );
-          _drawText(
-            canvas,
-            energyData.impConsumed?.toStringAsFixed(2) ?? 'N/A',
-            baseTextOffset.translate(
-              valueOffsetFromLabel,
-              6 * lineHeight * energyTextFontSize,
-            ),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-          );
-
-          _drawText(
-            canvas,
-            'Exp(C):',
-            baseTextOffset.translate(0, 7 * lineHeight * energyTextFontSize),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-            isBold: true,
-          );
-          _drawText(
-            canvas,
-            energyData.expConsumed?.toStringAsFixed(2) ?? 'N/A',
-            baseTextOffset.translate(
-              valueOffsetFromLabel,
-              7 * lineHeight * energyTextFontSize,
-            ),
-            fontSize: energyTextFontSize,
-            textAlign: alignment,
-            isBold: true,
+            energyText,
+            rect.topLeft + energyTextOffset,
+            fontSize: 10,
+            textAlign: TextAlign.center,
+            color: energyTextColor, // Use theme-aware energy text color
           );
         }
-      }
-    }
 
-    if (debugDrawHitboxes) {
-      final debugHitboxPaint = Paint()
-        ..color = Colors.red.withOpacity(0.3)
-        ..style = PaintingStyle.fill;
-      for (var renderData in bayRenderDataList) {
-        canvas.drawRect(renderData.rect, debugHitboxPaint);
+        // Draw Busbar specific energy summary
+        if (element.properties['bayTypeString'] ==
+            BayType.Busbar.toString().split('.').last) {
+          final Map<String, double>? busSummary = busEnergySummary[bay.id];
+          if (busSummary != null) {
+            final String importText =
+                'Imp: ${(busSummary['totalImp'] ?? 0.0).toStringAsFixed(2)} MWH';
+            final String exportText =
+                'Exp: ${(busSummary['totalExp'] ?? 0.0).toStringAsFixed(2)} MWH';
+            const double busEnergyTextFontSize = 9.0;
+            const double textHeight = busEnergyTextFontSize + 2;
+
+            // Positioning relative to the busbar node's rect (element.position is its top-left)
+            Offset busSummaryOffset = Offset(
+              rect.right + 10, // To the right of the busbar
+              rect.center.dy - textHeight * 2, // Centered vertically
+            );
+
+            _drawText(
+              canvas,
+              importText,
+              busSummaryOffset,
+              textAlign: TextAlign.left,
+              fontSize: busEnergyTextFontSize,
+              isBold: true,
+              color: busSummaryTextColor,
+            );
+            _drawText(
+              canvas,
+              exportText,
+              busSummaryOffset.translate(0, textHeight),
+              textAlign: TextAlign.left,
+              fontSize: busEnergyTextFontSize,
+              isBold: true,
+              color: busSummaryTextColor,
+            );
+          }
+        }
+      } else if (element is SldTextLabel) {
+        // Draw standalone text labels
+        _drawText(
+          canvas,
+          element.text,
+          element.position, // SldTextLabel's position is its top-left
+          fontSize: element.textStyle.fontSize ?? 14,
+          isBold: element.textStyle.fontWeight == FontWeight.bold,
+          textAlign: element.textAlign,
+          color: element.textStyle.color ?? defaultTextColor,
+        );
       }
     }
 
@@ -716,23 +478,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
   }
 
-  Size _measureText(String text, {double fontSize = 9, bool isBold = false}) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: Colors.black87,
-          fontSize: fontSize,
-          fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
-      maxLines: 2,
-      textAlign: TextAlign.right,
-      textDirection: TextDirection.ltr,
-    )..layout(minWidth: 0, maxWidth: 100);
-    return textPainter.size;
-  }
-
+  // Helper function to draw text on canvas
   void _drawText(
     Canvas canvas,
     String text,
@@ -742,9 +488,14 @@ class SingleLineDiagramPainter extends CustomPainter {
     TextAlign textAlign = TextAlign.center,
     double fontSize = 9,
     double offsetX = 0,
+    Color? color, // Make color optional and use default if null
   }) {
     final textStyle = TextStyle(
-      color: Colors.black87,
+      color:
+          color ??
+          (colorScheme.brightness == Brightness.dark
+              ? Colors.white
+              : Colors.black87), // Dynamic default color
       fontSize: fontSize,
       fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
     );
@@ -754,7 +505,7 @@ class SingleLineDiagramPainter extends CustomPainter {
       textAlign: textAlign,
       textDirection: TextDirection.ltr,
     );
-    textPainter.layout(maxWidth: 100);
+    textPainter.layout(maxWidth: 150); // Set a max width for text wrapping
 
     double x = position.dx + offsetX;
     if (textAlign == TextAlign.center) {
@@ -764,6 +515,35 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
 
     textPainter.paint(canvas, Offset(x, position.dy + offsetY));
+  }
+
+  // Helper for drawing dashed lines
+  void _drawDashedLine(Canvas canvas, Path path, Paint paint) {
+    const double dashWidth = 8.0;
+    const double dashSpace = 4.0;
+
+    final ui.PathMetrics pathMetrics = path.computeMetrics();
+    for (final ui.PathMetric metric in pathMetrics) {
+      double distance = 0.0;
+      while (distance < metric.length) {
+        final double start = distance;
+        final double end = min(distance + dashWidth, metric.length);
+        canvas.drawPath(metric.extractPath(start, end), paint);
+        distance += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  // Helper to map our custom SldLineJoin enum to Flutter's ui.StrokeJoin
+  ui.StrokeJoin _mapSldLineJoinToStrokeJoin(SldLineJoin sldLineJoin) {
+    switch (sldLineJoin) {
+      case SldLineJoin.miter:
+        return ui.StrokeJoin.miter;
+      case SldLineJoin.round:
+        return ui.StrokeJoin.round;
+      case SldLineJoin.bevel:
+        return ui.StrokeJoin.bevel;
+    }
   }
 
   void _drawArrowhead(Canvas canvas, Offset p1, Offset p2, Paint paint) {
@@ -788,53 +568,15 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
   }
 
-  void _drawConnectionLine(
-    Canvas canvas,
-    Offset startPoint,
-    Offset endPoint,
-    Paint linePaint,
-    Paint dotPaint,
-    String sourceBayType,
-    String targetBayType,
-    Map<String, Map<String, Offset>> busbarConnectionPoints,
-    String sourceBayId,
-    String targetBayId,
-  ) {
-    canvas.drawLine(startPoint, endPoint, linePaint);
-
-    if (sourceBayType == 'Busbar' && targetBayType != 'Busbar') {
-      final busConnectionPoint =
-          busbarConnectionPoints[sourceBayId]?[targetBayId];
-      if (busConnectionPoint != null) {
-        canvas.drawCircle(busConnectionPoint, 4.0, dotPaint);
-      }
-    } else if (targetBayType == 'Busbar' && sourceBayType != 'Busbar') {
-      final busConnectionPoint =
-          busbarConnectionPoints[targetBayId]?[sourceBayId];
-      if (busConnectionPoint != null) {
-        canvas.drawCircle(busConnectionPoint, 4.0, dotPaint);
-      }
-    }
-
-    if ((sourceBayType == 'Busbar' && targetBayType == 'Transformer') ||
-        (sourceBayType == 'Transformer' && targetBayType == 'Busbar')) {
-      _drawArrowhead(canvas, startPoint, endPoint, linePaint);
-    }
-  }
-
   @override
   bool shouldRepaint(covariant SingleLineDiagramPainter oldDelegate) {
-    return oldDelegate.selectedBayForMovementId != selectedBayForMovementId ||
-        oldDelegate.bayRenderDataList != bayRenderDataList ||
-        oldDelegate.bayConnections != bayConnections ||
+    // Repaint if SldData changes or theme changes
+    return oldDelegate.sldData != sldData ||
         oldDelegate.baysMap != baysMap ||
-        oldDelegate.busbarRects != busbarRects ||
-        oldDelegate.busbarConnectionPoints != busbarConnectionPoints ||
         oldDelegate.bayEnergyData != bayEnergyData ||
         oldDelegate.busEnergySummary != busEnergySummary ||
-        oldDelegate.contentBounds !=
-            contentBounds || // NEW: Repaint if contentBounds changes
-        oldDelegate.originOffsetForPdf !=
-            originOffsetForPdf; // NEW: Repaint if originOffsetForPdf changes
+        oldDelegate.colorScheme != colorScheme ||
+        oldDelegate.contentBounds != contentBounds ||
+        oldDelegate.originOffsetForPdf != originOffsetForPdf;
   }
 }

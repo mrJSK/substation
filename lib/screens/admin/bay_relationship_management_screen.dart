@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 
 import '../../models/hierarchy_models.dart';
-import '../../models/bay_model.dart';
+import '../../models/bay_model.dart'; // Ensure this is the updated Bay model
 import '../../models/user_model.dart';
 import '../../utils/snackbar_utils.dart';
 
@@ -40,32 +40,59 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
   String? _selectedHvBusId; // For transformer HV
   String? _selectedLvBusId; // For transformer LV
 
-  // For display purposes, to re-select correct voltage for transformer
-  String? _bayHvVoltage;
-  String? _bayLvVoltage;
-
   @override
   void initState() {
     super.initState();
     if (widget.bayToEdit != null) {
       final bay = widget.bayToEdit!;
-      if (bay.bayType == 'Transformer') {
+      // FIX: Use BayType enum directly for comparison
+      if (bay.bayType == BayType.Transformer) {
         _selectedHvBusId = bay.hvBusId;
         _selectedLvBusId = bay.lvBusId;
-        _bayHvVoltage = bay.hvVoltage; // Store for filtering bus options
-        _bayLvVoltage = bay.lvVoltage; // Store for filtering bus options
       } else {
-        // For other types, assume it uses the single bus connection for now
-        // This part needs careful consideration for how single bus connections were stored.
-        // If _selectedBusbarId was meant for the BayConnection model, this needs adjustment.
-        // Assuming for now, this screen will handle it if the bay has a single bus field.
-        // For simplicity, this screen directly updates the bay's existing connection.
-        // NOTE: The previous `_selectedBusbarId` from SubstationDetailScreen was not on the Bay model itself,
-        // but used to create a BayConnection. This screen will focus on the new `hvBusId`/`lvBusId` for transformers,
-        // and for other bays, it will simulate a single connection update.
-        // A more robust solution would be to update the BayConnection model or add a field to Bay for single connection.
-        // For now, I'll allow a single bus connection to be selected for non-transformers, and assume it's saved to Firebase.
+        _fetchSingleBusConnection(bay.id);
       }
+    }
+  }
+
+  // Helper to fetch single bus connection for a bay
+  Future<void> _fetchSingleBusConnection(String bayId) async {
+    try {
+      final connectionsSnapshot = await FirebaseFirestore.instance
+          .collection('bay_connections')
+          .where(
+            Filter.or(
+              Filter('sourceBayId', isEqualTo: bayId),
+              Filter('targetBayId', isEqualTo: bayId),
+            ),
+          )
+          .get();
+
+      if (connectionsSnapshot.docs.isNotEmpty) {
+        final connectionDoc = connectionsSnapshot.docs.first;
+        String? connectedBusId;
+
+        // Determine which ID in the connection refers to a busbar
+        if (widget.busbars.any((b) => b.id == connectionDoc['sourceBayId'])) {
+          connectedBusId = connectionDoc['sourceBayId'] as String;
+        } else if (widget.busbars.any(
+          (b) => b.id == connectionDoc['targetBayId'],
+        )) {
+          connectedBusId = connectionDoc['targetBayId'] as String;
+        }
+
+        if (connectedBusId != null && mounted) {
+          setState(() {
+            _selectedSingleBusId = connectedBusId;
+          });
+        }
+      } else if (mounted) {
+        setState(() {
+          _selectedSingleBusId = null; // No existing connection found
+        });
+      }
+    } catch (e) {
+      print("Error fetching single bus connection: $e");
     }
   }
 
@@ -74,44 +101,104 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
     setState(() => _isSaving = true);
 
     try {
-      final bayRef = FirebaseFirestore.instance
-          .collection('bays')
-          .doc(widget.bayToEdit!.id);
+      final bay = widget.bayToEdit!;
+      final batch = FirebaseFirestore.instance.batch();
 
-      Map<String, dynamic> updateData = {};
+      // Clear existing connections for this bay first, to replace them
+      final existingConnections = await FirebaseFirestore.instance
+          .collection('bay_connections')
+          .where(
+            Filter.or(
+              Filter('sourceBayId', isEqualTo: bay.id),
+              Filter('targetBayId', isEqualTo: bay.id),
+            ),
+          )
+          .get();
 
-      if (widget.bayToEdit!.bayType == 'Transformer') {
-        updateData['hvBusId'] = _selectedHvBusId;
-        updateData['lvBusId'] = _selectedLvBusId;
-
-        // Optionally, delete existing BayConnection documents for this transformer
-        // and create new ones based on _selectedHvBusId and _selectedLvBusId.
-        // This part requires more complex logic if BayConnection is still used for this.
-        // For now, it will just update the fields on the Bay document.
-      } else {
-        // This part is illustrative. If single connections are stored differently,
-        // this needs to be adjusted. The prompt implied a single bus connection for others.
-        // If `_selectedBusbarId` was stored as a field on `Bay` for non-transformers, use that.
-        // Otherwise, this screen would manage `BayConnection` documents.
-        // Given that `_selectedBusbarId` in `SubstationDetailScreen` creates a `BayConnection`,
-        // this screen would ideally modify or create/delete `BayConnection` documents for non-transformers.
-        // To simplify for this request, I will assume a conceptual single bus connection for other types
-        // and focus on updating the transformer's bus IDs. A comprehensive solution for other types
-        // would involve managing BayConnection docs here or adding a singleBusId to the Bay model.
+      for (var doc in existingConnections.docs) {
+        batch.delete(doc.reference);
       }
 
-      await bayRef.update(updateData);
-      SnackBarUtils.showSnackBar(
-        context,
-        'Connections for ${widget.bayToEdit!.name} saved successfully!',
-      );
-      widget.onSave();
+      Map<String, dynamic> bayUpdateData = {};
+
+      // FIX: Use BayType enum directly for comparison
+      if (bay.bayType == BayType.Transformer) {
+        // Update hvBusId and lvBusId on the Bay document itself
+        bayUpdateData['hvBusId'] = _selectedHvBusId;
+        bayUpdateData['lvBusId'] = _selectedLvBusId;
+
+        // Add new BayConnection documents for Transformer
+        if (_selectedHvBusId != null) {
+          batch.set(
+            FirebaseFirestore.instance.collection('bay_connections').doc(),
+            {
+              'substationId': widget.substationId,
+              'sourceBayId': bay.id, // Transformer is source for HV
+              'targetBayId': _selectedHvBusId!,
+              'connectionType': 'HV_BUS_CONNECTION',
+              'createdBy': widget.currentUser.uid,
+              'createdAt': Timestamp.now(),
+            },
+          );
+        }
+        if (_selectedLvBusId != null) {
+          batch.set(
+            FirebaseFirestore.instance.collection('bay_connections').doc(),
+            {
+              'substationId': widget.substationId,
+              'sourceBayId': bay.id, // Transformer is source for LV
+              'targetBayId': _selectedLvBusId!,
+              'connectionType': 'LV_BUS_CONNECTION',
+              'createdBy': widget.currentUser.uid,
+              'createdAt': Timestamp.now(),
+            },
+          );
+        }
+        // FIX: Use BayType enum directly for comparison for other types
+      } else if (bay.bayType != BayType.Busbar &&
+          bay.bayType != BayType.Battery) {
+        // For other types that connect to a single busbar
+        if (_selectedSingleBusId != null) {
+          batch.set(
+            FirebaseFirestore.instance.collection('bay_connections').doc(),
+            {
+              'substationId': widget.substationId,
+              'sourceBayId': bay.id, // Bay is source
+              'targetBayId': _selectedSingleBusId!, // Busbar is target
+              'connectionType': 'SINGLE_BUS_CONNECTION',
+              'createdBy': widget.currentUser.uid,
+              'createdAt': Timestamp.now(),
+            },
+          );
+        }
+      }
+
+      // Update the Bay document itself (only for transformer bus IDs)
+      if (bayUpdateData.isNotEmpty) {
+        batch.update(
+          FirebaseFirestore.instance.collection('bays').doc(bay.id),
+          bayUpdateData,
+        );
+      }
+
+      await batch.commit();
+
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Connections for ${bay.name} saved successfully!',
+        );
+        widget.onSave(); // Callback to parent to refresh data
+      }
     } catch (e) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'Error saving connections: $e',
-        isError: true,
-      );
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error saving connections: $e',
+          isError: true,
+        );
+      }
+      print('Error saving connections: $e'); // Debug print
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -120,27 +207,36 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
   @override
   Widget build(BuildContext context) {
     final bay = widget.bayToEdit!;
-    final bool isTransformer = bay.bayType == 'Transformer';
+    // FIX: Use BayType enum directly for comparison
+    final bool isTransformer = bay.bayType == BayType.Transformer;
     final bool isBusbarOrBattery =
-        bay.bayType == 'Busbar' || bay.bayType == 'Battery';
+        bay.bayType == BayType.Busbar || bay.bayType == BayType.Battery;
 
     // Filter busbars by voltage level for transformers
     List<Bay> hvCompatibleBusbars = [];
-    if (isTransformer && _bayHvVoltage != null) {
+    // Access hvVoltage from bay model directly, which is String?
+    if (isTransformer && bay.hvVoltage != null) {
       hvCompatibleBusbars = widget.busbars
-          .where((b) => b.voltageLevel == _bayHvVoltage)
+          .where((b) => b.voltageLevel == bay.hvVoltage)
           .toList();
     }
 
     List<Bay> lvCompatibleBusbars = [];
-    if (isTransformer && _bayLvVoltage != null) {
+    // Access lvVoltage from bay model directly, which is String?
+    if (isTransformer && bay.lvVoltage != null) {
       lvCompatibleBusbars = widget.busbars
-          .where((b) => b.voltageLevel == _bayLvVoltage)
+          .where((b) => b.voltageLevel == bay.lvVoltage)
           .toList();
     }
 
     // Busbars available for single connection (for non-transformer, non-busbar, non-battery)
     List<Bay> singleConnectBusbars = widget.busbars;
+    // Filter single connect busbars based on the bay's main voltageLevel
+    if (!isTransformer && !isBusbarOrBattery && bay.voltageLevel != null) {
+      singleConnectBusbars = widget.busbars
+          .where((b) => b.voltageLevel == bay.voltageLevel)
+          .toList();
+    }
 
     return AlertDialog(
       title: Text('Manage Connections for ${bay.name}'),
@@ -152,6 +248,7 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
             children: [
               if (isTransformer) ...[
                 Text(
+                  // Display hvVoltage from bay model
                   'HV Voltage: ${bay.hvVoltage ?? 'N/A'}',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
@@ -161,14 +258,15 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
                   selectedItem: hvCompatibleBusbars.firstWhere(
                     (b) => b.id == _selectedHvBusId,
                     orElse: () => Bay(
+                      // Dummy Bay for orElse
                       id: '',
                       name: 'N/A',
                       substationId: '',
                       voltageLevel: '',
-                      bayType: '',
+                      bayType: BayType.Busbar, // FIX: Use BayType enum
                       createdBy: '',
                       createdAt: Timestamp.now(),
-                    ), // Dummy
+                    ),
                   ),
                   onChanged: (Bay? data) =>
                       setState(() => _selectedHvBusId = data?.id),
@@ -182,6 +280,7 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
                 ),
                 const SizedBox(height: 16),
                 Text(
+                  // Display lvVoltage from bay model
                   'LV Voltage: ${bay.lvVoltage ?? 'N/A'}',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
@@ -191,14 +290,15 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
                   selectedItem: lvCompatibleBusbars.firstWhere(
                     (b) => b.id == _selectedLvBusId,
                     orElse: () => Bay(
+                      // Dummy Bay for orElse
                       id: '',
                       name: 'N/A',
                       substationId: '',
                       voltageLevel: '',
-                      bayType: '',
+                      bayType: BayType.Busbar, // FIX: Use BayType enum
                       createdBy: '',
                       createdAt: Timestamp.now(),
-                    ), // Dummy
+                    ),
                   ),
                   onChanged: (Bay? data) =>
                       setState(() => _selectedLvBusId = data?.id),
@@ -212,24 +312,21 @@ class __BayConnectionDialogState extends State<_BayConnectionDialog> {
                 ),
               ] else if (!isBusbarOrBattery) ...[
                 // For other equipment, connect to a single bus
-                // This assumes `voltageLevel` exists and is relevant for non-transformers too.
-                // If the bay has a voltage level, filter by it.
                 DropdownSearch<Bay>(
-                  items: singleConnectBusbars
-                      .where((b) => b.voltageLevel == bay.voltageLevel)
-                      .toList(),
+                  items: singleConnectBusbars, // Already filtered above
                   itemAsString: (Bay b) => '${b.name} (${b.voltageLevel})',
                   selectedItem: singleConnectBusbars.firstWhere(
                     (b) => b.id == _selectedSingleBusId,
                     orElse: () => Bay(
+                      // Dummy Bay for orElse
                       id: '',
                       name: 'N/A',
                       substationId: '',
                       voltageLevel: '',
-                      bayType: '',
+                      bayType: BayType.Busbar, // FIX: Use BayType enum
                       createdBy: '',
                       createdAt: Timestamp.now(),
-                    ), // Dummy
+                    ),
                   ),
                   onChanged: (Bay? data) =>
                       setState(() => _selectedSingleBusId = data?.id),
@@ -331,8 +428,9 @@ class _BayRelationshipManagementScreenState
           .map((doc) => Bay.fromFirestore(doc))
           .toList();
 
+      // FIX: Use BayType enum directly for comparison
       _busbarsInSubstation = _baysInSubstation
-          .where((bay) => bay.bayType == 'Busbar')
+          .where((bay) => bay.bayType == BayType.Busbar)
           .toList();
     } catch (e) {
       SnackBarUtils.showSnackBar(
@@ -382,22 +480,24 @@ class _BayRelationshipManagementScreenState
                       itemCount: _baysInSubstation.length,
                       itemBuilder: (context, index) {
                         final bay = _baysInSubstation[index];
-                        // Exclude Busbar bays from being managed here as they are connection points
-                        if (bay.bayType == 'Busbar') {
+                        // FIX: Use BayType enum directly for comparison
+                        if (bay.bayType == BayType.Busbar) {
                           return const SizedBox.shrink(); // Hide busbars from the list
                         }
 
                         // Determine current connections for display
                         String currentConnections = '';
-                        if (bay.bayType == 'Transformer') {
+                        // FIX: Use BayType enum directly for comparison
+                        if (bay.bayType == BayType.Transformer) {
                           final hvBus = _busbarsInSubstation.firstWhere(
                             (b) => b.id == bay.hvBusId,
                             orElse: () => Bay(
+                              // Dummy Bay for orElse
                               id: '',
                               name: 'N/A',
                               substationId: '',
                               voltageLevel: '',
-                              bayType: '',
+                              bayType: BayType.Busbar, // FIX: Use BayType enum
                               createdBy: '',
                               createdAt: Timestamp.now(),
                             ),
@@ -405,18 +505,20 @@ class _BayRelationshipManagementScreenState
                           final lvBus = _busbarsInSubstation.firstWhere(
                             (b) => b.id == bay.lvBusId,
                             orElse: () => Bay(
+                              // Dummy Bay for orElse
                               id: '',
                               name: 'N/A',
                               substationId: '',
                               voltageLevel: '',
-                              bayType: '',
+                              bayType: BayType.Busbar, // FIX: Use BayType enum
                               createdBy: '',
                               createdAt: Timestamp.now(),
                             ),
                           );
                           currentConnections =
                               'HV: ${hvBus.name} (${hvBus.voltageLevel}), LV: ${lvBus.name} (${lvBus.voltageLevel})';
-                        } else if (bay.bayType != 'Battery') {
+                          // FIX: Use BayType enum directly for comparison
+                        } else if (bay.bayType != BayType.Battery) {
                           // For other equipment (non-busbar, non-battery)
                           // If a single bus connection was implemented directly on Bay model, retrieve it here
                           // For now, it will just show if it has a bus connection conceptually.
@@ -430,7 +532,9 @@ class _BayRelationshipManagementScreenState
                             vertical: 8,
                           ),
                           child: ListTile(
-                            title: Text('${bay.name} (${bay.bayType})'),
+                            title: Text(
+                              '${bay.name} (${bay.bayType.toString().split('.').last})',
+                            ), // Display enum as string
                             subtitle: Text('Connections: $currentConnections'),
                             trailing: IconButton(
                               icon: const Icon(Icons.edit),

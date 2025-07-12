@@ -6,6 +6,7 @@ class BayConnection {
   final String substationId;
   final String sourceBayId;
   final String targetBayId;
+  final String? connectionType; // NEW: Added connectionType field
   final String createdBy;
   final Timestamp createdAt;
 
@@ -14,6 +15,7 @@ class BayConnection {
     required this.substationId,
     required this.sourceBayId,
     required this.targetBayId,
+    this.connectionType, // NEW: Include in constructor
     required this.createdBy,
     required this.createdAt,
   });
@@ -25,6 +27,7 @@ class BayConnection {
       substationId: data['substationId'] ?? '',
       sourceBayId: data['sourceBayId'] ?? '',
       targetBayId: data['targetBayId'] ?? '',
+      connectionType: data['connectionType'] as String?, // NEW: Deserialize
       createdBy: data['createdBy'] ?? '',
       createdAt: data['createdAt'] ?? Timestamp.now(),
     );
@@ -35,6 +38,7 @@ class BayConnection {
       'substationId': substationId,
       'sourceBayId': sourceBayId,
       'targetBayId': targetBayId,
+      'connectionType': connectionType, // NEW: Serialize
       'createdBy': createdBy,
       'createdAt': createdAt,
     };

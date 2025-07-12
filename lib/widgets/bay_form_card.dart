@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 
 import '../models/bay_connection_model.dart';
-import '../models/bay_model.dart';
+import '../models/bay_model.dart'; // Ensure this is the updated Bay model
 import '../models/user_model.dart';
 import '../models/hierarchy_models.dart';
 import '../utils/snackbar_utils.dart';
@@ -182,10 +182,12 @@ class _BayFormCardState extends State<BayFormCard> {
       _multiplyingFactorController.text =
           bay.multiplyingFactor?.toString() ?? '';
       _selectedVoltageLevel = bay.voltageLevel;
-      _selectedBayType = bay.bayType;
+      // FIX: Convert BayType enum to String for _selectedBayType
+      _selectedBayType = bay.bayType.toString().split('.').last;
       _isGovernmentFeeder = bay.isGovernmentFeeder ?? false;
       _selectedFeederType = bay.feederType;
-      if (bay.bayType == 'Line') {
+      // FIX: Use BayType enum directly for comparison
+      if (bay.bayType == BayType.Line) {
         _lineLengthController.text = bay.lineLength?.toString() ?? '';
         _selectedCircuit = bay.circuitType;
         _selectedConductor = bay.conductorType;
@@ -198,9 +200,10 @@ class _BayFormCardState extends State<BayFormCard> {
               .split(' ')[0];
         }
       }
-      if (bay.bayType == 'Transformer') {
-        _selectedHvVoltage = bay.hvVoltage;
-        _selectedLvVoltage = bay.lvVoltage;
+      // FIX: Use BayType enum directly for comparison
+      if (bay.bayType == BayType.Transformer) {
+        _selectedHvVoltage = bay.hvVoltage; // Access directly from Bay model
+        _selectedLvVoltage = bay.lvVoltage; // Access directly from Bay model
         _makeController.text = bay.make ?? '';
         _capacityController.text = bay.capacity?.toString() ?? '';
         // Only set if the HV bus ID exists in the available busbars
@@ -232,8 +235,9 @@ class _BayFormCardState extends State<BayFormCard> {
             .toString()
             .split(' ')[0];
       }
-      // Initialize distribution hierarchy for Feeder bays
-      if (bay.bayType == 'Feeder') {
+      // Initialize distribution hierarchy for Feeders
+      // FIX: Use BayType enum directly for comparison
+      if (bay.bayType == BayType.Feeder) {
         _selectedDistributionZoneId = bay.distributionZoneId;
         _selectedDistributionCircleId = bay.distributionCircleId;
         _selectedDistributionDivisionId = bay.distributionDivisionId;
@@ -241,10 +245,11 @@ class _BayFormCardState extends State<BayFormCard> {
       }
 
       // NEW FIX: For non-transformer, non-busbar, non-battery bays, fetch and set their single connected busbar
+      // FIX: Use BayType enum directly for comparison
       if (bay.id.isNotEmpty &&
-          bay.bayType != 'Busbar' &&
-          bay.bayType != 'Transformer' &&
-          bay.bayType != 'Battery') {
+          bay.bayType != BayType.Busbar &&
+          bay.bayType != BayType.Transformer &&
+          bay.bayType != BayType.Battery) {
         _fetchAndSetSingleBusbarConnection(bay.id);
       }
     }
@@ -362,7 +367,15 @@ class _BayFormCardState extends State<BayFormCard> {
 
   Future<void> _saveBay() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedBayType != 'Busbar' && widget.availableBusbars.isEmpty) {
+
+    // FIX: Use BayType enum directly for comparisons
+    final selectedBayTypeEnum = BayType.values.firstWhere(
+      (e) => e.toString().split('.').last == _selectedBayType,
+      orElse: () => BayType.Feeder,
+    ); // Fallback
+
+    if (selectedBayTypeEnum != BayType.Busbar &&
+        widget.availableBusbars.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
         'Please create a Busbar first.',
@@ -370,7 +383,7 @@ class _BayFormCardState extends State<BayFormCard> {
       );
       return;
     }
-    if (_selectedBayType == 'Transformer' &&
+    if (selectedBayTypeEnum == BayType.Transformer &&
         (_selectedHvBusId == null || _selectedLvBusId == null)) {
       SnackBarUtils.showSnackBar(
         context,
@@ -380,9 +393,9 @@ class _BayFormCardState extends State<BayFormCard> {
       return;
     }
     // Re-added check for non-transformer/non-busbar bays if _selectedBusbarId is null
-    if (_selectedBayType != 'Busbar' &&
-        _selectedBayType != 'Transformer' &&
-        _selectedBayType != 'Battery' &&
+    if (selectedBayTypeEnum != BayType.Busbar &&
+        selectedBayTypeEnum != BayType.Transformer &&
+        selectedBayTypeEnum != BayType.Battery &&
         _selectedBusbarId == null) {
       SnackBarUtils.showSnackBar(
         context,
@@ -393,7 +406,7 @@ class _BayFormCardState extends State<BayFormCard> {
     }
 
     // Validation for Feeder distribution hierarchy
-    if (_selectedBayType == 'Feeder' &&
+    if (selectedBayTypeEnum == BayType.Feeder &&
         (_selectedDistributionZoneId == null ||
             _selectedDistributionCircleId == null ||
             _selectedDistributionDivisionId == null ||
@@ -441,71 +454,76 @@ class _BayFormCardState extends State<BayFormCard> {
           _multiplyingFactorController.text.isNotEmpty
           ? double.tryParse(_multiplyingFactorController.text.trim())
           : null;
-      final bool? isGovernmentFeeder = _selectedBayType == 'Feeder'
+      final bool? isGovernmentFeeder = selectedBayTypeEnum == BayType.Feeder
           ? _isGovernmentFeeder
           : null;
-      final String? feederType = _selectedBayType == 'Feeder'
+      final String? feederType = selectedBayTypeEnum == BayType.Feeder
           ? _selectedFeederType
           : null;
-      final double? lineLength = _selectedBayType == 'Line'
+      final double? lineLength = selectedBayTypeEnum == BayType.Line
           ? double.tryParse(_lineLengthController.text.trim())
           : null;
-      final String? circuitType = _selectedBayType == 'Line'
+      final String? circuitType = selectedBayTypeEnum == BayType.Line
           ? _selectedCircuit
           : null;
-      final String? conductorType = _selectedBayType == 'Line'
+      final String? conductorType = selectedBayTypeEnum == BayType.Line
           ? _selectedConductor
           : null;
       final String? conductorDetail =
-          _selectedBayType == 'Line' && _selectedConductor == 'Other'
+          selectedBayTypeEnum == BayType.Line && _selectedConductor == 'Other'
           ? (_otherConductorController.text.trim().isEmpty
                 ? null
                 : _otherConductorController.text.trim())
           : null;
       final Timestamp? erectionDate =
-          _selectedBayType == 'Line' && _erectionDate != null
+          selectedBayTypeEnum == BayType.Line && _erectionDate != null
           ? Timestamp.fromDate(_erectionDate!)
           : null;
-      final String? hvVoltage = _selectedBayType == 'Transformer'
+      final String? hvVoltage = selectedBayTypeEnum == BayType.Transformer
           ? _selectedHvVoltage
           : null;
-      final String? lvVoltage = _selectedBayType == 'Transformer'
+      final String? lvVoltage = selectedBayTypeEnum == BayType.Transformer
           ? _selectedLvVoltage
           : null;
       final String? make =
-          _selectedBayType == 'Transformer' && _makeController.text.isNotEmpty
+          selectedBayTypeEnum == BayType.Transformer &&
+              _makeController.text.isNotEmpty
           ? _makeController.text.trim()
           : null;
       final double? capacity =
-          _selectedBayType == 'Transformer' &&
+          selectedBayTypeEnum == BayType.Transformer &&
               _capacityController.text.isNotEmpty
           ? double.tryParse(_capacityController.text.trim())
           : null;
       final Timestamp? manufacturingDate =
-          _selectedBayType == 'Transformer' && _manufacturingDate != null
+          selectedBayTypeEnum == BayType.Transformer &&
+              _manufacturingDate != null
           ? Timestamp.fromDate(_manufacturingDate!)
           : null;
-      final String? hvBusId = _selectedBayType == 'Transformer'
+      final String? hvBusId = selectedBayTypeEnum == BayType.Transformer
           ? _selectedHvBusId
           : null;
-      final String? lvBusId = _selectedBayType == 'Transformer'
+      final String? lvBusId = selectedBayTypeEnum == BayType.Transformer
           ? _selectedLvBusId
           : null;
       final Timestamp? commissioningDateVal =
-          (_selectedBayType == 'Line' || _selectedBayType == 'Transformer') &&
+          (selectedBayTypeEnum == BayType.Line ||
+                  selectedBayTypeEnum == BayType.Transformer) &&
               _commissioningDate != null
           ? Timestamp.fromDate(_commissioningDate!)
           : null;
-      final String? distributionZoneId = _selectedBayType == 'Feeder'
+      final String? distributionZoneId = selectedBayTypeEnum == BayType.Feeder
           ? _selectedDistributionZoneId
           : null;
-      final String? distributionCircleId = _selectedBayType == 'Feeder'
+      final String? distributionCircleId = selectedBayTypeEnum == BayType.Feeder
           ? _selectedDistributionCircleId
           : null;
-      final String? distributionDivisionId = _selectedBayType == 'Feeder'
+      final String? distributionDivisionId =
+          selectedBayTypeEnum == BayType.Feeder
           ? _selectedDistributionDivisionId
           : null;
-      final String? distributionSubdivisionId = _selectedBayType == 'Feeder'
+      final String? distributionSubdivisionId =
+          selectedBayTypeEnum == BayType.Feeder
           ? _selectedDistributionSubdivisionId
           : null;
 
@@ -514,10 +532,10 @@ class _BayFormCardState extends State<BayFormCard> {
 
         final updatedBay = existingBay.copyWith(
           name: bayName,
-          voltageLevel: _selectedBayType == 'Transformer'
+          voltageLevel: selectedBayTypeEnum == BayType.Transformer
               ? hvVoltage
               : _selectedVoltageLevel,
-          bayType: _selectedBayType!,
+          bayType: selectedBayTypeEnum, // Pass enum directly
           description: description,
           landmark: landmark,
           contactNumber: contactNumber,
@@ -526,15 +544,15 @@ class _BayFormCardState extends State<BayFormCard> {
           feederType: feederType,
           multiplyingFactor: multiplyingFactor,
           bayNumber: bayNumber,
-          lineLength: lineLength,
+          lineLengthKm: lineLength, // Changed from lineLength to lineLengthKm
           circuitType: circuitType,
           conductorType: conductorType,
           conductorDetail: conductorDetail,
           erectionDate: erectionDate,
-          hvVoltage: hvVoltage,
-          lvVoltage: lvVoltage,
+          hvVoltage: hvVoltage, // Now a field in Bay
+          lvVoltage: lvVoltage, // Now a field in Bay
           make: make,
-          capacity: capacity,
+          capacityMVA: capacity, // Changed from capacity to capacityMVA
           manufacturingDate: manufacturingDate,
           hvBusId: hvBusId,
           lvBusId: lvBusId,
@@ -548,7 +566,7 @@ class _BayFormCardState extends State<BayFormCard> {
         await FirebaseFirestore.instance
             .collection('bays')
             .doc(updatedBay.id)
-            .update(updatedBay.toFirestore());
+            .update(updatedBay.toJson()); // Use toJson() for Firestore
 
         final batch = FirebaseFirestore.instance.batch();
 
@@ -567,7 +585,7 @@ class _BayFormCardState extends State<BayFormCard> {
         }
         await batch.commit();
 
-        if (_selectedBayType == 'Transformer') {
+        if (selectedBayTypeEnum == BayType.Transformer) {
           if (_selectedHvBusId != null) {
             await FirebaseFirestore.instance
                 .collection('bay_connections')
@@ -594,8 +612,8 @@ class _BayFormCardState extends State<BayFormCard> {
                   ).toFirestore(),
                 );
           }
-        } else if (_selectedBayType != 'Busbar' &&
-            _selectedBayType != 'Battery' &&
+        } else if (selectedBayTypeEnum != BayType.Busbar &&
+            selectedBayTypeEnum != BayType.Battery &&
             _selectedBusbarId != null) {
           await FirebaseFirestore.instance
               .collection('bay_connections')
@@ -621,12 +639,11 @@ class _BayFormCardState extends State<BayFormCard> {
           id: newBayRef.id,
           name: bayName!,
           substationId: widget.substationId,
-          voltageLevel: _selectedBayType == 'Transformer'
+          voltageLevel: selectedBayTypeEnum == BayType.Transformer
               ? hvVoltage!
               : _selectedVoltageLevel!,
-          bayType: _selectedBayType!,
-          createdBy: firebaseUser.uid,
-          createdAt: Timestamp.now(),
+          bayType: selectedBayTypeEnum, // Pass enum directly
+          // createdBy and createdAt are now handled by the toFirestore method
           description: description,
           landmark: landmark,
           contactNumber: contactNumber,
@@ -635,30 +652,37 @@ class _BayFormCardState extends State<BayFormCard> {
           feederType: feederType,
           multiplyingFactor: multiplyingFactor,
           bayNumber: bayNumber,
-          lineLength: lineLength,
+          lineLengthKm: lineLength, // Changed from lineLength to lineLengthKm
           circuitType: circuitType,
           conductorType: conductorType,
           conductorDetail: conductorDetail,
           erectionDate: erectionDate,
-          hvVoltage: hvVoltage,
-          lvVoltage: lvVoltage,
+          hvVoltage: hvVoltage, // Now a field in Bay
+          lvVoltage: lvVoltage, // Now a field in Bay
           make: make,
-          capacity: capacity,
+          capacityMVA: capacity, // Changed from capacity to capacityMVA
           manufacturingDate: manufacturingDate,
           hvBusId: hvBusId,
           lvBusId: lvBusId,
           commissioningDate: commissioningDateVal,
-          xPosition: null,
-          yPosition: null,
+          // xPosition and yPosition are not part of the Bay model directly now
+          // They will be part of the SldNode model.
           distributionZoneId: distributionZoneId,
           distributionCircleId: distributionCircleId,
           distributionDivisionId: distributionDivisionId,
           distributionSubdivisionId: distributionSubdivisionId,
+          createdBy: '',
+          createdAt: Timestamp.now(),
         );
 
-        await newBayRef.set(newBay.toFirestore());
+        // Call toJson() and add createdBy/createdAt here
+        final Map<String, dynamic> bayData = newBay.toJson();
+        bayData['createdBy'] = firebaseUser.uid;
+        bayData['createdAt'] = FieldValue.serverTimestamp();
 
-        if (_selectedBayType == 'Transformer') {
+        await newBayRef.set(bayData);
+
+        if (selectedBayTypeEnum == BayType.Transformer) {
           if (_selectedHvBusId != null) {
             await FirebaseFirestore.instance
                 .collection('bay_connections')
@@ -685,8 +709,8 @@ class _BayFormCardState extends State<BayFormCard> {
                   ).toFirestore(),
                 );
           }
-        } else if (_selectedBayType != 'Busbar' &&
-            _selectedBayType != 'Battery' &&
+        } else if (selectedBayTypeEnum != BayType.Busbar &&
+            selectedBayTypeEnum != BayType.Battery &&
             _selectedBusbarId != null) {
           await FirebaseFirestore.instance
               .collection('bay_connections')
@@ -972,8 +996,11 @@ class _BayFormCardState extends State<BayFormCard> {
             // Conditionally render the rest of the form based on _selectedBayType
             if (_selectedBayType != null) ...[
               // Common fields that depend on voltage level, unless it's a transformer or battery
-              if (_selectedBayType != 'Transformer' &&
-                  _selectedBayType != 'Battery') ...[
+              // FIX: Use BayType enum string for comparison
+              if (_selectedBayType !=
+                      BayType.Transformer.toString().split('.').last &&
+                  _selectedBayType !=
+                      BayType.Battery.toString().split('.').last) ...[
                 DropdownButtonFormField<String>(
                   value: _selectedVoltageLevel,
                   decoration: const InputDecoration(
@@ -990,9 +1017,13 @@ class _BayFormCardState extends State<BayFormCard> {
               ],
 
               // Connection to Busbar for non-Busbar, non-Transformer, non-Battery types
-              if (_selectedBayType != 'Busbar' &&
-                  _selectedBayType != 'Transformer' &&
-                  _selectedBayType != 'Battery') ...[
+              // FIX: Use BayType enum string for comparison
+              if (_selectedBayType !=
+                      BayType.Busbar.toString().split('.').last &&
+                  _selectedBayType !=
+                      BayType.Transformer.toString().split('.').last &&
+                  _selectedBayType !=
+                      BayType.Battery.toString().split('.').last) ...[
                 DropdownButtonFormField<String>(
                   value: _selectedBusbarId,
                   decoration: const InputDecoration(
@@ -1015,7 +1046,9 @@ class _BayFormCardState extends State<BayFormCard> {
               ],
 
               // Transformer specific fields
-              if (_selectedBayType == 'Transformer') ...[
+              // FIX: Use BayType enum string for comparison
+              if (_selectedBayType ==
+                  BayType.Transformer.toString().split('.').last) ...[
                 DropdownButtonFormField<String>(
                   value: _selectedHvVoltage,
                   decoration: const InputDecoration(
@@ -1132,7 +1165,9 @@ class _BayFormCardState extends State<BayFormCard> {
               ],
 
               // Line specific fields
-              if (_selectedBayType == 'Line') ...[
+              // FIX: Use BayType enum string for comparison
+              if (_selectedBayType ==
+                  BayType.Line.toString().split('.').last) ...[
                 TextFormField(
                   controller: _lineLengthController,
                   decoration: const InputDecoration(
@@ -1194,8 +1229,10 @@ class _BayFormCardState extends State<BayFormCard> {
               ],
 
               // Commissioning Date for Line or Transformer
-              if (_selectedBayType == 'Line' ||
-                  _selectedBayType == 'Transformer') ...[
+              // FIX: Use BayType enum string for comparison
+              if (_selectedBayType == BayType.Line.toString().split('.').last ||
+                  _selectedBayType ==
+                      BayType.Transformer.toString().split('.').last) ...[
                 TextFormField(
                   controller: _commissioningDateController,
                   decoration: const InputDecoration(
@@ -1210,7 +1247,8 @@ class _BayFormCardState extends State<BayFormCard> {
               ],
 
               // Feeder specific fields
-              if (_selectedBayType == 'Feeder')
+              // FIX: Use BayType enum string for comparison
+              if (_selectedBayType == BayType.Feeder.toString().split('.').last)
                 ..._buildFeederDistributionHierarchyFields(),
 
               // General optional fields
