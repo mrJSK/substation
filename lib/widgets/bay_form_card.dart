@@ -648,8 +648,6 @@ class _BayFormCardState extends State<BayFormCard> {
           hvBusId: hvBusId,
           lvBusId: lvBusId,
           commissioningDate: commissioningDateVal,
-          xPosition: null,
-          yPosition: null,
           distributionZoneId: distributionZoneId,
           distributionCircleId: distributionCircleId,
           distributionDivisionId: distributionDivisionId,

@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart'; // Keep if Offset is used elsewhere in the app for non-layout purposes
 
 class Bay {
   final String id;
@@ -30,11 +30,12 @@ class Bay {
   final String? hvBusId;
   final String? lvBusId;
   final Timestamp? commissioningDate;
-  final double? xPosition;
-  final double? yPosition;
-  final double? busbarLength;
-  final Offset? textOffset;
-  final Offset? energyTextOffset; // New field for energy text
+  // Removed layout properties:
+  // final double? xPosition;
+  // final double? yPosition;
+  // final double? busbarLength;
+  // final Offset? textOffset;
+  // final Offset? energyTextOffset;
   final String? distributionZoneId;
   final String? distributionCircleId;
   final String? distributionDivisionId;
@@ -69,11 +70,12 @@ class Bay {
     this.hvBusId,
     this.lvBusId,
     this.commissioningDate,
-    this.xPosition,
-    this.yPosition,
-    this.busbarLength,
-    this.textOffset,
-    this.energyTextOffset, // Add to constructor
+    // Removed from constructor:
+    // this.xPosition,
+    // this.yPosition,
+    // this.busbarLength,
+    // this.textOffset,
+    // this.energyTextOffset,
     this.distributionZoneId,
     this.distributionCircleId,
     this.distributionDivisionId,
@@ -111,21 +113,22 @@ class Bay {
       hvBusId: data['hvBusId'] as String?,
       lvBusId: data['lvBusId'] as String?,
       commissioningDate: data['commissioningDate'],
-      xPosition: (data['xPosition'] as num?)?.toDouble(),
-      yPosition: (data['yPosition'] as num?)?.toDouble(),
-      busbarLength: (data['busbarLength'] as num?)?.toDouble(),
-      textOffset: data['textOffset'] != null
-          ? Offset(
-              (data['textOffset']['dx'] as num).toDouble(),
-              (data['textOffset']['dy'] as num).toDouble(),
-            )
-          : null,
-      energyTextOffset: data['energyTextOffset'] != null
-          ? Offset(
-              (data['energyTextOffset']['dx'] as num).toDouble(),
-              (data['energyTextOffset']['dy'] as num).toDouble(),
-            )
-          : null,
+      // Removed from fromFirestore:
+      // xPosition: (data['xPosition'] as num?)?.toDouble(),
+      // yPosition: (data['yPosition'] as num?)?.toDouble(),
+      // busbarLength: (data['busbarLength'] as num?)?.toDouble(),
+      // textOffset: data['textOffset'] != null
+      //     ? Offset(
+      //         (data['textOffset']['dx'] as num).toDouble(),
+      //         (data['textOffset']['dy'] as num).toDouble(),
+      //       )
+      //     : null,
+      // energyTextOffset: data['energyTextOffset'] != null
+      //     ? Offset(
+      //         (data['energyTextOffset']['dx'] as num).toDouble(),
+      //         (data['energyTextOffset']['dy'] as num).toDouble(),
+      //       )
+      //     : null,
       distributionZoneId: data['distributionZoneId'] as String?,
       distributionCircleId: data['distributionCircleId'] as String?,
       distributionDivisionId: data['distributionDivisionId'] as String?,
@@ -162,15 +165,16 @@ class Bay {
       'hvBusId': hvBusId,
       'lvBusId': lvBusId,
       'commissioningDate': commissioningDate,
-      'xPosition': xPosition,
-      'yPosition': yPosition,
-      'busbarLength': busbarLength,
-      'textOffset': textOffset != null
-          ? {'dx': textOffset!.dx, 'dy': textOffset!.dy}
-          : null,
-      'energyTextOffset': energyTextOffset != null
-          ? {'dx': energyTextOffset!.dx, 'dy': energyTextOffset!.dy}
-          : null,
+      // Removed from toFirestore:
+      // 'xPosition': xPosition,
+      // 'yPosition': yPosition,
+      // 'busbarLength': busbarLength,
+      // 'textOffset': textOffset != null
+      //     ? {'dx': textOffset!.dx, 'dy': textOffset!.dy}
+      //     : null,
+      // 'energyTextOffset': energyTextOffset != null
+      //     ? {'dx': energyTextOffset!.dx, 'dy': energyTextOffset!.dy}
+      //     : null,
       'distributionZoneId': distributionZoneId,
       'distributionCircleId': distributionCircleId,
       'distributionDivisionId': distributionDivisionId,
@@ -178,6 +182,7 @@ class Bay {
     };
   }
 
+  // The copyWith method also needs to be updated to reflect the removal of these fields.
   Bay copyWith({
     String? id,
     String? name,
@@ -207,11 +212,12 @@ class Bay {
     String? hvBusId,
     String? lvBusId,
     Timestamp? commissioningDate,
-    double? xPosition,
-    double? yPosition,
-    double? busbarLength,
-    Offset? textOffset,
-    Offset? energyTextOffset,
+    // Removed from copyWith:
+    // double? xPosition,
+    // double? yPosition,
+    // double? busbarLength,
+    // Offset? textOffset,
+    // Offset? energyTextOffset,
     String? distributionZoneId,
     String? distributionCircleId,
     String? distributionDivisionId,
@@ -246,11 +252,12 @@ class Bay {
       hvBusId: hvBusId ?? this.hvBusId,
       lvBusId: lvBusId ?? this.lvBusId,
       commissioningDate: commissioningDate ?? this.commissioningDate,
-      xPosition: xPosition ?? this.xPosition,
-      yPosition: yPosition ?? this.yPosition,
-      busbarLength: busbarLength ?? this.busbarLength,
-      textOffset: textOffset ?? this.textOffset,
-      energyTextOffset: energyTextOffset ?? this.energyTextOffset,
+      // Removed from copyWith:
+      // xPosition: xPosition ?? this.xPosition,
+      // yPosition: yPosition ?? this.yPosition,
+      // busbarLength: busbarLength ?? this.busbarLength,
+      // textOffset: textOffset ?? this.textOffset,
+      // energyTextOffset: energyTextOffset ?? this.energyTextOffset,
       distributionZoneId: distributionZoneId ?? this.distributionZoneId,
       distributionCircleId: distributionCircleId ?? this.distributionCircleId,
       distributionDivisionId:

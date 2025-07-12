@@ -1,20 +1,19 @@
-// models/substation_sld_layout_model.dart
+// lib/models/substation_sld_layout_model.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:ui'; // For Offset
+import 'dart:ui'; // For Offset - even though we store dx/dy as doubles, the Offset class is useful for conceptual clarity.
 
 class SubstationSldLayout {
-  final String
-  id; // Document ID for this layout, could be same as substationId for 1:1 mapping
+  final String id; // Document ID (often same as substationId)
   final String substationId;
   final Timestamp createdAt;
   final Timestamp lastModifiedAt;
   final String createdBy;
   final String lastModifiedBy;
 
-  // Map to store positions, text offsets, and busbar lengths per bay
+  // Map to store layout parameters for each bay.
   // Key: bayId
-  // Value: Map containing 'x', 'y', 'textOffsetDx', 'textOffsetDy', 'busbarLength'
+  // Value: Map containing 'x', 'y', 'textOffsetDx', 'textOffsetDy', 'busbarLength', 'energyTextOffsetDx', 'energyTextOffsetDy'
   final Map<String, Map<String, double>> bayLayoutParameters;
 
   SubstationSldLayout({
@@ -31,11 +30,11 @@ class SubstationSldLayout {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return SubstationSldLayout(
       id: doc.id,
-      substationId: data['substationId'],
-      createdAt: data['createdAt'],
-      lastModifiedAt: data['lastModifiedAt'],
-      createdBy: data['createdBy'],
-      lastModifiedBy: data['lastModifiedBy'],
+      substationId: data['substationId'] ?? '',
+      createdAt: data['createdAt'] ?? Timestamp.now(),
+      lastModifiedAt: data['lastModifiedAt'] ?? Timestamp.now(),
+      createdBy: data['createdBy'] ?? '',
+      lastModifiedBy: data['lastModifiedBy'] ?? '',
       bayLayoutParameters:
           (data['bayLayoutParameters'] as Map<String, dynamic>?)?.map(
             (key, value) => MapEntry(key, Map<String, double>.from(value)),
@@ -55,20 +54,23 @@ class SubstationSldLayout {
     };
   }
 
-  // Helper method to update specific layout parameters
   SubstationSldLayout copyWith({
-    Map<String, Map<String, double>>? bayLayoutParameters,
+    String? id,
+    String? substationId,
+    Timestamp? createdAt,
     Timestamp? lastModifiedAt,
+    String? createdBy,
     String? lastModifiedBy,
+    Map<String, Map<String, double>>? bayLayoutParameters,
   }) {
     return SubstationSldLayout(
-      id: id,
-      substationId: substationId,
-      createdAt: createdAt,
-      createdBy: createdBy,
-      bayLayoutParameters: bayLayoutParameters ?? this.bayLayoutParameters,
+      id: id ?? this.id,
+      substationId: substationId ?? this.substationId,
+      createdAt: createdAt ?? this.createdAt,
       lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
+      createdBy: createdBy ?? this.createdBy,
       lastModifiedBy: lastModifiedBy ?? this.lastModifiedBy,
+      bayLayoutParameters: bayLayoutParameters ?? this.bayLayoutParameters,
     );
   }
 }
