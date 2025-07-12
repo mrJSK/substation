@@ -1,22 +1,25 @@
 // lib/screens/energy_sld_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 import 'dart:math';
 import 'package:collection/collection.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 
 // PDF & Capture related imports
+import 'package:flutter/material.dart' show TextDirection;
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
+import 'dart:ui';
 import 'dart:typed_data';
 import 'package:widgets_to_image/widgets_to_image.dart';
 
 import '../models/bay_model.dart';
+import '../models/equipment_model.dart';
 import '../models/user_model.dart';
 import '../models/reading_models.dart';
 import '../models/logsheet_models.dart';
@@ -30,7 +33,7 @@ import '../utils/snackbar_utils.dart';
 import '../painters/single_line_diagram_painter.dart';
 import '../widgets/energy_assessment_dialog.dart';
 
-// Data model for energy data associated with a bay
+/// Data model for energy data associated with a bay
 class BayEnergyData {
   final String bayName;
   final double? prevImp;
@@ -46,12 +49,12 @@ class BayEnergyData {
     required this.bayName,
     this.prevImp,
     this.currImp,
-    this.prevExp,
     this.currExp,
     this.mf,
     this.impConsumed,
     this.expConsumed,
     this.hasAssessment = false,
+    this.prevExp,
   });
 
   BayEnergyData applyAssessment({
@@ -73,7 +76,7 @@ class BayEnergyData {
     );
   }
 
-  // Convert to Map for serialization
+  /// Convert to Map for serialization
   Map<String, dynamic> toMap() {
     return {
       'bayName': bayName,
@@ -88,7 +91,7 @@ class BayEnergyData {
     };
   }
 
-  // Create from Map for deserialization
+  /// Create from Map for deserialization
   factory BayEnergyData.fromMap(Map<String, dynamic> map) {
     return BayEnergyData(
       bayName: map['bayName'],
@@ -104,7 +107,7 @@ class BayEnergyData {
   }
 }
 
-// Data model for Aggregated Feeder Energy Table
+/// Data model for Aggregated Feeder Energy Table
 class AggregatedFeederEnergyData {
   final String zoneName;
   final String circleName;
@@ -148,7 +151,7 @@ class AggregatedFeederEnergyData {
   }
 }
 
-// Data model for rendering the SLD with energy data
+/// Data model for rendering the SLD with energy data
 class SldRenderData {
   final List<BayRenderData> bayRenderDataList;
   final Map<String, Rect>
@@ -174,7 +177,7 @@ class SldRenderData {
     required this.aggregatedFeederEnergyData, // NEW: Required in constructor
   });
 
-  // Convert to Map for serialization (excluding Rects and Offsets)
+  /// Convert to Map for serialization (excluding Rects and Offsets)
   Map<String, dynamic> toMap() {
     return {
       // bayRenderDataList contains Bay objects which are serializable through toFirestore()
@@ -183,9 +186,12 @@ class SldRenderData {
         for (var renderData in bayRenderDataList)
           renderData.bay.id: {
             'x': renderData.bay.xPosition,
-            'y': renderData
-                .bay
-                .yPosition, // Corrected from renderData.bay.yPosition
+            'y': renderData.bay.yPosition,
+            'textOffsetDx':
+                renderData.bay.textOffset?.dx, // Include textOffset.dx
+            'textOffsetDy':
+                renderData.bay.textOffset?.dy, // Include textOffset.dy
+            'busbarLength': renderData.bay.busbarLength, // Include busbarLength
           },
       },
       'bayEnergyData': {
@@ -200,7 +206,7 @@ class SldRenderData {
     };
   }
 
-  // Create from Map for deserialization (re-generating Rects and Offsets will happen dynamically)
+  /// Create from Map for deserialization (re-generating Rects and Offsets will happen dynamically)
   factory SldRenderData.fromMap(
     Map<String, dynamic> map,
     Map<String, Bay> baysMap,
@@ -226,7 +232,7 @@ class SldRenderData {
               (e) => AggregatedFeederEnergyData.fromMap(
                 e as Map<String, dynamic>? ?? {},
               ),
-            ) // ADDED: null check for e
+            )
             .toList() ??
         [];
 
@@ -241,11 +247,21 @@ class SldRenderData {
         if (originalBay != null) {
           final double? x = (positionData['x'] as num?)?.toDouble();
           final double? y = (positionData['y'] as num?)?.toDouble();
+          final double? textOffsetDx = (positionData['textOffsetDx'] as num?)
+              ?.toDouble();
+          final double? textOffsetDy = (positionData['textOffsetDy'] as num?)
+              ?.toDouble();
+          final double? busbarLength = (positionData['busbarLength'] as num?)
+              ?.toDouble();
 
           // Create a new Bay object with the saved position
           final Bay bayWithPosition = originalBay.copyWith(
             xPosition: x,
             yPosition: y,
+            textOffset: (textOffsetDx != null && textOffsetDy != null)
+                ? Offset(textOffsetDx, textOffsetDy)
+                : null,
+            busbarLength: busbarLength,
           );
 
           // Dummy rects for now, they will be recalculated by _buildBayRenderDataList
@@ -258,8 +274,10 @@ class SldRenderData {
               bottomCenter: Offset(x ?? 0, y ?? 0),
               leftCenter: Offset(x ?? 0, y ?? 0),
               rightCenter: Offset(x ?? 0, y ?? 0),
-              textOffset: Offset(x ?? 0, y ?? 0),
-              busbarLength: 0.0,
+              textOffset: (textOffsetDx != null && textOffsetDy != null)
+                  ? Offset(textOffsetDx, textOffsetDy)
+                  : Offset.zero,
+              busbarLength: busbarLength ?? 0.0,
             ),
           );
         }
@@ -279,6 +297,10 @@ class SldRenderData {
   }
 }
 
+/// GlobalKey for ScaffoldMessengerState to show SnackBars from anywhere
+final GlobalKey<ScaffoldMessengerState> energySldScaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+
 class EnergySldScreen extends StatefulWidget {
   final String substationId;
   final String substationName;
@@ -297,6 +319,8 @@ class EnergySldScreen extends StatefulWidget {
   State<EnergySldScreen> createState() => _EnergySldScreenState();
 }
 
+enum MovementMode { bay, text } // Reintroduce MovementMode enum
+
 class _EnergySldScreenState extends State<EnergySldScreen> {
   bool _isLoading = true;
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 1));
@@ -306,6 +330,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   List<Bay> _allBaysInSubstation = [];
   Map<String, Bay> _baysMap = {};
   List<BayConnection> _allConnections = [];
+  List<BayRenderData> _currentBayRenderDataList = [];
 
   Map<String, BayEnergyData> _bayEnergyData = {};
   Map<String, double> _abstractEnergyData = {};
@@ -313,6 +338,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Map<String, BusbarEnergyMap> _busbarEnergyMaps = {};
   Map<String, Assessment> _latestAssessmentsPerBay =
       {}; // Stores only the latest assessment per bay
+  Map<String, List<EquipmentInstance>> _equipmentByBayId = {};
 
   // Hierarchy maps for lookup (Transmission Hierarchy)
   Map<String, Zone> _zonesMap = {};
@@ -350,6 +376,18 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   // NEW: State to control rendering size for PDF capture
   bool _isCapturingPdf = false;
   Matrix4? _originalTransformation; // To store and restore transformation
+
+  // --- Start of additions for text movement ---
+  String? _selectedBayForMovementId;
+  MovementMode _movementMode = MovementMode.bay; // Default to bay movement
+  Map<String, Offset> _bayPositions = {}; // To store temporary bay positions
+  Map<String, Offset> _textOffsets = {}; // To store temporary text offsets
+  Map<String, double> _busbarLengths = {}; // To store temporary busbar lengths
+
+  static const double _movementStep = 10.0;
+  static const double _busbarLengthStep = 20.0;
+
+  // --- End of additions for text movement ---
 
   @override
   void initState() {
@@ -405,6 +443,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _aggregatedFeederEnergyData.clear();
       _currentPageIndex = 0;
       _feederTablePageIndex = 0;
+
+      // Clear movement state
+      _selectedBayForMovementId = null;
+      _bayPositions.clear();
+      _textOffsets.clear();
+      _busbarLengths.clear();
     });
 
     try {
@@ -449,31 +493,30 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 ) ??
             {};
         _busEnergySummary = Map<String, Map<String, double>>.from(
-          (_loadedSldParameters!['busEnergySummary']
-                      as Map<String, dynamic>?) // Removed '!'
+          (_loadedSldParameters!['busEnergySummary'] as Map<String, dynamic>?)
                   ?.map(
                     (key, value) => MapEntry(
                       key,
                       Map<String, double>.from(
                         value as Map<String, dynamic>? ?? {},
-                      ), // Added null check for 'value' here
+                      ),
                     ),
                   ) ??
               {},
         );
         _abstractEnergyData = Map<String, double>.from(
-          _loadedSldParameters!['abstractEnergyData'] // Removed '!'
+          _loadedSldParameters!['abstractEnergyData']
                   as Map<String, dynamic>? ??
               {},
         );
         _aggregatedFeederEnergyData =
-            (_loadedSldParameters!['aggregatedFeederEnergyData'] // Removed '!'
+            (_loadedSldParameters!['aggregatedFeederEnergyData']
                     as List<dynamic>?)
                 ?.map(
                   (e) => AggregatedFeederEnergyData.fromMap(
                     e as Map<String, dynamic>? ?? {},
                   ),
-                ) // Added null check for 'e' here
+                )
                 .toList() ??
             [];
         _allAssessmentsForDisplay = _loadedAssessmentsSummary
@@ -531,10 +574,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             .where('substationId', isEqualTo: widget.substationId)
             .where('frequency', isEqualTo: 'daily')
             .where('readingTimestamp', isGreaterThanOrEqualTo: startOfStartDate)
-            .where(
-              'readingTimestamp',
-              isLessThanOrEqualTo: endOfEndDate,
-            ) // Changed to endOfEndDate to cover the range
+            .where('readingTimestamp', isLessThanOrEqualTo: endOfEndDate)
             .get();
         startDayReadings = {
           for (var doc in startDayLogsheetsSnapshot.docs)
@@ -542,7 +582,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 LogsheetEntry.fromFirestore(doc),
         };
 
-        // If start and end dates are different, fetch end day readings specifically
         if (!_startDate.isAtSameMomentAs(_endDate)) {
           final endDayLogsheetsSnapshot = await FirebaseFirestore.instance
               .collection('logsheetEntries')
@@ -557,8 +596,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   LogsheetEntry.fromFirestore(doc),
           };
         } else {
-          // If start and end dates are the same, endDayReadings is startDayReadings
-          // And we need to fetch readings for the previous day to calculate consumption for that single day
           endDayReadings = startDayReadings;
           final previousDay = _startDate.subtract(const Duration(days: 1));
           final startOfPreviousDay = DateTime(
@@ -599,7 +636,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           };
         }
 
-        // Fetch all assessments for the substation within the date range, ordered by timestamp
         final assessmentsRawSnapshot = await FirebaseFirestore.instance
             .collection('assessments')
             .where('substationId', isEqualTo: widget.substationId)
@@ -611,32 +647,23 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               'assessmentTimestamp',
               isLessThanOrEqualTo: Timestamp.fromDate(endOfEndDate),
             )
-            .orderBy(
-              'assessmentTimestamp',
-              descending: true,
-            ) // Get most recent first
+            .orderBy('assessmentTimestamp', descending: true)
             .get();
 
-        _allAssessmentsForDisplay = []; // Reset for notes section
-        _latestAssessmentsPerBay.clear(); // Reset for applying adjustments
+        _allAssessmentsForDisplay = [];
+        _latestAssessmentsPerBay.clear();
 
         for (var doc in assessmentsRawSnapshot.docs) {
           final assessment = Assessment.fromFirestore(doc);
-          _allAssessmentsForDisplay.add(
-            assessment,
-          ); // Add all for notes display
-
-          // Store only the latest assessment per bay (due to orderBy descending, the first one encountered is the latest)
+          _allAssessmentsForDisplay.add(assessment);
           if (!_latestAssessmentsPerBay.containsKey(assessment.bayId)) {
             _latestAssessmentsPerBay[assessment.bayId] = assessment;
           }
         }
-        // Sort assessments for display by most recent first
         _allAssessmentsForDisplay.sort(
           (a, b) => b.assessmentTimestamp.compareTo(a.assessmentTimestamp),
         );
 
-        // Calculate energy for each bay
         for (var bay in _allBaysInSubstation) {
           final double? mf = bay.multiplyingFactor;
           double calculatedImpConsumed = 0.0;
@@ -769,7 +796,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             );
           }
 
-          // Apply latest assessment if available for this bay (only one per bay from _latestAssessmentsPerBay)
           final latestAssessment = _latestAssessmentsPerBay[bay.id];
           if (latestAssessment != null) {
             _bayEnergyData[bay.id] = _bayEnergyData[bay.id]!.applyAssessment(
@@ -1038,7 +1064,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
-    if (_isViewingSavedSld) return; // Cannot change date range for saved SLD
+    if (_isViewingSavedSld) return;
 
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
@@ -1058,7 +1084,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Future<void> _saveBusbarEnergyMap(BusbarEnergyMap map) async {
-    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+    if (_isViewingSavedSld) return;
 
     try {
       if (map.id == null) {
@@ -1085,7 +1111,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Future<void> _deleteBusbarEnergyMap(String mapId) async {
-    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+    if (_isViewingSavedSld) return;
 
     try {
       await FirebaseFirestore.instance
@@ -1106,7 +1132,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _showBusbarSelectionDialog() {
-    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+    if (_isViewingSavedSld) return;
 
     final List<Bay> busbars = _allBaysInSubstation
         .where((bay) => bay.bayType == 'Busbar')
@@ -1145,7 +1171,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _showBusbarEnergyAssignmentDialog(Bay busbar) {
-    if (_isViewingSavedSld) return; // Cannot modify for saved SLD
+    if (_isViewingSavedSld) return;
 
     final List<Bay> connectedBays = _allConnections
         .where(
@@ -1182,10 +1208,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // Method to show the energy assessment dialog for a specific bay
-  // This is called AFTER the bay selection dialog.
+  /// Method to show the energy assessment dialog for a specific bay
+  /// This is called AFTER the bay selection dialog.
   void _showEnergyAssessmentDialog(Bay bay, BayEnergyData? energyData) {
-    if (_isViewingSavedSld) return; // Cannot add assessments to saved SLD
+    if (_isViewingSavedSld) return;
 
     showDialog(
       context: context,
@@ -1194,16 +1220,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         currentUser: widget.currentUser,
         currentEnergyData: energyData,
         onSaveAssessment: _loadEnergyData,
-        latestExistingAssessment:
-            _latestAssessmentsPerBay[bay
-                .id], // Pass the latest assessment if found
+        latestExistingAssessment: _latestAssessmentsPerBay[bay.id],
       ),
     );
   }
 
-  // NEW: Method to show a dialog for selecting a bay for assessment
+  /// NEW: Method to show a dialog for selecting a bay for assessment
   void _showBaySelectionForAssessment() {
-    if (_isViewingSavedSld) return; // Cannot add assessments to saved SLD
+    if (_isViewingSavedSld) return;
 
     final List<Bay> assessableBays = _allBaysInSubstation
         .where((bay) => ['Feeder', 'Line', 'Transformer'].contains(bay.bayType))
@@ -1217,10 +1241,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           content: assessableBays.isEmpty
               ? const Text('No assessable bays found in this substation.')
               : SizedBox(
-                  // Added SizedBox for width constraint
-                  width:
-                      MediaQuery.of(context).size.width *
-                      0.7, // Adjust width as needed
+                  width: MediaQuery.of(context).size.width * 0.7,
                   child: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -1228,11 +1249,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                         return ListTile(
                           title: Text('${bay.name} (${bay.bayType})'),
                           onTap: () {
-                            Navigator.pop(context); // Close selection dialog
+                            Navigator.pop(context);
                             _showEnergyAssessmentDialog(
                               bay,
-                              _bayEnergyData[bay
-                                  .id], // Pass current energy data
+                              _bayEnergyData[bay.id],
                             );
                           },
                         );
@@ -1251,12 +1271,315 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // NEW: Method to save the current SLD state
+  // --- Start of methods for text movement functionality ---
+
+  /// Helper to get BayRenderData (copied from SubstationDetailScreen)
+  BayRenderData? _getBayRenderData(
+    String bayId,
+    List<BayRenderData> bayRenderDataList,
+  ) {
+    try {
+      return bayRenderDataList.firstWhere((data) => data.bay.id == bayId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Function to save position/textOffset/busbarLength changes to Firestore
+  Future<void> _saveChangesToFirestore() async {
+    if (_selectedBayForMovementId == null) return;
+    if (_isViewingSavedSld) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Cannot save position changes to a historical SLD.',
+        isError: true,
+      );
+      return;
+    }
+
+    final bayId = _selectedBayForMovementId!;
+    try {
+      final updateData = <String, dynamic>{};
+
+      if (_bayPositions.containsKey(bayId)) {
+        updateData['xPosition'] = _bayPositions[bayId]!.dx;
+        updateData['yPosition'] = _bayPositions[bayId]!.dy;
+      }
+      if (_textOffsets.containsKey(bayId)) {
+        updateData['textOffset'] = {
+          'dx': _textOffsets[bayId]!.dx,
+          'dy': _textOffsets[bayId]!.dy,
+        };
+      }
+      if (_busbarLengths.containsKey(bayId)) {
+        updateData['busbarLength'] = _busbarLengths[bayId];
+      }
+
+      if (updateData.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('bays')
+            .doc(bayId)
+            .update(updateData);
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Position changes saved successfully!',
+          );
+        }
+        if (!_isViewingSavedSld) {
+          await _loadEnergyData();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to save position changes: $e',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _selectedBayForMovementId = null;
+          _bayPositions.clear();
+          _textOffsets.clear();
+          _busbarLengths.clear();
+        });
+      }
+    }
+  }
+
+  /// Method to show context menu for bay symbol actions
+  void _showBaySymbolActions(
+    BuildContext context,
+    Bay bay,
+    Offset tapPosition,
+  ) {
+    if (_isViewingSavedSld) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Cannot modify bays in a saved historical SLD.',
+      );
+      return;
+    }
+
+    final List<PopupMenuEntry<String>> menuItems = [
+      const PopupMenuItem<String>(
+        value: 'adjust',
+        child: ListTile(
+          leading: Icon(Icons.open_with),
+          title: Text('Adjust Position/Size'),
+        ),
+      ),
+      const PopupMenuItem<String>(
+        value: 'move_text',
+        child: ListTile(
+          leading: Icon(Icons.text_fields),
+          title: Text('Adjust Text Position'),
+        ),
+      ),
+    ];
+
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        tapPosition.dx,
+        tapPosition.dy,
+        MediaQuery.of(context).size.width - tapPosition.dx,
+        MediaQuery.of(context).size.height - tapPosition.dy,
+      ),
+      items: menuItems,
+    ).then((value) {
+      if (value == 'adjust') {
+        setState(() {
+          _selectedBayForMovementId = bay.id;
+          _bayPositions[bay.id] = Offset(
+            bay.xPosition ?? 0,
+            bay.yPosition ?? 0,
+          );
+          _textOffsets[bay.id] = bay.textOffset ?? Offset.zero;
+          if (bay.bayType == 'Busbar') {
+            _busbarLengths[bay.id] = bay.busbarLength ?? 200.0;
+          }
+          _movementMode = MovementMode.bay;
+        });
+        SnackBarUtils.showSnackBar(
+          context,
+          'Selected "${bay.name}". Use controls below to adjust.',
+        );
+      } else if (value == 'move_text') {
+        setState(() {
+          _selectedBayForMovementId = bay.id;
+          _movementMode = MovementMode.text;
+          _textOffsets[bay.id] = bay.textOffset ?? Offset.zero;
+        });
+        SnackBarUtils.showSnackBar(
+          context,
+          'Selected "${bay.name}" text. Use controls below to adjust.',
+        );
+      }
+    });
+  }
+
+  /// Method to handle moving the selected item (bay or text)
+  void _moveSelectedItem(double dx, double dy) {
+    setState(() {
+      if (_movementMode == MovementMode.bay) {
+        final currentOffset =
+            _bayPositions[_selectedBayForMovementId] ?? Offset.zero;
+        _bayPositions[_selectedBayForMovementId!] = Offset(
+          currentOffset.dx + dx,
+          currentOffset.dy + dy,
+        );
+      } else {
+        final currentOffset =
+            _textOffsets[_selectedBayForMovementId] ?? Offset.zero;
+        _textOffsets[_selectedBayForMovementId!] = Offset(
+          currentOffset.dx + dx,
+          currentOffset.dy + dy,
+        );
+      }
+    });
+  }
+
+  /// Method to adjust busbar length
+  void _adjustBusbarLength(double change) {
+    setState(() {
+      final currentLength = _busbarLengths[_selectedBayForMovementId!] ?? 100.0;
+      _busbarLengths[_selectedBayForMovementId!] = max(
+        20.0,
+        currentLength + change,
+      );
+    });
+  }
+
+  /// Widget for movement controls (copied and adapted from SubstationDetailScreen)
+  Widget _buildMovementControls() {
+    final selectedBay = _getBayRenderData(
+      _selectedBayForMovementId!,
+      _allBaysInSubstation
+          .map(
+            (bay) => BayRenderData(
+              bay: bay,
+              rect: Rect.zero,
+              center: Offset.zero,
+              topCenter: Offset.zero,
+              bottomCenter: Offset.zero,
+              leftCenter: Offset.zero,
+              rightCenter: Offset.zero,
+              textOffset: bay.textOffset ?? Offset.zero,
+              busbarLength: bay.busbarLength ?? 0.0,
+            ),
+          )
+          .toList(),
+    )?.bay;
+
+    if (selectedBay == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(8.0),
+      color: Colors.blueGrey.shade800,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Editing: ${selectedBay.name}',
+            style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 10),
+          SegmentedButton<MovementMode>(
+            segments: const [
+              ButtonSegment(value: MovementMode.bay, label: Text('Move Bay')),
+              ButtonSegment(value: MovementMode.text, label: Text('Move Text')),
+            ],
+            selected: {_movementMode},
+            onSelectionChanged: (newSelection) {
+              setState(() {
+                _movementMode = newSelection.first;
+              });
+            },
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                color: Colors.white,
+                onPressed: () => _moveSelectedItem(-_movementStep, 0),
+              ),
+              Column(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_upward),
+                    color: Colors.white,
+                    onPressed: () => _moveSelectedItem(0, -_movementStep),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_downward),
+                    color: Colors.white,
+                    onPressed: () => _moveSelectedItem(0, _movementStep),
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.arrow_forward),
+                color: Colors.white,
+                onPressed: () => _moveSelectedItem(_movementStep, 0),
+              ),
+            ],
+          ),
+          if (selectedBay.bayType == 'Busbar') ...[
+            const SizedBox(height: 10),
+            const Text('Busbar Length', style: TextStyle(color: Colors.white)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove),
+                  color: Colors.white,
+                  onPressed: () => _adjustBusbarLength(-_busbarLengthStep),
+                ),
+                Text(
+                  _busbarLengths[selectedBay.id]?.toStringAsFixed(0) ?? 'Auto',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  color: Colors.white,
+                  onPressed: () => _adjustBusbarLength(_busbarLengthStep),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: _saveChangesToFirestore,
+            child: const Text('Done & Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- End of additions for text movement functionality ---
+
+  /// NEW: Method to save the current SLD state
   Future<void> _saveSld() async {
     if (_isViewingSavedSld) {
       SnackBarUtils.showSnackBar(
         context,
         'Cannot re-save a loaded historical SLD. Please go to a live SLD to save.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (_selectedBayForMovementId != null) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please save or cancel current position adjustments first.',
         isError: true,
       );
       return;
@@ -1298,15 +1621,21 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     if (sldName == null || sldName.isEmpty) return;
 
     setState(() {
-      _isLoading = true; // Show loading indicator during saving
+      _isLoading = true;
     });
 
     try {
-      // Serialize current state for sldParameters
       final Map<String, dynamic> currentSldParameters = {
         'bayPositions': {
           for (var bay in _allBaysInSubstation)
-            bay.id: {'x': bay.xPosition, 'y': bay.yPosition},
+            bay.id: {
+              'x': bay.xPosition,
+              'y': bay.yPosition,
+              'textOffsetDx': bay.textOffset?.dx,
+              'yPosition': bay.yPosition,
+              'textOffsetDy': bay.textOffset?.dy,
+              'busbarLength': bay.busbarLength,
+            },
         },
         'bayEnergyData': {
           for (var entry in _bayEnergyData.entries)
@@ -1317,19 +1646,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         'aggregatedFeederEnergyData': _aggregatedFeederEnergyData
             .map((e) => e.toMap())
             .toList(),
-        // NEW: Add a map for bayId to bayName lookup for all bays
         'bayNamesLookup': {
           for (var bay in _allBaysInSubstation) bay.id: bay.name,
         },
       };
 
-      // Serialize current assessments for assessmentsSummary
       final List<Map<String, dynamic>> currentAssessmentsSummary =
           _allAssessmentsForDisplay
               .map(
                 (assessment) => {
                   ...assessment.toFirestore(),
-                  // Add bayName to the summary for easier PDF generation
                   'bayName': _baysMap[assessment.bayId]?.name ?? 'N/A',
                 },
               )
@@ -1375,84 +1701,189 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Function to generate PDF content from the current SLD state
+  /// Function to generate PDF content from the current SLD state
   Future<Uint8List> _generatePdfFromCurrentSld() async {
     final pdf = pw.Document();
 
-    // 1. Save current transformation and reset for capture
     _originalTransformation = Matrix4.copy(_transformationController.value);
 
-    // Calculate fitting transformation for the capture size (210x297)
-    const double captureWidth = 210; // A4 size in mm
-    const double captureHeight = 297; // A4 size in mm
-
-    // Calculate the diagram's actual content size
-    final SldRenderData currentSldRenderData = _buildBayRenderDataList(
+    final SldRenderData sldRenderDataForCapture = _buildBayRenderDataList(
       _allBaysInSubstation,
       _baysMap,
       _allConnections,
       _bayEnergyData,
       _busEnergySummary,
     );
-    final double diagramContentWidth = max(
-      1.0, // Ensure it's not zero to prevent division by zero
-      (currentSldRenderData.bayRenderDataList.isNotEmpty
-              ? currentSldRenderData.bayRenderDataList
-                    .map((e) => e.rect.right + 100)
-                    .reduce(max)
-              : 0) +
-          50,
+
+    double minXForContent = double.infinity;
+    double minYForContent = double.infinity;
+    double maxXForContent = double.negativeInfinity;
+    double maxYForContent = double.negativeInfinity;
+
+    for (var renderData in sldRenderDataForCapture.bayRenderDataList) {
+      minXForContent = min(minXForContent, renderData.rect.left);
+      minYForContent = min(minYForContent, renderData.rect.top);
+      maxXForContent = max(maxXForContent, renderData.rect.right);
+      maxYForContent = max(maxYForContent, renderData.rect.bottom);
+
+      final TextPainter textPainter = TextPainter(
+        text: TextSpan(
+          text: renderData.bay.name,
+          style: const TextStyle(fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      Offset potentialTextTopLeft = Offset.zero;
+      if (renderData.bay.bayType == 'Busbar') {
+        potentialTextTopLeft =
+            Offset(
+              sldRenderDataForCapture.busbarRects[renderData.bay.id]!.left - 8,
+              sldRenderDataForCapture.busbarRects[renderData.bay.id]!.center.dy,
+            ) +
+            renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width, textPainter.height / 2);
+      } else if (renderData.bay.bayType == 'Transformer') {
+        potentialTextTopLeft =
+            renderData.rect.centerLeft + renderData.textOffset;
+        final Size tempMeasure = _measureText(
+          renderData.bay.name,
+          fontSize: 9,
+          isBold: true,
+        );
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(tempMeasure.width, -(tempMeasure.height / 2 + 20));
+      } else if (renderData.bay.bayType == 'Line') {
+        potentialTextTopLeft =
+            renderData.rect.topCenter + renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width / 2, textPainter.height / 2 + 12);
+      } else if (renderData.bay.bayType == 'Feeder') {
+        potentialTextTopLeft =
+            renderData.rect.bottomCenter + renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width / 2, textPainter.height / 2 - 4);
+      } else {
+        potentialTextTopLeft = renderData.rect.center + renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width / 2, textPainter.height / 2);
+      }
+
+      minXForContent = min(minXForContent, potentialTextTopLeft.dx);
+      minYForContent = min(minYForContent, potentialTextTopLeft.dy);
+      maxXForContent = max(
+        maxXForContent,
+        potentialTextTopLeft.dx + textPainter.width,
+      );
+      maxYForContent = max(
+        maxYForContent,
+        potentialTextTopLeft.dy + textPainter.height,
+      );
+
+      if (renderData.bay.bayType == 'Busbar') {
+        const double energyTextFontSize = 9.0;
+        const double textHeight = energyTextFontSize + 2;
+        final double energyTextWidth = 120;
+
+        Offset energyTextStart = Offset(
+          sldRenderDataForCapture.busbarRects[renderData.bay.id]!.right - 80,
+          sldRenderDataForCapture.busbarRects[renderData.bay.id]!.center.dy -
+              (textHeight * 2.5),
+        );
+        minXForContent = min(minXForContent, energyTextStart.dx);
+        minYForContent = min(minYForContent, energyTextStart.dy);
+        maxXForContent = max(
+          maxXForContent,
+          energyTextStart.dx + energyTextWidth,
+        );
+        maxYForContent = max(
+          maxYForContent,
+          energyTextStart.dy + textHeight * 2.5,
+        );
+      } else {
+        const double energyTextFontSize = 9.0;
+        const double lineHeight = 1.2;
+        final double energyTextWidth = 100;
+
+        Offset baseEnergyTextOffset;
+        if (renderData.bay.bayType == 'Transformer') {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.centerLeft.dx - 60,
+            renderData.rect.center.dy - 5,
+          );
+        } else if (renderData.bay.bayType == 'Line') {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.center.dx - 75,
+            renderData.rect.top + 10,
+          );
+        } else if (renderData.bay.bayType == 'Feeder') {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.center.dx - 70,
+            renderData.rect.bottom - 35,
+          );
+        } else {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.right + 15,
+            renderData.rect.center.dy - 20,
+          );
+        }
+
+        minXForContent = min(minXForContent, baseEnergyTextOffset.dx);
+        minYForContent = min(minYForContent, baseEnergyTextOffset.dy);
+        maxXForContent = max(
+          maxXForContent,
+          baseEnergyTextOffset.dx + energyTextWidth,
+        );
+        maxYForContent = max(
+          maxYForContent,
+          baseEnergyTextOffset.dy + 7 * lineHeight * energyTextFontSize,
+        );
+      }
+    }
+
+    if (!minXForContent.isFinite ||
+        !minYForContent.isFinite ||
+        !maxXForContent.isFinite ||
+        !maxYForContent.isFinite ||
+        (maxXForContent - minXForContent) <= 0 ||
+        (maxYForContent - minYForContent) <= 0) {
+      minXForContent = 0;
+      minYForContent = 0;
+      maxXForContent = 400;
+      maxYForContent = 300;
+    }
+
+    const double capturePadding = 50.0;
+    final double diagramContentWidth =
+        (maxXForContent - minXForContent) + 2 * capturePadding;
+    final double diagramContentHeight =
+        (maxYForContent - minYForContent) + 2 * capturePadding;
+
+    final Offset originOffsetForPainter = Offset(
+      -minXForContent + capturePadding,
+      -minYForContent + capturePadding,
     );
-    final double diagramContentHeight = max(
-      1.0, // Ensure it's not zero
-      (currentSldRenderData.bayRenderDataList.isNotEmpty
-              ? currentSldRenderData.bayRenderDataList
-                    .map((e) => e.rect.bottom + 100)
-                    .reduce(max)
-              : 0) +
-          50,
-    );
 
-    // Determine scale to fit entire diagram into capture box
-    final double scaleX = captureWidth / diagramContentWidth;
-    final double scaleY = captureHeight / diagramContentHeight;
-    final double fitScale = min(
-      scaleX,
-      scaleY,
-    ); // Use smaller scale to ensure everything fits
-
-    // Calculate translation to center the scaled diagram
-    final double scaledDiagramWidth = diagramContentWidth * fitScale;
-    final double scaledDiagramHeight = diagramContentHeight * fitScale;
-
-    final double translateX = (captureWidth - scaledDiagramWidth) / 2;
-    final double translateY = (captureHeight - scaledDiagramHeight) / 2;
-
-    // Apply the fitting transformation
-    _transformationController.value = Matrix4.identity()
-      ..translate(translateX, translateY)
-      ..scale(fitScale);
-
-    // Set flag to indicate PDF capture mode
     setState(() {
       _isCapturingPdf = true;
     });
 
-    // Allow the UI to rebuild with the constrained size and new transformation
-    await WidgetsBinding
-        .instance
-        .endOfFrame; // Await end of the current frame rendering
+    await WidgetsBinding.instance.endOfFrame;
 
     final Uint8List? sldImageBytes = await _widgetsToImageController.capturePng(
-      pixelRatio: 3.0, // High quality capture
+      pixelRatio: 10.0,
     );
 
-    // Reset flag after capture is complete
     setState(() {
       _isCapturingPdf = false;
     });
 
-    // 2. Restore original transformation
     _transformationController.value = _originalTransformation!;
 
     pw.MemoryImage? sldPdfImage;
@@ -1460,13 +1891,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       sldPdfImage = pw.MemoryImage(sldImageBytes);
     }
 
-    // Prepare data for PDF
     final Map<String, dynamic> currentAbstractEnergyData = _abstractEnergyData;
     final Map<String, Map<String, double>> currentBusEnergySummaryData =
         _busEnergySummary;
     final List<AggregatedFeederEnergyData> currentAggregatedFeederData =
         _aggregatedFeederEnergyData;
-    // For live view, use _allAssessmentsForDisplay. For saved view, _loadedAssessmentsSummary
     final List<Map<String, dynamic>> assessmentsForPdf = _isViewingSavedSld
         ? _loadedAssessmentsSummary
         : _allAssessmentsForDisplay
@@ -1478,7 +1907,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               )
               .toList();
 
-    // Use a unified map for bay names, prioritizing the loaded one if available, otherwise live
     final Map<String, String> currentBayNamesLookup;
     if (_isViewingSavedSld &&
         _loadedSldParameters != null &&
@@ -1492,8 +1920,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       };
     }
 
-    // NEW: Prepare data for the Abstract Energy Table (based on screenshot)
-    // Identify unique bus voltage levels in the substation
+    // Removed uniqueDistributionSubdivisionNames from here for consolidated table
+
     final List<String> uniqueBusVoltages =
         _allBaysInSubstation
             .where((bay) => bay.bayType == 'Busbar')
@@ -1503,42 +1931,28 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           ..sort(
             (a, b) =>
                 _getVoltageLevelValue(b).compareTo(_getVoltageLevelValue(a)),
-          ); // Sort descending
+          );
 
-    // Collect all unique distribution subdivision names from the aggregated feeder data
-    final List<String> uniqueDistributionSubdivisionNames =
-        currentAggregatedFeederData
-            .map((data) => data.distributionSubdivisionName)
-            .toSet()
-            .toList()
-          ..sort(); // Sort alphabetically for consistent order
-
-    // Construct the headers for the new abstract table
-    List<String> abstractTableHeaders = [
-      '',
-    ]; // Empty top-left cell for Imp./Exp./Diff./%Loss
+    List<String> abstractTableHeaders = [''];
     for (String voltage in uniqueBusVoltages) {
       abstractTableHeaders.add('$voltage BUS');
     }
     abstractTableHeaders.add('ABSTRACT OF S/S');
 
-    // Dynamically add columns for each unique distribution subdivision found in the data
-    for (String subDivisionName in uniqueDistributionSubdivisionNames) {
-      abstractTableHeaders.add(subDivisionName);
-    }
-    abstractTableHeaders.add('TOTAL'); // Overall total column
+    // Removed loop for distribution subdivision names for consolidated table headers
+
+    abstractTableHeaders.add('TOTAL');
 
     List<List<String>> abstractTableData = [];
 
-    // Rows for Imp., Exp., Diff., % Loss
     final List<String> rowLabels = ['Imp.', 'Exp.', 'Diff.', '% Loss'];
 
     for (int i = 0; i < rowLabels.length; i++) {
       List<String> row = [rowLabels[i]];
-      double rowTotalSummable =
-          0.0; // Sum of values that can be directly added for 'TOTAL' column
+      double rowTotalSummable = 0.0; // Sum for non-percentage rows
+      double overallTotalImpForLossCalc = 0.0;
+      double overallTotalDiffForLossCalc = 0.0;
 
-      // Process Bus Voltage Columns
       for (String voltage in uniqueBusVoltages) {
         final busbarsOfThisVoltage = _allBaysInSubstation.where(
           (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
@@ -1556,16 +1970,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           }
         }
 
-        // Add to row based on label
         if (rowLabels[i] == 'Imp.') {
           row.add(totalForThisBusVoltageImp.toStringAsFixed(2));
           rowTotalSummable += totalForThisBusVoltageImp;
+          overallTotalImpForLossCalc += totalForThisBusVoltageImp;
         } else if (rowLabels[i] == 'Exp.') {
           row.add(totalForThisBusVoltageExp.toStringAsFixed(2));
           rowTotalSummable += totalForThisBusVoltageExp;
         } else if (rowLabels[i] == 'Diff.') {
           row.add(totalForThisBusVoltageDiff.toStringAsFixed(2));
           rowTotalSummable += totalForThisBusVoltageDiff;
+          overallTotalDiffForLossCalc += totalForThisBusVoltageDiff;
         } else if (rowLabels[i] == '% Loss') {
           String lossValue = 'N/A';
           if (totalForThisBusVoltageImp > 0) {
@@ -1583,6 +1998,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           (currentAbstractEnergyData['totalImp'] ?? 0.0).toStringAsFixed(2),
         );
         rowTotalSummable += (currentAbstractEnergyData['totalImp'] ?? 0.0);
+        overallTotalImpForLossCalc +=
+            (currentAbstractEnergyData['totalImp'] ?? 0.0);
       } else if (rowLabels[i] == 'Exp.') {
         row.add(
           (currentAbstractEnergyData['totalExp'] ?? 0.0).toStringAsFixed(2),
@@ -1593,6 +2010,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           (currentAbstractEnergyData['difference'] ?? 0.0).toStringAsFixed(2),
         );
         rowTotalSummable += (currentAbstractEnergyData['difference'] ?? 0.0);
+        overallTotalDiffForLossCalc +=
+            (currentAbstractEnergyData['difference'] ?? 0.0);
       } else if (rowLabels[i] == '% Loss') {
         row.add(
           (currentAbstractEnergyData['lossPercentage'] ?? 0.0).toStringAsFixed(
@@ -1601,78 +2020,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         );
       }
 
-      // Process dynamically generated feeder columns (e.g., 'Akbapur Subdivision', 'Ghaziabad Division')
-      for (String subDivisionName in uniqueDistributionSubdivisionNames) {
-        double currentFeederImp = 0.0;
-        double currentFeederExp = 0.0;
-        double currentFeederDiff = 0.0;
+      // Removed loop for distribution subdivision names for consolidated table data
 
-        // Sum up energy for all entries that belong to this specific subdivision name
-        for (var feederData in currentAggregatedFeederData.where(
-          (data) => data.distributionSubdivisionName == subDivisionName,
-        )) {
-          currentFeederImp += feederData.importedEnergy;
-          currentFeederExp += feederData.exportedEnergy;
-          currentFeederDiff +=
-              (feederData.importedEnergy - feederData.exportedEnergy);
-        }
-
-        if (rowLabels[i] == 'Imp.') {
-          row.add(currentFeederImp.toStringAsFixed(2));
-          rowTotalSummable += currentFeederImp;
-        } else if (rowLabels[i] == 'Exp.') {
-          row.add(currentFeederExp.toStringAsFixed(2));
-          rowTotalSummable += currentFeederExp;
-        } else if (rowLabels[i] == 'Diff.') {
-          row.add(currentFeederDiff.toStringAsFixed(2));
-          rowTotalSummable += currentFeederDiff;
-        } else if (rowLabels[i] == '% Loss') {
-          String lossValue = 'N/A';
-          if (currentFeederImp > 0) {
-            lossValue = ((currentFeederDiff / currentFeederImp) * 100)
-                .toStringAsFixed(2);
-          }
-          row.add(lossValue);
-        }
-      }
-
-      // Calculate and add the 'TOTAL' column for the row
+      // Add TOTAL column
       if (rowLabels[i] == '% Loss') {
-        double overallTotalImp = 0.0;
-        double overallTotalDiff = 0.0;
-
-        // Add from Abstract of S/S
-        overallTotalImp += (currentAbstractEnergyData['totalImp'] ?? 0.0);
-        overallTotalDiff += (currentAbstractEnergyData['difference'] ?? 0.0);
-
-        // Add from Bus Voltages
-        for (String voltage in uniqueBusVoltages) {
-          final busbarsOfThisVoltage = _allBaysInSubstation.where(
-            (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
-          );
-          for (var busbar in busbarsOfThisVoltage) {
-            final busSummary = currentBusEnergySummaryData[busbar.id];
-            if (busSummary != null) {
-              overallTotalImp += busSummary['totalImp'] ?? 0.0;
-              overallTotalDiff += busSummary['difference'] ?? 0.0;
-            }
-          }
+        String overallTotalLossPercentage = 'N/A';
+        if (overallTotalImpForLossCalc > 0) {
+          overallTotalLossPercentage =
+              ((overallTotalDiffForLossCalc / overallTotalImpForLossCalc) * 100)
+                  .toStringAsFixed(2);
         }
-
-        // Add from all unique distribution subdivisions
-        for (var feederData in currentAggregatedFeederData) {
-          // Iterate through all original aggregated data
-          overallTotalImp += feederData.importedEnergy;
-          overallTotalDiff +=
-              (feederData.importedEnergy - feederData.exportedEnergy);
-        }
-
-        String overallLossPercentage = 'N/A';
-        if (overallTotalImp > 0) {
-          overallLossPercentage = ((overallTotalDiff / overallTotalImp) * 100)
-              .toStringAsFixed(2);
-        }
-        row.add(overallLossPercentage);
+        row.add(overallTotalLossPercentage);
       } else {
         row.add(rowTotalSummable.toStringAsFixed(2));
       }
@@ -1699,10 +2057,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
-              pw.Text(
-                '${widget.substationName}',
-                style: pw.TextStyle(fontSize: 14),
-              ),
+              pw.Text(widget.substationName, style: pw.TextStyle(fontSize: 14)),
               pw.Text(
                 'Period: ${DateFormat('dd-MMM-yyyy').format(_startDate)} to ${DateFormat('dd-MMM-yyyy').format(_endDate)}',
                 style: pw.TextStyle(fontSize: 12),
@@ -1713,7 +2068,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         },
         build: (pw.Context context) {
           return [
-            // MODIFIED: SLD Drawing section moved to the top
             if (sldPdfImage != null)
               pw.Center(
                 child: pw.Column(
@@ -1740,8 +2094,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 'SLD Diagram could not be captured.',
                 style: pw.TextStyle(color: PdfColors.red),
               ),
-
-            // NEW SECTION: Consolidated Energy Abstract (now comes after SLD)
             pw.Header(
               level: 0,
               text: 'Consolidated Energy Abstract',
@@ -1761,30 +2113,20 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               cellAlignment: pw.Alignment.center,
               cellPadding: const pw.EdgeInsets.all(3),
               columnWidths: {
-                0: const pw.FlexColumnWidth(1.2), // For Imp, Exp, etc.
+                0: const pw.FlexColumnWidth(1.2),
                 for (int i = 0; i < uniqueBusVoltages.length; i++)
-                  i + 1: const pw.FlexColumnWidth(1.0), // For each bus voltage
-                uniqueBusVoltages.length + 1: const pw.FlexColumnWidth(
+                  (i + 1).toInt(): const pw.FlexColumnWidth(1.0), // Fixed
+                (uniqueBusVoltages.length + 1).toInt():
+                    const pw.FlexColumnWidth(1.2), // Fixed
+                // Removed column widths for uniqueDistributionSubdivisionNames
+                (uniqueBusVoltages.length + 2)
+                    .toInt(): // Adjusted index for TOTAL column
+                const pw.FlexColumnWidth(
                   1.2,
-                ), // Abstract of S/S
-                // Dynamically added feeder columns - these indices will depend on uniqueDistributionSubdivisionNames.length
-                for (
-                  int i = 0;
-                  i < uniqueDistributionSubdivisionNames.length;
-                  i++
-                )
-                  (uniqueBusVoltages.length + 2 + i): const pw.FlexColumnWidth(
-                    1.0,
-                  ),
-                (uniqueBusVoltages.length +
-                        2 +
-                        uniqueDistributionSubdivisionNames.length):
-                    const pw.FlexColumnWidth(1.2), // TOTAL
+                ), // Fixed
               },
             ),
             pw.SizedBox(height: 20),
-
-            // Section: Feeder Energy Supplied by Distribution Hierarchy (remains after abstract table)
             pw.Header(
               level: 0,
               text: 'Feeder Energy Supplied by Distribution Hierarchy',
@@ -1821,8 +2163,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             else
               pw.Text('No aggregated feeder energy data available.'),
             pw.SizedBox(height: 20),
-
-            // Section: Assessments (remains at the end)
             pw.Header(
               level: 0,
               text: 'Assessments for this Period',
@@ -1845,7 +2185,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     assessmentMap,
                   );
                   return <String>[
-                    assessmentMap['bayName'] ?? 'N/A', // Use stored bayName
+                    assessmentMap['bayName'] ?? 'N/A',
                     assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A',
                     assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A',
                     assessment.reason,
@@ -1876,7 +2216,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     return await pdf.save();
   }
 
-  // Helper for building energy rows in PDF
   pw.Widget _buildPdfEnergyRow(String label, dynamic value, String unit) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 2.0),
@@ -1893,7 +2232,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // Function to handle PDF generation and sharing for the currently displayed SLD
   Future<void> _shareCurrentSldAsPdf() async {
     try {
       SnackBarUtils.showSnackBar(context, 'Generating PDF...');
@@ -1939,14 +2277,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     final Map<String, Rect> busbarRects = {};
     final Map<String, Map<String, Offset>> busbarConnectionPoints = {};
 
-    const double symbolWidth = 60;
-    const double symbolHeight = 60;
+    const double symbolWidth = 40;
+    const double symbolHeight = 40;
     const double horizontalSpacing = 100;
     const double verticalBusbarSpacing = 200;
     const double topPadding = 80;
     const double sidePadding = 100;
     const double busbarHitboxHeight = 50.0;
-    const double lineFeederHeight = 40.0;
+    const double lineFeederHeight = 100.0;
 
     final List<Bay> busbars = allBays
         .where((b) => b.bayType == 'Busbar')
@@ -1969,6 +2307,15 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     for (var bay in allBays) {
       if (!['Busbar', 'Transformer', 'Line', 'Feeder'].contains(bay.bayType)) {
         continue;
+      }
+
+      _bayPositions.putIfAbsent(
+        bay.id,
+        () => Offset(bay.xPosition ?? 0, bay.yPosition ?? 0),
+      );
+      _textOffsets.putIfAbsent(bay.id, () => bay.textOffset ?? Offset.zero);
+      if (bay.bayType == 'Busbar') {
+        _busbarLengths.putIfAbsent(bay.id, () => bay.busbarLength ?? 200.0);
       }
 
       if (bay.bayType == 'Transformer') {
@@ -2050,13 +2397,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       String hvBusId = busIdsInPair[0];
       String lvBusId = busIdsInPair[1];
 
-      // NEW: Add null check for busYPositions
       if (!busYPositions.containsKey(hvBusId) ||
           !busYPositions.containsKey(lvBusId)) {
         debugPrint(
-          'Skipping transformer group for pair $pairKey: One or both bus IDs not found in busYPositions. This should ideally not happen if data is clean.',
+          'Skipping transformer group for pair $pairKey: One or both bus IDs not found in busYPositions.',
         );
-        continue; // Skip this transformer group if bus position is unknown
+        continue;
       }
 
       final Bay? currentHvBus = baysMap[hvBusId];
@@ -2064,9 +2410,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       if (currentHvBus == null || currentLvBus == null) {
         debugPrint(
-          'Skipping transformer group for pair $pairKey: One or both bus objects not found in baysMap. This should ideally not happen if data is clean.',
+          'Skipping transformer group for pair $pairKey: One or both bus objects not found in baysMap.',
         );
-        continue; // Should ideally not happen if busYPositions check passes, but extra safety
+        continue;
       }
 
       final double hvVoltageValue = _getVoltageLevelValue(
@@ -2082,22 +2428,25 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         lvBusId = temp;
       }
 
-      final double hvBusY = busYPositions[hvBusId]!; // Now safe due to check
-      final double lvBusY = busYPositions[lvBusId]!; // Now safe due to check
+      final double hvBusY = busYPositions[hvBusId]!;
+      final double lvBusY = busYPositions[lvBusId]!;
 
       final List<Bay> transformers =
           transformersForPair[hvBusId] ?? transformersForPair[lvBusId] ?? [];
       for (var tf in transformers) {
         if (!placedTransformers.contains(tf)) {
-          Offset finalOffset = (tf.xPosition != null && tf.yPosition != null)
-              ? Offset(tf.xPosition!, tf.yPosition!)
-              : Offset(
-                  nextTransformerX + symbolWidth / 2,
-                  (hvBusY + lvBusY) / 2,
-                );
+          Offset currentBayPosition = _bayPositions[tf.id]!;
+          if (currentBayPosition == Offset.zero &&
+              (tf.xPosition == null || tf.yPosition == null)) {
+            currentBayPosition = Offset(
+              nextTransformerX + symbolWidth / 2,
+              (hvBusY + lvBusY) / 2,
+            );
+            _bayPositions[tf.id] = currentBayPosition;
+          }
 
           final tfRect = Rect.fromCenter(
-            center: finalOffset,
+            center: currentBayPosition,
             width: symbolWidth,
             height: symbolHeight,
           );
@@ -2109,7 +2458,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
     }
 
-    double currentLaneXForOtherBays = nextTransformerX;
+    double currentLaneXForOtherBays = maxOverallXForCanvas + horizontalSpacing;
 
     for (var busbar in busbars) {
       final double busY = busYPositions[busbar.id]!;
@@ -2119,13 +2468,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       );
       double currentX = currentLaneXForOtherBays;
       for (var bay in baysAbove) {
-        Offset finalOffset = (bay.xPosition != null && bay.yPosition != null)
-            ? Offset(bay.xPosition!, bay.yPosition!)
-            : Offset(currentX, busY - lineFeederHeight - 10);
+        Offset currentBayPosition = _bayPositions[bay.id]!;
+        if (currentBayPosition == Offset.zero &&
+            (bay.xPosition == null || bay.yPosition == null)) {
+          currentBayPosition = Offset(currentX, busY - lineFeederHeight - 10);
+          _bayPositions[bay.id] = currentBayPosition;
+        }
 
         final bayRect = Rect.fromLTWH(
-          finalOffset.dx,
-          finalOffset.dy,
+          currentBayPosition.dx,
+          currentBayPosition.dy,
           symbolWidth,
           lineFeederHeight,
         );
@@ -2139,14 +2491,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       );
       currentX = currentLaneXForOtherBays;
       for (var bay in baysBelow) {
-        Offset finalOffset = (bay.xPosition != null && bay.yPosition != null)
-            ? Offset(bay.xPosition!, bay.yPosition!)
-            : Offset(currentX, busY + 10);
+        Offset currentBayPosition = _bayPositions[bay.id]!;
+        if (currentBayPosition == Offset.zero &&
+            (bay.xPosition == null || bay.yPosition == null)) {
+          currentBayPosition = Offset(currentX, busY + 10);
+          _bayPositions[bay.id] = currentBayPosition;
+        }
 
         final bayRect = Rect.fromLTWH(
-          finalOffset.dx,
-          finalOffset
-              .dy, // CORRECTED: Changed from finalBayRects[bay.id]!.top to finalOffset.dy
+          currentBayPosition.dx,
+          currentBayPosition.dy,
           symbolWidth,
           lineFeederHeight,
         );
@@ -2160,45 +2514,60 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       final double busY = busYPositions[busbar.id]!;
       double maxConnectedBayX = sidePadding;
 
-      allBays.where((b) => b.bayType != 'Busbar').forEach((bay) {
+      for (var bay in allBays) {
+        if (bay.id == busbar.id) continue;
+
+        bool isConnected = false;
         if (bay.bayType == 'Transformer') {
-          if ((bay.hvBusId == busbar.id || bay.lvBusId == busbar.id) &&
-              finalBayRects.containsKey(bay.id)) {
-            maxConnectedBayX = max(
-              maxConnectedBayX,
-              finalBayRects[bay.id]!.right,
-            );
+          if (bay.hvBusId == busbar.id || bay.lvBusId == busbar.id) {
+            isConnected = true;
           }
         } else {
-          final connectionToBus = allConnections.firstWhereOrNull((c) {
-            return (c.sourceBayId == bay.id && c.targetBayId == busbar.id) ||
-                (c.targetBayId == bay.id && c.sourceBayId == busbar.id);
-          });
-          if (connectionToBus != null && finalBayRects.containsKey(bay.id)) {
-            maxConnectedBayX = max(
-              maxConnectedBayX,
-              finalBayRects[bay.id]!.right,
-            );
+          if (allConnections.any(
+            (c) =>
+                (c.sourceBayId == bay.id && c.targetBayId == busbar.id) ||
+                (c.targetBayId == bay.id && c.sourceBayId == busbar.id),
+          )) {
+            isConnected = true;
           }
         }
-      });
 
-      final double effectiveBusWidth = max(
+        if (isConnected && finalBayRects.containsKey(bay.id)) {
+          maxConnectedBayX = max(
+            maxConnectedBayX,
+            finalBayRects[bay.id]!.right,
+          );
+        }
+      }
+
+      final double calculatedBusbarWidth = max(
         maxConnectedBayX - sidePadding + horizontalSpacing,
         symbolWidth * 2,
       ).toDouble();
 
+      double currentBusbarLength = _busbarLengths[busbar.id]!;
+      if (currentBusbarLength == 0.0 && busbar.busbarLength == null) {
+        currentBusbarLength = calculatedBusbarWidth;
+        _busbarLengths[busbar.id] = currentBusbarLength;
+      } else if (currentBusbarLength == 0.0 && busbar.busbarLength != null) {
+        currentBusbarLength = busbar.busbarLength!;
+        _busbarLengths[busbar.id] = currentBusbarLength;
+      }
+
+      final double busbarCenterX = sidePadding + currentBusbarLength / 2;
+      _bayPositions[busbar.id] = Offset(busbarCenterX, busY);
+
       final Rect drawingRect = Rect.fromLTWH(
         sidePadding,
         busY,
-        effectiveBusWidth,
+        currentBusbarLength,
         0,
       );
       busbarRects[busbar.id] = drawingRect;
 
       final Rect tappableRect = Rect.fromCenter(
-        center: Offset(sidePadding + effectiveBusWidth / 2, busY),
-        width: effectiveBusWidth,
+        center: Offset(busbarCenterX, busY),
+        width: currentBusbarLength,
         height: busbarHitboxHeight,
       );
       finalBayRects[busbar.id] = tappableRect;
@@ -2215,23 +2584,53 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       if (!allowedVisualBayTypes.contains(bay.bayType)) {
         continue;
       }
-      final Rect? rect = finalBayRects[bay.id];
-      if (rect != null) {
-        bayRenderDataList.add(
-          BayRenderData(
-            bay: bay,
-            rect: rect,
-            center: rect.center,
-            topCenter: rect.topCenter,
-            bottomCenter: rect.bottomCenter,
-            leftCenter: rect.centerLeft,
-            rightCenter: rect.centerRight,
-            textOffset: Offset.zero,
-            busbarLength: 0.0,
-          ),
+
+      final Offset bayPosition = _bayPositions[bay.id] ?? Offset.zero;
+
+      Rect rect;
+      if (bay.bayType == 'Busbar') {
+        final double busbarLength = _busbarLengths[bay.id] ?? 200.0;
+        rect = Rect.fromCenter(
+          center: bayPosition,
+          width: busbarLength,
+          height: busbarHitboxHeight,
+        );
+        busbarRects[bay.id] = Rect.fromLTWH(
+          bayPosition.dx - busbarLength / 2,
+          bayPosition.dy,
+          busbarLength,
+          0,
+        );
+      } else {
+        rect = Rect.fromLTWH(
+          bayPosition.dx - symbolWidth / 2,
+          bayPosition.dy - symbolHeight / 2,
+          symbolWidth,
+          symbolHeight,
         );
       }
+
+      finalBayRects[bay.id] = rect;
+
+      Offset currentTextOffset = _textOffsets[bay.id] ?? Offset.zero;
+
+      bayRenderDataList.add(
+        BayRenderData(
+          bay: bay,
+          rect: rect,
+          center: rect.center,
+          topCenter: rect.topCenter,
+          bottomCenter: rect.bottomCenter,
+          leftCenter: rect.centerLeft,
+          rightCenter: rect.centerRight,
+          equipmentInstances: _equipmentByBayId[bay.id] ?? [],
+          textOffset: currentTextOffset,
+          busbarLength: _busbarLengths[bay.id] ?? 0.0,
+        ),
+      );
     }
+
+    _currentBayRenderDataList = List.from(bayRenderDataList);
 
     for (var connection in allConnections) {
       final sourceBay = baysMap[connection.sourceBayId];
@@ -2245,7 +2644,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Transformer') {
         final Rect? targetRect = finalBayRects[targetBay.id];
-        final double? busY = busYPositions[sourceBay.id];
+        final double? busY = _bayPositions[sourceBay.id]?.dy;
         if (targetRect != null && busY != null) {
           busbarConnectionPoints.putIfAbsent(
             sourceBay.id,
@@ -2258,7 +2657,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       } else if (targetBay.bayType == 'Busbar' &&
           sourceBay.bayType == 'Transformer') {
         final Rect? sourceRect = finalBayRects[sourceBay.id];
-        final double? busY = busYPositions[targetBay.id];
+        final double? busY = _bayPositions[targetBay.id]?.dy;
         if (sourceRect != null && busY != null) {
           busbarConnectionPoints.putIfAbsent(
             targetBay.id,
@@ -2271,7 +2670,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       } else if (sourceBay.bayType == 'Busbar' &&
           targetBay.bayType != 'Busbar') {
         final Rect? targetRect = finalBayRects[targetBay.id];
-        final double? busY = busYPositions[sourceBay.id];
+        final double? busY = _bayPositions[sourceBay.id]?.dy;
         if (targetRect != null && busY != null) {
           busbarConnectionPoints.putIfAbsent(
             sourceBay.id,
@@ -2284,7 +2683,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       } else if (targetBay.bayType == 'Busbar' &&
           sourceBay.bayType != 'Busbar') {
         final sourceRect = finalBayRects[sourceBay.id];
-        final double? busY = busYPositions[targetBay.id];
+        final double? busY = _bayPositions[targetBay.id]?.dy;
         if (sourceRect != null && busY != null) {
           busbarConnectionPoints.putIfAbsent(
             targetBay.id,
@@ -2303,9 +2702,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       busbarConnectionPoints: busbarConnectionPoints,
       bayEnergyData: bayEnergyData,
       busEnergySummary: busEnergySummary,
-      abstractEnergyData: _abstractEnergyData, // Pass abstract data
-      aggregatedFeederEnergyData:
-          _aggregatedFeederEnergyData, // Pass aggregated feeder data
+      abstractEnergyData: _abstractEnergyData,
+      aggregatedFeederEnergyData: _aggregatedFeederEnergyData,
     );
   }
 
@@ -2384,36 +2782,307 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _busEnergySummary,
     );
 
+    double minXForContent = double.infinity;
+    double minYForContent = double.infinity;
+    double maxXForContent = double.negativeInfinity;
+    double maxYForContent = double.negativeInfinity;
+
+    for (var renderData in sldRenderData.bayRenderDataList) {
+      minXForContent = min(minXForContent, renderData.rect.left);
+      minYForContent = min(minYForContent, renderData.rect.top);
+      maxXForContent = max(maxXForContent, renderData.rect.right);
+      maxYForContent = max(maxYForContent, renderData.rect.bottom);
+
+      final TextPainter textPainter = TextPainter(
+        text: TextSpan(
+          text: renderData.bay.name,
+          style: const TextStyle(fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      Offset potentialTextTopLeft = Offset.zero;
+      if (renderData.bay.bayType == 'Busbar') {
+        potentialTextTopLeft =
+            Offset(
+              sldRenderData.busbarRects[renderData.bay.id]!.left - 8,
+              sldRenderData.busbarRects[renderData.bay.id]!.center.dy,
+            ) +
+            renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width, textPainter.height / 2);
+      } else if (renderData.bay.bayType == 'Transformer') {
+        potentialTextTopLeft =
+            renderData.rect.centerLeft + renderData.textOffset;
+        final Size tempMeasure = _measureText(
+          renderData.bay.name,
+          fontSize: 9,
+          isBold: true,
+        );
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(tempMeasure.width, -(tempMeasure.height / 2 + 20));
+      } else if (renderData.bay.bayType == 'Line') {
+        potentialTextTopLeft =
+            renderData.rect.topCenter + renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width / 2, textPainter.height / 2 + 12);
+      } else if (renderData.bay.bayType == 'Feeder') {
+        potentialTextTopLeft =
+            renderData.rect.bottomCenter + renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width / 2, textPainter.height / 2 - 4);
+      } else {
+        potentialTextTopLeft = renderData.rect.center + renderData.textOffset;
+        potentialTextTopLeft =
+            potentialTextTopLeft -
+            Offset(textPainter.width / 2, textPainter.height / 2);
+      }
+
+      minXForContent = min(minXForContent, potentialTextTopLeft.dx);
+      minYForContent = min(minYForContent, potentialTextTopLeft.dy);
+      maxXForContent = max(
+        maxXForContent,
+        potentialTextTopLeft.dx + textPainter.width,
+      );
+      maxYForContent = max(
+        maxYForContent,
+        potentialTextTopLeft.dy + textPainter.height,
+      );
+
+      if (renderData.bay.bayType == 'Busbar') {
+        const double energyTextFontSize = 9.0;
+        const double textHeight = energyTextFontSize + 2;
+        final double energyTextWidth = 120;
+
+        Offset energyTextStart = Offset(
+          sldRenderData.busbarRects[renderData.bay.id]!.right - 80,
+          sldRenderData.busbarRects[renderData.bay.id]!.center.dy -
+              (textHeight * 2.5),
+        );
+        minXForContent = min(minXForContent, energyTextStart.dx);
+        minYForContent = min(minYForContent, energyTextStart.dy);
+        maxXForContent = max(
+          maxXForContent,
+          energyTextStart.dx + energyTextWidth,
+        );
+        maxYForContent = max(
+          maxYForContent,
+          energyTextStart.dy + textHeight * 2.5,
+        );
+      } else {
+        const double energyTextFontSize = 9.0;
+        const double lineHeight = 1.2;
+        final double energyTextWidth = 100;
+
+        Offset baseEnergyTextOffset;
+        if (renderData.bay.bayType == 'Transformer') {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.centerLeft.dx - 60,
+            renderData.rect.center.dy - 5,
+          );
+        } else if (renderData.bay.bayType == 'Line') {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.center.dx - 75,
+            renderData.rect.top + 10,
+          );
+        } else if (renderData.bay.bayType == 'Feeder') {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.center.dx - 70,
+            renderData.rect.bottom - 35,
+          );
+        } else {
+          baseEnergyTextOffset = Offset(
+            renderData.rect.right + 15,
+            renderData.rect.center.dy - 20,
+          );
+        }
+
+        minXForContent = min(minXForContent, baseEnergyTextOffset.dx);
+        minYForContent = min(minYForContent, baseEnergyTextOffset.dy);
+        maxXForContent = max(
+          maxXForContent,
+          baseEnergyTextOffset.dx + energyTextWidth,
+        );
+        maxYForContent = max(
+          maxYForContent,
+          baseEnergyTextOffset.dy + 7 * lineHeight * energyTextFontSize,
+        );
+      }
+    }
+
+    if (!minXForContent.isFinite ||
+        !minYForContent.isFinite ||
+        !maxXForContent.isFinite ||
+        !maxYForContent.isFinite ||
+        (maxXForContent - minXForContent) <= 0 ||
+        (maxYForContent - minYForContent) <= 0) {
+      minXForContent = 0;
+      minYForContent = 0;
+      maxXForContent = 400;
+      maxYForContent = 300;
+    }
+
+    const double contentPaddingForCanvas = 50.0;
+    final double effectiveContentWidth =
+        (maxXForContent - minXForContent) + 2 * contentPaddingForCanvas;
+    final double effectiveContentHeight =
+        (maxYForContent - minYForContent) + 2 * contentPaddingForCanvas;
+    final Offset originOffsetForPainter = Offset(
+      -minXForContent + contentPaddingForCanvas,
+      -minYForContent + contentPaddingForCanvas,
+    );
+
     final double canvasWidth = max(
       MediaQuery.of(context).size.width,
-      (sldRenderData.bayRenderDataList.isNotEmpty
-              ? sldRenderData.bayRenderDataList
-                    .map((e) => e.rect.right + 100)
-                    .reduce(max)
-              : 0) +
-          50,
+      effectiveContentWidth,
     );
     final double canvasHeight = max(
       MediaQuery.of(context).size.height,
-      (sldRenderData.bayRenderDataList.isNotEmpty
-              ? sldRenderData.bayRenderDataList
-                    .map((e) => e.rect.bottom + 100)
-                    .reduce(max)
-              : 0) +
-          50,
+      effectiveContentHeight,
     );
 
-    const double abstractCardWidth = 400;
-    const double abstractCardHeight = 200; // Adjusted for better fit in UI
-    const double feederTableHeight = 300;
+    const double consolidatedTableHeight =
+        250; // Height for the new consolidated table
     const double assessmentTableHeight = 250;
 
-    final List<Bay> busbarsWithData = _allBaysInSubstation
-        .where(
-          (bay) =>
-              bay.bayType == 'Busbar' && _busEnergySummary.containsKey(bay.id),
-        )
-        .toList();
+    final List<String> uniqueBusVoltages =
+        _allBaysInSubstation
+            .where((bay) => bay.bayType == 'Busbar')
+            .map((bay) => bay.voltageLevel)
+            .toSet()
+            .toList()
+          ..sort(
+            (a, b) =>
+                _getVoltageLevelValue(b).compareTo(_getVoltageLevelValue(a)),
+          );
+
+    List<String> abstractTableHeaders = [''];
+    for (String voltage in uniqueBusVoltages) {
+      abstractTableHeaders.add('$voltage BUS');
+    }
+    abstractTableHeaders.add('ABSTRACT OF S/S');
+
+    // Removed uniqueDistributionSubdivisionNames from here for consolidated table
+
+    abstractTableHeaders.add('TOTAL');
+
+    List<DataRow> consolidatedEnergyTableRows = [];
+    final List<String> rowLabels = [
+      'Import (MWH)',
+      'Export (MWH)',
+      'Difference (MWH)',
+      'Loss (%)',
+    ];
+
+    for (int i = 0; i < rowLabels.length; i++) {
+      List<DataCell> rowCells = [DataCell(Text(rowLabels[i]))];
+      double rowTotalSummable = 0.0;
+      double rowTotalImportForLossCalc = 0.0;
+      double rowTotalDifferenceForLossCalc = 0.0;
+
+      // Add busbar data
+      for (String voltage in uniqueBusVoltages) {
+        final busbarsOfThisVoltage = _allBaysInSubstation.where(
+          (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
+        );
+        double totalForThisBusVoltageImp = 0.0;
+        double totalForThisBusVoltageExp = 0.0;
+        double totalForThisBusVoltageDiff = 0.0;
+
+        for (var busbar in busbarsOfThisVoltage) {
+          final busSummary = _busEnergySummary[busbar.id];
+          if (busSummary != null) {
+            totalForThisBusVoltageImp += busSummary['totalImp'] ?? 0.0;
+            totalForThisBusVoltageExp += busSummary['totalExp'] ?? 0.0;
+            totalForThisBusVoltageDiff += busSummary['difference'] ?? 0.0;
+          }
+        }
+
+        if (rowLabels[i].contains('Import')) {
+          rowCells.add(
+            DataCell(Text(totalForThisBusVoltageImp.toStringAsFixed(2))),
+          );
+          rowTotalSummable += totalForThisBusVoltageImp;
+          rowTotalImportForLossCalc += totalForThisBusVoltageImp;
+        } else if (rowLabels[i].contains('Export')) {
+          rowCells.add(
+            DataCell(Text(totalForThisBusVoltageExp.toStringAsFixed(2))),
+          );
+          rowTotalSummable += totalForThisBusVoltageExp;
+        } else if (rowLabels[i].contains('Difference')) {
+          rowCells.add(
+            DataCell(Text(totalForThisBusVoltageDiff.toStringAsFixed(2))),
+          );
+          rowTotalSummable += totalForThisBusVoltageDiff;
+          rowTotalDifferenceForLossCalc += totalForThisBusVoltageDiff;
+        } else if (rowLabels[i].contains('Loss')) {
+          String lossValue = 'N/A';
+          if (totalForThisBusVoltageImp > 0) {
+            lossValue =
+                ((totalForThisBusVoltageDiff / totalForThisBusVoltageImp) * 100)
+                    .toStringAsFixed(2);
+          }
+          rowCells.add(DataCell(Text(lossValue)));
+        }
+      }
+
+      // Add Abstract of S/S data
+      if (rowLabels[i].contains('Import')) {
+        rowCells.add(
+          DataCell(
+            Text((_abstractEnergyData['totalImp'] ?? 0.0).toStringAsFixed(2)),
+          ),
+        );
+        rowTotalSummable += (_abstractEnergyData['totalImp'] ?? 0.0);
+        rowTotalImportForLossCalc += (_abstractEnergyData['totalImp'] ?? 0.0);
+      } else if (rowLabels[i].contains('Export')) {
+        rowCells.add(
+          DataCell(
+            Text((_abstractEnergyData['totalExp'] ?? 0.0).toStringAsFixed(2)),
+          ),
+        );
+        rowTotalSummable += (_abstractEnergyData['totalExp'] ?? 0.0);
+      } else if (rowLabels[i].contains('Difference')) {
+        rowCells.add(
+          DataCell(
+            Text((_abstractEnergyData['difference'] ?? 0.0).toStringAsFixed(2)),
+          ),
+        );
+        rowTotalSummable += (_abstractEnergyData['difference'] ?? 0.0);
+        rowTotalDifferenceForLossCalc +=
+            (_abstractEnergyData['difference'] ?? 0.0);
+      } else if (rowLabels[i].contains('Loss')) {
+        rowCells.add(
+          DataCell(
+            Text(
+              (_abstractEnergyData['lossPercentage'] ?? 0.0).toStringAsFixed(2),
+            ),
+          ),
+        );
+      }
+
+      // Removed loop for distribution subdivision names data cells for consolidated table in UI
+
+      // Add TOTAL column
+      if (rowLabels[i].contains('Loss')) {
+        String overallTotalLossPercentage = 'N/A';
+        if (rowTotalImportForLossCalc > 0) {
+          overallTotalLossPercentage =
+              ((rowTotalDifferenceForLossCalc / rowTotalImportForLossCalc) *
+                      100)
+                  .toStringAsFixed(2);
+        }
+        rowCells.add(DataCell(Text(overallTotalLossPercentage)));
+      } else {
+        rowCells.add(DataCell(Text(rowTotalSummable.toStringAsFixed(2))));
+      }
+
+      consolidatedEnergyTableRows.add(DataRow(cells: rowCells));
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -2428,6 +3097,34 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 ? 'Date range cannot be changed for saved SLD'
                 : 'Change Date Range',
           ),
+          if (!_isViewingSavedSld && _selectedBayForMovementId == null)
+            IconButton(
+              icon: const Icon(Icons.move_up),
+              tooltip: 'Adjust SLD Layout',
+              onPressed: () {
+                SnackBarUtils.showSnackBar(
+                  context,
+                  'Tap and hold a bay to adjust its position/size.',
+                );
+              },
+            ),
+          if (_selectedBayForMovementId != null)
+            IconButton(
+              icon: const Icon(Icons.cancel),
+              tooltip: 'Cancel Adjustments',
+              onPressed: () {
+                setState(() {
+                  _selectedBayForMovementId = null;
+                  _bayPositions.clear();
+                  _textOffsets.clear();
+                  _busbarLengths.clear();
+                });
+                SnackBarUtils.showSnackBar(
+                  context,
+                  'Adjustments cancelled. Position not saved.',
+                );
+              },
+            ),
         ],
       ),
       body: _isLoading
@@ -2439,65 +3136,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     children: [
                       WidgetsToImage(
                         controller: _widgetsToImageController,
-                        child:
-                            _isCapturingPdf // <--- NEW CONDITIONAL LOGIC
+                        child: _isCapturingPdf
                             ? SizedBox(
-                                // Fixed size for PDF capture
-                                width: 1200, // Reasonable width for PDF output
-                                height: 800, // Reasonable height for PDF output
-                                child: InteractiveViewer(
-                                  // For PDF capture, make the viewer constrained
-                                  transformationController:
-                                      _transformationController,
-                                  boundaryMargin: EdgeInsets
-                                      .zero, // No infinite margin during capture
-                                  minScale:
-                                      1.0, // Scale will be set by transformationController.value
-                                  maxScale: 1.0,
-                                  constrained:
-                                      true, // Crucial: force child to fit parent bounds
-                                  child: CustomPaint(
-                                    // The size here will be the fixed capture size
-                                    size: const Size(
-                                      1200,
-                                      800,
-                                    ), // IMPORTANT: Use fixed size here
-                                    painter: SingleLineDiagramPainter(
-                                      bayRenderDataList:
-                                          sldRenderData.bayRenderDataList,
-                                      bayConnections: _allConnections,
-                                      baysMap: _baysMap,
-                                      createDummyBayRenderData:
-                                          _createDummyBayRenderData,
-                                      busbarRects: sldRenderData.busbarRects,
-                                      busbarConnectionPoints:
-                                          sldRenderData.busbarConnectionPoints,
-                                      debugDrawHitboxes: false,
-                                      selectedBayForMovementId: null,
-                                      bayEnergyData:
-                                          sldRenderData.bayEnergyData,
-                                      busEnergySummary:
-                                          sldRenderData.busEnergySummary,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : InteractiveViewer(
-                                // Original, unconstrained InteractiveViewer for normal display
-                                transformationController:
-                                    _transformationController,
-                                boundaryMargin: const EdgeInsets.all(
-                                  double.infinity,
-                                ), // Allow free movement
-                                minScale: 0.1,
-                                maxScale: 4.0,
-                                constrained:
-                                    false, // Not constrained for interactive use
+                                width: 1200,
+                                height: 800,
                                 child: CustomPaint(
-                                  size: Size(
-                                    canvasWidth,
-                                    canvasHeight,
-                                  ), // Uses calculated content size
+                                  size: const Size(1200, 800),
                                   painter: SingleLineDiagramPainter(
                                     bayRenderDataList:
                                         sldRenderData.bayRenderDataList,
@@ -2508,289 +3152,126 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                                     busbarRects: sldRenderData.busbarRects,
                                     busbarConnectionPoints:
                                         sldRenderData.busbarConnectionPoints,
-                                    debugDrawHitboxes: false,
+                                    debugDrawHitboxes: true,
                                     selectedBayForMovementId: null,
                                     bayEnergyData: sldRenderData.bayEnergyData,
                                     busEnergySummary:
                                         sldRenderData.busEnergySummary,
+                                    contentBounds: Size(
+                                      effectiveContentWidth,
+                                      effectiveContentHeight,
+                                    ),
+                                    originOffsetForPdf: originOffsetForPainter,
+                                  ),
+                                ),
+                              )
+                            : InteractiveViewer(
+                                transformationController:
+                                    _transformationController,
+                                boundaryMargin: const EdgeInsets.all(
+                                  double.infinity,
+                                ),
+                                minScale: 0.1,
+                                maxScale: 4.0,
+                                constrained: false,
+                                child: Listener(
+                                  behavior: HitTestBehavior.opaque,
+                                  onPointerDown: (details) {
+                                    if (_isViewingSavedSld) return;
+
+                                    final RenderBox renderBox =
+                                        context.findRenderObject() as RenderBox;
+                                    final Offset localPosition = renderBox
+                                        .globalToLocal(details.position);
+                                    final scenePosition =
+                                        _transformationController.toScene(
+                                          localPosition,
+                                        );
+
+                                    final tappedBay = sldRenderData
+                                        .bayRenderDataList
+                                        .firstWhere(
+                                          (data) =>
+                                              data.rect.contains(scenePosition),
+                                          orElse: _createDummyBayRenderData,
+                                        );
+
+                                    if (tappedBay.bay.id != 'dummy') {
+                                      _showBaySymbolActions(
+                                        context,
+                                        tappedBay.bay,
+                                        details.position,
+                                      );
+                                    }
+                                  },
+                                  child: CustomPaint(
+                                    size: Size(canvasWidth, canvasHeight),
+                                    painter: SingleLineDiagramPainter(
+                                      bayRenderDataList:
+                                          sldRenderData.bayRenderDataList,
+                                      bayConnections: _allConnections,
+                                      baysMap: _baysMap,
+                                      createDummyBayRenderData:
+                                          _createDummyBayRenderData,
+                                      busbarRects: sldRenderData.busbarRects,
+                                      busbarConnectionPoints:
+                                          sldRenderData.busbarConnectionPoints,
+                                      debugDrawHitboxes: true,
+                                      selectedBayForMovementId:
+                                          _selectedBayForMovementId,
+                                      bayEnergyData:
+                                          sldRenderData.bayEnergyData,
+                                      busEnergySummary:
+                                          sldRenderData.busEnergySummary,
+                                      contentBounds: null,
+                                      originOffsetForPdf: null,
+                                    ),
                                   ),
                                 ),
                               ),
                       ),
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: SizedBox(
-                            width: abstractCardWidth,
-                            height: abstractCardHeight,
-                            child: Card(
-                              elevation: 4,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: PageView.builder(
-                                        itemCount: busbarsWithData.length + 1,
-                                        onPageChanged: (index) {
-                                          setState(() {
-                                            _currentPageIndex = index;
-                                          });
-                                        },
-                                        itemBuilder: (context, index) {
-                                          if (index == busbarsWithData.length) {
-                                            return Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'Abstract of Substation',
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.titleSmall,
-                                                ),
-                                                const Divider(),
-                                                _buildEnergyRow(
-                                                  'Total Import',
-                                                  _abstractEnergyData['totalImp'],
-                                                  'MWH',
-                                                  isAbstract: true,
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Total Export',
-                                                  _abstractEnergyData['totalExp'],
-                                                  'MWH',
-                                                  isAbstract: true,
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Difference',
-                                                  _abstractEnergyData['difference'],
-                                                  'MWH',
-                                                  isAbstract: true,
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Loss Percentage',
-                                                  _abstractEnergyData['lossPercentage'],
-                                                  '%',
-                                                  isAbstract: true,
-                                                ),
-                                              ],
-                                            );
-                                          } else {
-                                            final busbar =
-                                                busbarsWithData[index];
-                                            final busSummary =
-                                                _busEnergySummary[busbar.id];
-                                            return Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'Abstract of Busbar:',
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.titleSmall,
-                                                ),
-                                                Text(
-                                                  '${busbar.voltageLevel} ${busbar.name}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                ),
-                                                const Divider(),
-                                                _buildEnergyRow(
-                                                  'Import',
-                                                  busSummary?['totalImp'],
-                                                  'MWH',
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Export',
-                                                  busSummary?['totalExp'],
-                                                  'MWH',
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Difference',
-                                                  busSummary?['difference'],
-                                                  'MWH',
-                                                ),
-                                                _buildEnergyRow(
-                                                  'Loss',
-                                                  busSummary?['lossPercentage'],
-                                                  '%',
-                                                ),
-                                              ],
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                    _buildPageIndicator(
-                                      busbarsWithData.length + 1,
-                                      _currentPageIndex,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
-                // THIS IS THE CORRECTED SECTION
+                if (_selectedBayForMovementId != null) _buildMovementControls(),
                 Visibility(
                   visible: _showTables,
                   child: Column(
                     children: [
-                      // Feeder Energy Table
                       Container(
-                        height: feederTableHeight,
+                        height: consolidatedTableHeight,
                         padding: const EdgeInsets.all(8.0),
                         child: Column(
                           children: [
                             Text(
-                              'Feeder Energy Supplied by Distribution Hierarchy',
+                              'Consolidated Energy Abstract',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                             const Divider(),
                             Expanded(
-                              child: PageView.builder(
-                                itemCount:
-                                    (_aggregatedFeederEnergyData.length / 5)
-                                        .ceil()
-                                        .toInt() +
-                                    (_aggregatedFeederEnergyData.isEmpty
-                                        ? 1
-                                        : 0),
-                                onPageChanged: (index) {
-                                  setState(() {
-                                    _feederTablePageIndex = index;
-                                  });
-                                },
-                                itemBuilder: (context, pageIndex) {
-                                  if (_aggregatedFeederEnergyData.isEmpty) {
-                                    return const Center(
-                                      child: Text(
-                                        'No aggregated feeder energy data available for this date range.',
-                                      ),
-                                    );
-                                  }
-                                  final int startIndex = pageIndex * 5;
-                                  final int endIndex = (startIndex + 5).clamp(
-                                    0,
-                                    _aggregatedFeederEnergyData.length,
-                                  );
-                                  final List<AggregatedFeederEnergyData>
-                                  currentPageData = _aggregatedFeederEnergyData
-                                      .sublist(startIndex, endIndex);
-                                  return SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: DataTable(
-                                      columns: const [
-                                        DataColumn(label: Text('D-Zone')),
-                                        DataColumn(label: Text('D-Circle')),
-                                        DataColumn(label: Text('D-Division')),
-                                        DataColumn(
-                                          label: Text('D-Subdivision'),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  columns: abstractTableHeaders
+                                      .map(
+                                        (header) => DataColumn(
+                                          label: Text(
+                                            header,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
-                                        DataColumn(label: Text('Import (MWH)')),
-                                        DataColumn(label: Text('Export (MWH)')),
-                                      ],
-                                      rows: currentPageData.mapIndexed((
-                                        index,
-                                        data,
-                                      ) {
-                                        final AggregatedFeederEnergyData?
-                                        prevDataOverall =
-                                            (startIndex + index > 0)
-                                            ? _aggregatedFeederEnergyData[startIndex +
-                                                  index -
-                                                  1]
-                                            : null;
-                                        final bool mergeZone =
-                                            (prevDataOverall != null) &&
-                                            data.zoneName ==
-                                                prevDataOverall.zoneName;
-                                        final bool mergeCircle =
-                                            mergeZone &&
-                                            data.circleName ==
-                                                prevDataOverall.circleName;
-                                        final bool mergeDivision =
-                                            mergeCircle &&
-                                            data.divisionName ==
-                                                prevDataOverall.divisionName;
-                                        final bool mergeSubdivision =
-                                            mergeDivision &&
-                                            data.distributionSubdivisionName ==
-                                                prevDataOverall
-                                                    .distributionSubdivisionName;
-                                        return DataRow(
-                                          cells: [
-                                            DataCell(
-                                              Text(
-                                                mergeZone ? '' : data.zoneName,
-                                              ),
-                                            ),
-                                            DataCell(
-                                              Text(
-                                                mergeCircle
-                                                    ? ''
-                                                    : data.circleName,
-                                              ),
-                                            ),
-                                            DataCell(
-                                              Text(
-                                                mergeDivision
-                                                    ? ''
-                                                    : data.divisionName,
-                                              ),
-                                            ),
-                                            DataCell(
-                                              Text(
-                                                mergeSubdivision
-                                                    ? ''
-                                                    : data.distributionSubdivisionName,
-                                              ),
-                                            ),
-                                            DataCell(
-                                              Text(
-                                                data.importedEnergy
-                                                    .toStringAsFixed(2),
-                                              ),
-                                            ),
-                                            DataCell(
-                                              Text(
-                                                data.exportedEnergy
-                                                    .toStringAsFixed(2),
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      }).toList(),
-                                    ),
-                                  );
-                                },
+                                      )
+                                      .toList(),
+                                  rows: consolidatedEnergyTableRows,
+                                ),
                               ),
                             ),
-                            if (_aggregatedFeederEnergyData.isNotEmpty)
-                              _buildPageIndicator(
-                                (_aggregatedFeederEnergyData.length / 5)
-                                    .ceil()
-                                    .toInt(),
-                                _feederTablePageIndex,
-                              ),
                           ],
                         ),
                       ),
-                      // Assessment Table using collection-if
+                      // Removed Feeder Energy Supplied by Distribution Hierarchy table from UI
                       if (_isViewingSavedSld &&
                           _loadedAssessmentsSummary.isNotEmpty)
                         Container(
@@ -2930,9 +3411,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         children: [
           SpeedDialChild(
             child: const Icon(Icons.save),
-            backgroundColor: _isViewingSavedSld ? Colors.grey : Colors.green,
+            backgroundColor:
+                _isViewingSavedSld || _selectedBayForMovementId != null
+                ? Colors.grey
+                : Colors.green,
             label: 'Save SLD',
-            onTap: _isViewingSavedSld ? null : _saveSld,
+            onTap: _isViewingSavedSld || _selectedBayForMovementId != null
+                ? null
+                : _saveSld,
           ),
           SpeedDialChild(
             child: const Icon(Icons.print),
@@ -2954,7 +3440,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             child: const Icon(Icons.settings_input_antenna),
             backgroundColor: Colors.purple,
             label: 'Configure Busbar Energy',
-            onTap: _isViewingSavedSld
+            onTap: _isViewingSavedSld || _selectedBayForMovementId != null
                 ? null
                 : () => _showBusbarSelectionDialog(),
           ),
@@ -2962,7 +3448,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             child: const Icon(Icons.assessment),
             backgroundColor: Colors.red,
             label: 'Add Energy Assessment',
-            onTap: _isViewingSavedSld
+            onTap: _isViewingSavedSld || _selectedBayForMovementId != null
                 ? null
                 : () => _showBaySelectionForAssessment(),
           ),
@@ -2971,40 +3457,28 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  Widget _buildEnergyRow(
-    String label,
-    double? value,
-    String unit, {
-    bool isAbstract = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label + ':',
-            style: isAbstract
-                ? Theme.of(context).textTheme.titleSmall
-                : Theme.of(context).textTheme.bodySmall,
-          ),
-          Text(
-            value != null ? '${value.toStringAsFixed(2)} $unit' : 'N/A',
-            style: isAbstract
-                ? Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)
-                : Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
-          ),
-        ],
+  Size _measureText(String text, {double fontSize = 9, bool isBold = false}) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: Colors.black87,
+          fontSize: fontSize,
+          fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+        ),
       ),
-    );
+      maxLines: 2,
+      textAlign: TextAlign.right,
+      textDirection: TextDirection.ltr,
+    )..layout(minWidth: 0, maxWidth: 100);
+    return textPainter.size;
   }
+
+  // _buildEnergyRow method is removed as it is no longer used in the UI.
+  // It is still implicitly used by _buildPdfEnergyRow which is called by _generatePdfFromCurrentSld.
+  // Hence, _buildPdfEnergyRow is kept.
 }
 
-// Dialog for configuring busbar energy contributions (remains unchanged)
 class _BusbarEnergyAssignmentDialog extends StatefulWidget {
   final Bay busbar;
   final List<Bay> connectedBays;
@@ -3125,7 +3599,6 @@ class __BusbarEnergyAssignmentDialogState
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
                       const SizedBox(height: 8),
-                      // Import Contribution
                       DropdownButtonFormField<EnergyContributionType>(
                         decoration: const InputDecoration(
                           labelText: 'Bay Import contributes to Busbar:',
@@ -3152,7 +3625,6 @@ class __BusbarEnergyAssignmentDialogState
                         },
                       ),
                       const SizedBox(height: 8),
-                      // Export Contribution
                       DropdownButtonFormField<EnergyContributionType>(
                         decoration: const InputDecoration(
                           labelText: 'Bay Export contributes to Busbar:',

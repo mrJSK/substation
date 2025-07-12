@@ -8,9 +8,6 @@ import '../models/bay_model.dart';
 import '../models/user_model.dart';
 import '../models/bay_connection_model.dart';
 import '../models/equipment_model.dart';
-// NOTE: Make sure you have a single, unified BayRenderData model definition
-// and import it here. For example:
-// import '../models/bay_render_data.dart';
 import '../utils/snackbar_utils.dart';
 import '../screens/bay_equipment_management_screen.dart';
 import '../screens/bay_reading_assignment_screen.dart';
@@ -21,6 +18,7 @@ import '../painters/single_line_diagram_painter.dart';
 
 enum BayDetailViewMode { list, add, edit }
 
+// Reintroduce MovementMode.text
 enum MovementMode { bay, text }
 
 class SubstationDetailScreen extends StatefulWidget {
@@ -47,11 +45,11 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
       TransformationController();
 
   Map<String, Offset> _bayPositions = {};
-  Map<String, Offset> _textOffsets = {};
+  Map<String, Offset> _textOffsets = {}; // Reintroduce textOffsets
   Map<String, double> _busbarLengths = {};
 
   String? _selectedBayForMovementId;
-  MovementMode _movementMode = MovementMode.bay;
+  MovementMode _movementMode = MovementMode.bay; // Default to bay movement
 
   static const double _movementStep = 10.0;
   static const double _busbarLengthStep = 20.0;
@@ -90,7 +88,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
       bottomCenter: Offset.zero,
       leftCenter: Offset.zero,
       rightCenter: Offset.zero,
-      textOffset: Offset.zero,
+      textOffset: Offset.zero, // Dummy textOffset
       busbarLength: 0.0,
     );
   }
@@ -186,6 +184,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     setState(() {
                       _selectedBayForMovementId = null;
                       _bayPositions.clear();
+                      _textOffsets.clear(); // Clear text offsets on cancel
                     });
                     SnackBarUtils.showSnackBar(
                       context,
@@ -243,6 +242,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
           const SizedBox(height: 10),
+          // Reintroduce SegmentedButton for MovementMode
           SegmentedButton<MovementMode>(
             segments: const [
               ButtonSegment(value: MovementMode.bay, label: Text('Move Bay')),
@@ -315,7 +315,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               setState(() {
                 _selectedBayForMovementId = null;
                 _bayPositions.clear();
-                _textOffsets.clear();
+                _textOffsets.clear(); // Clear text offsets after save
                 _busbarLengths.clear();
               });
             },
@@ -336,6 +336,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           currentOffset.dy + dy,
         );
       } else {
+        // Handle text movement
         final currentOffset =
             _textOffsets[_selectedBayForMovementId] ?? Offset.zero;
         _textOffsets[_selectedBayForMovementId!] = Offset(
@@ -435,7 +436,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             bay.xPosition ?? 0,
             bay.yPosition ?? 0,
           );
-          _textOffsets[bay.id] = bay.textOffset ?? Offset.zero;
+          _textOffsets[bay.id] =
+              bay.textOffset ?? Offset.zero; // Initialize textOffset
           if (bay.bayType == 'Busbar') {
             _busbarLengths[bay.id] = bay.busbarLength ?? 200.0;
           }
@@ -494,6 +496,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         updateData['yPosition'] = _bayPositions[bayId]!.dy;
       }
       if (_textOffsets.containsKey(bayId)) {
+        // Save textOffset as a map with 'dx' and 'dy'
         updateData['textOffset'] = {
           'dx': _textOffsets[bayId]!.dx,
           'dy': _textOffsets[bayId]!.dy,
@@ -508,7 +511,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             .collection('bays')
             .doc(bayId)
             .update(updateData);
-        SnackBarUtils.showSnackBar(context, 'Changes saved successfully!');
+        if (mounted) {
+          // Added mounted check
+          SnackBarUtils.showSnackBar(context, 'Changes saved successfully!');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -546,10 +552,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         false;
     if (confirm) {
       try {
+        debugPrint('Attempting to delete bay: ${bay.id}');
         await FirebaseFirestore.instance
             .collection('bays')
             .doc(bay.id)
             .delete();
+        debugPrint('Bay deleted: ${bay.id}. Now deleting connections...');
         final batch = FirebaseFirestore.instance.batch();
         final connectionsSnapshot = await FirebaseFirestore.instance
             .collection('bay_connections')
@@ -565,6 +573,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           batch.delete(doc.reference);
         }
         await batch.commit();
+        debugPrint('Connections deleted for bay: ${bay.id}');
         if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
@@ -572,6 +581,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           );
         }
       } catch (e) {
+        debugPrint('Error deleting bay: $e');
         if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
@@ -610,15 +620,17 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             .toList();
         final baysMap = {for (var bay in allBays) bay.id: bay};
 
+        // Initialize local positions and text offsets from fetched data only if not actively moving a bay
         if (_selectedBayForMovementId == null) {
           _bayPositions.clear();
-          _textOffsets.clear();
+          _textOffsets.clear(); // Clear local text offsets
           _busbarLengths.clear();
           for (var bay in allBays) {
             if (bay.xPosition != null && bay.yPosition != null) {
               _bayPositions[bay.id] = Offset(bay.xPosition!, bay.yPosition!);
             }
             if (bay.textOffset != null) {
+              // Initialize textOffset from bay model
               _textOffsets[bay.id] = bay.textOffset!;
             }
             if (bay.bayType == 'Busbar' && bay.busbarLength != null) {
@@ -686,7 +698,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 const double topPadding = 80;
                 const double sidePadding = 100;
                 const double busbarHitboxHeight = 20.0;
-                const double lineFeederHeight = 40.0;
+                const double lineFeederHeight = 100.0;
 
                 final busbars = allBays
                     .where((b) => b.bayType == 'Busbar')
@@ -839,20 +851,23 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                       [];
                   for (var tf in transformers) {
                     if (!placedTransformers.contains(tf)) {
-                      Offset calculatedOffset = Offset(
-                        nextTransformerX + symbolWidth / 2,
-                        (hvBusY + lvBusY) / 2,
-                      );
-
-                      Offset finalOffset =
-                          _bayPositions[tf.id] ??
-                          (tf.xPosition != null && tf.yPosition != null
-                              ? Offset(tf.xPosition!, tf.yPosition!)
-                              : calculatedOffset);
-
-                      if (!_bayPositions.containsKey(tf.id) &&
-                          (tf.xPosition == null || tf.yPosition == null)) {
-                        _bayPositions[tf.id] = finalOffset;
+                      // Corrected: Prioritize local _bayPositions for selected bay, then saved, then calculated
+                      Offset finalOffset;
+                      if (_selectedBayForMovementId == tf.id &&
+                          _bayPositions.containsKey(tf.id)) {
+                        finalOffset = _bayPositions[tf.id]!;
+                      } else if (tf.xPosition != null && tf.yPosition != null) {
+                        finalOffset = Offset(tf.xPosition!, tf.yPosition!);
+                      } else {
+                        // Calculate default position if no saved or local override
+                        finalOffset = Offset(
+                          nextTransformerX + symbolWidth / 2,
+                          (hvBusY + lvBusY) / 2,
+                        );
+                        // Store this calculated position for immediate feedback if this bay is *not* selected but needs default position
+                        if (!_bayPositions.containsKey(tf.id)) {
+                          _bayPositions[tf.id] = finalOffset;
+                        }
                       }
 
                       final tfRect = Rect.fromCenter(
@@ -881,19 +896,21 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   );
                   double currentX = currentLaneXForOtherBays;
                   for (var bay in baysAbove) {
-                    Offset calculatedOffset = Offset(
-                      currentX,
-                      busY - lineFeederHeight - 10,
-                    );
-                    Offset finalOffset =
-                        _bayPositions[bay.id] ??
-                        (bay.xPosition != null && bay.yPosition != null
-                            ? Offset(bay.xPosition!, bay.yPosition!)
-                            : calculatedOffset);
-
-                    if (!_bayPositions.containsKey(bay.id) &&
-                        (bay.xPosition == null || bay.yPosition == null)) {
-                      _bayPositions[bay.id] = finalOffset;
+                    // Corrected: Prioritize local _bayPositions for selected bay, then saved, then calculated
+                    Offset finalOffset;
+                    if (_selectedBayForMovementId == bay.id &&
+                        _bayPositions.containsKey(bay.id)) {
+                      finalOffset = _bayPositions[bay.id]!;
+                    } else if (bay.xPosition != null && bay.yPosition != null) {
+                      finalOffset = Offset(bay.xPosition!, bay.yPosition!);
+                    } else {
+                      finalOffset = Offset(
+                        currentX,
+                        busY - lineFeederHeight - 10,
+                      );
+                      if (!_bayPositions.containsKey(bay.id)) {
+                        _bayPositions[bay.id] = finalOffset;
+                      }
                     }
 
                     final bayRect = Rect.fromLTWH(
@@ -912,16 +929,18 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   );
                   currentX = currentLaneXForOtherBays;
                   for (var bay in baysBelow) {
-                    Offset calculatedOffset = Offset(currentX, busY + 10);
-                    Offset finalOffset =
-                        _bayPositions[bay.id] ??
-                        (bay.xPosition != null && bay.yPosition != null
-                            ? Offset(bay.xPosition!, bay.yPosition!)
-                            : calculatedOffset);
-
-                    if (!_bayPositions.containsKey(bay.id) &&
-                        (bay.xPosition == null || bay.yPosition == null)) {
-                      _bayPositions[bay.id] = finalOffset;
+                    // Corrected: Prioritize local _bayPositions for selected bay, then saved, then calculated
+                    Offset finalOffset;
+                    if (_selectedBayForMovementId == bay.id &&
+                        _bayPositions.containsKey(bay.id)) {
+                      finalOffset = _bayPositions[bay.id]!;
+                    } else if (bay.xPosition != null && bay.yPosition != null) {
+                      finalOffset = Offset(bay.xPosition!, bay.yPosition!);
+                    } else {
+                      finalOffset = Offset(currentX, busY + 10);
+                      if (!_bayPositions.containsKey(bay.id)) {
+                        _bayPositions[bay.id] = finalOffset;
+                      }
                     }
 
                     final bayRect = Rect.fromLTWH(
@@ -974,8 +993,19 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     symbolWidth * 2,
                   ).toDouble();
 
-                  final double busbarWidth =
-                      _busbarLengths[busbar.id] ?? effectiveBusWidth;
+                  // Corrected: Prioritize local _busbarLengths for selected busbar, then saved, then calculated
+                  final double busbarWidth;
+                  if (_selectedBayForMovementId == busbar.id &&
+                      _busbarLengths.containsKey(busbar.id)) {
+                    busbarWidth = _busbarLengths[busbar.id]!;
+                  } else if (busbar.busbarLength != null) {
+                    busbarWidth = busbar.busbarLength!;
+                  } else {
+                    busbarWidth = effectiveBusWidth;
+                    if (!_busbarLengths.containsKey(busbar.id)) {
+                      _busbarLengths[busbar.id] = busbarWidth;
+                    }
+                  }
 
                   final Rect drawingRect = Rect.fromLTWH(
                     sidePadding,
@@ -1006,6 +1036,22 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   }
                   final Rect? rect = finalBayRects[bay.id];
                   if (rect != null) {
+                    // Determine the text offset for this render cycle
+                    Offset currentTextOffset;
+                    if (_selectedBayForMovementId == bay.id &&
+                        _textOffsets.containsKey(bay.id)) {
+                      currentTextOffset =
+                          _textOffsets[bay
+                              .id]!; // Use locally adjusted text offset
+                    } else {
+                      currentTextOffset =
+                          bay.textOffset ?? Offset.zero; // Use saved or default
+                      if (!_textOffsets.containsKey(bay.id)) {
+                        _textOffsets[bay.id] =
+                            currentTextOffset; // Store for future potential edits
+                      }
+                    }
+
                     bayRenderDataList.add(
                       BayRenderData(
                         bay: bay,
@@ -1016,7 +1062,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                         leftCenter: rect.centerLeft,
                         rightCenter: rect.centerRight,
                         equipmentInstances: equipmentByBayId[bay.id] ?? [],
-                        textOffset: _textOffsets[bay.id] ?? Offset.zero,
+                        textOffset:
+                            currentTextOffset, // Pass the effective text offset
                         busbarLength: _busbarLengths[bay.id] ?? 0.0,
                       ),
                     );
