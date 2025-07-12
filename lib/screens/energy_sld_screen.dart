@@ -73,8 +73,8 @@ class EnergySldScreen extends StatefulWidget {
 }
 
 class _EnergySldScreenState extends State<EnergySldScreen> {
-  // NEW: SldEditorState instance
-  late SldEditorState _sldEditorState;
+  // NEW: SldEditorState instance - now declared without `late` as it's initialized in didChangeDependencies
+  SldEditorState? _sldEditorState; // Made nullable
   // NEW: EnergyAccountService instance
   late EnergyAccountService _energyAccountService;
 
@@ -82,9 +82,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 1));
   DateTime _endDate = DateTime.now();
   bool _showTables = true; // State for table visibility
-
-  // Removed direct lists/maps for energy data as they are now in EnergyAccountService
-  // Access data via _energyAccountService.propertyName
 
   final TransformationController _transformationController =
       TransformationController();
@@ -113,17 +110,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   @override
   void initState() {
     super.initState();
-    _sldEditorState = SldEditorState(substationId: widget.substationId);
-    _sldEditorState.setContext(
-      context,
-    ); // Set context for SnackBarUtils for SLD state
-    _sldEditorState.addListener(
-      _onSldStateChanged,
-    ); // Listen to SLD state changes
-
-    _energyAccountService = EnergyAccountService(
-      context: context,
-    ); // NEW: Initialize service
+    _energyAccountService = EnergyAccountService(context: context);
     // Set context for SnackBarUtils for EnergyAccountService as well
     _energyAccountService.setContext(context);
 
@@ -133,29 +120,45 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       _endDate = widget.savedSld!.endDate.toDate();
       _loadedSldParameters = widget.savedSld!.sldParameters;
       _loadedAssessmentsSummary = widget.savedSld!.assessmentsSummary;
-      _loadData(fromSaved: true); // Load data from saved SLD
-    } else {
-      if (widget.substationId.isNotEmpty) {
-        _loadData(); // Load live data
+    }
+    // _loadData will be called in didChangeDependencies
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_sldEditorState == null) {
+      _sldEditorState = Provider.of<SldEditorState>(context);
+      _sldEditorState!.setContext(context);
+      _sldEditorState!.addListener(_onSldStateChanged);
+
+      // Now that _sldEditorState is available, call _loadData
+      if (_isViewingSavedSld) {
+        _loadData(fromSaved: true);
       } else {
-        _isLoading = false;
+        if (widget.substationId.isNotEmpty) {
+          _loadData();
+        } else {
+          _isLoading = false;
+        }
       }
     }
   }
 
   @override
   void dispose() {
-    _sldEditorState.removeListener(_onSldStateChanged);
-    _sldEditorState.dispose();
+    _sldEditorState?.removeListener(_onSldStateChanged);
+    _sldEditorState
+        ?.dispose(); // Dispose the provider when the widget is disposed
     _transformationController.dispose();
-    // _energyAccountService does not extend ChangeNotifier, so no listener to remove,
-    // but it's good practice to dispose of resources if it had any.
     super.dispose();
   }
 
   // Listener for SldEditorState changes to trigger UI rebuild
   void _onSldStateChanged() {
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   double _getVoltageLevelValue(String voltageLevel) {
@@ -196,7 +199,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           sldDataMap['elements'] = elements;
         }
         final savedSldData = SldData.fromJson(sldDataMap);
-        _sldEditorState.setSldData(
+        _sldEditorState!.setSldData(
           savedSldData,
           addToHistory: false,
           markDirty: false,
@@ -210,7 +213,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       } else {
         // If loading live data, build SldData from live data and set it
         final liveSldData = _buildSldDataFromLive();
-        _sldEditorState.setSldData(
+        _sldEditorState!.setSldData(
           liveSldData,
           addToHistory: true,
           markDirty: true,
@@ -593,7 +596,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       );
       return;
     }
-    await _sldEditorState.saveSld();
+    await _sldEditorState!.saveSld();
     if (mounted) {
       setState(() {});
     }
@@ -613,7 +616,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       return;
     }
 
-    _sldEditorState.selectElement(elementId);
+    _sldEditorState!.selectElement(elementId);
 
     final List<PopupMenuEntry<String>> menuItems = [
       const PopupMenuItem<String>(
@@ -647,19 +650,19 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       items: menuItems,
     ).then((value) {
       if (value == 'adjust') {
-        _sldEditorState.setInteractionMode(SldInteractionMode.pan);
+        _sldEditorState!.setInteractionMode(SldInteractionMode.pan);
         SnackBarUtils.showSnackBar(
           context,
-          'Selected element. Drag to adjust position/size.',
+          'Selected element. Drag to position.', // Simplified for consistency with SldEditorState.moveNode
         );
       } else if (value == 'move_label') {
-        _sldEditorState.setInteractionMode(SldInteractionMode.addText);
+        _sldEditorState!.setInteractionMode(SldInteractionMode.addText);
         SnackBarUtils.showSnackBar(
           context,
-          'Selected element label. Drag to adjust position.',
+          'Selected element label. Drag to position.', // Simplified
         );
       } else if (value == 'delete') {
-        _sldEditorState.removeElement(elementId);
+        _sldEditorState!.removeElement(elementId);
         SnackBarUtils.showSnackBar(context, 'Element deleted.');
       }
     });
@@ -667,7 +670,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   /// Method to handle moving the selected item (node or text label) via buttons
   void _moveSelectedItem(double dx, double dy) {
-    final sldState = _sldEditorState;
+    final sldState = _sldEditorState!;
     final selectedId = sldState.sldData?.selectedElementIds.firstOrNull;
     if (selectedId == null) return;
 
@@ -678,11 +681,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     if (sldState.interactionMode == SldInteractionMode.pan) {
       if (currentElement is SldNode) {
+        // Direct update of node position within SldEditorState.moveNode
         sldState.moveNode(
           selectedId,
           currentElement.position + Offset(dx / currentZoom, dy / currentZoom),
         );
       } else if (currentElement is SldTextLabel) {
+        // Direct update of text label position via updateElementProperties
         sldState.updateElementProperties(selectedId, {
           'positionX': currentElement.position.dx + dx / currentZoom,
           'positionY': currentElement.position.dy + dy / currentZoom,
@@ -690,6 +695,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
     } else if (sldState.interactionMode == SldInteractionMode.addText) {
       if (currentElement is SldNode) {
+        // Update text offset in node properties
         sldState.updateElementProperties(selectedId, {
           'textOffsetDx':
               ((currentElement.properties['textOffsetDx'] as num?)
@@ -703,6 +709,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               dy / currentZoom,
         });
       } else if (currentElement is SldTextLabel) {
+        // Update text label position (same as pan for text label)
         sldState.updateElementProperties(selectedId, {
           'positionX': currentElement.position.dx + dx / currentZoom,
           'positionY': currentElement.position.dy + dy / currentZoom,
@@ -713,7 +720,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   /// Method to adjust busbar length of a selected busbar node
   void _adjustBusbarLength(double change) {
-    final sldState = _sldEditorState;
+    final sldState = _sldEditorState!;
     final selectedId = sldState.sldData?.selectedElementIds.firstOrNull;
     if (selectedId == null) return;
 
@@ -732,7 +739,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   /// Widget for movement controls
   Widget _buildMovementControls() {
-    final sldState = Provider.of<SldEditorState>(context);
+    final sldState = _sldEditorState!; // Use the instance
     final selectedId = sldState.sldData?.selectedElementIds.firstOrNull;
     if (selectedId == null) return const SizedBox.shrink();
 
@@ -868,8 +875,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       return;
     }
 
-    if (!(_sldEditorState.isDirty) &&
-        (_sldEditorState.sldData?.selectedElementIds.isEmpty ?? true)) {
+    if (!(_sldEditorState!.isDirty) &&
+        (_sldEditorState!.sldData?.selectedElementIds.isEmpty ?? true)) {
       SnackBarUtils.showSnackBar(
         context,
         'No changes to save.',
@@ -878,7 +885,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       return;
     }
 
-    if (!(_sldEditorState.sldData?.selectedElementIds.isEmpty ?? true)) {
+    if (!(_sldEditorState!.sldData?.selectedElementIds.isEmpty ?? true)) {
       SnackBarUtils.showSnackBar(
         context,
         'Please save or cancel current adjustments before saving SLD.',
@@ -927,7 +934,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     });
 
     try {
-      final SldData currentSldData = _sldEditorState.sldData!;
+      final SldData currentSldData = _sldEditorState!.sldData!;
 
       currentSldData.currentZoom = _transformationController.value
           .getMaxScaleOnAxis();
@@ -1011,7 +1018,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     final pdf = pw.Document();
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
-    final SldData? currentSldData = _sldEditorState.sldData;
+    final SldData? currentSldData = _sldEditorState!.sldData;
     if (currentSldData == null || currentSldData.elements.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
@@ -1027,67 +1034,64 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     double maxYForContent = double.negativeInfinity;
 
     for (var element in currentSldData.elements.values) {
+      // Calculate content bounds considering all element types
+      double elementMinX = element.position.dx;
+      double elementMinY = element.position.dy;
+      double elementMaxX = element.position.dx + element.size.width;
+      double elementMaxY = element.position.dy + element.size.height;
+
       if (element is SldNode) {
-        minXForContent = min(minXForContent, element.position.dx);
-        minYForContent = min(minYForContent, element.position.dy);
-        maxXForContent = max(
-          maxXForContent,
-          element.position.dx + element.size.width,
-        );
-        maxYForContent = max(
-          maxYForContent,
-          element.position.dy + element.size.height,
-        );
+        // Consider potential text offsets and energy text offsets for nodes
         if (element.properties.containsKey('textOffsetDx')) {
-          minXForContent = min(
-            minXForContent,
+          elementMinX = min(
+            elementMinX,
             element.position.dx +
                 (element.properties['textOffsetDx'] as num).toDouble(),
           );
-          maxXForContent = max(
-            maxXForContent,
+          elementMaxX = max(
+            elementMaxX,
             element.position.dx +
                 (element.properties['textOffsetDx'] as num).toDouble() +
-                100,
+                100, // Approximate text width
           );
         }
         if (element.properties.containsKey('textOffsetDy')) {
-          minYForContent = min(
-            minYForContent,
+          elementMinY = min(
+            elementMinY,
             element.position.dy +
                 (element.properties['textOffsetDy'] as num).toDouble(),
           );
-          maxYForContent = max(
-            maxYForContent,
+          elementMaxY = max(
+            elementMaxY,
             element.position.dy +
                 (element.properties['textOffsetDy'] as num).toDouble() +
-                50,
+                50, // Approximate text height
           );
         }
         if (element.properties.containsKey('energyTextOffsetDx')) {
-          minXForContent = min(
-            minXForContent,
+          elementMinX = min(
+            elementMinX,
             element.position.dx +
                 (element.properties['energyTextOffsetDx'] as num).toDouble(),
           );
-          maxXForContent = max(
-            maxXForContent,
+          elementMaxX = max(
+            elementMaxX,
             element.position.dx +
                 (element.properties['energyTextOffsetDx'] as num).toDouble() +
-                120,
+                120, // Approximate energy text width
           );
         }
         if (element.properties.containsKey('energyTextOffsetDy')) {
-          minYForContent = min(
-            minYForContent,
+          elementMinY = min(
+            elementMinY,
             element.position.dy +
                 (element.properties['energyTextOffsetDy'] as num).toDouble(),
           );
-          maxYForContent = max(
-            maxYForContent,
+          elementMaxY = max(
+            elementMaxY,
             element.position.dy +
                 (element.properties['energyTextOffsetDy'] as num).toDouble() +
-                100,
+                100, // Approximate energy text height
           );
         }
       } else if (element is SldEdge) {
@@ -1106,29 +1110,23 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       .connectionPoints[element.targetConnectionPointId]
                       ?.localOffset ??
                   Offset.zero);
-          minXForContent = min(minXForContent, min(startPoint.dx, endPoint.dx));
-          minYForContent = min(minYForContent, min(startPoint.dy, endPoint.dy));
-          maxXForContent = max(maxXForContent, max(startPoint.dx, endPoint.dx));
-          maxYForContent = max(maxYForContent, max(startPoint.dy, endPoint.dy));
+          elementMinX = min(elementMinX, min(startPoint.dx, endPoint.dx));
+          elementMinY = min(elementMinY, min(startPoint.dy, endPoint.dy));
+          elementMaxX = max(elementMaxX, max(startPoint.dx, endPoint.dx));
+          elementMaxY = max(elementMaxY, max(startPoint.dy, endPoint.dy));
           for (var p in element.pathPoints) {
-            minXForContent = min(minXForContent, p.dx);
-            minYForContent = min(minYForContent, p.dy);
-            maxXForContent = max(maxXForContent, p.dx);
-            maxYForContent = max(maxYForContent, p.dy);
+            elementMinX = min(elementMinX, p.dx);
+            elementMinY = min(elementMinY, p.dy);
+            elementMaxX = max(elementMaxX, p.dx);
+            elementMaxY = max(elementMaxY, p.dy);
           }
         }
-      } else if (element is SldTextLabel) {
-        minXForContent = min(minXForContent, element.position.dx);
-        minYForContent = min(minYForContent, element.position.dy);
-        maxXForContent = max(
-          maxXForContent,
-          element.position.dx + element.size.width,
-        );
-        maxYForContent = max(
-          maxYForContent,
-          element.position.dy + element.size.height,
-        );
       }
+      // Update overall min/max bounds
+      minXForContent = min(minXForContent, elementMinX);
+      minYForContent = min(minYForContent, elementMinY);
+      maxXForContent = max(maxXForContent, elementMaxX);
+      maxYForContent = max(maxYForContent, elementMaxY);
     }
 
     const double capturePadding = 50.0;
@@ -1141,6 +1139,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       -minYForContent + capturePadding,
     );
 
+    // Set a fixed render box for the custom painter to draw into for PDF.
+    // This is the size of the 'contentBounds' for the SingleLineDiagramPainter.
+    // Ensure these dimensions are suitable for A4 aspect ratio or adjusted.
+    final Size pdfRenderBoxSize = Size(
+      diagramContentWidth,
+      diagramContentHeight,
+    );
+
     _originalTransformation = Matrix4.copy(_transformationController.value);
     _transformationController.value = Matrix4.identity()
       ..translate(originOffsetForPainter.dx, originOffsetForPainter.dy);
@@ -1150,14 +1156,20 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     });
     await WidgetsBinding.instance.endOfFrame;
 
+    // Capture the widget as an image using the custom painter's actual bounds
+    // The WidgetsToImage widget will wrap the CustomPaint.
+    // This ensures that the image generated is exactly what the painter draws
+    // within the calculated content bounds.
     final Uint8List? sldImageBytes = await _widgetsToImageController.capturePng(
-      pixelRatio: 5.0,
+      pixelRatio: 5.0, // High quality capture for PDF
+      // Bounds will be handled by the CustomPaint's size during capture
     );
 
     setState(() {
       _isCapturingPdf = false;
     });
-    _transformationController.value = _originalTransformation!;
+    _transformationController.value =
+        _originalTransformation!; // Restore original transformation
 
     pw.MemoryImage? sldPdfImage;
     if (sldImageBytes != null) {
@@ -1226,7 +1238,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     List<List<String>> abstractTableData = [];
 
-    final List<String> rowLabels = ['Imp.', 'Exp.', 'Diff.', '% Loss'];
+    final List<String> rowLabels = [
+      'Imp. (MWH)',
+      'Exp. (MWH)',
+      'Diff. (MWH)',
+      'Loss (%)',
+    ];
 
     for (int i = 0; i < rowLabels.length; i++) {
       List<String> row = [rowLabels[i]];
@@ -1253,18 +1270,18 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           }
         }
 
-        if (rowLabels[i] == 'Imp.') {
+        if (rowLabels[i].contains('Imp.')) {
           row.add(totalForThisBusVoltageImp.toStringAsFixed(2));
           rowTotalSummable += totalForThisBusVoltageImp;
           tempRowImportForLossCalc += totalForThisBusVoltageImp;
-        } else if (rowLabels[i] == 'Exp.') {
+        } else if (rowLabels[i].contains('Exp.')) {
           row.add(totalForThisBusVoltageExp.toStringAsFixed(2));
           rowTotalSummable += totalForThisBusVoltageExp;
-        } else if (rowLabels[i] == 'Diff.') {
+        } else if (rowLabels[i].contains('Diff.')) {
           row.add(totalForThisBusVoltageDiff.toStringAsFixed(2));
           rowTotalSummable += totalForThisBusVoltageDiff;
           tempRowDifferenceForLossCalc += totalForThisBusVoltageDiff;
-        } else if (rowLabels[i] == '% Loss') {
+        } else if (rowLabels[i].contains('Loss')) {
           String lossValue = 'N/A';
           if (totalForThisBusVoltageImp > 0) {
             lossValue =
@@ -1275,19 +1292,19 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         }
       }
 
-      if (rowLabels[i] == 'Imp.') {
+      if (rowLabels[i].contains('Imp.')) {
         row.add(
           (currentAbstractEnergyData['totalImp'] ?? 0.0).toStringAsFixed(2),
         );
         rowTotalSummable += (currentAbstractEnergyData['totalImp'] ?? 0.0);
         tempRowImportForLossCalc +=
             (currentAbstractEnergyData['totalImp'] ?? 0.0);
-      } else if (rowLabels[i] == 'Exp.') {
+      } else if (rowLabels[i].contains('Exp.')) {
         row.add(
           (currentAbstractEnergyData['totalExp'] ?? 0.0).toStringAsFixed(2),
         );
         rowTotalSummable += (currentAbstractEnergyData['totalExp'] ?? 0.0);
-      } else if (rowLabels[i] == 'Diff.') {
+      } else if (rowLabels[i].contains('Diff.')) {
         row.add(
           (currentAbstractEnergyData['difference'] ?? 0.0).toStringAsFixed(2),
         );
@@ -1307,9 +1324,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         double currentFeederExp = 0.0;
         double currentFeederDiff = 0.0;
 
-        for (var feederData in currentAggregatedFeederData.where(
-          (data) => data.distributionSubdivisionName == subDivisionName,
-        )) {
+        for (var feederData
+            in _energyAccountService.aggregatedFeederEnergyData.where(
+              (data) => data.distributionSubdivisionName == subDivisionName,
+            )) {
           currentFeederImp += feederData.importedEnergy;
           currentFeederExp += feederData.exportedEnergy;
           currentFeederDiff +=
@@ -1631,7 +1649,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       );
     }
 
-    final SldEditorState sldState = Provider.of<SldEditorState>(context);
+    // Access sldState using Provider.of here, ensuring it's not null.
+    // The `_sldEditorState` is initialized in `didChangeDependencies`,
+    // so it should be available by the time `build` runs if `mounted` is true.
+    final SldEditorState sldState = _sldEditorState!;
     final SldData? currentSldData = sldState.sldData;
 
     double minXForContent = double.infinity;
@@ -1641,67 +1662,64 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     if (currentSldData != null) {
       for (var element in currentSldData.elements.values) {
+        // Calculate content bounds considering all element types
+        double elementMinX = element.position.dx;
+        double elementMinY = element.position.dy;
+        double elementMaxX = element.position.dx + element.size.width;
+        double elementMaxY = element.position.dy + element.size.height;
+
         if (element is SldNode) {
-          minXForContent = min(minXForContent, element.position.dx);
-          minYForContent = min(minYForContent, element.position.dy);
-          maxXForContent = max(
-            maxXForContent,
-            element.position.dx + element.size.width,
-          );
-          maxYForContent = max(
-            maxYForContent,
-            element.position.dy + element.size.height,
-          );
+          // Consider potential text offsets and energy text offsets for nodes
           if (element.properties.containsKey('textOffsetDx')) {
-            minXForContent = min(
-              minXForContent,
+            elementMinX = min(
+              elementMinX,
               element.position.dx +
                   (element.properties['textOffsetDx'] as num).toDouble(),
             );
-            maxXForContent = max(
-              maxXForContent,
+            elementMaxX = max(
+              elementMaxX,
               element.position.dx +
                   (element.properties['textOffsetDx'] as num).toDouble() +
-                  100,
+                  100, // Approximate text width
             );
           }
           if (element.properties.containsKey('textOffsetDy')) {
-            minYForContent = min(
-              minYForContent,
+            elementMinY = min(
+              elementMinY,
               element.position.dy +
                   (element.properties['textOffsetDy'] as num).toDouble(),
             );
-            maxYForContent = max(
-              maxYForContent,
+            elementMaxY = max(
+              elementMaxY,
               element.position.dy +
                   (element.properties['textOffsetDy'] as num).toDouble() +
-                  50,
+                  50, // Approximate text height
             );
           }
           if (element.properties.containsKey('energyTextOffsetDx')) {
-            minXForContent = min(
-              minXForContent,
+            elementMinX = min(
+              elementMinX,
               element.position.dx +
                   (element.properties['energyTextOffsetDx'] as num).toDouble(),
             );
-            maxXForContent = max(
-              maxXForContent,
+            elementMaxX = max(
+              elementMaxX,
               element.position.dx +
                   (element.properties['energyTextOffsetDx'] as num).toDouble() +
-                  120,
+                  120, // Approximate energy text width
             );
           }
           if (element.properties.containsKey('energyTextOffsetDy')) {
-            minYForContent = min(
-              minYForContent,
+            elementMinY = min(
+              elementMinY,
               element.position.dy +
                   (element.properties['energyTextOffsetDy'] as num).toDouble(),
             );
-            maxYForContent = max(
-              maxYForContent,
+            elementMaxY = max(
+              elementMaxY,
               element.position.dy +
                   (element.properties['energyTextOffsetDy'] as num).toDouble() +
-                  100,
+                  100, // Approximate energy text height
             );
           }
         } else if (element is SldEdge) {
@@ -1720,41 +1738,34 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                         .connectionPoints[element.targetConnectionPointId]
                         ?.localOffset ??
                     Offset.zero);
-            minXForContent = min(
-              minXForContent,
-              min(startPoint.dx, endPoint.dx),
-            );
-            minYForContent = min(
-              minYForContent,
-              min(startPoint.dy, endPoint.dy),
-            );
-            maxXForContent = max(
-              maxXForContent,
-              max(startPoint.dx, endPoint.dx),
-            );
-            maxYForContent = max(
-              maxYForContent,
-              max(startPoint.dy, endPoint.dy),
-            );
+            elementMinX = min(elementMinX, min(startPoint.dx, endPoint.dx));
+            elementMinY = min(elementMinY, min(startPoint.dy, endPoint.dy));
+            elementMaxX = max(elementMaxX, max(startPoint.dx, endPoint.dx));
+            elementMaxY = max(elementMaxY, max(startPoint.dy, endPoint.dy));
             for (var p in element.pathPoints) {
-              minXForContent = min(minXForContent, p.dx);
-              minYForContent = min(minYForContent, p.dy);
-              maxXForContent = max(maxXForContent, p.dx);
-              maxYForContent = max(maxYForContent, p.dy);
+              elementMinX = min(elementMinX, p.dx);
+              elementMinY = min(elementMinY, p.dy);
+              elementMaxX = max(elementMaxX, p.dx);
+              elementMaxY = max(elementMaxY, p.dy);
             }
           }
         } else if (element is SldTextLabel) {
-          minXForContent = min(minXForContent, element.position.dx);
-          minYForContent = min(minYForContent, element.position.dy);
-          maxXForContent = max(
-            maxXForContent,
+          elementMinX = min(elementMinX, element.position.dx);
+          elementMinY = min(elementMinY, element.position.dy);
+          elementMaxX = max(
+            elementMaxX,
             element.position.dx + element.size.width,
           );
-          maxYForContent = max(
-            maxYForContent,
+          elementMaxY = max(
+            elementMaxY,
             element.position.dy + element.size.height,
           );
         }
+        // Update overall min/max bounds
+        minXForContent = min(minXForContent, elementMinX);
+        minYForContent = min(minYForContent, elementMinY);
+        maxXForContent = max(maxXForContent, elementMaxX);
+        maxYForContent = max(maxYForContent, elementMaxY);
       }
     }
 
@@ -1824,7 +1835,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     final List<String> rowLabels = [
       'Import (MWH)',
       'Export (MWH)',
-      'Difference (MWH)',
+      'Diff. (MWH)',
       'Loss (%)',
     ];
 
@@ -1853,24 +1864,24 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           }
         }
 
-        if (rowLabels[i] == 'Imp.') {
+        if (rowLabels[i].contains('Imp.')) {
           rowCells.add(
             DataCell(Text(totalForThisBusVoltageImp.toStringAsFixed(2))),
           );
           rowTotalSummable += totalForThisBusVoltageImp;
           tempRowImportForLossCalc += totalForThisBusVoltageImp;
-        } else if (rowLabels[i] == 'Exp.') {
+        } else if (rowLabels[i].contains('Exp.')) {
           rowCells.add(
             DataCell(Text(totalForThisBusVoltageExp.toStringAsFixed(2))),
           );
           rowTotalSummable += totalForThisBusVoltageExp;
-        } else if (rowLabels[i] == 'Diff.') {
+        } else if (rowLabels[i].contains('Diff.')) {
           rowCells.add(
             DataCell(Text(totalForThisBusVoltageDiff.toStringAsFixed(2))),
           );
           rowTotalSummable += totalForThisBusVoltageDiff;
           tempRowDifferenceForLossCalc += totalForThisBusVoltageDiff;
-        } else if (rowLabels[i] == '% Loss') {
+        } else if (rowLabels[i].contains('Loss')) {
           String lossValue = 'N/A';
           if (totalForThisBusVoltageImp > 0) {
             lossValue =
@@ -1881,7 +1892,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         }
       }
 
-      if (rowLabels[i] == 'Imp.') {
+      if (rowLabels[i].contains('Imp.')) {
         rowCells.add(
           DataCell(
             Text(
@@ -1894,7 +1905,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             (_energyAccountService.abstractEnergyData['totalImp'] ?? 0.0);
         tempRowImportForLossCalc +=
             (_energyAccountService.abstractEnergyData['totalImp'] ?? 0.0);
-      } else if (rowLabels[i] == 'Exp.') {
+      } else if (rowLabels[i].contains('Exp.')) {
         rowCells.add(
           DataCell(
             Text(
@@ -2031,103 +2042,139 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     children: [
                       WidgetsToImage(
                         controller: _widgetsToImageController,
-                        child: SizedBox(
-                          width: canvasWidthForPainter,
-                          height: canvasHeightForPainter,
-                          child: InteractiveViewer(
-                            transformationController: _transformationController,
-                            boundaryMargin: const EdgeInsets.all(
-                              double.infinity,
-                            ),
-                            minScale: 0.1,
-                            maxScale: 4.0,
-                            constrained: false,
-                            onInteractionEnd: (details) {
-                              if (sldState.sldData != null) {
-                                sldState.updateCanvasTransform(
-                                  _transformationController.value
-                                      .getMaxScaleOnAxis(),
-                                  Offset(
-                                    _transformationController.value
-                                        .getTranslation()
-                                        .x,
-                                    _transformationController.value
-                                        .getTranslation()
-                                        .y,
+                        child: _isCapturingPdf
+                            ?
+                              // For PDF capture, render the custom painter in a fixed-size SizedBox
+                              // to ensure consistent output dimensions.
+                              SizedBox(
+                                // Use the calculated content size for the painter's drawing area
+                                // This assumes the painter itself can scale its content to fit.
+                                width: effectiveContentWidth,
+                                height: effectiveContentHeight,
+                                child: CustomPaint(
+                                  size: Size(
+                                    effectiveContentWidth,
+                                    effectiveContentHeight,
                                   ),
-                                );
-                              }
-                            },
-                            child: Container(
-                              color: Theme.of(context).colorScheme.background,
-                              child: Stack(
-                                children: [
-                                  CustomPaint(
-                                    size: Size(
-                                      canvasWidthForPainter,
-                                      canvasHeightForPainter,
-                                    ),
-                                    painter: _GridPainter(
-                                      colorScheme: Theme.of(
-                                        context,
-                                      ).colorScheme,
-                                      gridSize: 50.0,
-                                      panOffset:
-                                          currentSldData?.currentPanOffset ??
-                                          Offset.zero,
-                                      zoom: currentSldData?.currentZoom ?? 1.0,
-                                    ),
+                                  painter: SingleLineDiagramPainter(
+                                    sldData: currentSldData!,
+                                    baysMap: _energyAccountService.baysMap,
+                                    bayEnergyData:
+                                        _energyAccountService.bayEnergyData,
+                                    busEnergySummary:
+                                        _energyAccountService.busEnergySummary,
+                                    colorScheme: Theme.of(context).colorScheme,
+                                    contentBounds: Size(
+                                      maxXForContent - minXForContent,
+                                      maxYForContent - minYForContent,
+                                    ), // Pass Size
+                                    originOffsetForPdf: originOffsetForPainter,
                                   ),
-                                  ...(currentSldData?.elements.values
-                                          .whereType<SldNode>()
-                                          .map((node) {
-                                            return Positioned(
-                                              left: node.position.dx,
-                                              top: node.position.dy,
-                                              child: SldNodeWidget(node: node),
-                                            );
-                                          })
-                                          .toList() ??
-                                      []),
-                                  ...(currentSldData?.elements.values
-                                          .whereType<SldEdge>()
-                                          .map((edge) {
-                                            final SldNode? sourceNode =
-                                                currentSldData.nodes[edge
-                                                    .sourceNodeId];
-                                            final SldNode? targetNode =
-                                                currentSldData.nodes[edge
-                                                    .targetNodeId];
-                                            if (sourceNode != null &&
-                                                targetNode != null) {
-                                              return SldEdgeWidget(
-                                                edge: edge,
-                                                sourceNode: sourceNode,
-                                                targetNode: targetNode,
-                                              );
-                                            }
-                                            return const SizedBox.shrink();
-                                          })
-                                          .toList() ??
-                                      []),
-                                  ...(currentSldData?.elements.values
-                                          .whereType<SldTextLabel>()
-                                          .map((label) {
-                                            return Positioned(
-                                              left: label.position.dx,
-                                              top: label.position.dy,
-                                              child: SldTextLabelWidget(
-                                                textLabel: label,
-                                              ),
-                                            );
-                                          })
-                                          .toList() ??
-                                      []),
-                                ],
+                                ),
+                              )
+                            :
+                              // For interactive display, use InteractiveViewer
+                              InteractiveViewer(
+                                transformationController:
+                                    _transformationController,
+                                boundaryMargin: const EdgeInsets.all(
+                                  double.infinity,
+                                ),
+                                minScale: 0.1,
+                                maxScale: 4.0,
+                                constrained: false,
+                                onInteractionEnd: (details) {
+                                  if (sldState.sldData != null) {
+                                    sldState.updateCanvasTransform(
+                                      _transformationController.value
+                                          .getMaxScaleOnAxis(),
+                                      Offset(
+                                        _transformationController.value
+                                            .getTranslation()
+                                            .x,
+                                        _transformationController.value
+                                            .getTranslation()
+                                            .y,
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.background,
+                                  child: Stack(
+                                    children: [
+                                      CustomPaint(
+                                        size: Size(
+                                          canvasWidthForPainter,
+                                          canvasHeightForPainter,
+                                        ),
+                                        painter: _GridPainter(
+                                          colorScheme: Theme.of(
+                                            context,
+                                          ).colorScheme,
+                                          gridSize: 50.0,
+                                          panOffset:
+                                              currentSldData
+                                                  ?.currentPanOffset ??
+                                              Offset.zero,
+                                          zoom:
+                                              currentSldData?.currentZoom ??
+                                              1.0,
+                                        ),
+                                      ),
+                                      ...(currentSldData?.elements.values
+                                              .whereType<SldNode>()
+                                              .map((node) {
+                                                return Positioned(
+                                                  left: node.position.dx,
+                                                  top: node.position.dy,
+                                                  child: SldNodeWidget(
+                                                    node: node,
+                                                  ),
+                                                );
+                                              })
+                                              .toList() ??
+                                          []),
+                                      ...(currentSldData?.elements.values
+                                              .whereType<SldEdge>()
+                                              .map((edge) {
+                                                final SldNode? sourceNode =
+                                                    currentSldData.nodes[edge
+                                                        .sourceNodeId];
+                                                final SldNode? targetNode =
+                                                    currentSldData.nodes[edge
+                                                        .targetNodeId];
+                                                if (sourceNode != null &&
+                                                    targetNode != null) {
+                                                  return SldEdgeWidget(
+                                                    edge: edge,
+                                                    sourceNode: sourceNode,
+                                                    targetNode: targetNode,
+                                                  );
+                                                }
+                                                return const SizedBox.shrink();
+                                              })
+                                              .toList() ??
+                                          []),
+                                      ...(currentSldData?.elements.values
+                                              .whereType<SldTextLabel>()
+                                              .map((label) {
+                                                return Positioned(
+                                                  left: label.position.dx,
+                                                  top: label.position.dy,
+                                                  child: SldTextLabelWidget(
+                                                    textLabel: label,
+                                                  ),
+                                                );
+                                              })
+                                              .toList() ??
+                                          []),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
                       ),
                     ],
                   ),
@@ -2470,14 +2517,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             child: const Icon(Icons.save),
             backgroundColor:
                 _isViewingSavedSld ||
-                    !(_sldEditorState.isDirty) ||
+                    !(_sldEditorState!.isDirty) ||
                     !(sldState.sldData?.selectedElementIds.isEmpty ?? true)
                 ? Colors.grey
                 : Colors.green,
             label: 'Save SLD',
             onTap:
                 _isViewingSavedSld ||
-                    !(_sldEditorState.isDirty) ||
+                    !(_sldEditorState!.isDirty) ||
                     !(sldState.sldData?.selectedElementIds.isEmpty ?? true)
                 ? null
                 : _saveSld,
@@ -2523,7 +2570,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             backgroundColor: Colors.blueGrey,
             label: 'Add New Bay',
             onTap: () {
-              _sldEditorState.addElement(
+              // Ensure _sldEditorState is not null before using it
+              _sldEditorState?.addElement(
                 Bay(
                   id: 'new_bay_${DateTime.now().microsecondsSinceEpoch}',
                   name: 'New Bay',
@@ -2545,7 +2593,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             backgroundColor: Colors.brown,
             label: 'Add Text Label',
             onTap: () {
-              _sldEditorState.addElement(
+              // Ensure _sldEditorState is not null before using it
+              _sldEditorState?.addElement(
                 SldTextLabel(
                   position: Offset(300, 300),
                   size: Size(100, 30),
@@ -2567,7 +2616,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             backgroundColor: Colors.deepPurple,
             label: 'Draw Connection',
             onTap: () {
-              _sldEditorState.setInteractionMode(
+              // Ensure _sldEditorState is not null before using it
+              _sldEditorState?.setInteractionMode(
                 SldInteractionMode.drawConnection,
               );
               SnackBarUtils.showSnackBar(
@@ -2581,8 +2631,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             backgroundColor: Colors.teal,
             label: 'Select Mode',
             onTap: () {
-              _sldEditorState.setInteractionMode(SldInteractionMode.select);
-              _sldEditorState.clearSelection();
+              // Ensure _sldEditorState is not null before using it
+              _sldEditorState?.setInteractionMode(SldInteractionMode.select);
+              _sldEditorState?.clearSelection();
               SnackBarUtils.showSnackBar(context, 'Switched to select mode.');
             },
           ),

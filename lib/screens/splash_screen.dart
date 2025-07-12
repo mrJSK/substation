@@ -1,17 +1,18 @@
+// lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Required for rootBundle
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core/firebase_core.dart'; // Keep import for types/classes
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Still needed for auth check
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:provider/provider.dart'; // Import Provider
-import '../firebase_options.dart'; // Import DefaultFirebaseOptions
+import 'package:provider/provider.dart';
+import '../firebase_options.dart'; // Keep import for DefaultFirebaseOptions
 
-import '../models/app_state_data.dart'; // Now contains StateModel and CityModel
-import '../models/user_model.dart'; // Assuming AppUser model is here
+import '../models/app_state_data.dart';
+import '../models/user_model.dart';
 import '../screens/auth_screen.dart';
 import '../screens/home_screen.dart';
-import '../utils/snackbar_utils.dart'; // Assuming you have this utility
+import '../utils/snackbar_utils.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -116,12 +117,11 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _initializeAppAndNavigate() async {
     try {
-      // Initialize Firebase
-      await Firebase.initializeApp(
-        name:
-            'SubstationManagerPro', // Ensure this matches your Firebase project setup if multiple apps
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+      // **REMOVED THIS LINE: await Firebase.initializeApp(...)**
+      // It is now correctly handled in main.dart at the application startup.
+      // Keeping the import statement for `firebase_core` at the top of this file
+      // is still necessary if other Firebase-related classes (like `User` or `FirebaseFirestore`)
+      // are used within this file.
 
       // --- Load States and Cities from SQL asset files into AppStateData ---
       print(
@@ -158,7 +158,7 @@ class _SplashScreenState extends State<SplashScreen>
         if (user == null) {
           // No user signed in, navigate to AuthScreen
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const AuthScreen()),
+            MaterialPageRoute(builder: (context) => AuthScreen()),
           );
         } else {
           // User is signed in, check their approval status and role from Firestore
@@ -219,13 +219,12 @@ class _SplashScreenState extends State<SplashScreen>
                 );
               }
             } else {
-              // This case should ideally not be hit frequently with the AuthScreen changes,
-              // but handles if a user somehow gets authenticated without a Firestore doc.
+              // Firebase user exists but no AppUser doc, or doc doesn't exist
               // Log out and send to auth screen to re-establish.
               await FirebaseAuth.instance.signOut();
               await GoogleSignIn().signOut();
               Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (context) => const AuthScreen()),
+                MaterialPageRoute(builder: (context) => AuthScreen()),
               );
             }
           } catch (e) {
@@ -236,7 +235,7 @@ class _SplashScreenState extends State<SplashScreen>
               isError: true,
             );
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const AuthScreen()),
+              MaterialPageRoute(builder: (context) => AuthScreen()),
             );
           }
         }
@@ -250,7 +249,7 @@ class _SplashScreenState extends State<SplashScreen>
           isError: true,
         );
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const AuthScreen()),
+          MaterialPageRoute(builder: (context) => AuthScreen()),
         );
       }
     }

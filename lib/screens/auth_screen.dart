@@ -1,3 +1,4 @@
+// lib/screens/auth_screen.dart
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +11,9 @@ import '../utils/snackbar_utils.dart';
 final GoogleSignIn _googleSignIn = GoogleSignIn();
 
 class AuthScreen extends StatefulWidget {
+  // ADD THIS LINE: Define a static routeName for this screen
+  static const String routeName = '/auth';
+
   const AuthScreen({super.key});
 
   @override
@@ -19,7 +23,6 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   bool _isLoading = false;
 
-  // New method to handle actual sign-in after user interaction
   Future<void> _handleGoogleSignInProcess(
     GoogleSignInAccount? googleUser,
   ) async {
@@ -89,7 +92,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           SizedBox(height: 20),
                           Text(
-                            'Your account is pending approval by an admin.',
+                            'Your account is pending admin approval.',
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 18, color: Colors.grey),
                           ),
@@ -155,8 +158,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         setState(() {
                           _isLoading = true;
                         });
-                        await _handleGoogleSignInProcess(
-                          await _googleSignIn.signIn(),
+                        await _googleSignIn.signIn().then(
+                          _handleGoogleSignInProcess,
                         );
                       },
                       darkMode: Theme.of(context).brightness == Brightness.dark,
@@ -178,10 +181,6 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
-// You will need to add a simple GoogleSignInButton widget to your project
-// or use a package that provides one, as `google_sign_in` does not directly
-// expose a Flutter widget for the new `renderButton` API.
-// This is a basic example of such a button:
 class GoogleSignInButton extends StatelessWidget {
   final VoidCallback onPressed;
   final bool darkMode;

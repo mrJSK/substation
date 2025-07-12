@@ -25,6 +25,9 @@ import '../state_management/sld_editor_state.dart';
 class HomeScreen extends StatefulWidget {
   final AppUser appUser;
 
+  // Define a static routeName for this screen
+  static const String routeName = '/home'; // Recommended for named routes
+
   const HomeScreen({super.key, required this.appUser});
 
   @override
@@ -297,20 +300,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           )
                           as Substation?;
                   if (selectedSubstation != null) {
-                    // FIX: Wrap EnergySldScreen in ChangeNotifierProvider for SldEditorState
+                    // Removed local ChangeNotifierProvider for SldEditorState
+                    // as it's now provided globally in main.dart
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) =>
-                            ChangeNotifierProvider<SldEditorState>(
-                              create: (_) => SldEditorState(
-                                substationId: selectedSubstation.id,
-                              ),
-                              child: EnergySldScreen(
-                                substationId: selectedSubstation.id,
-                                substationName: selectedSubstation.name,
-                                currentUser: widget.appUser,
-                              ),
-                            ),
+                        builder: (context) => EnergySldScreen(
+                          substationId: selectedSubstation.id,
+                          substationName: selectedSubstation.name,
+                          currentUser: widget.appUser,
+                        ),
                       ),
                     );
                   } else {
@@ -377,20 +375,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
 
                   if (substationToView != null) {
-                    // FIX: Wrap EnergySldScreen in ChangeNotifierProvider for SldEditorState
+                    // Removed local ChangeNotifierProvider for SldEditorState
+                    // as it's now provided globally in main.dart
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) =>
-                            ChangeNotifierProvider<SldEditorState>(
-                              create: (_) => SldEditorState(
-                                substationId: substationToView!.id,
-                              ),
-                              child: EnergySldScreen(
-                                substationId: substationToView!.id,
-                                substationName: substationToView.name,
-                                currentUser: widget.appUser,
-                              ),
-                            ),
+                        builder: (context) => EnergySldScreen(
+                          substationId: substationToView!.id,
+                          substationName: substationToView.name,
+                          currentUser: widget.appUser,
+                        ),
                       ),
                     );
                   } else {
@@ -422,10 +415,10 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () async {
                 Navigator.of(context).pop();
                 await FirebaseAuth.instance.signOut();
-                await GoogleSignIn().signOut();
+                await GoogleSignIn().signOut(); // Ensure Google sign-out too
                 if (mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const AuthScreen()),
+                    MaterialPageRoute(builder: (context) => AuthScreen()),
                     (Route<dynamic> route) => false,
                   );
                 }
@@ -436,6 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: bodyContent,
       bottomNavigationBar:
+          // Check if bottomNavItems is not empty AND it's an admin role
           (widget.appUser.role == UserRole.admin && bottomNavItems.isNotEmpty)
           ? BottomNavigationBar(
               items: bottomNavItems,
@@ -445,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 context,
               ).colorScheme.onSurface.withOpacity(0.6),
             )
-          : null,
+          : null, // If not admin or bottomNavItems is empty, return null
     );
   }
 }
