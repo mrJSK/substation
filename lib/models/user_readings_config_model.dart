@@ -3,12 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserReadingsConfig {
   final String userId;
-  // NEW: Granularity of readings (hourly, daily) -- this tells us WHICH collection/type of reading to fetch
   final String readingGranularity;
-  // NEW: Duration value and unit for how far back to fetch data
-  final int durationValue; // e.g., 48, 7, 1
-  final String durationUnit; // e.g., 'hours', 'days', 'weeks', 'months'
-
+  final int durationValue;
+  final String durationUnit;
   final List<ConfiguredBayReading> configuredReadings;
   final Timestamp createdAt;
   final Timestamp updatedAt;
@@ -24,14 +21,12 @@ class UserReadingsConfig {
   });
 
   factory UserReadingsConfig.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return UserReadingsConfig(
       userId: doc.id,
-      readingGranularity:
-          data['readingGranularity'] as String? ?? 'hourly', // Default
-      durationValue:
-          (data['durationValue'] as num?)?.toInt() ?? 48, // Default 48
-      durationUnit: data['durationUnit'] as String? ?? 'hours', // Default hours
+      readingGranularity: data['readingGranularity'] as String? ?? 'hourly',
+      durationValue: (data['durationValue'] as num?)?.toInt() ?? 48,
+      durationUnit: data['durationUnit'] as String? ?? 'hours',
       configuredReadings:
           (data['configuredReadings'] as List<dynamic>?)
               ?.map(

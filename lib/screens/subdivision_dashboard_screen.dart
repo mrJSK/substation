@@ -1,32 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore Timestamp and FirebaseFirestore
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:fl_chart/fl_chart.dart'; // Assuming fl_chart is added in pubspec.yaml
-import 'dart:math'; // For min/max in TransformerReadingsChart
+import 'package:fl_chart/fl_chart.dart';
+import 'dart:math';
 
 import '../models/tripping_shutdown_model.dart';
-import '../models/user_model.dart'; // Import AppUser
-import '../models/bay_model.dart'; // For bay details if needed
-import '../models/logsheet_models.dart'; // For chart data
-import '../utils/snackbar_utils.dart'; // For SnackBarUtils
+import '../models/user_model.dart';
+import '../models/bay_model.dart';
+import '../models/logsheet_models.dart';
+import '../utils/snackbar_utils.dart';
 import './tripping_shutdown_entry_screen.dart';
-import './reading_slot_overview_screen.dart'; // Corrected import (was BayReadingsOverviewScreen)
-import './tripping_shutdown_overview_screen.dart'; // For the direct navigation in Drawer
-import './subdivision_asset_management_screen.dart'; // For the Assets tab
-import 'readings_configuration_screen.dart'; // New import
+import './reading_slot_overview_screen.dart';
+import './tripping_shutdown_overview_screen.dart';
+import './subdivision_asset_management_screen.dart';
+import '../models/user_readings_config_model.dart';
 
 // Tripping & Shutdown Event List Widget
 class TrippingShutdownEventsList extends StatelessWidget {
   final List<TrippingShutdownEntry> events;
   final AppUser currentUser;
   final Map<String, Bay> baysMap;
+  final Function() onRefresh;
 
   const TrippingShutdownEventsList({
     Key? key,
     required this.events,
     required this.currentUser,
     required this.baysMap,
+    required this.onRefresh,
   }) : super(key: key);
 
   @override
@@ -118,9 +120,7 @@ class TrippingShutdownEventsList extends StatelessWidget {
                             ),
                           )
                           .then((_) {
-                            if (Navigator.of(context).mounted) {
-                              (context as Element).markNeedsBuild();
-                            }
+                            onRefresh();
                           });
                     },
                   ),
@@ -136,8 +136,8 @@ class TrippingShutdownEventsList extends StatelessWidget {
 // Transformer Readings Chart Widget
 class TransformerReadingsChart extends StatelessWidget {
   final List<LogsheetEntry> readings;
-  final String fieldName; // e.g., 'Current', 'Voltage', 'Power Factor'
-  final String unit; // e.g., 'A', 'V', ''
+  final String fieldName;
+  final String unit;
 
   const TransformerReadingsChart({
     Key? key,
@@ -651,12 +651,13 @@ class _ReportGenerationSectionState extends State<ReportGenerationSection> {
 
 // Main Subdivision Dashboard Screen
 class SubdivisionDashboardScreen extends StatefulWidget {
-  final AppUser currentUser; // Added currentUser as a required parameter
+  final AppUser currentUser;
+  final String? selectedSubstationId;
 
   const SubdivisionDashboardScreen({
     Key? key,
     required this.currentUser,
-    String? selectedSubstationId,
+    this.selectedSubstationId,
   }) : super(key: key);
 
   @override
@@ -671,7 +672,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   List<TrippingShutdownEntry> _trippingShutdownEvents = [];
   Map<String, List<LogsheetEntry>> _transformerReadings = {};
   Map<String, Bay> _baysMap = {};
-  late DateTime _startTime; // Store the configured start time
+  late DateTime _startTime;
 
   @override
   void initState() {
@@ -719,13 +720,13 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
                 ? config.durationValue * 24
                 : config.durationUnit == 'weeks'
                 ? config.durationValue * 24 * 7
+                : config.durationUnit == 'months'
+                ? config.durationValue * 24 * 30
                 : config.durationValue * 24 * 30,
           ),
         );
       } else {
-        _startTime = DateTime.now().subtract(
-          const Duration(hours: 48),
-        ); // Default
+        _startTime = DateTime.now().subtract(const Duration(hours: 48));
       }
       await _fetchData();
     } catch (e) {
@@ -737,9 +738,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
           isError: true,
         );
       }
-      _startTime = DateTime.now().subtract(
-        const Duration(hours: 48),
-      ); // Fallback
+      _startTime = DateTime.now().subtract(const Duration(hours: 48));
       await _fetchData();
     }
   }
@@ -897,145 +896,54 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       _tabController.addListener(_handleTabSelection);
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Subdivision Dashboard'),
-        centerTitle: true,
-        leading: Builder(
-          builder: (BuildContext context) {
-            return IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
-            );
-          },
-        ),
-      ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Subdivision Manager Pro',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    currentUser.email,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimary,
-                    ),
-                  ),
-                  Text(
-                    'Role: ${currentUser.role.name}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onPrimary.withOpacity(0.7),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.dashboard),
-              title: const Text('Subdivision Dashboard'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Configure Readings'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context)
-                    .push(
-                      MaterialPageRoute(
-                        builder: (context) => ReadingConfigurationScreen(
-                          currentUser: currentUser,
-                          subdivisionId:
-                              currentUser.assignedLevels!['subdivisionId']!,
-                        ),
-                      ),
-                    )
-                    .then((_) {
-                      if (mounted) {
-                        _loadConfigAndFetchData(); // Refresh data after configuration change
-                      }
-                    });
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Logout'),
-              onTap: () {
-                Navigator.pop(context);
-                // Add logout logic here if needed
-              },
-            ),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
-          Container(
-            color:
-                Theme.of(context).appBarTheme.backgroundColor ??
-                Theme.of(context).primaryColor,
-            child: TabBar(
-              controller: _tabController,
-              tabs: [
-                const Tab(text: 'Tripping/Shutdown'),
-                const Tab(text: 'Transformer Readings'),
-                const Tab(text: 'Generate Reports'),
-                if (currentUser.role == UserRole.subdivisionManager)
-                  const Tab(text: 'Assets'),
-              ],
-              indicatorColor: Theme.of(context).colorScheme.onPrimary,
-              labelColor: Theme.of(context).colorScheme.onPrimary,
-              unselectedLabelColor: Colors.white70,
-            ),
+    return Column(
+      children: [
+        Container(
+          color:
+              Theme.of(context).appBarTheme.backgroundColor ??
+              Theme.of(context).primaryColor,
+          child: TabBar(
+            controller: _tabController,
+            tabs: [
+              const Tab(text: 'Tripping/Shutdown'),
+              const Tab(text: 'Transformer Readings'),
+              const Tab(text: 'Generate Reports'),
+              if (currentUser.role == UserRole.subdivisionManager)
+                const Tab(text: 'Assets'),
+            ],
+            indicatorColor: Theme.of(context).colorScheme.onPrimary,
+            labelColor: Theme.of(context).colorScheme.onPrimary,
+            unselectedLabelColor: Colors.white70,
           ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                    controller: _tabController,
-                    children: [
-                      TrippingShutdownEventsList(
-                        events: _trippingShutdownEvents,
-                        currentUser: currentUser,
-                        baysMap: _baysMap,
-                      ),
-                      _buildTransformerReadingsCharts(),
-                      ReportGenerationSection(
+        ),
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    TrippingShutdownEventsList(
+                      events: _trippingShutdownEvents,
+                      currentUser: currentUser,
+                      baysMap: _baysMap,
+                      onRefresh: _loadConfigAndFetchData,
+                    ),
+                    _buildTransformerReadingsCharts(),
+                    ReportGenerationSection(
+                      subdivisionId:
+                          currentUser.assignedLevels!['subdivisionId']!,
+                      currentUser: currentUser,
+                    ),
+                    if (currentUser.role == UserRole.subdivisionManager)
+                      SubdivisionAssetManagementScreen(
                         subdivisionId:
                             currentUser.assignedLevels!['subdivisionId']!,
                         currentUser: currentUser,
                       ),
-                      if (currentUser.role == UserRole.subdivisionManager)
-                        SubdivisionAssetManagementScreen(
-                          subdivisionId:
-                              currentUser.assignedLevels!['subdivisionId']!,
-                          currentUser: currentUser,
-                        ),
-                    ],
-                  ),
-          ),
-        ],
-      ),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 

@@ -1,4 +1,3 @@
-// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -16,6 +15,7 @@ import '../screens/saved_sld_list_screen.dart';
 import '../screens/substation_user_dashboard_screen.dart';
 import '../screens/subdivision_dashboard_screen.dart';
 import '../screens/admin/reading_template_management_screen.dart';
+import '../screens/readings_configuration_screen.dart';
 import '../controllers/sld_controller.dart';
 import '../utils/snackbar_utils.dart';
 
@@ -430,15 +430,30 @@ class _SubdivisionManagerHomeScreenState
             leading: const Icon(Icons.dashboard),
             title: const Text('Subdivision Dashboard'),
             onTap: () {
+              Navigator.of(context).pop(); // Just close the drawer
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings),
+            title: const Text('Configure Readings'),
+            onTap: () {
               Navigator.of(context).pop();
               if (widget.appUser.assignedLevels != null &&
                   widget.appUser.assignedLevels!.containsKey('subdivisionId')) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SubdivisionDashboardScreen(currentUser: widget.appUser),
-                  ),
-                );
+                Navigator.of(context)
+                    .push(
+                      MaterialPageRoute(
+                        builder: (context) => ReadingConfigurationScreen(
+                          currentUser: widget.appUser,
+                          subdivisionId:
+                              widget.appUser.assignedLevels!['subdivisionId']!,
+                        ),
+                      ),
+                    )
+                    .then((_) {
+                      // Refresh substations after configuration change
+                      _loadSubstations();
+                    });
               } else {
                 SnackBarUtils.showSnackBar(
                   context,
