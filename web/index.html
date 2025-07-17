@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base href="$FLUTTER_BASE_HREF" />
+    <meta charset="UTF-8" />
+    <meta content="IE=Edge" http-equiv="X-UA-Compatible" />
+    <meta name="description" content="A new Flutter project." />
+
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="substation" />
+    <link rel="apple-touch-icon" href="icons/Icon-192.png" />
+
+    <link rel="icon" type="image/png" href="favicon.png" />
+
+    <title>substation</title>
+    <link rel="manifest" href="manifest.json" />
+
+    <meta
+      name="google-signin-client_id"
+      content="415497790316-sf6p2qphu3r7nmedg6d5m6glijjn2r7k.apps.googleusercontent.com"
+    />
+
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+    <script>
+      // Your web app's Firebase configuration
+      const firebaseConfig = {
+        apiKey: "AIzaSyDduBa235737YVFU3WDLwgBpIg7xyEkh0g",
+        authDomain: "substation-12f1a.firebaseapp.com",
+        projectId: "substation-12f1a",
+        storageBucket: "substation-12f1a.firebasestorage.app",
+        messagingSenderId: "693101970435",
+        appId: "1:693101970435:web:d526d159f2849bec31fa36",
+        measurementId: "G-W1GZJFTDT1",
+      };
+
+      // Initialize Firebase
+      // This should ideally happen AFTER firebase-app-compat.js is loaded
+      firebase.initializeApp(firebaseConfig);
+    </script>
+  </head>
+  <body>
+    <script src="flutter_bootstrap.js" async></script>
+  </body>
+</html>
