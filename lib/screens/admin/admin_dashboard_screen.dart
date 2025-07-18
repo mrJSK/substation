@@ -1,11 +1,19 @@
 // lib/screens/admin/admin_dashboard_screen.dart
+
 import 'package:flutter/material.dart';
+
 import '../../models/user_model.dart';
+
 import 'admin_hierarchy_screen.dart';
+
 import 'master_equipment_management_screen.dart';
+
 import 'user_management_screen.dart';
+
 import 'reading_template_management_screen.dart';
+
 import '../equipment_hierarchy_selection_screen.dart';
+
 import 'bay_relationship_management_screen.dart'; // Import the new screen
 
 class AdminDashboardScreen extends StatelessWidget {
@@ -79,11 +87,22 @@ class AdminDashboardScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Card(
-              elevation: 6,
+              elevation: 4,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
               ),
-              child: Padding(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(15),
+                  gradient: LinearGradient(
+                    colors: [
+                      Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      Colors.transparent,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,11 +135,11 @@ class AdminDashboardScreen extends StatelessWidget {
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                childAspectRatio: 1.0,
+                childAspectRatio: 1.1,
               ),
               itemCount: dashboardItems.length,
               itemBuilder: (context, index) {
@@ -165,7 +184,7 @@ class DashboardCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 5,
+      elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: InkWell(
         onTap: onTap,

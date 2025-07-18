@@ -11,7 +11,6 @@ import '../models/user_readings_config_model.dart'; // Correct import for UserRe
 import '../models/reading_models.dart'; // Import ReadingField and ReadingTemplate
 
 class ReadingConfigurationScreen extends StatefulWidget {
-  // Corrected class name
   final AppUser currentUser;
   final String subdivisionId;
 
@@ -22,8 +21,7 @@ class ReadingConfigurationScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<ReadingConfigurationScreen>
-  createState() => // Corrected state class name
+  State<ReadingConfigurationScreen> createState() =>
       _ReadingConfigurationScreenState();
 }
 
@@ -42,6 +40,9 @@ class _ReadingConfigurationScreenState
   List<Bay> _baysInSelectedSubstations = [];
 
   Map<String, List<String>> _bayToAvailableReadingFields = {};
+
+  // Track expansion state for bays
+  final Map<String, bool> _expansionState = {};
 
   @override
   void initState() {
@@ -136,7 +137,6 @@ class _ReadingConfigurationScreenState
           .get();
 
       if (assignmentSnapshot.docs.isNotEmpty) {
-        // Assuming BayReadingAssignment is defined elsewhere and has a readingTemplateId
         final assignment =
             assignmentSnapshot.docs.first.data() as Map<String, dynamic>;
         final String templateId = assignment['templateId'] as String;
@@ -239,6 +239,7 @@ class _ReadingConfigurationScreenState
         _baysInSelectedSubstations = [];
         _configuredReadings = [];
         _bayToAvailableReadingFields = {};
+        _expansionState.clear();
       });
       return;
     }
@@ -266,6 +267,10 @@ class _ReadingConfigurationScreenState
         _configuredReadings.retainWhere(
           (cbr) => fetchedBays.any((bay) => bay.id == cbr.bayId),
         );
+        // Initialize expansion state
+        for (var bay in fetchedBays) {
+          _expansionState[bay.id] = false; // Start collapsed for cleaner UI
+        }
       });
       await _fetchReadingFieldsForBays(fetchedBays);
     }
@@ -273,241 +278,333 @@ class _ReadingConfigurationScreenState
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Readings Configuration')),
+      appBar: AppBar(
+        title: const Text('Readings Configuration'),
+        elevation: 0, // Flat app bar for modern feel
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Data Duration',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextFormField(
-                          controller: _durationValueController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Back duration',
-                            hintText: 'e.g., 48',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null ||
-                                value.isEmpty ||
-                                int.tryParse(value) == null) {
-                              return 'Enter a number';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 3,
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedDurationUnit,
-                          decoration: InputDecoration(
-                            labelText: 'Unit',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          items: _durationUnits.map((String unit) {
-                            return DropdownMenuItem<String>(
-                              value: unit,
-                              child: Text(unit),
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              _selectedDurationUnit = newValue!;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  const SizedBox(height: 16),
-
-                  Text(
-                    'Select Substations & Bays',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  DropdownSearch<Substation>.multiSelection(
-                    popupProps: PopupPropsMultiSelection.menu(
-                      showSearchBox: true,
-                      menuProps: MenuProps(
-                        borderRadius: BorderRadius.circular(10),
+              padding: EdgeInsets.all(
+                screenHeight * 0.02,
+              ), // Responsive padding
+              child: Form(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Data Duration',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration(
-                        labelText: 'Select Substation(s)',
-                        hintText: 'Choose substations to view bays from',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    itemAsString: (Substation s) => s.name,
-                    selectedItems: _substationsInSubdivision
-                        .where(
-                          (s) => _configuredReadings.any(
-                            (cbr) => cbr.substationId == s.id,
-                          ),
-                        )
-                        .toList(),
-                    items: _substationsInSubdivision,
-                    onChanged: (List<Substation> selectedSubstations) {
-                      _fetchBaysForSubstations(
-                        selectedSubstations.map((s) => s.id).toList(),
-                      );
-                    },
-                    validator: (value) => value == null || value.isEmpty
-                        ? 'Please select at least one Substation'
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-
-                  if (_baysInSelectedSubstations.isNotEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: _baysInSelectedSubstations.map((bay) {
-                        // Find existing configuration for this bay
-                        ConfiguredBayReading? currentConfig =
-                            _configuredReadings.firstWhereOrNull(
-                              (cbr) => cbr.bayId == bay.id,
-                            );
-                        List<String> availableFieldsForBay =
-                            _bayToAvailableReadingFields[bay.id] ?? [];
-
-                        return Card(
-                          margin: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Bay: ${bay.name} (${bay.voltageLevel})',
-                                  style: Theme.of(context).textTheme.titleSmall,
+                    const SizedBox(height: 8),
+                    Baseline(
+                      baseline: 60.0, // Align baselines for even positioning
+                      baselineType: TextBaseline.alphabetic,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: TextFormField(
+                              controller: _durationValueController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: 'Back duration',
+                                hintText: 'e.g., 48',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                if (availableFieldsForBay.isEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 8.0,
+                                prefixIcon: const Icon(Icons.timer),
+                                helperText: 'Enter how far back to fetch data',
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 16.0,
+                                  horizontal: 12.0,
+                                ),
+                              ),
+                              validator: (value) {
+                                if (value == null ||
+                                    value.isEmpty ||
+                                    int.tryParse(value) == null) {
+                                  return 'Enter a valid number';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                          SizedBox(width: screenHeight * 0.01),
+                          Expanded(
+                            flex: 3,
+                            child: DropdownButtonFormField<String>(
+                              value: _selectedDurationUnit,
+                              decoration: InputDecoration(
+                                labelText: 'Unit',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                prefixIcon: const Icon(Icons.calendar_today),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 16.0,
+                                  horizontal: 12.0,
+                                ),
+                              ),
+                              items: _durationUnits.map((String unit) {
+                                return DropdownMenuItem<String>(
+                                  value: unit,
+                                  child: Text(unit.capitalize()),
+                                );
+                              }).toList(),
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  _selectedDurationUnit = newValue!;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 32, thickness: 1),
+                    Text(
+                      'Select Substations & Bays',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownSearch<Substation>.multiSelection(
+                      popupProps: PopupPropsMultiSelection.menu(
+                        showSearchBox: true,
+                        menuProps: MenuProps(
+                          borderRadius: BorderRadius.circular(12),
+                          elevation: 4, // Subtle shadow
+                        ),
+                      ),
+                      dropdownDecoratorProps: DropDownDecoratorProps(
+                        dropdownSearchDecoration: InputDecoration(
+                          labelText: 'Select Substation(s)',
+                          hintText: 'Choose substations to view bays from',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: const Icon(Icons.location_on),
+                          helperText: 'Multiple selections allowed',
+                        ),
+                      ),
+                      itemAsString: (Substation s) => s.name,
+                      selectedItems: _substationsInSubdivision
+                          .where(
+                            (s) => _configuredReadings.any(
+                              (cbr) => cbr.substationId == s.id,
+                            ),
+                          )
+                          .toList(),
+                      items: _substationsInSubdivision,
+                      onChanged: (List<Substation> selectedSubstations) {
+                        _fetchBaysForSubstations(
+                          selectedSubstations.map((s) => s.id).toList(),
+                        );
+                      },
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Please select at least one Substation'
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (_baysInSelectedSubstations.isNotEmpty)
+                      ExpansionPanelList(
+                        expansionCallback: (int index, bool isExpanded) {
+                          setState(() {
+                            final bay = _baysInSelectedSubstations[index];
+                            _expansionState[bay.id] = !isExpanded;
+                          });
+                        },
+                        animationDuration: const Duration(
+                          milliseconds: 300,
+                        ), // Smooth animation
+                        children: _baysInSelectedSubstations.map((bay) {
+                          ConfiguredBayReading? currentConfig =
+                              _configuredReadings.firstWhereOrNull(
+                                (cbr) => cbr.bayId == bay.id,
+                              );
+                          List<String> availableFieldsForBay =
+                              _bayToAvailableReadingFields[bay.id] ?? [];
+
+                          return ExpansionPanel(
+                            headerBuilder:
+                                (BuildContext context, bool isExpanded) {
+                                  return ListTile(
+                                    title: Text(
+                                      'Bay: ${bay.name} (${bay.voltageLevel})',
+                                      style: theme.textTheme.titleMedium,
                                     ),
-                                    child: Text(
-                                      'No reading template fields found for this bay. Please assign one via Bay Reading Assignment Screen.',
-                                      style: TextStyle(
-                                        fontStyle: FontStyle.italic,
-                                        color: Colors.red[700],
+                                    trailing: AnimatedRotation(
+                                      turns: isExpanded
+                                          ? 0.5
+                                          : 0, // Single arrow rotation
+                                      duration: const Duration(
+                                        milliseconds: 200,
+                                      ),
+                                      child: const Icon(
+                                        Icons.keyboard_arrow_down,
                                       ),
                                     ),
-                                  ),
-                                if (availableFieldsForBay.isNotEmpty)
-                                  DropdownSearch<String>.multiSelection(
-                                    popupProps: PopupPropsMultiSelection.menu(
-                                      showSearchBox: true,
-                                      menuProps: MenuProps(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                    ),
-                                    dropdownDecoratorProps: DropDownDecoratorProps(
-                                      dropdownSearchDecoration: InputDecoration(
-                                        labelText:
-                                            'Select Readings for ${bay.name}',
-                                        hintText: 'Choose reading parameters',
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
+                                  );
+                                },
+                            body: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (availableFieldsForBay.isEmpty)
+                                    Card(
+                                      color: theme.colorScheme.error
+                                          .withOpacity(0.1),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.warning_amber,
+                                              color: theme.colorScheme.error,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                'No reading template fields found for this bay. Please assign one via Bay Reading Assignment Screen.',
+                                                style: TextStyle(
+                                                  color:
+                                                      theme.colorScheme.error,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
-                                    itemAsString: (String s) => s,
-                                    selectedItems:
-                                        currentConfig?.readingFields ?? [],
-                                    items: availableFieldsForBay,
-                                    onChanged: (List<String> selectedFields) {
-                                      setState(() {
-                                        if (selectedFields.isEmpty) {
-                                          _configuredReadings.removeWhere(
-                                            (cbr) => cbr.bayId == bay.id,
-                                          );
-                                        } else {
-                                          final newConfig =
-                                              ConfiguredBayReading(
-                                                bayId: bay.id,
-                                                bayName: bay.name,
-                                                substationId: bay.substationId,
-                                                substationName:
-                                                    _substationsInSubdivision
-                                                        .firstWhere(
-                                                          (s) =>
-                                                              s.id ==
-                                                              bay.substationId,
-                                                        )
-                                                        .name,
-                                                readingFields: selectedFields,
-                                              );
-                                          int existingIndex =
-                                              _configuredReadings.indexWhere(
-                                                (cbr) => cbr.bayId == bay.id,
-                                              );
-                                          if (existingIndex != -1) {
-                                            _configuredReadings[existingIndex] =
-                                                newConfig;
+                                  if (availableFieldsForBay.isNotEmpty)
+                                    DropdownSearch<String>.multiSelection(
+                                      popupProps: PopupPropsMultiSelection.menu(
+                                        showSearchBox: true,
+                                        menuProps: MenuProps(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          elevation: 4,
+                                        ),
+                                      ),
+                                      dropdownDecoratorProps: DropDownDecoratorProps(
+                                        dropdownSearchDecoration: InputDecoration(
+                                          labelText:
+                                              'Select Readings for ${bay.name}',
+                                          hintText: 'Choose reading parameters',
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          prefixIcon: const Icon(
+                                            Icons.playlist_add_check,
+                                          ),
+                                          helperText:
+                                              'Select multiple if needed',
+                                        ),
+                                      ),
+                                      itemAsString: (String s) => s,
+                                      selectedItems:
+                                          currentConfig?.readingFields ?? [],
+                                      items: availableFieldsForBay,
+                                      onChanged: (List<String> selectedFields) {
+                                        setState(() {
+                                          if (selectedFields.isEmpty) {
+                                            _configuredReadings.removeWhere(
+                                              (cbr) => cbr.bayId == bay.id,
+                                            );
                                           } else {
-                                            _configuredReadings.add(newConfig);
+                                            final newConfig =
+                                                ConfiguredBayReading(
+                                                  bayId: bay.id,
+                                                  bayName: bay.name,
+                                                  substationId:
+                                                      bay.substationId,
+                                                  substationName:
+                                                      _substationsInSubdivision
+                                                          .firstWhere(
+                                                            (s) =>
+                                                                s.id ==
+                                                                bay.substationId,
+                                                          )
+                                                          .name,
+                                                  readingFields: selectedFields,
+                                                );
+                                            int existingIndex =
+                                                _configuredReadings.indexWhere(
+                                                  (cbr) => cbr.bayId == bay.id,
+                                                );
+                                            if (existingIndex != -1) {
+                                              _configuredReadings[existingIndex] =
+                                                  newConfig;
+                                            } else {
+                                              _configuredReadings.add(
+                                                newConfig,
+                                              );
+                                            }
                                           }
-                                        }
-                                      });
-                                    },
-                                  ),
-                              ],
+                                        });
+                                      },
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  const SizedBox(height: 32),
+                            isExpanded: _expansionState[bay.id] ?? false,
+                          );
+                        }).toList(),
+                      ),
+                    SizedBox(height: screenHeight * 0.04),
 
-                  Center(
-                    child: _isSaving
-                        ? const CircularProgressIndicator()
-                        : ElevatedButton.icon(
-                            onPressed: _saveConfiguration,
-                            icon: const Icon(Icons.save),
-                            label: const Text('Save Configuration'),
-                            style: ElevatedButton.styleFrom(
-                              minimumSize: const Size(double.infinity, 50),
+                    Center(
+                      child: _isSaving
+                          ? const CircularProgressIndicator()
+                          : ElevatedButton.icon(
+                              onPressed: _saveConfiguration,
+                              icon: const Icon(Icons.save),
+                              label: const Text('Save Configuration'),
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: Size(double.infinity, 50),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 2, // Subtle shadow
+                              ),
                             ),
-                          ),
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
     );
   }
 }
 
-// Extension to help find firstWhereOrNull for List (Moved from previous readings_configuration_screen.dart content)
+// Extension to help find firstWhereOrNull for List
 extension ListExtension<T> on List<T> {
   T? firstWhereOrNull(bool Function(T element) test) {
     for (var element in this) {
       if (test(element)) return element;
     }
     return null;
+  }
+}
+
+// Simple extension for capitalizing strings
+extension StringExtension on String {
+  String capitalize() {
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

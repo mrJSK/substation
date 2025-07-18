@@ -15,6 +15,7 @@ import './reading_slot_overview_screen.dart';
 import './tripping_shutdown_overview_screen.dart';
 import './subdivision_asset_management_screen.dart';
 import '../models/user_readings_config_model.dart';
+import '../models/hierarchy_models.dart';
 
 // Tripping & Shutdown Event List Widget
 class TrippingShutdownEventsList extends StatelessWidget {
@@ -257,11 +258,13 @@ class TransformerReadingsChart extends StatelessWidget {
 class ReportGenerationSection extends StatefulWidget {
   final String subdivisionId;
   final AppUser currentUser;
+  final String? selectedSubstationId; // Added selectedSubstationId
 
   const ReportGenerationSection({
     Key? key,
     required this.subdivisionId,
     required this.currentUser,
+    this.selectedSubstationId, // Added selectedSubstationId
   }) : super(key: key);
 
   @override
@@ -284,24 +287,36 @@ class _ReportGenerationSectionState extends State<ReportGenerationSection> {
     });
   }
 
+  @override
+  void didUpdateWidget(covariant ReportGenerationSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedSubstationId != oldWidget.selectedSubstationId) {
+      _selectedBayId = null; // Reset selected bay when substation changes
+      _fetchBays();
+    }
+  }
+
   Future<void> _fetchBays() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final substationsSnapshot = await FirebaseFirestore.instance
-          .collection('substations')
-          .where('subdivisionId', isEqualTo: widget.subdivisionId)
-          .get();
-
-      final List<String> substationIds = substationsSnapshot.docs
-          .map((doc) => doc.id)
-          .toList();
+      List<String> substationIds = [];
+      if (widget.selectedSubstationId != null) {
+        substationIds.add(widget.selectedSubstationId!);
+      } else {
+        // If no specific substation is selected, fetch all for the subdivision
+        final substationsSnapshot = await FirebaseFirestore.instance
+            .collection('substations')
+            .where('subdivisionId', isEqualTo: widget.subdivisionId)
+            .get();
+        substationIds = substationsSnapshot.docs.map((doc) => doc.id).toList();
+      }
 
       if (substationIds.isEmpty) {
         if (!mounted) return;
         SnackBarUtils.showSnackBar(
           context,
-          'No substations found in your subdivision.',
+          'No substations found for report generation or no substation selected.',
           isError: true,
         );
         setState(() {
@@ -332,6 +347,11 @@ class _ReportGenerationSectionState extends State<ReportGenerationSection> {
       if (!mounted) return;
       setState(() {
         _bays = fetchedBays;
+        // Keep the previously selected bay if it exists in the new list of bays for the selected substation
+        if (_selectedBayId != null &&
+            !_bays.any((bay) => bay.id == _selectedBayId)) {
+          _selectedBayId = null;
+        }
         _isLoading = false;
       });
     } catch (e) {
@@ -578,8 +598,8 @@ class _ReportGenerationSectionState extends State<ReportGenerationSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.all(16.0),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
           child: Text(
             'Generate Custom Bay Reports',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -665,38 +685,25 @@ class SubdivisionDashboardScreen extends StatefulWidget {
       _SubdivisionDashboardScreenState();
 }
 
-class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _SubdivisionDashboardScreenState
+    extends State<SubdivisionDashboardScreen> {
   bool _isLoading = true;
   List<TrippingShutdownEntry> _trippingShutdownEvents = [];
   Map<String, List<LogsheetEntry>> _transformerReadings = {};
   Map<String, Bay> _baysMap = {};
   late DateTime _startTime;
 
+  List<Substation> _substations = []; // Changed to List<Substation>
+  String? _selectedSubstationId; // Holds the selected substation
+
+  int _currentIndex = 0; // Current index for BottomNavigationBar
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _getTabCount(), vsync: this);
-    _tabController.addListener(_handleTabSelection);
+    _selectedSubstationId =
+        widget.selectedSubstationId; // Initialize selected substation
     _loadConfigAndFetchData();
-  }
-
-  @override
-  void dispose() {
-    _tabController.removeListener(_handleTabSelection);
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  void _handleTabSelection() {
-    if (_tabController.indexIsChanging && _tabController.index == 0) {
-      // Optional: Refresh data when switching to Tripping/Shutdown tab
-    }
-  }
-
-  int _getTabCount() {
-    return widget.currentUser.role == UserRole.subdivisionManager ? 4 : 3;
   }
 
   Future<void> _loadConfigAndFetchData() async {
@@ -728,7 +735,16 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       } else {
         _startTime = DateTime.now().subtract(const Duration(hours: 48));
       }
-      await _fetchData();
+      await _fetchSubstations(); // Fetch substations first
+      if (_selectedSubstationId != null || _substations.isNotEmpty) {
+        // If _selectedSubstationId is still null after fetching, try to set the first one
+        if (_selectedSubstationId == null && _substations.isNotEmpty) {
+          _selectedSubstationId = _substations.first.id;
+        }
+        await _fetchData();
+      } else {
+        setState(() => _isLoading = false);
+      }
     } catch (e) {
       print('Error loading configuration: $e');
       if (mounted) {
@@ -739,11 +755,11 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         );
       }
       _startTime = DateTime.now().subtract(const Duration(hours: 48));
-      await _fetchData();
+      setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _fetchData() async {
+  Future<void> _fetchSubstations() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
@@ -765,19 +781,36 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       final substationsSnapshot = await FirebaseFirestore.instance
           .collection('substations')
           .where('subdivisionId', isEqualTo: subdivisionId)
+          .orderBy('name')
           .get();
 
-      final List<String> substationIds = substationsSnapshot.docs
-          .map((doc) => doc.id)
-          .toList();
-
-      if (substationIds.isEmpty) {
-        if (!mounted) return;
+      if (!mounted) return;
+      setState(() {
+        _substations = substationsSnapshot.docs
+            .map((doc) => Substation.fromFirestore(doc))
+            .toList();
+        if (_selectedSubstationId == null && _substations.isNotEmpty) {
+          _selectedSubstationId = _substations.first.id;
+        }
+      });
+    } catch (e) {
+      print('Error fetching substations: $e');
+      if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'No substations found in your subdivision.',
+          'Error fetching substations: $e',
           isError: true,
         );
+      }
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      if (_selectedSubstationId == null) {
         setState(() {
           _isLoading = false;
           _trippingShutdownEvents = [];
@@ -788,21 +821,13 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       }
 
       List<Bay> fetchedBays = [];
-      for (int i = 0; i < substationIds.length; i += 10) {
-        final chunk = substationIds.sublist(
-          i,
-          i + 10 > substationIds.length ? substationIds.length : i + 10,
-        );
-        if (chunk.isEmpty) continue;
-
-        final baysSnapshot = await FirebaseFirestore.instance
-            .collection('bays')
-            .where('substationId', whereIn: chunk)
-            .get();
-        fetchedBays.addAll(
-          baysSnapshot.docs.map((doc) => Bay.fromFirestore(doc)).toList(),
-        );
-      }
+      final baysSnapshot = await FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: _selectedSubstationId)
+          .get();
+      fetchedBays.addAll(
+        baysSnapshot.docs.map((doc) => Bay.fromFirestore(doc)).toList(),
+      );
       _baysMap = {for (var bay in fetchedBays) bay.id: bay};
 
       final List<String> bayIds = _baysMap.keys.toList();
@@ -810,7 +835,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         if (!mounted) return;
         SnackBarUtils.showSnackBar(
           context,
-          'No bays found in your substations.',
+          'No bays found for the selected substation.',
           isError: true,
         );
         setState(() {
@@ -822,24 +847,16 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       }
 
       List<TrippingShutdownEntry> fetchedTrippingEvents = [];
-      for (int i = 0; i < substationIds.length; i += 10) {
-        final chunk = substationIds.sublist(
-          i,
-          i + 10 > substationIds.length ? substationIds.length : i + 10,
-        );
-        if (chunk.isEmpty) continue;
-
-        final trippingSnapshot = await FirebaseFirestore.instance
-            .collection('trippingShutdownEntries')
-            .where('substationId', whereIn: chunk)
-            .orderBy('startTime', descending: true)
-            .get();
-        fetchedTrippingEvents.addAll(
-          trippingSnapshot.docs
-              .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
-              .toList(),
-        );
-      }
+      final trippingSnapshot = await FirebaseFirestore.instance
+          .collection('trippingShutdownEntries')
+          .where('substationId', isEqualTo: _selectedSubstationId)
+          .orderBy('startTime', descending: true)
+          .get();
+      fetchedTrippingEvents.addAll(
+        trippingSnapshot.docs
+            .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+            .toList(),
+      );
       _trippingShutdownEvents = fetchedTrippingEvents;
 
       final endTime = Timestamp.fromDate(DateTime.now());
@@ -851,24 +868,28 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
           .toList();
 
       _transformerReadings.clear();
-      for (int i = 0; i < transformerBayIds.length; i += 10) {
-        final chunk = transformerBayIds.sublist(
-          i,
-          i + 10 > transformerBayIds.length ? transformerBayIds.length : i + 10,
-        );
-        if (chunk.isEmpty) continue;
+      if (transformerBayIds.isNotEmpty) {
+        for (int i = 0; i < transformerBayIds.length; i += 10) {
+          final chunk = transformerBayIds.sublist(
+            i,
+            i + 10 > transformerBayIds.length
+                ? transformerBayIds.length
+                : i + 10,
+          );
+          if (chunk.isEmpty) continue;
 
-        final readingsSnapshot = await FirebaseFirestore.instance
-            .collection('logsheetEntries')
-            .where('bayId', whereIn: chunk)
-            .where('frequency', isEqualTo: 'hourly')
-            .where('readingTimestamp', isGreaterThanOrEqualTo: startTime)
-            .where('readingTimestamp', isLessThanOrEqualTo: endTime)
-            .get();
+          final readingsSnapshot = await FirebaseFirestore.instance
+              .collection('logsheetEntries')
+              .where('bayId', whereIn: chunk)
+              .where('frequency', isEqualTo: 'hourly')
+              .where('readingTimestamp', isGreaterThanOrEqualTo: startTime)
+              .where('readingTimestamp', isLessThanOrEqualTo: endTime)
+              .get();
 
-        for (var doc in readingsSnapshot.docs) {
-          final entry = LogsheetEntry.fromFirestore(doc);
-          _transformerReadings.putIfAbsent(entry.bayId, () => []).add(entry);
+          for (var doc in readingsSnapshot.docs) {
+            final entry = LogsheetEntry.fromFirestore(doc);
+            _transformerReadings.putIfAbsent(entry.bayId, () => []).add(entry);
+          }
         }
       }
 
@@ -889,61 +910,174 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   @override
   Widget build(BuildContext context) {
     final currentUser = widget.currentUser;
-    final int expectedTabCount = _getTabCount();
-    if (_tabController.length != expectedTabCount) {
-      _tabController.dispose();
-      _tabController = TabController(length: expectedTabCount, vsync: this);
-      _tabController.addListener(_handleTabSelection);
-    }
 
-    return Column(
-      children: [
-        Container(
-          color:
-              Theme.of(context).appBarTheme.backgroundColor ??
-              Theme.of(context).primaryColor,
-          child: TabBar(
-            controller: _tabController,
-            tabs: [
-              const Tab(text: 'Tripping/Shutdown'),
-              const Tab(text: 'Transformer Readings'),
-              const Tab(text: 'Generate Reports'),
-              if (currentUser.role == UserRole.subdivisionManager)
-                const Tab(text: 'Assets'),
-            ],
-            indicatorColor: Theme.of(context).colorScheme.onPrimary,
-            labelColor: Theme.of(context).colorScheme.onPrimary,
-            unselectedLabelColor: Colors.white70,
-          ),
-        ),
-        Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    TrippingShutdownEventsList(
-                      events: _trippingShutdownEvents,
-                      currentUser: currentUser,
-                      baysMap: _baysMap,
-                      onRefresh: _loadConfigAndFetchData,
-                    ),
-                    _buildTransformerReadingsCharts(),
-                    ReportGenerationSection(
-                      subdivisionId:
-                          currentUser.assignedLevels!['subdivisionId']!,
-                      currentUser: currentUser,
-                    ),
-                    if (currentUser.role == UserRole.subdivisionManager)
-                      SubdivisionAssetManagementScreen(
-                        subdivisionId:
-                            currentUser.assignedLevels!['subdivisionId']!,
-                        currentUser: currentUser,
-                      ),
-                  ],
+    final List<Widget> _screens = [
+      Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: 'Select Substation',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
+              ),
+              value: _selectedSubstationId,
+              items: _substations
+                  .map(
+                    (substation) => DropdownMenuItem(
+                      value: substation.id,
+                      child: Text(substation.name),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedSubstationId = value;
+                  _fetchData();
+                });
+              },
+              validator: (value) =>
+                  value == null ? 'Please select a substation' : null,
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _substations.isEmpty
+                ? const Center(child: Text('No substations available.'))
+                : TrippingShutdownEventsList(
+                    events: _trippingShutdownEvents,
+                    currentUser: currentUser,
+                    baysMap: _baysMap,
+                    onRefresh: _loadConfigAndFetchData,
+                  ),
+          ),
+        ],
+      ),
+      Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: 'Select Substation',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              value: _selectedSubstationId,
+              items: _substations
+                  .map(
+                    (substation) => DropdownMenuItem(
+                      value: substation.id,
+                      child: Text(substation.name),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedSubstationId = value;
+                  _fetchData();
+                });
+              },
+              validator: (value) =>
+                  value == null ? 'Please select a substation' : null,
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _substations.isEmpty
+                ? const Center(child: Text('No substations available.'))
+                : _buildTransformerReadingsCharts(),
+          ),
+        ],
+      ),
+      Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: 'Select Substation',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              value: _selectedSubstationId,
+              items: _substations
+                  .map(
+                    (substation) => DropdownMenuItem(
+                      value: substation.id,
+                      child: Text(substation.name),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedSubstationId = value;
+                  _fetchData();
+                });
+              },
+              validator: (value) =>
+                  value == null ? 'Please select a substation' : null,
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _substations.isEmpty
+                ? const Center(child: Text('No substations available.'))
+                : ReportGenerationSection(
+                    subdivisionId:
+                        currentUser.assignedLevels!['subdivisionId']!,
+                    currentUser: currentUser,
+                    selectedSubstationId: _selectedSubstationId,
+                  ),
+          ),
+        ],
+      ),
+      if (currentUser.role == UserRole.subdivisionManager)
+        SubdivisionAssetManagementScreen(
+          subdivisionId: currentUser.assignedLevels!['subdivisionId']!,
+          currentUser: currentUser,
         ),
-      ],
+    ];
+
+    return Scaffold(
+      body: _screens[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        selectedItemColor: Theme.of(context).colorScheme.primary,
+        unselectedItemColor: Colors.grey,
+        type: BottomNavigationBarType.fixed, // Ensures all labels are visible
+        items: [
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.warning),
+            label: 'Tripping',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.insights),
+            label: 'Readings',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart),
+            label: 'Reports',
+          ),
+          if (currentUser.role == UserRole.subdivisionManager)
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.engineering),
+              label: 'Assets',
+            ),
+        ],
+      ),
     );
   }
 

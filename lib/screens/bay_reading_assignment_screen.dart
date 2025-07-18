@@ -1,4 +1,5 @@
 // lib/screens/bay_reading_assignment_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -30,7 +31,6 @@ class _BayReadingAssignmentScreenState
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool _isLoading = true;
   bool _isSaving = false;
-
   String?
   _bayType; // The type of the current bay (e.g., 'Transformer', 'Feeder')
   List<ReadingTemplate> _availableReadingTemplates = [];
@@ -78,7 +78,6 @@ class _BayReadingAssignmentScreenState
     setState(() {
       _isLoading = true;
     });
-
     try {
       // 1. Fetch bay details to get its type
       final bayDoc = await FirebaseFirestore.instance
@@ -141,7 +140,7 @@ class _BayReadingAssignmentScreenState
 
         // Populate _instanceReadingFields from the 'assignedFields' in Firestore
         final List<dynamic> assignedFieldsRaw =
-            assignedData['assignedFields'] as List<dynamic>? ?? [];
+            assignedData['assignedFields'] as List? ?? [];
         _instanceReadingFields.addAll(
           assignedFieldsRaw.map((e) => Map<String, dynamic>.from(e)).toList(),
         );
@@ -207,7 +206,6 @@ class _BayReadingAssignmentScreenState
 
   void _onTemplateSelected(ReadingTemplate? template) {
     if (template == null) return;
-
     setState(() {
       _selectedTemplate = template;
       _instanceReadingFields.clear();
@@ -221,6 +219,7 @@ class _BayReadingAssignmentScreenState
       for (var field in template.readingFields) {
         _instanceReadingFields.add(field.toMap());
       }
+
       _initializeFieldControllers();
     });
   }
@@ -243,6 +242,7 @@ class _BayReadingAssignmentScreenState
     setState(() {
       final fieldName = _instanceReadingFields[index]['name'];
       _instanceReadingFields.removeAt(index);
+
       // Dispose controllers/clear values for removed fields
       _textFieldControllers.remove(fieldName)?.dispose();
       _booleanFieldValues.remove(fieldName);
@@ -256,6 +256,7 @@ class _BayReadingAssignmentScreenState
     if (!_formKey.currentState!.validate()) {
       return;
     }
+
     if (_selectedTemplate == null) {
       SnackBarUtils.showSnackBar(
         context,
@@ -264,6 +265,7 @@ class _BayReadingAssignmentScreenState
       );
       return;
     }
+
     if (_readingStartDate == null) {
       SnackBarUtils.showSnackBar(
         context,
@@ -285,9 +287,7 @@ class _BayReadingAssignmentScreenState
         final String dataType = fieldMap['dataType'] as String;
 
         // Clone the field map to avoid modifying the original list directly
-        Map<String, dynamic> currentFieldData = Map<String, dynamic>.from(
-          fieldMap,
-        );
+        Map<String, dynamic> currentFieldData = Map.from(fieldMap);
 
         // Assign current UI values based on data type
         if (dataType == 'text' || dataType == 'number') {
@@ -304,6 +304,7 @@ class _BayReadingAssignmentScreenState
         } else if (dataType == 'dropdown') {
           currentFieldData['value'] = _dropdownFieldValues[fieldName];
         }
+
         finalAssignedFields.add(currentFieldData);
       }
 
@@ -342,6 +343,7 @@ class _BayReadingAssignmentScreenState
           );
         }
       }
+
       if (mounted) {
         Navigator.of(context).pop(); // Go back after saving
       }
@@ -524,6 +526,7 @@ class _BayReadingAssignmentScreenState
       default:
         fieldWidget = Text('Unsupported data type: $dataType for $fieldName');
     }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Column(
@@ -564,9 +567,7 @@ class _BayReadingAssignmentScreenState
     final String currentDataType = fieldDef['dataType'] as String;
     final bool currentIsMandatory = fieldDef['isMandatory'] as bool;
     final String currentUnit = fieldDef['unit'] as String? ?? '';
-    final List<String> currentOptions = List<String>.from(
-      fieldDef['options'] ?? [],
-    );
+    final List<String> currentOptions = List.from(fieldDef['options'] ?? []);
     final String currentFrequency = fieldDef['frequency'] as String;
     final String currentDescriptionRemarks =
         fieldDef['description_remarks'] as String? ?? '';
@@ -574,6 +575,7 @@ class _BayReadingAssignmentScreenState
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -719,128 +721,153 @@ class _BayReadingAssignmentScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text('Assign Readings to Bay: ${widget.bayName}')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Bay Type: ${_bayType ?? 'N/A'}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                title: Text(
-                  'Reading Start Date: ${DateFormat('dd-MM-yyyy').format(_readingStartDate ?? DateTime.now())}',
-                ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () => _selectReadingStartDate(context),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: Colors.grey.shade300),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Select Reading Template',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 10),
-              if (_availableReadingTemplates.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Center(
-                    child: Text(
-                      'No reading templates defined for "${_bayType ?? 'this bay type'}". Please define them in Admin Dashboard > Reading Templates.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontStyle: FontStyle.italic,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-                )
-              else
-                DropdownButtonFormField<ReadingTemplate>(
-                  value: _selectedTemplate,
-                  decoration: const InputDecoration(
-                    labelText: 'Choose Reading Template',
-                    prefixIcon: Icon(Icons.description),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _availableReadingTemplates.map((template) {
-                    return DropdownMenuItem<ReadingTemplate>(
-                      value: template,
-                      child: Text(
-                        template.bayType +
-                            (template.id != null
-                                ? ' (${template.id!.substring(0, 4)}...)'
-                                : ''),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: _onTemplateSelected,
-                  validator: (value) =>
-                      value == null ? 'Please select a template' : null,
-                ),
-              const SizedBox(height: 24),
-              if (_selectedTemplate != null) ...[
+      appBar: AppBar(
+        title: Text('Assign Readings to Bay: ${widget.bayName}'),
+        elevation: 0,
+      ),
+      body: GestureDetector(
+        onTap: () =>
+            FocusScope.of(context).unfocus(), // Dismiss keyboard on tap
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(screenHeight * 0.02),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  'Configured Reading Fields',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  'Bay Type: ${_bayType ?? 'N/A'}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ListTile(
+                  title: Text(
+                    'Reading Start Date: ${DateFormat('dd-MM-yyyy').format(_readingStartDate ?? DateTime.now())}',
+                  ),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () => _selectReadingStartDate(context),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: Colors.grey.shade300),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Select Reading Template',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 10),
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _instanceReadingFields.length,
-                  itemBuilder: (context, index) {
-                    final field = _instanceReadingFields[index];
-                    return _buildReadingFieldDefinitionInput(field, index);
-                  },
-                ),
-                if (widget.currentUser.role == UserRole.admin ||
-                    widget.currentUser.role == UserRole.subdivisionManager)
-                  ElevatedButton.icon(
-                    onPressed: _addInstanceReadingField,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Additional Reading Field'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.secondary,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onSecondary,
-                    ),
-                  ),
-                const SizedBox(height: 32),
-              ],
-              Center(
-                child: _isSaving
-                    ? const CircularProgressIndicator()
-                    : ElevatedButton.icon(
-                        onPressed: _selectedTemplate != null
-                            ? _saveAssignment
-                            : null,
-                        icon: const Icon(Icons.save),
-                        label: Text(
-                          _existingAssignmentId == null
-                              ? 'Save Assignment'
-                              : 'Update Assignment',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
+                if (_availableReadingTemplates.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Center(
+                      child: Text(
+                        'No reading templates defined for "${_bayType ?? 'this bay type'}". Please define them in Admin Dashboard > Reading Templates.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontStyle: FontStyle.italic,
+                          color: Colors.grey.shade600,
                         ),
                       ),
-              ),
-            ],
+                    ),
+                  )
+                else
+                  DropdownButtonFormField<ReadingTemplate>(
+                    value: _selectedTemplate,
+                    decoration: const InputDecoration(
+                      labelText: 'Choose Reading Template',
+                      prefixIcon: Icon(Icons.description),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _availableReadingTemplates.map((template) {
+                      return DropdownMenuItem(
+                        value: template,
+                        child: Text(
+                          template.bayType +
+                              (template.id != null
+                                  ? ' (${template.id!.substring(0, 4)}...)'
+                                  : ''),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: _onTemplateSelected,
+                    validator: (value) =>
+                        value == null ? 'Please select a template' : null,
+                  ),
+                const SizedBox(height: 24),
+                if (_selectedTemplate != null) ...[
+                  Text(
+                    'Configured Reading Fields',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _instanceReadingFields.length,
+                    itemBuilder: (context, index) {
+                      final field = _instanceReadingFields[index];
+                      return AnimatedOpacity(
+                        opacity: 1.0,
+                        duration: const Duration(milliseconds: 300),
+                        child: _buildReadingFieldDefinitionInput(field, index),
+                      );
+                    },
+                  ),
+                  if (widget.currentUser.role == UserRole.admin ||
+                      widget.currentUser.role == UserRole.subdivisionManager)
+                    ElevatedButton.icon(
+                      onPressed: _addInstanceReadingField,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add Additional Reading Field'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.secondary,
+                        foregroundColor: theme.colorScheme.onSecondary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 32),
+                ],
+                Center(
+                  child: _isSaving
+                      ? const CircularProgressIndicator()
+                      : ElevatedButton.icon(
+                          onPressed: _selectedTemplate != null
+                              ? _saveAssignment
+                              : null,
+                          icon: const Icon(Icons.save),
+                          label: Text(
+                            _existingAssignmentId == null
+                                ? 'Save Assignment'
+                                : 'Update Assignment',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 2,
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

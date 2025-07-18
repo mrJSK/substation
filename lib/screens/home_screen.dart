@@ -327,47 +327,27 @@ class SubdivisionManagerHomeScreen extends BaseHomeScreen {
 
 class _SubdivisionManagerHomeScreenState
     extends BaseHomeScreenState<SubdivisionManagerHomeScreen> {
-  int _selectedIndex = 0;
-  List<Substation> _substations = [];
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSubstations();
-  }
-
-  Future<void> _loadSubstations() async {
-    if (widget.appUser.assignedLevels != null &&
-        widget.appUser.assignedLevels!.containsKey('subdivisionId')) {
-      final subdivisionId = widget.appUser.assignedLevels!['subdivisionId'];
-      final querySnapshot = await _firestore
-          .collection('substations')
-          .where('subdivisionId', isEqualTo: subdivisionId)
-          .get();
-      setState(() {
-        _substations = querySnapshot.docs
-            .map((doc) => Substation.fromFirestore(doc))
-            .toList();
-      });
-    }
-  }
+  // We no longer need _selectedIndex or _substations here as SubdivisionDashboardScreen manages the substation selection internally.
+  // The _selectedIndex was used for the BottomNavigationBar which is now moved to SubdivisionDashboardScreen.
+  // _substations was also used to populate that BottomNavigationBar.
 
   @override
   String getAppBarTitle() => 'Subdivision Dashboard';
 
   @override
   Widget buildBody(BuildContext context) {
-    return _substations.isNotEmpty
-        ? SubdivisionDashboardScreen(
-            currentUser: widget.appUser,
-            selectedSubstationId: _substations[_selectedIndex].id,
-          )
-        : const Center(child: Text('No substations available.'));
+    // SubdivisionDashboardScreen now handles its own internal state, including substation selection and tabs.
+    return SubdivisionDashboardScreen(
+      currentUser: widget.appUser,
+      // No need to pass selectedSubstationId here, as it's managed internally
+      // and selected by the user via the dropdown in SubdivisionDashboardScreen's AppBar.
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // The Scaffold here is for the overall structure of the SubdivisionManagerHomeScreen.
+    // The SubdivisionDashboardScreen will have its own Scaffold and BottomNavigationBar.
     return Scaffold(
       appBar: AppBar(
         title: Text(getAppBarTitle()),
@@ -385,37 +365,8 @@ class _SubdivisionManagerHomeScreenState
         ),
       ),
       drawer: buildDrawer(context),
-      body: _substations.isNotEmpty
-          ? Column(
-              children: [
-                Expanded(
-                  child: SubdivisionDashboardScreen(
-                    currentUser: widget.appUser,
-                    selectedSubstationId: _substations[_selectedIndex].id,
-                  ),
-                ),
-              ],
-            )
-          : const Center(child: Text('No substations available.')),
-      bottomNavigationBar: _substations.isNotEmpty
-          ? BottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: (index) {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
-              items: _substations.map((substation) {
-                return BottomNavigationBarItem(
-                  icon: const Icon(Icons.factory),
-                  label: substation.name,
-                );
-              }).toList(),
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: Theme.of(context).colorScheme.primary,
-              unselectedItemColor: Colors.grey,
-            )
-          : null,
+      body: buildBody(context), // This will render SubdivisionDashboardScreen
+      // Removed bottomNavigationBar from here as SubdivisionDashboardScreen has its own
     );
   }
 
@@ -431,6 +382,7 @@ class _SubdivisionManagerHomeScreenState
             title: const Text('Subdivision Dashboard'),
             onTap: () {
               Navigator.of(context).pop(); // Just close the drawer
+              // No navigation needed, as this is the current screen
             },
           ),
           ListTile(
@@ -451,8 +403,7 @@ class _SubdivisionManagerHomeScreenState
                       ),
                     )
                     .then((_) {
-                      // Refresh substations after configuration change
-                      _loadSubstations();
+                      // No need to refresh substations here anymore, as SubdivisionDashboardScreen manages its own data loading.
                     });
               } else {
                 SnackBarUtils.showSnackBar(

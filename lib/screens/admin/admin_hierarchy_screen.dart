@@ -1,4 +1,5 @@
 // lib/screens/admin/admin_hierarchy_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -55,7 +56,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
       TextEditingController();
 
   Timestamp? commissioningDate;
-
   String? bottomSheetSelectedState;
   double? selectedCityId;
   String? selectedCityName;
@@ -125,6 +125,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
       if (widget.itemToEdit is Zone) {
         bottomSheetSelectedState = (widget.itemToEdit as Zone).stateName;
       }
+
       if (widget.itemToEdit is Substation) {
         Substation substation = widget.itemToEdit as Substation;
         substationAddressController.text = substation.address ?? '';
@@ -248,7 +249,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   @override
   Widget build(BuildContext context) {
     bool isEditing = widget.itemToEdit != null;
-
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -301,6 +301,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                           Icons.edit_note,
                           color: Theme.of(context).colorScheme.primary,
                         ),
+                        helperText: 'Enter a unique name',
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -309,7 +310,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                         return null;
                       },
                     ),
-
                     if (widget.itemType == 'Bay') ...[
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
@@ -320,10 +320,9 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.category,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Select the type of bay',
                         ),
-                        items: bayTypes.map<DropdownMenuItem<String>>((
-                          String value,
-                        ) {
+                        items: bayTypes.map((String value) {
                           return DropdownMenuItem<String>(
                             value: value,
                             child: Text(value),
@@ -346,6 +345,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.flash_on,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Select the voltage level',
                         ),
                         items:
                             <String>[
@@ -355,7 +355,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                               '132kV',
                               '33kV',
                               '11kV',
-                            ].map<DropdownMenuItem<String>>((String value) {
+                            ].map((String value) {
                               return DropdownMenuItem<String>(
                                 value: value,
                                 child: Text(value),
@@ -379,6 +379,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.clear,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Optional numerical value',
                         ),
                         keyboardType: TextInputType.number,
                         validator: (value) {
@@ -391,7 +392,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                         },
                       ),
                     ],
-
                     if (widget.itemType == 'Substation') ...[
                       const SizedBox(height: 16),
                       Text(
@@ -401,6 +401,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                               color: Theme.of(context).colorScheme.primary,
                             ),
                       ),
+                      const Divider(height: 8),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         value: selectedVoltageLevel,
@@ -410,6 +411,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.flash_on,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Select the voltage level',
                         ),
                         items:
                             <String>[
@@ -419,7 +421,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                               '132kV',
                               '33kV',
                               '11kV',
-                            ].map<DropdownMenuItem<String>>((String value) {
+                            ].map((String value) {
                               return DropdownMenuItem<String>(
                                 value: value,
                                 child: Text(value),
@@ -449,15 +451,14 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.category,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Select substation type',
                         ),
-                        items: <String>['AIS', 'GIS', 'Hybrid']
-                            .map<DropdownMenuItem<String>>((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            })
-                            .toList(),
+                        items: ['AIS', 'GIS', 'Hybrid'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
                         onChanged: (String? newValue) {
                           setState(() {
                             typeController.text = newValue ?? '';
@@ -500,6 +501,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                               Icons.precision_manufacturing,
                               color: Theme.of(context).colorScheme.primary,
                             ),
+                            helperText: 'Enter SAS manufacturer',
                           ),
                           validator: (value) {
                             if (isSasOperation &&
@@ -519,15 +521,14 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.check_circle_outline,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Select operational status',
                         ),
-                        items: <String>['Working', 'Non-Working']
-                            .map<DropdownMenuItem<String>>((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            })
-                            .toList(),
+                        items: ['Working', 'Non-Working'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
                         onChanged: (String? newValue) {
                           setState(() {
                             selectedStatus = newValue;
@@ -556,6 +557,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                               Icons.info_outline,
                               color: Theme.of(context).colorScheme.primary,
                             ),
+                            helperText: 'Provide details',
                           ),
                           maxLines: 3,
                           validator: (value) {
@@ -577,9 +579,15 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                         onTap: () => _selectCommissioningDate(context),
                       ),
                       const SizedBox(height: 16),
-                    ],
-
-                    if (widget.itemType == 'Zone') ...[
+                      Text(
+                        'Substation Location Details',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      ),
+                      const Divider(height: 8),
+                      const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         value: bottomSheetSelectedState,
                         decoration: InputDecoration(
@@ -588,6 +596,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.map,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Choose a state',
                         ),
                         isExpanded: true,
                         items: Provider.of<AppStateData>(context, listen: false)
@@ -618,18 +627,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                         },
                       ),
                       const SizedBox(height: 16),
-                    ],
-
-                    if (widget.itemType == 'Substation') ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        'Substation Location Details',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
                       DropdownSearch<CityModel>(
                         selectedItem: selectedCityId != null
                             ? Provider.of<AppStateData>(
@@ -691,6 +688,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
+                            helperText: 'Search or select a city',
                           ),
                         ),
                         onChanged: (CityModel? city) {
@@ -716,36 +714,11 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.location_on,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Enter detailed address',
                         ),
                         maxLines: 2,
                       ),
                       const SizedBox(height: 16),
-                    ],
-
-                    TextFormField(
-                      controller: landmarkController,
-                      decoration: InputDecoration(
-                        labelText: 'Landmark (Optional)',
-                        prefixIcon: Icon(
-                          Icons.flag,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: contactNumberController,
-                      decoration: InputDecoration(
-                        labelText: 'Contact Number (Optional)',
-                        prefixIcon: Icon(
-                          Icons.phone,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      keyboardType: TextInputType.phone,
-                    ),
-                    const SizedBox(height: 16),
-                    if (widget.itemType == 'Substation') ...[
                       DropdownButtonFormField<String>(
                         value: selectedContactDesignation,
                         decoration: InputDecoration(
@@ -754,6 +727,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                             Icons.badge,
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                          helperText: 'Select designation',
                         ),
                         items: contactDesignations.map((String designation) {
                           return DropdownMenuItem<String>(
@@ -770,6 +744,31 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                       const SizedBox(height: 16),
                     ],
                     TextFormField(
+                      controller: landmarkController,
+                      decoration: InputDecoration(
+                        labelText: 'Landmark (Optional)',
+                        prefixIcon: Icon(
+                          Icons.flag,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        helperText: 'Nearby landmark',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: contactNumberController,
+                      decoration: InputDecoration(
+                        labelText: 'Contact Number (Optional)',
+                        prefixIcon: Icon(
+                          Icons.phone,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        helperText: 'Enter phone number',
+                      ),
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
                       controller: contactPersonController,
                       decoration: InputDecoration(
                         labelText: 'Contact Person Name (Optional)',
@@ -777,6 +776,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                           Icons.person,
                           color: Theme.of(context).colorScheme.primary,
                         ),
+                        helperText: 'Name of contact',
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -788,6 +788,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                           Icons.description,
                           color: Theme.of(context).colorScheme.primary,
                         ),
+                        helperText: 'Additional details',
                       ),
                       maxLines: 3,
                     ),
@@ -848,6 +849,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
                       if (widget.itemType == 'Zone') {
                         data['stateName'] = bottomSheetSelectedState;
                       }
+
                       if (widget.itemType == 'Substation') {
                         data['address'] =
                             substationAddressController.text.isEmpty
@@ -1017,13 +1019,14 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
     String nextLevelItemType = '',
   }) {
     Query query = collection;
-
     if (collection.id == 'zones' && stateNameFilter != null) {
       query = query.where('stateName', isEqualTo: stateNameFilter);
     }
+
     if (parentIdField != null && parentId != null) {
       query = query.where(parentIdField, isEqualTo: parentId);
     }
+
     query = query.orderBy('name');
 
     return StreamBuilder<QuerySnapshot>(
@@ -1037,9 +1040,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
             ),
           );
         }
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+
         if (snapshot.data!.docs.isEmpty) {
           if (parentId != null || stateNameFilter != null) {
             return Center(
@@ -1589,7 +1594,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
           content: Text(
             'Are you sure you want to delete "$name"? This action cannot be undone.',
           ),
-          actions: <Widget>[
+          actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: Text(
@@ -1673,6 +1678,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                         ),
                       );
                     }
+
                     return StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
                           .collection('zones')
@@ -1689,12 +1695,14 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                             ),
                           );
                         }
+
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
                           return const Center(
                             child: CircularProgressIndicator(),
                           );
                         }
+
                         if (snapshot.data!.docs.isEmpty) {
                           return Center(
                             child: Padding(

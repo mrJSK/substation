@@ -94,6 +94,10 @@ class AppStateData extends ChangeNotifier {
   List<StateModel> allStateModels = [];
   List<CityModel> allCityModels = [];
 
+  // NEW: Loading state flag
+  bool _isDataLoaded = false;
+  bool get isDataLoaded => _isDataLoaded;
+
   // Expose states as a list of names for dropdowns
   List<String> get states {
     print(
@@ -108,7 +112,7 @@ class AppStateData extends ChangeNotifier {
     print(
       'DEBUG: AppStateData: All state models set. Total: ${allStateModels.length}',
     ); // Debug print
-    notifyListeners();
+    _checkAndSetLoaded();
   }
 
   void setAllCityModels(List<CityModel> cities) {
@@ -116,7 +120,16 @@ class AppStateData extends ChangeNotifier {
     print(
       'DEBUG: AppStateData: All city models set. Total: ${allCityModels.length}',
     ); // Debug print
-    notifyListeners();
+    _checkAndSetLoaded();
+  }
+
+  // NEW: Check if both datasets are loaded and set flag
+  void _checkAndSetLoaded() {
+    if (allStateModels.isNotEmpty && allCityModels.isNotEmpty) {
+      _isDataLoaded = true;
+      notifyListeners();
+      print('DEBUG: AppStateData: Data fully loaded and flag set to true.');
+    }
   }
 
   // Method to get city models for a specific state name
