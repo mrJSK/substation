@@ -1,4 +1,3 @@
-// lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Required for rootBundle
 import 'package:firebase_core/firebase_core.dart';
@@ -144,16 +143,103 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (mounted) {
         final appStateData = Provider.of<AppStateData>(context, listen: false);
-        // Use addPostFrameCallback to ensure provider updates happen post-build
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          appStateData.setAllStateModels(loadedStateModels);
-          appStateData.setAllCityModels(loadedCityModels);
-          print(
-            'DEBUG: SplashScreen: Asset data loading complete. States: ${loadedStateModels.length}, Cities: ${loadedCityModels.length}',
+        appStateData.setAllStateModels(loadedStateModels);
+        appStateData.setAllCityModels(loadedCityModels);
+        print(
+          'DEBUG: SplashScreen: Asset data loading complete for states and cities.',
+        );
+      }
+      // --- End Asset Data Loading ---
+
+      // Check Firebase authentication state for existing users
+      final User? user = FirebaseAuth.instance.currentUser;
+
+      if (mounted) {
+        if (user == null) {
+          // No user signed in, navigate to AuthScreen
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const AuthScreen()),
           );
-          // Proceed with navigation after data is set
-          _navigateBasedOnUser();
-        });
+        } else {
+          // User is signed in, check their approval status and role from Firestore
+          try {
+            final userDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .get();
+            if (userDoc.exists) {
+              final appUser = AppUser.fromFirestore(userDoc);
+              if (appUser.approved) {
+                // User is approved, navigate to HomeScreen
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => HomeScreen(appUser: appUser),
+                  ),
+                );
+              } else {
+                // User is not yet approved
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => const Scaffold(
+                      body: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.hourglass_empty,
+                                size: 80,
+                                color: Colors.blue,
+                              ),
+                              SizedBox(height: 20),
+                              Text(
+                                'Your account is pending approval by an admin.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              SizedBox(height: 10),
+                              Text(
+                                'Please wait while an administrator reviews your registration.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+            } else {
+              // This case should ideally not be hit frequently with the AuthScreen changes,
+              // but handles if a user somehow gets authenticated without a Firestore doc.
+              // Log out and send to auth screen to re-establish.
+              await FirebaseAuth.instance.signOut();
+              await GoogleSignIn().signOut();
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (context) => const AuthScreen()),
+              );
+            }
+          } catch (e) {
+            print('Error checking user approval from Splash: $e');
+            SnackBarUtils.showSnackBar(
+              context,
+              'Authentication failed: $e',
+              isError: true,
+            );
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const AuthScreen()),
+            );
+          }
+        }
       }
     } catch (e) {
       print("ERROR: SplashScreen: Initialization failed: $e");
@@ -166,124 +252,6 @@ class _SplashScreenState extends State<SplashScreen>
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const AuthScreen()),
         );
-      }
-    }
-  }
-
-  Future<void> _navigateBasedOnUser() async {
-    // Check Firebase authentication state for existing users
-    final User? user = FirebaseAuth.instance.currentUser;
-
-    if (mounted) {
-      if (user == null) {
-        // No user signed in, navigate to AuthScreen
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const AuthScreen()),
-        );
-      } else {
-        // User is signed in, check their approval status and role from Firestore
-        try {
-          final userDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .get();
-          if (userDoc.exists) {
-            final appUser = AppUser.fromFirestore(userDoc);
-            if (appUser.approved) {
-              // User is approved, navigate based on role
-              if (appUser.role == UserRole.admin) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) => AdminHomeScreen(appUser: appUser),
-                  ),
-                );
-              } else if (appUser.role == UserRole.substationUser) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SubstationUserHomeScreen(appUser: appUser),
-                  ),
-                );
-              } else if (appUser.role == UserRole.subdivisionManager) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SubdivisionManagerHomeScreen(appUser: appUser),
-                  ),
-                );
-              } else {
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'Unsupported user role.',
-                  isError: true,
-                );
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (context) => const AuthScreen()),
-                );
-              }
-            } else {
-              // User is not yet approved
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => const Scaffold(
-                    body: Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.hourglass_empty,
-                              size: 80,
-                              color: Colors.blue,
-                            ),
-                            SizedBox(height: 20),
-                            Text(
-                              'Your account is pending approval by an admin.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              'Please wait while an administrator reviews your registration.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }
-          } else {
-            // This case should ideally not be hit frequently with the AuthScreen changes,
-            // but handles if a user somehow gets authenticated without a Firestore doc.
-            // Log out and send to auth screen to re-establish.
-            await FirebaseAuth.instance.signOut();
-            await GoogleSignIn().signOut();
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const AuthScreen()),
-            );
-          }
-        } catch (e) {
-          print('Error checking user approval from Splash: $e');
-          SnackBarUtils.showSnackBar(
-            context,
-            'Authentication failed: $e',
-            isError: true,
-          );
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const AuthScreen()),
-          );
-        }
       }
     }
   }
