@@ -1,13 +1,12 @@
+// lib/screens/auth_screen.dart
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
-import '../screens/home_screen.dart';
-// Add the following imports to resolve the errors
-import '../screens/admin/admin_dashboard_screen.dart'; //
-import '../screens/substation_user_dashboard_screen.dart'; //
-import '../screens/subdivision_dashboard_screen.dart'; // Corrected import for SubdivisionDashboardScreen
+import '../screens/admin/admin_dashboard_screen.dart';
+import '../screens/substation_user_dashboard_screen.dart';
+import '../screens/subdivision_dashboard_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -17,10 +16,35 @@ class AuthScreen extends StatefulWidget {
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
+class _AuthScreenState extends State<AuthScreen>
+    with SingleTickerProviderStateMixin {
   bool _isLoading = false;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
   Future<void> _signInWithGoogle() async {
+    if (_isLoading) return; // Prevent multiple sign-in attempts
+
     setState(() {
       _isLoading = true;
     });
@@ -63,6 +87,7 @@ class _AuthScreenState extends State<AuthScreen> {
           );
           await userDocRef.set(newUser.toFirestore());
           print('New user document created for ${firebaseUser.email}');
+          _showSnackBar('Account created. Awaiting admin approval.');
         } else {
           print('Existing user signed in: ${firebaseUser.email}');
           final appUser = AppUser.fromFirestore(userDoc);
@@ -71,9 +96,8 @@ class _AuthScreenState extends State<AuthScreen> {
               if (appUser.role == UserRole.admin) {
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
-                    builder: (context) => AdminDashboardScreen(
-                      adminUser: appUser,
-                    ), // Fixed: Pass appUser to adminUser
+                    builder: (context) =>
+                        AdminDashboardScreen(adminUser: appUser),
                   ),
                 );
               } else if (appUser.role == UserRole.substationUser) {
@@ -91,25 +115,23 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 );
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Unsupported user role.'),
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                  ),
-                );
+                _showSnackBar('Unsupported user role.', isError: true);
               }
             }
+          } else {
+            _showSnackBar(
+              'Your account is pending admin approval.',
+              isError: true,
+            );
           }
         }
       }
     } catch (e) {
       print('Error during Google Sign-In: $e');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to sign in with Google: ${e.toString()}'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+        _showSnackBar(
+          'Failed to sign in with Google: ${e.toString()}',
+          isError: true,
         );
       }
     } finally {
@@ -121,56 +143,156 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        backgroundColor: isError
+            ? Theme.of(context).colorScheme.errorContainer
+            : Theme.of(context).colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        elevation: 4,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sign In'), centerTitle: true),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Welcome to Substation Manager Pro',
-                style: Theme.of(context).textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 40),
-              _isLoading
-                  ? const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                    )
-                  : ElevatedButton.icon(
-                      onPressed: _signInWithGoogle,
-                      icon: Image.asset(
-                        'assets/google_logo.webp',
-                        height: 24,
-                        width: 24,
-                      ),
-                      label: const Expanded(
-                        child: Text(
-                          'Sign In with Google',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        side: BorderSide(color: Colors.grey.shade300),
-                        elevation: 3,
-                        minimumSize: const Size(250, 50),
-                      ),
-                    ),
-              const SizedBox(height: 20),
-              Text(
-                'Please sign in to continue. Your account will require admin approval.',
-                textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-              ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              Theme.of(context).colorScheme.secondary.withOpacity(0.1),
             ],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 16.0,
+              ),
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // App Logo
+                        Image.asset(
+                          'assets/app_logo.png', // Replace with your app logo
+                          height: 80,
+                          width: 80,
+                          semanticLabel: 'App Logo',
+                        ),
+                        const SizedBox(height: 24),
+                        // Title
+                        Text(
+                          'Substation Manager Pro',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        // Subtitle
+                        Text(
+                          'Sign in to manage your substations efficiently',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w400,
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 40),
+                        // Sign-In Button
+                        AnimatedScale(
+                          scale: _isLoading ? 0.95 : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: ElevatedButton.icon(
+                            onPressed: _isLoading ? null : _signInWithGoogle,
+                            icon: Image.asset(
+                              'assets/google_logo.webp',
+                              height: 24,
+                              width: 24,
+                              semanticLabel: 'Google Logo',
+                            ),
+                            label: const Text(
+                              'Sign in with Google',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black87,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                              minimumSize: const Size(280, 56),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              side: BorderSide(color: Colors.grey.shade300),
+                              elevation: 4,
+                              shadowColor: Colors.black.withOpacity(0.2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        // Info Text
+                        Text(
+                          'Your account requires admin approval to access the dashboard.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                fontSize: 14,
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (_isLoading) ...[
+                          const SizedBox(height: 24),
+                          CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),

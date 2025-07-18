@@ -1,10 +1,12 @@
+// lib/screens/admin/admin_hierarchy_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart'; // Contains StateModel and CityModel
 import 'package:dropdown_search/dropdown_search.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart'; // Required for Consumer and Provider.of
 import '../../models/bay_model.dart';
 
 class _AddEditHierarchyItemForm extends StatefulWidget {
@@ -56,7 +58,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
 
   Timestamp? commissioningDate;
   String? bottomSheetSelectedState;
-  String? bottomSheetSelectedCompany;
+  String? bottomSheetSelectedCompany; // New: To select parent company for Zone
   double? selectedCityId;
   String? selectedCityName;
   String? selectedVoltageLevel;
@@ -128,7 +130,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
       selectedContactDesignation = widget.itemToEdit!.contactDesignation;
 
       if (widget.itemToEdit is AppScreenState) {
-        // If editing a state, pre-select it in the dropdown (if applicable)
         bottomSheetSelectedState = (widget.itemToEdit as AppScreenState).name;
       } else if (widget.itemToEdit is Company) {
         bottomSheetSelectedState = (widget.itemToEdit as Company).stateId;
@@ -357,8 +358,11 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                 ),
                 const SizedBox(height: 16),
                 Text(
+                  // Updated Text for 'Add New State'
                   isEditing
                       ? 'Edit ${widget.itemType}'
+                      : widget.itemType == 'AppScreenState'
+                      ? 'Add New State' // Specific text for adding states
                       : 'Add New ${widget.itemType}',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
@@ -383,8 +387,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (widget.itemType ==
-                          'AppScreenState') // Specific widget for 'AppScreenState' creation
+                      // Conditional input for AppScreenState
+                      if (widget.itemType == 'AppScreenState')
                         DropdownSearch<String>(
                           selectedItem: bottomSheetSelectedState,
                           popupProps: PopupProps.menu(
@@ -498,8 +502,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             return null;
                           },
                         ),
-                      if (widget.itemType !=
-                          'AppScreenState') // Use generic TextFormField for other types
+                      // General name field for other hierarchy items
+                      if (widget.itemType != 'AppScreenState')
                         TextFormField(
                           controller: nameController,
                           decoration: InputDecoration(
@@ -540,7 +544,9 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             return null;
                           },
                         ),
-                      // State selection for Company and Substation (if adding/editing)
+
+                      // Start of conditional fields for various item types
+                      // Fields for Company, Zone, Substation (parent state selection)
                       if (widget.itemType == 'Company' ||
                           widget.itemType == 'Substation' ||
                           widget.itemType == 'Zone') ...[
@@ -629,7 +635,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           },
                         ),
                       ],
-                      // Company selection for Zone and Substation (if adding/editing)
+
+                      // Company selection for Zone and Substation
                       if (widget.itemType == 'Zone' ||
                           widget.itemType == 'Substation') ...[
                         const SizedBox(height: 16),
@@ -707,9 +714,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                 });
                               },
                               validator: (value) {
-                                if ((widget.itemType == 'Zone' ||
-                                        widget.itemType == 'Substation') &&
-                                    (value == null || value.isEmpty)) {
+                                if (value == null || value.isEmpty) {
                                   return 'Please select a company';
                                 }
                                 return null;
@@ -718,6 +723,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           },
                         ),
                       ],
+
+                      // Bay-specific fields
                       if (widget.itemType == 'Bay') ...[
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
@@ -820,13 +827,9 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                               selectedVoltageLevel = newValue;
                             });
                           },
-                          validator: (value) {
-                            if (widget.itemType == 'Substation' &&
-                                value == null) {
-                              return 'Please select a voltage level';
-                            }
-                            return null;
-                          },
+                          validator: (value) => value == null
+                              ? 'Please select a voltage level'
+                              : null,
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
@@ -834,8 +837,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           decoration: InputDecoration(
                             labelText: 'Multiplying Factor (MF)',
                             prefixIcon: Icon(
-                              Icons
-                                  .clear, // Changed icon, you might want a more relevant one
+                              Icons.clear,
                               color: Theme.of(context).colorScheme.primary,
                             ),
                             helperText: 'Optional numerical value',
@@ -874,6 +876,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           },
                         ),
                       ],
+
+                      // Substation-specific fields
                       if (widget.itemType == 'Substation') ...[
                         const SizedBox(height: 16),
                         Text(
@@ -1193,7 +1197,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                         ),
                         const Divider(height: 24, thickness: 1),
                         const SizedBox(height: 8),
-                        // City dropdown for Substation
                         DropdownSearch<CityModel>(
                           selectedItem: selectedCityId != null
                               ? Provider.of<AppStateData>(
@@ -1390,148 +1393,155 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                         ),
                         const SizedBox(height: 16),
                       ],
-                      TextFormField(
-                        controller: landmarkController,
-                        decoration: InputDecoration(
-                          labelText: 'Landmark (Optional)',
-                          prefixIcon: Icon(
-                            Icons.flag,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Nearby landmark',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
+
+                      // Optional fields common to many HierarchyItems (e.g., Description, Landmark, Contact Info)
+                      // These fields will be hidden for AppScreenState
+                      if (widget.itemType != 'AppScreenState') ...[
+                        TextFormField(
+                          controller: landmarkController,
+                          decoration: InputDecoration(
+                            labelText: 'Landmark (Optional)',
+                            prefixIcon: Icon(
+                              Icons.flag,
                               color: Theme.of(context).colorScheme.primary,
-                              width: 2,
+                            ),
+                            helperText: 'Nearby landmark',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: contactNumberController,
-                        decoration: InputDecoration(
-                          labelText: 'Contact Number (Optional)',
-                          prefixIcon: Icon(
-                            Icons.phone,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Enter phone number',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: contactNumberController,
+                          decoration: InputDecoration(
+                            labelText: 'Contact Number (Optional)',
+                            prefixIcon: Icon(
+                              Icons.phone,
                               color: Theme.of(context).colorScheme.primary,
-                              width: 2,
+                            ),
+                            helperText: 'Enter phone number',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: contactPersonController,
+                          decoration: InputDecoration(
+                            labelText: 'Contact Person Name (Optional)',
+                            prefixIcon: Icon(
+                              Icons.person,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            helperText: 'Name of contact',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
                             ),
                           ),
                         ),
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: contactPersonController,
-                        decoration: InputDecoration(
-                          labelText: 'Contact Person Name (Optional)',
-                          prefixIcon: Icon(
-                            Icons.person,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Name of contact',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
+                        const SizedBox(height: 16),
+                        // Only show description for AppScreenState, or for other types as a generic description
+                        TextFormField(
+                          controller: descriptionController,
+                          decoration: InputDecoration(
+                            labelText: widget.itemType == 'AppScreenState'
+                                ? 'State Description (Optional)'
+                                : '${widget.itemType} Description (Optional)',
+                            prefixIcon: Icon(
+                              Icons.description,
                               color: Theme.of(context).colorScheme.primary,
-                              width: 2,
+                            ),
+                            helperText: 'Additional details',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
                             ),
                           ),
+                          maxLines: 3,
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: descriptionController,
-                        decoration: InputDecoration(
-                          labelText:
-                              '${widget.itemType} Description (Optional)',
-                          prefixIcon: Icon(
-                            Icons.description,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Additional details',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                        maxLines: 3,
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -1584,11 +1594,11 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
 
                         if (widget.itemType == 'AppScreenState') {
                           // When adding a new state, use the selected state name as docId
-                          // and set 'name' field
-                          docToUseId = nameController.text;
+                          docToUseId = nameController
+                              .text; // nameController now holds the selected state name
                           data['name'] = nameController.text;
-                        } else if (widget.parentId != null &&
-                            widget.parentCollectionName != null) {
+                        } else if (widget.parentCollectionName != null &&
+                            widget.parentId != null) {
                           final parentIdKey =
                               '${widget.parentCollectionName!.substring(0, widget.parentCollectionName!.length - 1)}Id';
                           data[parentIdKey] = widget.parentId;
@@ -1731,7 +1741,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
 
     try {
       if (docId == null || docId.isEmpty) {
-        // For new documents that don't have a pre-defined ID (like AppScreenState name)
+        // For new documents that don't have a pre-defined ID (like AppScreenState name when adding directly)
         await FirebaseFirestore.instance.collection(collectionName).add({
           ...data,
           'createdBy': currentUser.uid,
@@ -1890,10 +1900,12 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
   }) {
     Query query = collection;
 
+    // Apply state filter for Companies
     if (collection.id == 'companies' && stateIdFilter != null) {
       query = query.where('stateId', isEqualTo: stateIdFilter);
     }
 
+    // Apply company filter for Zones
     if (collection.id == 'zones' && companyIdFilter != null) {
       query = query.where('companyId', isEqualTo: companyIdFilter);
     }
@@ -2440,21 +2452,24 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                         ElevatedButton(
                           onPressed: () {
                             _showAddBottomSheet(
-                              itemType: collection.id == 'appScreenStates'
-                                  ? 'AppScreenState'
-                                  : (item is Company)
-                                  ? 'Company'
-                                  : (item is Zone)
+                              itemType: (T == Zone)
                                   ? 'Zone'
-                                  : (item is Circle)
+                                  : (T == Circle)
                                   ? 'Circle'
-                                  : (item is Division)
+                                  : (T == Division)
                                   ? 'Division'
-                                  : (item is Subdivision)
+                                  : (T == Subdivision)
                                   ? 'Subdivision'
                                   : 'Substation',
-                              parentId:
-                                  item.id, // Pass the item itself for editing
+                              parentId: (item is Circle)
+                                  ? (item as Circle).zoneId
+                                  : (item is Division)
+                                  ? (item as Division).circleId
+                                  : (item is Subdivision)
+                                  ? (item as Subdivision).divisionId
+                                  : (item is Substation)
+                                  ? (item as Substation).subdivisionId
+                                  : null,
                               parentName: item.name,
                               parentCollectionName: collection.id,
                               itemToEdit: item,
@@ -2508,11 +2523,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                             ),
                           ),
                         ElevatedButton(
-                          onPressed: () => this._confirmDelete(
-                            collection.id,
-                            item.id,
-                            item.name,
-                          ),
+                          onPressed: () =>
+                              _confirmDelete(collection.id, item.id, item.name),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(
                               context,
@@ -2531,22 +2543,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                       ],
                     ),
                   ),
-                  // Recursive calls for nested hierarchy
-                  if (nextLevelItemType == 'Company')
-                    _buildHierarchyList<Company>(
-                      FirebaseFirestore.instance.collection('companies'),
-                      Company.fromFirestore,
-                      stateIdFilter: item.id, // Filter companies by stateId
-                      nextLevelItemType: 'Zone',
-                    ),
-                  if (nextLevelItemType == 'Zone')
-                    _buildHierarchyList<Zone>(
-                      FirebaseFirestore.instance.collection('zones'),
-                      Zone.fromFirestore,
-                      parentIdField: 'companyId',
-                      parentId: item.id,
-                      nextLevelItemType: 'Circle',
-                    ),
                   if (nextLevelItemType == 'Circle')
                     _buildHierarchyList<Circle>(
                       FirebaseFirestore.instance.collection('circles'),
@@ -2585,7 +2581,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                       Bay.fromFirestore,
                       parentIdField: 'substationId',
                       parentId: item.id,
-                      nextLevelItemType: '', // Bays are the last level
+                      nextLevelItemType: '',
                     ),
                   const SizedBox(height: 8),
                 ],
@@ -2609,10 +2605,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddBottomSheet(
-          itemType: 'AppScreenState',
-        ), // FAB now adds AppScreenState
-        label: const Text('Add New State'), // Changed label
+        onPressed: () => _showAddBottomSheet(itemType: 'AppScreenState'),
+        label: const Text('Add New State'),
         icon: const Icon(Icons.add),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -2636,11 +2630,135 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // This is the top-level list, showing states already added to Firestore
-                  _buildHierarchyList<AppScreenState>(
-                    FirebaseFirestore.instance.collection('appScreenStates'),
-                    AppScreenState.fromFirestore,
-                    nextLevelItemType: 'Company', // Next level is Company
+                  Consumer<AppStateData>(
+                    builder: (context, appState, child) {
+                      if (appState.states.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Text(
+                              'No states loaded. Please ensure state_sql_command.txt is correct and loaded.',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.6),
+                                fontStyle: FontStyle.italic,
+                                fontSize: 11,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }
+
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('appScreenStates')
+                            .orderBy('name')
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                'Error: ${snapshot.error}',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+
+                          if (snapshot.data!.docs.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  'No states found. Click "Add New State" to get started!',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.6),
+                                    fontStyle: FontStyle.italic,
+                                    fontSize: 11,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final states = snapshot.data!.docs
+                              .map((doc) => AppScreenState.fromFirestore(doc))
+                              .toList();
+                          states.sort((a, b) => a.name.compareTo(b.name));
+
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: states.length,
+                            itemBuilder: (context, index) {
+                              final stateItem = states.elementAt(index);
+                              return Card(
+                                elevation: 2,
+                                margin: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                  horizontal: 0,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.1),
+                                  ),
+                                ),
+                                child: ExpansionTile(
+                                  key: ValueKey('state-${stateItem.id}'),
+                                  leading: Icon(
+                                    Icons.map,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    size: 24,
+                                  ),
+                                  title: Text(
+                                    stateItem.name,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                        ),
+                                  ),
+                                  children: [
+                                    _buildHierarchyList<Company>(
+                                      FirebaseFirestore.instance.collection(
+                                        'companies',
+                                      ),
+                                      Company.fromFirestore,
+                                      stateIdFilter: stateItem.id,
+                                      nextLevelItemType: 'Zone',
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
                   ),
                 ],
               ),
