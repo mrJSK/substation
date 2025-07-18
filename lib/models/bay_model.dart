@@ -1,19 +1,28 @@
 // lib/models/bay_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'hierarchy_models.dart'; // Import the file containing HierarchyItem
 
-class Bay {
+class Bay implements HierarchyItem {
+  @override
   final String id;
+  @override
   final String name;
   final String substationId;
   final String voltageLevel;
   final String bayType;
   final String createdBy;
   final Timestamp createdAt;
+  @override
   final String? description;
+  @override
   final String? landmark;
+  @override
   final String? contactNumber;
+  @override
   final String? contactPerson;
+  @override
+  final String? contactDesignation;
   final bool? isGovernmentFeeder;
   final String? feederType;
   final double? multiplyingFactor;
@@ -57,6 +66,7 @@ class Bay {
     this.landmark,
     this.contactNumber,
     this.contactPerson,
+    this.contactDesignation,
     this.isGovernmentFeeder,
     this.feederType,
     this.multiplyingFactor,
@@ -82,8 +92,6 @@ class Bay {
     this.distributionCircleId,
     this.distributionDivisionId,
     this.distributionSubdivisionId,
-
-    // Add new properties to constructor
     this.energyReadingOffset,
     this.energyReadingFontSize,
     this.energyReadingIsBold,
@@ -113,6 +121,7 @@ class Bay {
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
       contactPerson: data['contactPerson'],
+      contactDesignation: data['contactDesignation'],
       isGovernmentFeeder: data['isGovernmentFeeder'],
       feederType: data['feederType'],
       multiplyingFactor: (data['multiplyingFactor'] as num?)?.toDouble(),
@@ -138,8 +147,6 @@ class Bay {
       distributionCircleId: data['distributionCircleId'] as String?,
       distributionDivisionId: data['distributionDivisionId'] as String?,
       distributionSubdivisionId: data['distributionSubdivisionId'] as String?,
-
-      // Read new properties from Firestore
       energyReadingOffset: parseOffset(data['energyReadingOffset']),
       energyReadingFontSize: (data['energyReadingFontSize'] as num?)
           ?.toDouble(),
@@ -159,6 +166,7 @@ class Bay {
       'landmark': landmark,
       'contactNumber': contactNumber,
       'contactPerson': contactPerson,
+      'contactDesignation': contactDesignation,
       'isGovernmentFeeder': isGovernmentFeeder,
       'feederType': feederType,
       'multiplyingFactor': multiplyingFactor,
@@ -185,7 +193,6 @@ class Bay {
       'distributionCircleId': distributionCircleId,
       'distributionDivisionId': distributionDivisionId,
       'distributionSubdivisionId': distributionSubdivisionId,
-
       if (energyReadingOffset != null)
         'energyReadingOffset': {
           'dx': energyReadingOffset!.dx,
@@ -208,6 +215,7 @@ class Bay {
     String? landmark,
     String? contactNumber,
     String? contactPerson,
+    String? contactDesignation,
     bool? isGovernmentFeeder,
     String? feederType,
     double? multiplyingFactor,
@@ -249,6 +257,7 @@ class Bay {
       landmark: landmark ?? this.landmark,
       contactNumber: contactNumber ?? this.contactNumber,
       contactPerson: contactPerson ?? this.contactPerson,
+      contactDesignation: contactDesignation ?? this.contactDesignation,
       isGovernmentFeeder: isGovernmentFeeder ?? this.isGovernmentFeeder,
       feederType: feederType ?? this.feederType,
       multiplyingFactor: multiplyingFactor ?? this.multiplyingFactor,

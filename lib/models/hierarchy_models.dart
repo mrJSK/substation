@@ -5,8 +5,8 @@ abstract class HierarchyItem {
   final String id;
   final String name;
   final String? description;
-  final String? createdBy; // Changed to optional
-  final Timestamp? createdAt; // Changed to optional
+  final String? createdBy;
+  final Timestamp? createdAt;
 
   final String? landmark;
   final String? contactNumber;
@@ -17,8 +17,8 @@ abstract class HierarchyItem {
     required this.id,
     required this.name,
     this.description,
-    this.createdBy, // Changed to optional in constructor
-    this.createdAt, // Changed to optional in constructor
+    this.createdBy,
+    this.createdAt,
     this.landmark,
     this.contactNumber,
     this.contactPerson,
@@ -28,14 +28,13 @@ abstract class HierarchyItem {
   Map<String, dynamic> toFirestore();
 }
 
-// NEW: AppScreenState Model for the top-level 'State' in the hierarchy
 class AppScreenState extends HierarchyItem {
   AppScreenState({
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     super.landmark,
     super.contactNumber,
     super.contactPerson,
@@ -48,10 +47,8 @@ class AppScreenState extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // Will be null if not present, handled by optional type
-      createdAt:
-          data['createdAt'], // Will be null if not present, handled by optional type
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
       contactPerson: data['contactPerson'],
@@ -98,33 +95,32 @@ class AppScreenState extends HierarchyItem {
   }
 }
 
-class Zone extends HierarchyItem {
-  final String stateName; // Assuming stateName is stored in Zone
+// NEW: Company Model
+class Company extends HierarchyItem {
+  final String stateId;
 
-  Zone({
+  Company({
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
-    required this.stateName,
+    super.createdBy,
+    super.createdAt,
+    required this.stateId,
     super.landmark,
     super.contactNumber,
     super.contactPerson,
     super.contactDesignation,
   });
 
-  factory Zone.fromFirestore(DocumentSnapshot doc) {
+  factory Company.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
-    return Zone(
+    return Company(
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
-      stateName: data['stateName'] ?? '',
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
+      stateId: data['stateId'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
       contactPerson: data['contactPerson'],
@@ -139,7 +135,81 @@ class Zone extends HierarchyItem {
       'description': description,
       'createdBy': createdBy,
       'createdAt': createdAt,
-      'stateName': stateName,
+      'stateId': stateId,
+      'landmark': landmark,
+      'contactNumber': contactNumber,
+      'contactPerson': contactPerson,
+      'contactDesignation': contactDesignation,
+    };
+  }
+
+  Company copyWith({
+    String? id,
+    String? name,
+    String? description,
+    String? createdBy,
+    Timestamp? createdAt,
+    String? stateId,
+    String? landmark,
+    String? contactNumber,
+    String? contactPerson,
+    String? contactDesignation,
+  }) {
+    return Company(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      createdBy: createdBy ?? this.createdBy,
+      createdAt: createdAt ?? this.createdAt,
+      stateId: stateId ?? this.stateId,
+      landmark: landmark ?? this.landmark,
+      contactNumber: contactNumber ?? this.contactNumber,
+      contactPerson: contactPerson ?? this.contactPerson,
+      contactDesignation: contactDesignation ?? this.contactDesignation,
+    );
+  }
+}
+
+class Zone extends HierarchyItem {
+  final String companyId; // Changed from stateName to companyId
+
+  Zone({
+    required super.id,
+    required super.name,
+    super.description,
+    super.createdBy,
+    super.createdAt,
+    required this.companyId,
+    super.landmark,
+    super.contactNumber,
+    super.contactPerson,
+    super.contactDesignation,
+  });
+
+  factory Zone.fromFirestore(DocumentSnapshot doc) {
+    Map data = doc.data() as Map<String, dynamic>;
+    return Zone(
+      id: doc.id,
+      name: data['name'] ?? '',
+      description: data['description'],
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
+      companyId: data['companyId'] ?? '',
+      landmark: data['landmark'],
+      contactNumber: data['contactNumber'],
+      contactPerson: data['contactPerson'],
+      contactDesignation: data['contactDesignation'],
+    );
+  }
+
+  @override
+  Map<String, dynamic> toFirestore() {
+    return {
+      'name': name,
+      'description': description,
+      'createdBy': createdBy,
+      'createdAt': createdAt,
+      'companyId': companyId,
       'landmark': landmark,
       'contactNumber': contactNumber,
       'contactPerson': contactPerson,
@@ -153,7 +223,7 @@ class Zone extends HierarchyItem {
     String? description,
     String? createdBy,
     Timestamp? createdAt,
-    String? stateName,
+    String? companyId,
     String? landmark,
     String? contactNumber,
     String? contactPerson,
@@ -165,7 +235,7 @@ class Zone extends HierarchyItem {
       description: description ?? this.description,
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
-      stateName: stateName ?? this.stateName,
+      companyId: companyId ?? this.companyId,
       landmark: landmark ?? this.landmark,
       contactNumber: contactNumber ?? this.contactNumber,
       contactPerson: contactPerson ?? this.contactPerson,
@@ -181,8 +251,8 @@ class Circle extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.zoneId,
     super.landmark,
     super.contactNumber,
@@ -196,10 +266,8 @@ class Circle extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       zoneId: data['zoneId'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
@@ -257,8 +325,8 @@ class Division extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.circleId,
     super.landmark,
     super.contactNumber,
@@ -272,10 +340,8 @@ class Division extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       circleId: data['circleId'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
@@ -333,8 +399,8 @@ class Subdivision extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.divisionId,
     super.landmark,
     super.contactNumber,
@@ -348,10 +414,8 @@ class Subdivision extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       divisionId: data['divisionId'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
@@ -419,8 +483,8 @@ class Substation extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.subdivisionId,
     this.address,
     this.cityId,
@@ -443,10 +507,8 @@ class Substation extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       subdivisionId: data['subdivisionId'] ?? '',
       address: data['address'],
       cityId: data['cityId'],
@@ -533,7 +595,6 @@ class Substation extends HierarchyItem {
   }
 }
 
-// Distribution Hierarchy Models
 class DistributionZone extends HierarchyItem {
   final String stateName;
 
@@ -541,8 +602,8 @@ class DistributionZone extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.stateName,
     super.landmark,
     super.contactNumber,
@@ -556,10 +617,8 @@ class DistributionZone extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       stateName: data['stateName'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
@@ -617,8 +676,8 @@ class DistributionCircle extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.distributionZoneId,
     super.landmark,
     super.contactNumber,
@@ -632,10 +691,8 @@ class DistributionCircle extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       distributionZoneId: data['distributionZoneId'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
@@ -693,8 +750,8 @@ class DistributionDivision extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.distributionCircleId,
     super.landmark,
     super.contactNumber,
@@ -708,10 +765,8 @@ class DistributionDivision extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       distributionCircleId: data['distributionCircleId'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
@@ -762,7 +817,6 @@ class DistributionDivision extends HierarchyItem {
   }
 }
 
-// NEW: DistributionSubdivision Model
 class DistributionSubdivision extends HierarchyItem {
   final String distributionDivisionId;
 
@@ -770,8 +824,8 @@ class DistributionSubdivision extends HierarchyItem {
     required super.id,
     required super.name,
     super.description,
-    super.createdBy, // Now optional, matches superclass
-    super.createdAt, // Now optional, matches superclass
+    super.createdBy,
+    super.createdAt,
     required this.distributionDivisionId,
     super.landmark,
     super.contactNumber,
@@ -785,10 +839,8 @@ class DistributionSubdivision extends HierarchyItem {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      createdBy:
-          data['createdBy'], // No default needed here, as it's from Firestore
-      createdAt:
-          data['createdAt'], // No default needed here, as it's from Firestore
+      createdBy: data['createdBy'],
+      createdAt: data['createdAt'],
       distributionDivisionId: data['distributionDivisionId'] ?? '',
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],

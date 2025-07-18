@@ -1,12 +1,10 @@
-// lib/screens/admin/admin_hierarchy_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart'; // Contains StateModel and CityModel
 import 'package:dropdown_search/dropdown_search.dart';
-import 'package:provider/provider.dart'; // Required for Consumer and Provider.of
+import 'package:provider/provider.dart';
 import '../../models/bay_model.dart';
 
 class _AddEditHierarchyItemForm extends StatefulWidget {
@@ -58,6 +56,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
 
   Timestamp? commissioningDate;
   String? bottomSheetSelectedState;
+  String? bottomSheetSelectedCompany;
   double? selectedCityId;
   String? selectedCityName;
   String? selectedVoltageLevel;
@@ -126,20 +125,32 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
       landmarkController.text = widget.itemToEdit!.landmark ?? '';
       contactNumberController.text = widget.itemToEdit!.contactNumber ?? '';
       contactPersonController.text = widget.itemToEdit!.contactPerson ?? '';
+      selectedContactDesignation = widget.itemToEdit!.contactDesignation;
 
-      if (widget.itemToEdit is Bay) {
+      if (widget.itemToEdit is AppScreenState) {
+        // If editing a state, pre-select it in the dropdown (if applicable)
+        bottomSheetSelectedState = (widget.itemToEdit as AppScreenState).name;
+      } else if (widget.itemToEdit is Company) {
+        bottomSheetSelectedState = (widget.itemToEdit as Company).stateId;
+      } else if (widget.itemToEdit is Zone) {
+        bottomSheetSelectedCompany = (widget.itemToEdit as Zone).companyId;
+        if (bottomSheetSelectedCompany != null) {
+          String? derivedState = await _findStateNameForCompany(
+            bottomSheetSelectedCompany!,
+          );
+          if (mounted) {
+            setState(() {
+              bottomSheetSelectedState = derivedState;
+            });
+          }
+        }
+      } else if (widget.itemToEdit is Bay) {
         final bay = widget.itemToEdit as Bay;
         multiplyingFactorController.text =
             bay.multiplyingFactor?.toString() ?? '';
         selectedBayType = bay.bayType;
         selectedVoltageLevel = bay.voltageLevel;
-      }
-
-      if (widget.itemToEdit is Zone) {
-        bottomSheetSelectedState = (widget.itemToEdit as Zone).stateName;
-      }
-
-      if (widget.itemToEdit is Substation) {
+      } else if (widget.itemToEdit is Substation) {
         Substation substation = widget.itemToEdit as Substation;
         substationAddressController.text = substation.address ?? '';
         voltageLevelController.text = substation.voltageLevel ?? '';
@@ -150,16 +161,21 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
         isSasOperation = substation.operation == 'SAS';
         selectedStatus = substation.status;
         statusDescriptionController.text = substation.statusDescription ?? '';
-        selectedContactDesignation = substation.contactDesignation;
 
         if (substation.subdivisionId != null) {
-          String? derivedState = await _findStateNameForSubdivision(
+          String? derivedCompanyId = await _findCompanyIdForSubdivision(
             substation.subdivisionId!,
           );
-          if (mounted) {
-            setState(() {
-              bottomSheetSelectedState = derivedState;
-            });
+          if (derivedCompanyId != null) {
+            bottomSheetSelectedCompany = derivedCompanyId;
+            String? derivedState = await _findStateNameForCompany(
+              derivedCompanyId,
+            );
+            if (mounted) {
+              setState(() {
+                bottomSheetSelectedState = derivedState;
+              });
+            }
           }
         }
 
@@ -176,22 +192,36 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
         }
       }
     } else {
-      if (widget.itemType == 'Zone' &&
-          Provider.of<AppStateData>(context, listen: false).states.isNotEmpty) {
-        bottomSheetSelectedState = Provider.of<AppStateData>(
-          context,
-          listen: false,
-        ).states.first;
-      } else if (widget.itemType == 'Substation' &&
-          widget.parentId != null &&
-          widget.parentCollectionName == 'subdivisions') {
-        String? derivedState = await _findStateNameForSubdivision(
+      // For new items, pre-select parent if available from widget.parentId
+      if (widget.parentCollectionName == 'appScreenStates') {
+        bottomSheetSelectedState = widget.parentId;
+      } else if (widget.parentCollectionName == 'companies') {
+        bottomSheetSelectedCompany = widget.parentId;
+        if (bottomSheetSelectedCompany != null) {
+          String? derivedState = await _findStateNameForCompany(
+            bottomSheetSelectedCompany!,
+          );
+          if (mounted) {
+            setState(() {
+              bottomSheetSelectedState = derivedState;
+            });
+          }
+        }
+      } else if (widget.parentCollectionName == 'subdivisions' &&
+          widget.parentId != null) {
+        String? derivedCompanyId = await _findCompanyIdForSubdivision(
           widget.parentId!,
         );
-        if (mounted) {
-          setState(() {
-            bottomSheetSelectedState = derivedState;
-          });
+        if (derivedCompanyId != null) {
+          bottomSheetSelectedCompany = derivedCompanyId;
+          String? derivedState = await _findStateNameForCompany(
+            derivedCompanyId,
+          );
+          if (mounted) {
+            setState(() {
+              bottomSheetSelectedState = derivedState;
+            });
+          }
         }
       }
       isSasOperation = false;
@@ -199,7 +229,22 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
     }
   }
 
-  Future<String?> _findStateNameForSubdivision(String subdivisionId) async {
+  Future<String?> _findStateNameForCompany(String companyId) async {
+    try {
+      DocumentSnapshot companyDoc = await FirebaseFirestore.instance
+          .collection('companies')
+          .doc(companyId)
+          .get();
+      if (companyDoc.exists && companyDoc.data() != null) {
+        return (companyDoc.data() as Map<String, dynamic>)['stateId'];
+      }
+    } catch (e) {
+      print("Error finding state for company: $e");
+    }
+    return null;
+  }
+
+  Future<String?> _findCompanyIdForSubdivision(String subdivisionId) async {
     try {
       DocumentSnapshot subdivisionDoc = await FirebaseFirestore.instance
           .collection('subdivisions')
@@ -231,7 +276,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                       .get();
                   if (zoneDoc.exists && zoneDoc.data() != null) {
                     return (zoneDoc.data()
-                        as Map<String, dynamic>)['stateName'];
+                        as Map<String, dynamic>)['companyId'];
                   }
                 }
               }
@@ -240,7 +285,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
         }
       }
     } catch (e) {
-      print("Error finding state for subdivision: $e");
+      print("Error finding company for subdivision: $e");
     }
     return null;
   }
@@ -315,7 +360,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                   isEditing
                       ? 'Edit ${widget.itemType}'
                       : 'Add New ${widget.itemType}',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.primary,
                   ),
@@ -338,46 +383,341 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextFormField(
-                        controller: nameController,
-                        decoration: InputDecoration(
-                          labelText: '${widget.itemType} Name',
-                          prefixIcon: Icon(
-                            Icons.edit_note,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Enter a unique name',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
+                      if (widget.itemType ==
+                          'AppScreenState') // Specific widget for 'AppScreenState' creation
+                        DropdownSearch<String>(
+                          selectedItem: bottomSheetSelectedState,
+                          popupProps: PopupProps.menu(
+                            showSearchBox: true,
+                            menuProps: MenuProps(
+                              borderRadius: BorderRadius.circular(12),
+                              elevation: 4,
+                            ),
+                            searchFieldProps: TextFieldProps(
+                              decoration: InputDecoration(
+                                labelText: 'Search State',
+                                prefixIcon: Icon(
+                                  Icons.search,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.2),
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.2),
+                          itemAsString: (String s) => s,
+                          asyncItems: (String filter) async {
+                            final appState = Provider.of<AppStateData>(
+                              context,
+                              listen: false,
+                            );
+                            // Get existing states in Firestore to filter out already added states
+                            final existingFirestoreStates =
+                                await FirebaseFirestore.instance
+                                    .collection('appScreenStates')
+                                    .get()
+                                    .then(
+                                      (snapshot) => snapshot.docs
+                                          .map((doc) => doc.id)
+                                          .toSet(),
+                                    ); // Assuming doc.id is the state name
+
+                            // Filter available states by search query and exclude already added states
+                            return appState.states
+                                .where(
+                                  (stateName) =>
+                                      stateName.toLowerCase().contains(
+                                        filter.toLowerCase(),
+                                      ) &&
+                                      !existingFirestoreStates.contains(
+                                        stateName,
+                                      ),
+                                )
+                                .toList();
+                          },
+                          dropdownDecoratorProps: DropDownDecoratorProps(
+                            dropdownSearchDecoration: InputDecoration(
+                              labelText: 'Select State',
+                              hintText: 'Choose a state to add',
+                              prefixIcon: Icon(
+                                Icons.map,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.2),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 2,
+                                ),
+                              ),
+                              helperText:
+                                  'Search or select a state from the list',
                             ),
                           ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 2,
-                            ),
-                          ),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              bottomSheetSelectedState = newValue;
+                              nameController.text =
+                                  newValue ??
+                                  ''; // Set nameController for form submission
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please select a state';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter a name';
-                          }
-                          return null;
-                        },
-                      ),
+                      if (widget.itemType !=
+                          'AppScreenState') // Use generic TextFormField for other types
+                        TextFormField(
+                          controller: nameController,
+                          decoration: InputDecoration(
+                            labelText: '${widget.itemType} Name',
+                            prefixIcon: Icon(
+                              Icons.edit_note,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            helperText: 'Enter a unique name',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter a name';
+                            }
+                            return null;
+                          },
+                        ),
+                      // State selection for Company and Substation (if adding/editing)
+                      if (widget.itemType == 'Company' ||
+                          widget.itemType == 'Substation' ||
+                          widget.itemType == 'Zone') ...[
+                        const SizedBox(height: 16),
+                        // This dropdown is for selecting the PARENT state (from already added states in Firestore)
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('appScreenStates')
+                              .orderBy('name')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Text(
+                                'Error loading states: ${snapshot.error}',
+                              );
+                            }
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const Text(
+                                'No states found in hierarchy. Please add states first.',
+                              );
+                            }
+                            final statesInHierarchy = snapshot.data!.docs
+                                .map((doc) => AppScreenState.fromFirestore(doc))
+                                .toList();
+                            return DropdownButtonFormField<String>(
+                              value: bottomSheetSelectedState,
+                              decoration: InputDecoration(
+                                labelText: 'Parent State',
+                                prefixIcon: Icon(
+                                  Icons.map,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                helperText: 'Choose a parent state',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.2),
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              isExpanded: true,
+                              items: statesInHierarchy.map((stateItem) {
+                                return DropdownMenuItem<String>(
+                                  value: stateItem
+                                      .id, // Use the Firestore document ID (state name in this case)
+                                  child: Text(
+                                    stateItem.name,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  bottomSheetSelectedState = newValue;
+                                  selectedCityId = null;
+                                  selectedCityName = null;
+                                  bottomSheetSelectedCompany = null;
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please select a parent state';
+                                }
+                                return null;
+                              },
+                            );
+                          },
+                        ),
+                      ],
+                      // Company selection for Zone and Substation (if adding/editing)
+                      if (widget.itemType == 'Zone' ||
+                          widget.itemType == 'Substation') ...[
+                        const SizedBox(height: 16),
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('companies')
+                              .where(
+                                'stateId',
+                                isEqualTo: bottomSheetSelectedState,
+                              )
+                              .orderBy('name')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Text(
+                                'Error loading companies: ${snapshot.error}',
+                              );
+                            }
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const Text(
+                                'No companies available for the selected state.',
+                              );
+                            }
+                            final companies = snapshot.data!.docs
+                                .map((doc) => Company.fromFirestore(doc))
+                                .toList();
+                            return DropdownButtonFormField<String>(
+                              value: bottomSheetSelectedCompany,
+                              decoration: InputDecoration(
+                                labelText: 'Select Company',
+                                prefixIcon: Icon(
+                                  Icons.business,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                helperText: 'Choose a company',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.2),
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              isExpanded: true,
+                              items: companies.map((company) {
+                                return DropdownMenuItem<String>(
+                                  value: company.id,
+                                  child: Text(
+                                    company.name,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  bottomSheetSelectedCompany = newValue;
+                                });
+                              },
+                              validator: (value) {
+                                if ((widget.itemType == 'Zone' ||
+                                        widget.itemType == 'Substation') &&
+                                    (value == null || value.isEmpty)) {
+                                  return 'Please select a company';
+                                }
+                                return null;
+                              },
+                            );
+                          },
+                        ),
+                      ],
                       if (widget.itemType == 'Bay') ...[
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
@@ -480,9 +820,13 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                               selectedVoltageLevel = newValue;
                             });
                           },
-                          validator: (value) => value == null
-                              ? 'Please select a voltage level'
-                              : null,
+                          validator: (value) {
+                            if (widget.itemType == 'Substation' &&
+                                value == null) {
+                              return 'Please select a voltage level';
+                            }
+                            return null;
+                          },
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
@@ -490,7 +834,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           decoration: InputDecoration(
                             labelText: 'Multiplying Factor (MF)',
                             prefixIcon: Icon(
-                              Icons.clear,
+                              Icons
+                                  .clear, // Changed icon, you might want a more relevant one
                               color: Theme.of(context).colorScheme.primary,
                             ),
                             helperText: 'Optional numerical value',
@@ -660,9 +1005,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                         SwitchListTile(
                           title: Text(
                             'Operation: ${isSasOperation ? "SAS" : "Manual"}',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall, // Reduced font size
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                           value: isSasOperation,
                           onChanged: (bool value) {
@@ -831,9 +1174,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             commissioningDate == null
                                 ? 'Select Commissioning Date (Optional)'
                                 : 'Commissioning Date: ${commissioningDate!.toDate().toLocal().toString().split(' ')[0]}',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall, // Reduced font size
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                           trailing: Icon(
                             Icons.calendar_today,
@@ -852,72 +1193,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                         ),
                         const Divider(height: 24, thickness: 1),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          value: bottomSheetSelectedState,
-                          decoration: InputDecoration(
-                            labelText: 'Select State',
-                            prefixIcon: Icon(
-                              Icons.map,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            helperText: 'Choose a state',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.2),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.2),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          isExpanded: true,
-                          items:
-                              Provider.of<AppStateData>(
-                                context,
-                                listen: false,
-                              ).states.map((String state) {
-                                return DropdownMenuItem<String>(
-                                  value: state,
-                                  child: Text(
-                                    state,
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium, // Smaller font
-                                  ),
-                                );
-                              }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              bottomSheetSelectedState = newValue;
-                              selectedCityId = null;
-                              selectedCityName = null;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please select a state';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
+                        // City dropdown for Substation
                         DropdownSearch<CityModel>(
                           selectedItem: selectedCityId != null
                               ? Provider.of<AppStateData>(
@@ -1299,28 +1575,36 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           'contactPerson': contactPersonController.text.isEmpty
                               ? null
                               : contactPersonController.text,
+                          'contactDesignation': selectedContactDesignation,
                         };
 
-                        if (widget.parentId != null &&
+                        String? docToUseId = isEditing
+                            ? widget.itemToEdit!.id
+                            : null;
+
+                        if (widget.itemType == 'AppScreenState') {
+                          // When adding a new state, use the selected state name as docId
+                          // and set 'name' field
+                          docToUseId = nameController.text;
+                          data['name'] = nameController.text;
+                        } else if (widget.parentId != null &&
                             widget.parentCollectionName != null) {
                           final parentIdKey =
                               '${widget.parentCollectionName!.substring(0, widget.parentCollectionName!.length - 1)}Id';
                           data[parentIdKey] = widget.parentId;
                         }
 
-                        if (widget.itemType == 'Bay') {
+                        if (widget.itemType == 'Company') {
+                          data['stateId'] = bottomSheetSelectedState;
+                        } else if (widget.itemType == 'Zone') {
+                          data['companyId'] = bottomSheetSelectedCompany;
+                        } else if (widget.itemType == 'Bay') {
                           data['bayType'] = selectedBayType;
                           data['voltageLevel'] = selectedVoltageLevel;
                           data['multiplyingFactor'] = double.tryParse(
                             multiplyingFactorController.text,
                           );
-                        }
-
-                        if (widget.itemType == 'Zone') {
-                          data['stateName'] = bottomSheetSelectedState;
-                        }
-
-                        if (widget.itemType == 'Substation') {
+                        } else if (widget.itemType == 'Substation') {
                           data['address'] =
                               substationAddressController.text.isEmpty
                               ? null
@@ -1340,15 +1624,13 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                               statusDescriptionController.text.isEmpty
                               ? null
                               : statusDescriptionController.text;
-                          data['contactDesignation'] =
-                              selectedContactDesignation;
                         }
 
                         widget.onAddItem(
                           '${widget.itemType.toLowerCase()}s',
                           data,
                           _formKey,
-                          isEditing ? widget.itemToEdit!.id : null,
+                          docToUseId,
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -1383,7 +1665,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
         content: Text(
           message,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            // Reduced font size for snackbar
             color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
@@ -1449,7 +1730,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
     }
 
     try {
-      if (docId == null) {
+      if (docId == null || docId.isEmpty) {
+        // For new documents that don't have a pre-defined ID (like AppScreenState name)
         await FirebaseFirestore.instance.collection(collectionName).add({
           ...data,
           'createdBy': currentUser.uid,
@@ -1457,10 +1739,17 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         });
         _showSnackBar('$collectionName added successfully!');
       } else {
-        await FirebaseFirestore.instance
-            .collection(collectionName)
-            .doc(docId)
-            .update({...data});
+        // For documents where the ID is pre-defined (like AppScreenState using state name)
+        // or for updating existing documents.
+        await FirebaseFirestore.instance.collection(collectionName).doc(docId).set(
+          {
+            ...data,
+            'createdBy': currentUser.uid, // Keep creator info
+            'createdAt':
+                FieldValue.serverTimestamp(), // Update timestamp on modification
+          },
+          SetOptions(merge: true), // Merge existing fields with new data
+        );
         _showSnackBar('$collectionName updated successfully!');
       }
 
@@ -1511,7 +1800,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         content: Text(
           message,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            // Apply smaller text style to snackbar
             color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
@@ -1527,17 +1815,87 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
     );
   }
 
+  void _confirmDelete(String collection, String docId, String name) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Confirm Delete',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Text(
+            'Are you sure you want to delete "$name"? This action cannot be undone.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withOpacity(0.6),
+              ),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  await FirebaseFirestore.instance
+                      .collection(collection)
+                      .doc(docId)
+                      .delete();
+                  _showSnackBar('$name deleted successfully!');
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                } catch (e) {
+                  _showSnackBar(
+                    'Failed to delete $name: ${e.toString()}',
+                    isError: true,
+                  );
+                  print('Error deleting $name: $e');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildHierarchyList<T extends HierarchyItem>(
     CollectionReference collection,
     T Function(DocumentSnapshot) fromFirestore, {
     String? parentIdField,
     String? parentId,
-    String? stateNameFilter,
+    String? stateIdFilter,
+    String? companyIdFilter,
     String nextLevelItemType = '',
   }) {
     Query query = collection;
-    if (collection.id == 'zones' && stateNameFilter != null) {
-      query = query.where('stateName', isEqualTo: stateNameFilter);
+
+    if (collection.id == 'companies' && stateIdFilter != null) {
+      query = query.where('stateId', isEqualTo: stateIdFilter);
+    }
+
+    if (collection.id == 'zones' && companyIdFilter != null) {
+      query = query.where('companyId', isEqualTo: companyIdFilter);
     }
 
     if (parentIdField != null && parentId != null) {
@@ -1555,7 +1913,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
               'Error: ${snapshot.error}',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.error,
-                fontSize: 11, // Reduced font size
+                fontSize: 11,
               ),
             ),
           );
@@ -1566,26 +1924,31 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         }
 
         if (snapshot.data!.docs.isEmpty) {
-          if (parentId != null || stateNameFilter != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'No ${collection.id} found here. Click the "+" button to add one.',
-                  style: TextStyle(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
-                    fontStyle: FontStyle.italic,
-                    fontSize: 11, // Reduced font size
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
+          String emptyMessage = 'No ${collection.id} found here.';
+          if (nextLevelItemType.isNotEmpty) {
+            emptyMessage += ' Click "Add $nextLevelItemType" to add one.';
+          } else if (collection.id == 'appScreenStates') {
+            emptyMessage = 'No states found. Click the "+" button to add one.';
           } else {
-            return const SizedBox.shrink();
+            emptyMessage += ' Click the "+" button above to add one.';
           }
+
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                emptyMessage,
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.6),
+                  fontStyle: FontStyle.italic,
+                  fontSize: 11,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
         }
 
         final items = snapshot.data!.docs
@@ -1618,12 +1981,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                 leading: Icon(
                   Icons.folder,
                   color: Theme.of(context).colorScheme.primary,
-                  size: 24, // Reduced icon size
+                  size: 24,
                 ),
                 title: Text(
                   item.name,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    // Changed to titleMedium
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
@@ -1633,11 +1995,10 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                     ? Text(
                         item.description!,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          // Using bodySmall, which is typically smaller than default
                           color: Theme.of(
                             context,
                           ).colorScheme.onSurface.withOpacity(0.6),
-                          fontSize: 11, // Explicitly set smaller font size
+                          fontSize: 11,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -1661,7 +2022,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.home,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1676,8 +2037,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1705,7 +2065,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                       children: [
                                         Icon(
                                           Icons.location_city,
-                                          size: 16, // Reduced icon size
+                                          size: 16,
                                           color: Colors.grey.shade600,
                                         ),
                                         const SizedBox(width: 12),
@@ -1720,8 +2080,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                       .colorScheme
                                                       .onSurface
                                                       .withOpacity(0.8),
-                                                  fontSize:
-                                                      11, // Explicitly set smaller font size
+                                                  fontSize: 11,
                                                 ),
                                           ),
                                         ),
@@ -1741,7 +2100,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.flash_on,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1756,8 +2115,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1772,7 +2130,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.category,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1787,8 +2145,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1804,7 +2161,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.settings,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1819,8 +2176,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1835,7 +2191,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.precision_manufacturing,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1850,8 +2206,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1866,7 +2221,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.calendar_today,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1881,8 +2236,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1897,7 +2251,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.info_outline,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1912,8 +2266,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1929,7 +2282,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.notes,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1944,8 +2297,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1962,7 +2314,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 children: [
                                   Icon(
                                     Icons.badge,
-                                    size: 16, // Reduced icon size
+                                    size: 16,
                                     color: Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 12),
@@ -1977,8 +2329,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                                 .colorScheme
                                                 .onSurface
                                                 .withOpacity(0.8),
-                                            fontSize:
-                                                11, // Explicitly set smaller font size
+                                            fontSize: 11,
                                           ),
                                     ),
                                   ),
@@ -1994,7 +2345,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                               children: [
                                 Icon(
                                   Icons.flag,
-                                  size: 16, // Reduced icon size
+                                  size: 16,
                                   color: Colors.grey.shade600,
                                 ),
                                 const SizedBox(width: 12),
@@ -2007,8 +2358,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                               .colorScheme
                                               .onSurface
                                               .withOpacity(0.8),
-                                          fontSize:
-                                              11, // Explicitly set smaller font size
+                                          fontSize: 11,
                                         ),
                                   ),
                                 ),
@@ -2024,7 +2374,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                               children: [
                                 Icon(
                                   Icons.phone,
-                                  size: 16, // Reduced icon size
+                                  size: 16,
                                   color: Colors.grey.shade600,
                                 ),
                                 const SizedBox(width: 12),
@@ -2037,8 +2387,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                               .colorScheme
                                               .onSurface
                                               .withOpacity(0.8),
-                                          fontSize:
-                                              11, // Explicitly set smaller font size
+                                          fontSize: 11,
                                         ),
                                   ),
                                 ),
@@ -2054,7 +2403,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                               children: [
                                 Icon(
                                   Icons.person,
-                                  size: 16, // Reduced icon size
+                                  size: 16,
                                   color: Colors.grey.shade600,
                                 ),
                                 const SizedBox(width: 12),
@@ -2067,8 +2416,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                               .colorScheme
                                               .onSurface
                                               .withOpacity(0.8),
-                                          fontSize:
-                                              11, // Explicitly set smaller font size
+                                          fontSize: 11,
                                         ),
                                   ),
                                 ),
@@ -2092,25 +2440,23 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                         ElevatedButton(
                           onPressed: () {
                             _showAddBottomSheet(
-                              itemType: (T == Zone)
+                              itemType: collection.id == 'appScreenStates'
+                                  ? 'AppScreenState'
+                                  : (item is Company)
+                                  ? 'Company'
+                                  : (item is Zone)
                                   ? 'Zone'
-                                  : (T == Circle)
+                                  : (item is Circle)
                                   ? 'Circle'
-                                  : (T == Division)
+                                  : (item is Division)
                                   ? 'Division'
-                                  : (T == Subdivision)
+                                  : (item is Subdivision)
                                   ? 'Subdivision'
                                   : 'Substation',
-                              parentId: (item is Circle)
-                                  ? (item as Circle).zoneId
-                                  : (item is Division)
-                                  ? (item as Division).circleId
-                                  : (item is Subdivision)
-                                  ? (item as Subdivision).divisionId
-                                  : (item is Substation)
-                                  ? (item as Substation).subdivisionId
-                                  : null,
+                              parentId:
+                                  item.id, // Pass the item itself for editing
                               parentName: item.name,
+                              parentCollectionName: collection.id,
                               itemToEdit: item,
                             );
                           },
@@ -2158,15 +2504,15 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                             child: Text(
                               'Add $nextLevelItemType',
                               style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    // Smaller font for button label
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
                         ElevatedButton(
-                          onPressed: () =>
-                              _confirmDelete(collection.id, item.id, item.name),
+                          onPressed: () => this._confirmDelete(
+                            collection.id,
+                            item.id,
+                            item.name,
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(
                               context,
@@ -2185,6 +2531,22 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                       ],
                     ),
                   ),
+                  // Recursive calls for nested hierarchy
+                  if (nextLevelItemType == 'Company')
+                    _buildHierarchyList<Company>(
+                      FirebaseFirestore.instance.collection('companies'),
+                      Company.fromFirestore,
+                      stateIdFilter: item.id, // Filter companies by stateId
+                      nextLevelItemType: 'Zone',
+                    ),
+                  if (nextLevelItemType == 'Zone')
+                    _buildHierarchyList<Zone>(
+                      FirebaseFirestore.instance.collection('zones'),
+                      Zone.fromFirestore,
+                      parentIdField: 'companyId',
+                      parentId: item.id,
+                      nextLevelItemType: 'Circle',
+                    ),
                   if (nextLevelItemType == 'Circle')
                     _buildHierarchyList<Circle>(
                       FirebaseFirestore.instance.collection('circles'),
@@ -2215,80 +2577,21 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                       Substation.fromFirestore,
                       parentIdField: 'subdivisionId',
                       parentId: item.id,
-                      nextLevelItemType: '',
+                      nextLevelItemType: 'Bay',
+                    ),
+                  if (nextLevelItemType == 'Bay')
+                    _buildHierarchyList<Bay>(
+                      FirebaseFirestore.instance.collection('bays'),
+                      Bay.fromFirestore,
+                      parentIdField: 'substationId',
+                      parentId: item.id,
+                      nextLevelItemType: '', // Bays are the last level
                     ),
                   const SizedBox(height: 8),
                 ],
               ),
             );
           },
-        );
-      },
-    );
-  }
-
-  void _confirmDelete(String collection, String docId, String name) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Confirm Delete',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              // Changed to titleSmall
-              color: Theme.of(context).colorScheme.error,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          content: Text(
-            'Are you sure you want to delete "$name"? This action cannot be undone.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall, // Changed to bodySmall
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withOpacity(0.6),
-              ),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  await FirebaseFirestore.instance
-                      .collection(collection)
-                      .doc(docId)
-                      .delete();
-                  _showSnackBar('$name deleted successfully!');
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                } catch (e) {
-                  _showSnackBar(
-                    'Failed to delete $name: ${e.toString()}',
-                    isError: true,
-                  );
-                  print('Error deleting $name: $e');
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-                foregroundColor: Theme.of(context).colorScheme.onError,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-              ),
-              child: const Text('Delete'),
-            ),
-          ],
         );
       },
     );
@@ -2306,11 +2609,10 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed:
-            Provider.of<AppStateData>(context, listen: false).states.isNotEmpty
-            ? () => _showAddBottomSheet(itemType: 'Zone')
-            : null,
-        label: const Text('Add New Zone'),
+        onPressed: () => _showAddBottomSheet(
+          itemType: 'AppScreenState',
+        ), // FAB now adds AppScreenState
+        label: const Text('Add New State'), // Changed label
         icon: const Icon(Icons.add),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -2328,168 +2630,17 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                 children: [
                   Text(
                     'Manage Substation Hierarchy',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Consumer<AppStateData>(
-                    builder: (context, appState, child) {
-                      if (appState.states.isEmpty) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Text(
-                              'No states loaded. Please ensure state_sql_command.txt is correct and loaded.',
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.6),
-                                fontStyle: FontStyle.italic,
-                                fontSize: 11, // Reduced font size
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        );
-                      }
-
-                      return StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('zones')
-                            .orderBy('stateName')
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Text(
-                                'Error: ${snapshot.error}',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                  fontSize: 11, // Reduced font size
-                                ),
-                              ),
-                            );
-                          }
-
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-
-                          if (snapshot.data!.docs.isEmpty) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Text(
-                                  'No zones found in any state. Click "Add New Zone" to get started!',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withOpacity(0.6),
-                                    fontStyle: FontStyle.italic,
-                                    fontSize: 11, // Reduced font size
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          }
-
-                          final Set<String> uniqueStatesInZones = {};
-                          for (var doc in snapshot.data!.docs) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            if (data.containsKey('stateName') &&
-                                data['stateName'] != null &&
-                                data['stateName'].isNotEmpty) {
-                              uniqueStatesInZones.add(data['stateName']);
-                            }
-                          }
-
-                          if (uniqueStatesInZones.isEmpty) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Text(
-                                  'No zones with state information found. Add a zone with a state!',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withOpacity(0.6),
-                                    fontStyle: FontStyle.italic,
-                                    fontSize: 11, // Reduced font size
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          }
-
-                          final sortedStates = uniqueStatesInZones.toList()
-                            ..sort();
-
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: sortedStates.length,
-                            itemBuilder: (context, index) {
-                              final stateName = sortedStates.elementAt(index);
-                              return Card(
-                                elevation: 2,
-                                margin: const EdgeInsets.symmetric(
-                                  vertical: 8,
-                                  horizontal: 0,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withOpacity(0.1),
-                                  ),
-                                ),
-                                child: ExpansionTile(
-                                  key: ValueKey('state-$stateName'),
-                                  leading: Icon(
-                                    Icons.map,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    size: 24, // Reduced icon size
-                                  ),
-                                  title: Text(
-                                    stateName,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium // Changed to titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.primary,
-                                        ),
-                                  ),
-                                  children: [
-                                    _buildHierarchyList<Zone>(
-                                      FirebaseFirestore.instance.collection(
-                                        'zones',
-                                      ),
-                                      Zone.fromFirestore,
-                                      stateNameFilter: stateName,
-                                      nextLevelItemType: 'Circle',
-                                    ),
-                                    const SizedBox(height: 12),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      );
-                    },
+                  // This is the top-level list, showing states already added to Firestore
+                  _buildHierarchyList<AppScreenState>(
+                    FirebaseFirestore.instance.collection('appScreenStates'),
+                    AppScreenState.fromFirestore,
+                    nextLevelItemType: 'Company', // Next level is Company
                   ),
                 ],
               ),
