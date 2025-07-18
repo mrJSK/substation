@@ -39,11 +39,12 @@ class CityModel {
 
 class AppStateData extends ChangeNotifier {
   static final AppStateData _instance = AppStateData._internal();
-  ThemeMode _themeMode = ThemeMode.light;
+  ThemeMode _themeMode = ThemeMode.light; // Default to light until loaded
 
   ThemeMode get themeMode => _themeMode;
 
   AppStateData._internal() {
+    // Load theme synchronously with a default fallback
     _loadThemeFromPrefs();
   }
 
@@ -52,35 +53,40 @@ class AppStateData extends ChangeNotifier {
   }
 
   Future<void> _loadThemeFromPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? savedTheme = prefs.getString('themeMode');
-    if (savedTheme == 'dark') {
-      _themeMode = ThemeMode.dark;
-    } else {
-      _themeMode = ThemeMode.light;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? savedTheme = prefs.getString('themeMode');
+      _themeMode = savedTheme == 'dark' ? ThemeMode.dark : ThemeMode.light;
+      print('DEBUG: AppStateData: Loaded theme from prefs: $_themeMode');
+    } catch (e) {
+      print('ERROR: AppStateData: Failed to load theme: $e');
+      _themeMode = ThemeMode.light; // Fallback to light theme
     }
     notifyListeners();
-    print('DEBUG: AppStateData: Loaded theme from prefs: $_themeMode');
   }
 
-  void toggleTheme() {
+  Future<void> toggleTheme() async {
     _themeMode = _themeMode == ThemeMode.light
         ? ThemeMode.dark
         : ThemeMode.light;
-    _saveThemeToPrefs(_themeMode);
-    notifyListeners();
     print('DEBUG: AppStateData: Theme toggled to $_themeMode');
+    await _saveThemeToPrefs(_themeMode);
+    notifyListeners();
   }
 
   Future<void> _saveThemeToPrefs(ThemeMode themeMode) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'themeMode',
-      themeMode == ThemeMode.dark ? 'dark' : 'light',
-    );
-    print(
-      'DEBUG: AppStateData: Saved theme to prefs: ${themeMode == ThemeMode.dark ? 'dark' : 'light'}',
-    );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'themeMode',
+        themeMode == ThemeMode.dark ? 'dark' : 'light',
+      );
+      print(
+        'DEBUG: AppStateData: Saved theme to prefs: ${themeMode == ThemeMode.dark ? 'dark' : 'light'}',
+      );
+    } catch (e) {
+      print('ERROR: AppStateData: Failed to save theme: $e');
+    }
   }
 
   List<StateModel> allStateModels = [];
