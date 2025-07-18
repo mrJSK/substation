@@ -4,6 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../screens/home_screen.dart';
+// Add the following imports to resolve the errors
+import '../screens/admin/admin_dashboard_screen.dart'; //
+import '../screens/substation_user_dashboard_screen.dart'; //
+import '../screens/subdivision_dashboard_screen.dart'; // Corrected import for SubdivisionDashboardScreen
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -67,21 +71,23 @@ class _AuthScreenState extends State<AuthScreen> {
               if (appUser.role == UserRole.admin) {
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
-                    builder: (context) => AdminHomeScreen(appUser: appUser),
+                    builder: (context) => AdminDashboardScreen(
+                      adminUser: appUser,
+                    ), // Fixed: Pass appUser to adminUser
                   ),
                 );
               } else if (appUser.role == UserRole.substationUser) {
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
                     builder: (context) =>
-                        SubstationUserHomeScreen(appUser: appUser),
+                        SubstationUserDashboardScreen(currentUser: appUser),
                   ),
                 );
               } else if (appUser.role == UserRole.subdivisionManager) {
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
                     builder: (context) =>
-                        SubdivisionManagerHomeScreen(appUser: appUser),
+                        SubdivisionDashboardScreen(currentUser: appUser),
                   ),
                 );
               } else {
