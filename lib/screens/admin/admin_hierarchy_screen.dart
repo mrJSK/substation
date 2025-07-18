@@ -38,7 +38,8 @@ class _AddEditHierarchyItemForm extends StatefulWidget {
       _AddEditHierarchyItemFormState();
 }
 
-class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
+class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
+    with SingleTickerProviderStateMixin {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController nameController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
@@ -64,6 +65,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   String? selectedContactDesignation;
   bool isSasOperation = false;
   String? selectedStatus;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
   final List<String> contactDesignations = [
     'CE',
@@ -87,6 +90,15 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
+    _animationController.forward();
     _initializeFormFields();
   }
 
@@ -103,6 +115,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
     sasMakeController.dispose();
     statusDescriptionController.dispose();
     multiplyingFactorController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -238,6 +251,23 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
       initialDate: commissioningDate?.toDate() ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2101),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: Theme.of(context).colorScheme.primary,
+              onPrimary: Theme.of(context).colorScheme.onPrimary,
+              surface: Theme.of(context).colorScheme.surface,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && picked != commissioningDate?.toDate()) {
       setState(() {
@@ -249,642 +279,1098 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   @override
   Widget build(BuildContext context) {
     bool isEditing = widget.itemToEdit != null;
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SingleChildScrollView(
-        child: Container(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: SingleChildScrollView(
+          child: Container(
+            padding: const EdgeInsets.all(24.0),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
               ),
-              const SizedBox(height: 16),
-              Text(
-                isEditing
-                    ? 'Edit ${widget.itemType}'
-                    : 'Add New ${widget.itemType}',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              if (widget.parentName != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    'Under: ${widget.parentName}',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ),
-              const SizedBox(height: 24),
-              Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextFormField(
-                      controller: nameController,
-                      decoration: InputDecoration(
-                        labelText: '${widget.itemType} Name',
-                        prefixIcon: Icon(
-                          Icons.edit_note,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        helperText: 'Enter a unique name',
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter a name';
-                        }
-                        return null;
-                      },
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 48,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    if (widget.itemType == 'Bay') ...[
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedBayType,
-                        decoration: InputDecoration(
-                          labelText: 'Bay Type',
-                          prefixIcon: Icon(
-                            Icons.category,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Select the type of bay',
-                        ),
-                        items: bayTypes.map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text(value),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            selectedBayType = newValue;
-                          });
-                        },
-                        validator: (value) =>
-                            value == null ? 'Please select a bay type' : null,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  isEditing
+                      ? 'Edit ${widget.itemType}'
+                      : 'Add New ${widget.itemType}',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                if (widget.parentName != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      'Under: ${widget.parentName}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.7),
                       ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedVoltageLevel,
-                        decoration: InputDecoration(
-                          labelText: 'Voltage Level',
-                          prefixIcon: Icon(
-                            Icons.flash_on,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Select the voltage level',
-                        ),
-                        items:
-                            <String>[
-                              '765kV',
-                              '400kV',
-                              '220kV',
-                              '132kV',
-                              '33kV',
-                              '11kV',
-                            ].map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            selectedVoltageLevel = newValue;
-                          });
-                        },
-                        validator: (value) => value == null
-                            ? 'Please select a voltage level'
-                            : null,
-                      ),
-                      const SizedBox(height: 16),
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       TextFormField(
-                        controller: multiplyingFactorController,
+                        controller: nameController,
                         decoration: InputDecoration(
-                          labelText: 'Multiplying Factor (MF)',
+                          labelText: '${widget.itemType} Name',
                           prefixIcon: Icon(
-                            Icons.clear,
+                            Icons.edit_note,
                             color: Theme.of(context).colorScheme.primary,
                           ),
-                          helperText: 'Optional numerical value',
+                          helperText: 'Enter a unique name',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
                         ),
-                        keyboardType: TextInputType.number,
                         validator: (value) {
-                          if (value != null &&
-                              value.isNotEmpty &&
-                              double.tryParse(value) == null) {
-                            return 'Please enter a valid number for MF';
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter a name';
                           }
                           return null;
                         },
                       ),
-                    ],
-                    if (widget.itemType == 'Substation') ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        'Substation Technical Details',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
+                      if (widget.itemType == 'Bay') ...[
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: selectedBayType,
+                          decoration: InputDecoration(
+                            labelText: 'Bay Type',
+                            prefixIcon: Icon(
+                              Icons.category,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                      ),
-                      const Divider(height: 8),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: selectedVoltageLevel,
-                        decoration: InputDecoration(
-                          labelText: 'Voltage Level',
-                          prefixIcon: Icon(
-                            Icons.flash_on,
-                            color: Theme.of(context).colorScheme.primary,
+                            helperText: 'Select the type of bay',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
                           ),
-                          helperText: 'Select the voltage level',
+                          items: bayTypes.map((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              selectedBayType = newValue;
+                            });
+                          },
+                          validator: (value) =>
+                              value == null ? 'Please select a bay type' : null,
                         ),
-                        items:
-                            <String>[
-                              '765kV',
-                              '400kV',
-                              '220kV',
-                              '132kV',
-                              '33kV',
-                              '11kV',
-                            ].map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            selectedVoltageLevel = newValue;
-                          });
-                        },
-                        validator: (value) {
-                          if (widget.itemType == 'Substation' &&
-                              value == null) {
-                            return 'Please select a voltage level';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: typeController.text.isNotEmpty
-                            ? typeController.text
-                            : null,
-                        decoration: InputDecoration(
-                          labelText: 'Type',
-                          prefixIcon: Icon(
-                            Icons.category,
-                            color: Theme.of(context).colorScheme.primary,
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: selectedVoltageLevel,
+                          decoration: InputDecoration(
+                            labelText: 'Voltage Level',
+                            prefixIcon: Icon(
+                              Icons.flash_on,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            helperText: 'Select the voltage level',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
                           ),
-                          helperText: 'Select substation type',
+                          items:
+                              <String>[
+                                '765kV',
+                                '400kV',
+                                '220kV',
+                                '132kV',
+                                '33kV',
+                                '11kV',
+                              ].map((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(value),
+                                );
+                              }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              selectedVoltageLevel = newValue;
+                            });
+                          },
+                          validator: (value) => value == null
+                              ? 'Please select a voltage level'
+                              : null,
                         ),
-                        items: ['AIS', 'GIS', 'Hybrid'].map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text(value),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            typeController.text = newValue ?? '';
-                          });
-                        },
-                        validator: (value) {
-                          if (widget.itemType == 'Substation' &&
-                              value == null) {
-                            return 'Please select a type';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      SwitchListTile(
-                        title: Text(
-                          'Operation: ${isSasOperation ? "SAS" : "Manual"}',
-                        ),
-                        value: isSasOperation,
-                        onChanged: (bool value) {
-                          setState(() {
-                            isSasOperation = value;
-                            if (!isSasOperation) {
-                              sasMakeController.clear();
-                            }
-                          });
-                        },
-                        secondary: Icon(
-                          Icons.settings,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      if (isSasOperation) ...[
                         const SizedBox(height: 16),
                         TextFormField(
-                          controller: sasMakeController,
+                          controller: multiplyingFactorController,
                           decoration: InputDecoration(
-                            labelText: 'SAS Make',
+                            labelText: 'Multiplying Factor (MF)',
                             prefixIcon: Icon(
-                              Icons.precision_manufacturing,
+                              Icons.clear,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                            helperText: 'Enter SAS manufacturer',
+                            helperText: 'Optional numerical value',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
                           ),
+                          keyboardType: TextInputType.number,
                           validator: (value) {
-                            if (isSasOperation &&
-                                (value == null || value.isEmpty)) {
-                              return 'Please enter SAS Make';
+                            if (value != null &&
+                                value.isNotEmpty &&
+                                double.tryParse(value) == null) {
+                              return 'Please enter a valid number for MF';
                             }
                             return null;
                           },
                         ),
                       ],
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedStatus,
-                        decoration: InputDecoration(
-                          labelText: 'Status',
-                          prefixIcon: Icon(
-                            Icons.check_circle_outline,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          helperText: 'Select operational status',
-                        ),
-                        items: ['Working', 'Non-Working'].map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text(value),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            selectedStatus = newValue;
-                            if (newValue == 'Working') {
-                              statusDescriptionController.clear();
-                            }
-                          });
-                        },
-                        validator: (value) {
-                          if (widget.itemType == 'Substation' &&
-                              value == null) {
-                            return 'Please select a status';
-                          }
-                          return null;
-                        },
-                      ),
-                      if (selectedStatus == 'Non-Working')
+                      if (widget.itemType == 'Substation') ...[
                         const SizedBox(height: 16),
-                      if (selectedStatus == 'Non-Working')
-                        TextFormField(
-                          controller: statusDescriptionController,
+                        Text(
+                          'Substation Technical Details',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                        const Divider(height: 24, thickness: 1),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: selectedVoltageLevel,
                           decoration: InputDecoration(
-                            labelText:
-                                'Status Description (Reason for Non-Working)',
+                            labelText: 'Voltage Level',
                             prefixIcon: Icon(
-                              Icons.info_outline,
+                              Icons.flash_on,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                            helperText: 'Provide details',
+                            helperText: 'Select the voltage level',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
                           ),
-                          maxLines: 3,
+                          items:
+                              <String>[
+                                '765kV',
+                                '400kV',
+                                '220kV',
+                                '132kV',
+                                '33kV',
+                                '11kV',
+                              ].map((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(value),
+                                );
+                              }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              selectedVoltageLevel = newValue;
+                            });
+                          },
                           validator: (value) {
-                            if (selectedStatus == 'Non-Working' &&
-                                (value == null || value.isEmpty)) {
-                              return 'Please provide a reason for non-working status';
+                            if (widget.itemType == 'Substation' &&
+                                value == null) {
+                              return 'Please select a voltage level';
                             }
                             return null;
                           },
                         ),
-                      const SizedBox(height: 16),
-                      ListTile(
-                        title: Text(
-                          commissioningDate == null
-                              ? 'Select Commissioning Date (Optional)'
-                              : 'Commissioning Date: ${commissioningDate!.toDate().toLocal().toString().split(' ')[0]}',
-                        ),
-                        trailing: const Icon(Icons.calendar_today),
-                        onTap: () => _selectCommissioningDate(context),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Substation Location Details',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: typeController.text.isNotEmpty
+                              ? typeController.text
+                              : null,
+                          decoration: InputDecoration(
+                            labelText: 'Type',
+                            prefixIcon: Icon(
+                              Icons.category,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                      ),
-                      const Divider(height: 8),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: bottomSheetSelectedState,
-                        decoration: InputDecoration(
-                          labelText: 'Select State',
-                          prefixIcon: Icon(
-                            Icons.map,
+                            helperText: 'Select substation type',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          items: ['AIS', 'GIS', 'Hybrid'].map((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              typeController.text = newValue ?? '';
+                            });
+                          },
+                          validator: (value) {
+                            if (widget.itemType == 'Substation' &&
+                                value == null) {
+                              return 'Please select a type';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        SwitchListTile(
+                          title: Text(
+                            'Operation: ${isSasOperation ? "SAS" : "Manual"}',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall, // Reduced font size
+                          ),
+                          value: isSasOperation,
+                          onChanged: (bool value) {
+                            setState(() {
+                              isSasOperation = value;
+                              if (!isSasOperation) {
+                                sasMakeController.clear();
+                              }
+                            });
+                          },
+                          activeColor: Theme.of(context).colorScheme.primary,
+                          secondary: Icon(
+                            Icons.settings,
                             color: Theme.of(context).colorScheme.primary,
                           ),
-                          helperText: 'Choose a state',
                         ),
-                        isExpanded: true,
-                        items: Provider.of<AppStateData>(context, listen: false)
-                            .states
-                            .map((String state) {
-                              return DropdownMenuItem<String>(
-                                value: state,
-                                child: Text(
-                                  state,
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
+                        if (isSasOperation) ...[
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: sasMakeController,
+                            decoration: InputDecoration(
+                              labelText: 'SAS Make',
+                              prefixIcon: Icon(
+                                Icons.precision_manufacturing,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              helperText: 'Enter SAS manufacturer',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.2),
                                 ),
-                              );
-                            })
-                            .toList(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            bottomSheetSelectedState = newValue;
-                            selectedCityId = null;
-                            selectedCityName = null;
-                          });
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please select a state';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownSearch<CityModel>(
-                        selectedItem: selectedCityId != null
-                            ? Provider.of<AppStateData>(
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.2),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            validator: (value) {
+                              if (isSasOperation &&
+                                  (value == null || value.isEmpty)) {
+                                return 'Please enter SAS Make';
+                              }
+                              return null;
+                            },
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: selectedStatus,
+                          decoration: InputDecoration(
+                            labelText: 'Status',
+                            prefixIcon: Icon(
+                              Icons.check_circle_outline,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            helperText: 'Select operational status',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          items: ['Working', 'Non-Working'].map((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              selectedStatus = newValue;
+                              if (newValue == 'Working') {
+                                statusDescriptionController.clear();
+                              }
+                            });
+                          },
+                          validator: (value) {
+                            if (widget.itemType == 'Substation' &&
+                                value == null) {
+                              return 'Please select a status';
+                            }
+                            return null;
+                          },
+                        ),
+                        if (selectedStatus == 'Non-Working')
+                          const SizedBox(height: 16),
+                        if (selectedStatus == 'Non-Working')
+                          TextFormField(
+                            controller: statusDescriptionController,
+                            decoration: InputDecoration(
+                              labelText:
+                                  'Status Description (Reason for Non-Working)',
+                              prefixIcon: Icon(
+                                Icons.info_outline,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              helperText: 'Provide details',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.2),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.2),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            maxLines: 3,
+                            validator: (value) {
+                              if (selectedStatus == 'Non-Working' &&
+                                  (value == null || value.isEmpty)) {
+                                return 'Please provide a reason for non-working status';
+                              }
+                              return null;
+                            },
+                          ),
+                        const SizedBox(height: 16),
+                        ListTile(
+                          title: Text(
+                            commissioningDate == null
+                                ? 'Select Commissioning Date (Optional)'
+                                : 'Commissioning Date: ${commissioningDate!.toDate().toLocal().toString().split(' ')[0]}',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall, // Reduced font size
+                          ),
+                          trailing: Icon(
+                            Icons.calendar_today,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          onTap: () => _selectCommissioningDate(context),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Substation Location Details',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                        const Divider(height: 24, thickness: 1),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: bottomSheetSelectedState,
+                          decoration: InputDecoration(
+                            labelText: 'Select State',
+                            prefixIcon: Icon(
+                              Icons.map,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            helperText: 'Choose a state',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          isExpanded: true,
+                          items:
+                              Provider.of<AppStateData>(
                                 context,
                                 listen: false,
-                              ).allCityModels.firstWhere(
-                                (c) => c.id == selectedCityId,
-                                orElse: () =>
-                                    CityModel(id: -1, name: '', stateId: -1),
-                              )
-                            : null,
-                        popupProps: PopupProps.menu(
-                          showSearchBox: true,
-                          menuProps: MenuProps(
-                            borderRadius: BorderRadius.circular(10),
+                              ).states.map((String state) {
+                                return DropdownMenuItem<String>(
+                                  value: state,
+                                  child: Text(
+                                    state,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium, // Smaller font
+                                  ),
+                                );
+                              }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              bottomSheetSelectedState = newValue;
+                              selectedCityId = null;
+                              selectedCityName = null;
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please select a state';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownSearch<CityModel>(
+                          selectedItem: selectedCityId != null
+                              ? Provider.of<AppStateData>(
+                                  context,
+                                  listen: false,
+                                ).allCityModels.firstWhere(
+                                  (c) => c.id == selectedCityId,
+                                  orElse: () =>
+                                      CityModel(id: -1, name: '', stateId: -1),
+                                )
+                              : null,
+                          popupProps: PopupProps.menu(
+                            showSearchBox: true,
+                            menuProps: MenuProps(
+                              borderRadius: BorderRadius.circular(12),
+                              elevation: 4,
+                            ),
+                            searchFieldProps: TextFieldProps(
+                              decoration: InputDecoration(
+                                labelText: 'Search City',
+                                prefixIcon: Icon(
+                                  Icons.search,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.2),
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                          searchFieldProps: TextFieldProps(
-                            decoration: InputDecoration(
-                              labelText: 'Search City',
+                          itemAsString: (CityModel c) => c.name,
+                          asyncItems: (String filter) async {
+                            if (bottomSheetSelectedState == null) {
+                              _showSnackBar(
+                                'Please select a state first.',
+                                isError: true,
+                              );
+                              return [];
+                            }
+                            final cities = Provider.of<AppStateData>(
+                              context,
+                              listen: false,
+                            ).getCitiesForStateName(bottomSheetSelectedState!);
+                            return cities
+                                .where(
+                                  (city) => city.name.toLowerCase().contains(
+                                    filter.toLowerCase(),
+                                  ),
+                                )
+                                .toList();
+                          },
+                          dropdownDecoratorProps: DropDownDecoratorProps(
+                            dropdownSearchDecoration: InputDecoration(
+                              labelText: 'City',
+                              hintText: 'Select City',
                               prefixIcon: Icon(
-                                Icons.search,
+                                Icons.location_city,
                                 color: Theme.of(context).colorScheme.primary,
                               ),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.2),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 2,
+                                ),
+                              ),
+                              helperText: 'Search or select a city',
+                            ),
+                          ),
+                          onChanged: (CityModel? city) {
+                            setState(() {
+                              selectedCityId = city?.id;
+                              selectedCityName = city?.name;
+                            });
+                          },
+                          validator: (value) {
+                            if (widget.itemType == 'Substation' &&
+                                selectedCityId == null) {
+                              return 'Please select a city';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: substationAddressController,
+                          decoration: InputDecoration(
+                            labelText:
+                                'Substation Address (Specific) (Optional)',
+                            prefixIcon: Icon(
+                              Icons.location_on,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            helperText: 'Enter detailed address',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
                               ),
                             ),
                           ),
+                          maxLines: 2,
                         ),
-                        itemAsString: (CityModel c) => c.name,
-                        asyncItems: (String filter) async {
-                          if (bottomSheetSelectedState == null) {
-                            _showSnackBar(
-                              'Please select a state first.',
-                              isError: true,
-                            );
-                            return [];
-                          }
-                          final cities = Provider.of<AppStateData>(
-                            context,
-                            listen: false,
-                          ).getCitiesForStateName(bottomSheetSelectedState!);
-                          return cities
-                              .where(
-                                (city) => city.name.toLowerCase().contains(
-                                  filter.toLowerCase(),
-                                ),
-                              )
-                              .toList();
-                        },
-                        dropdownDecoratorProps: DropDownDecoratorProps(
-                          dropdownSearchDecoration: InputDecoration(
-                            labelText: 'City',
-                            hintText: 'Select City',
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: selectedContactDesignation,
+                          decoration: InputDecoration(
+                            labelText: 'Contact Designation',
                             prefixIcon: Icon(
-                              Icons.location_city,
+                              Icons.badge,
                               color: Theme.of(context).colorScheme.primary,
                             ),
+                            helperText: 'Select designation',
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
                             ),
-                            helperText: 'Search or select a city',
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.2),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          items: contactDesignations.map((String designation) {
+                            return DropdownMenuItem<String>(
+                              value: designation,
+                              child: Text(designation),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              selectedContactDesignation = newValue;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      TextFormField(
+                        controller: landmarkController,
+                        decoration: InputDecoration(
+                          labelText: 'Landmark (Optional)',
+                          prefixIcon: Icon(
+                            Icons.flag,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          helperText: 'Nearby landmark',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
                           ),
                         ),
-                        onChanged: (CityModel? city) {
-                          setState(() {
-                            selectedCityId = city?.id;
-                            selectedCityName = city?.name;
-                          });
-                        },
-                        validator: (value) {
-                          if (widget.itemType == 'Substation' &&
-                              selectedCityId == null) {
-                            return 'Please select a city';
-                          }
-                          return null;
-                        },
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
-                        controller: substationAddressController,
+                        controller: contactNumberController,
                         decoration: InputDecoration(
-                          labelText: 'Substation Address (Specific) (Optional)',
+                          labelText: 'Contact Number (Optional)',
                           prefixIcon: Icon(
-                            Icons.location_on,
+                            Icons.phone,
                             color: Theme.of(context).colorScheme.primary,
                           ),
-                          helperText: 'Enter detailed address',
+                          helperText: 'Enter phone number',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
                         ),
-                        maxLines: 2,
+                        keyboardType: TextInputType.phone,
                       ),
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedContactDesignation,
+                      TextFormField(
+                        controller: contactPersonController,
                         decoration: InputDecoration(
-                          labelText: 'Contact Designation',
+                          labelText: 'Contact Person Name (Optional)',
                           prefixIcon: Icon(
-                            Icons.badge,
+                            Icons.person,
                             color: Theme.of(context).colorScheme.primary,
                           ),
-                          helperText: 'Select designation',
+                          helperText: 'Name of contact',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
                         ),
-                        items: contactDesignations.map((String designation) {
-                          return DropdownMenuItem<String>(
-                            value: designation,
-                            child: Text(designation),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            selectedContactDesignation = newValue;
-                          });
-                        },
                       ),
                       const SizedBox(height: 16),
+                      TextFormField(
+                        controller: descriptionController,
+                        decoration: InputDecoration(
+                          labelText:
+                              '${widget.itemType} Description (Optional)',
+                          prefixIcon: Icon(
+                            Icons.description,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          helperText: 'Additional details',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        maxLines: 3,
+                      ),
                     ],
-                    TextFormField(
-                      controller: landmarkController,
-                      decoration: InputDecoration(
-                        labelText: 'Landmark (Optional)',
-                        prefixIcon: Icon(
-                          Icons.flag,
-                          color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
-                        helperText: 'Nearby landmark',
                       ),
+                      child: const Text('Cancel'),
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: contactNumberController,
-                      decoration: InputDecoration(
-                        labelText: 'Contact Number (Optional)',
-                        prefixIcon: Icon(
-                          Icons.phone,
-                          color: Theme.of(context).colorScheme.primary,
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (!_formKey.currentState!.validate()) {
+                          return;
+                        }
+
+                        Map<String, dynamic> data = {
+                          'name': nameController.text,
+                          'description': descriptionController.text.isEmpty
+                              ? null
+                              : descriptionController.text,
+                          'landmark': landmarkController.text.isEmpty
+                              ? null
+                              : landmarkController.text,
+                          'contactNumber': contactNumberController.text.isEmpty
+                              ? null
+                              : contactNumberController.text,
+                          'contactPerson': contactPersonController.text.isEmpty
+                              ? null
+                              : contactPersonController.text,
+                        };
+
+                        if (widget.parentId != null &&
+                            widget.parentCollectionName != null) {
+                          final parentIdKey =
+                              '${widget.parentCollectionName!.substring(0, widget.parentCollectionName!.length - 1)}Id';
+                          data[parentIdKey] = widget.parentId;
+                        }
+
+                        if (widget.itemType == 'Bay') {
+                          data['bayType'] = selectedBayType;
+                          data['voltageLevel'] = selectedVoltageLevel;
+                          data['multiplyingFactor'] = double.tryParse(
+                            multiplyingFactorController.text,
+                          );
+                        }
+
+                        if (widget.itemType == 'Zone') {
+                          data['stateName'] = bottomSheetSelectedState;
+                        }
+
+                        if (widget.itemType == 'Substation') {
+                          data['address'] =
+                              substationAddressController.text.isEmpty
+                              ? null
+                              : substationAddressController.text;
+                          data['cityId'] = selectedCityId?.toString();
+                          data['voltageLevel'] = selectedVoltageLevel;
+                          data['type'] = typeController.text.isEmpty
+                              ? null
+                              : typeController.text;
+                          data['operation'] = isSasOperation ? 'SAS' : 'Manual';
+                          data['sasMake'] = sasMakeController.text.isEmpty
+                              ? null
+                              : sasMakeController.text;
+                          data['commissioningDate'] = commissioningDate;
+                          data['status'] = selectedStatus;
+                          data['statusDescription'] =
+                              statusDescriptionController.text.isEmpty
+                              ? null
+                              : statusDescriptionController.text;
+                          data['contactDesignation'] =
+                              selectedContactDesignation;
+                        }
+
+                        widget.onAddItem(
+                          '${widget.itemType.toLowerCase()}s',
+                          data,
+                          _formKey,
+                          isEditing ? widget.itemToEdit!.id : null,
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
                         ),
-                        helperText: 'Enter phone number',
-                      ),
-                      keyboardType: TextInputType.phone,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: contactPersonController,
-                      decoration: InputDecoration(
-                        labelText: 'Contact Person Name (Optional)',
-                        prefixIcon: Icon(
-                          Icons.person,
-                          color: Theme.of(context).colorScheme.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        helperText: 'Name of contact',
+                        elevation: 2,
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: descriptionController,
-                      decoration: InputDecoration(
-                        labelText: '${widget.itemType} Description (Optional)',
-                        prefixIcon: Icon(
-                          Icons.description,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        helperText: 'Additional details',
-                      ),
-                      maxLines: 3,
+                      child: Text(isEditing ? 'Update' : 'Add'),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                    child: Text(
-                      'Cancel',
-                      style: TextStyle(color: Colors.grey.shade700),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (!_formKey.currentState!.validate()) {
-                        return;
-                      }
-
-                      Map<String, dynamic> data = {
-                        'name': nameController.text,
-                        'description': descriptionController.text.isEmpty
-                            ? null
-                            : descriptionController.text,
-                        'landmark': landmarkController.text.isEmpty
-                            ? null
-                            : landmarkController.text,
-                        'contactNumber': contactNumberController.text.isEmpty
-                            ? null
-                            : contactNumberController.text,
-                        'contactPerson': contactPersonController.text.isEmpty
-                            ? null
-                            : contactPersonController.text,
-                      };
-
-                      if (widget.parentId != null &&
-                          widget.parentCollectionName != null) {
-                        final parentIdKey =
-                            '${widget.parentCollectionName!.substring(0, widget.parentCollectionName!.length - 1)}Id';
-                        data[parentIdKey] = widget.parentId;
-                      }
-
-                      if (widget.itemType == 'Bay') {
-                        data['bayType'] = selectedBayType;
-                        data['voltageLevel'] = selectedVoltageLevel;
-                        data['multiplyingFactor'] = double.tryParse(
-                          multiplyingFactorController.text,
-                        );
-                      }
-
-                      if (widget.itemType == 'Zone') {
-                        data['stateName'] = bottomSheetSelectedState;
-                      }
-
-                      if (widget.itemType == 'Substation') {
-                        data['address'] =
-                            substationAddressController.text.isEmpty
-                            ? null
-                            : substationAddressController.text;
-                        data['cityId'] = selectedCityId?.toString();
-                        data['voltageLevel'] = selectedVoltageLevel;
-                        data['type'] = typeController.text.isEmpty
-                            ? null
-                            : typeController.text;
-                        data['operation'] = isSasOperation ? 'SAS' : 'Manual';
-                        data['sasMake'] = sasMakeController.text.isEmpty
-                            ? null
-                            : sasMakeController.text;
-                        data['commissioningDate'] = commissioningDate;
-                        data['status'] = selectedStatus;
-                        data['statusDescription'] =
-                            statusDescriptionController.text.isEmpty
-                            ? null
-                            : statusDescriptionController.text;
-                        data['contactDesignation'] = selectedContactDesignation;
-                      }
-
-                      widget.onAddItem(
-                        '${widget.itemType.toLowerCase()}s',
-                        data,
-                        _formKey,
-                        isEditing ? widget.itemToEdit!.id : null,
-                      );
-                    },
-                    child: Text(isEditing ? 'Update' : 'Add'),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -894,13 +1380,21 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm> {
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(
+          message,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            // Reduced font size for snackbar
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
         backgroundColor: isError
             ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary,
+            : Theme.of(context).colorScheme.primary.withOpacity(0.9),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+        elevation: 4,
       ),
     );
   }
@@ -913,14 +1407,28 @@ class AdminHierarchyScreen extends StatefulWidget {
   State<AdminHierarchyScreen> createState() => _AdminHierarchyScreenState();
 }
 
-class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
+class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
+    _animationController.forward();
   }
 
   @override
   void dispose() {
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -981,8 +1489,9 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
         return _AddEditHierarchyItemForm(
           itemType: itemType,
@@ -999,13 +1508,21 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(
+          message,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            // Apply smaller text style to snackbar
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
         backgroundColor: isError
             ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary,
+            : Theme.of(context).colorScheme.primary.withOpacity(0.9),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+        elevation: 4,
       ),
     );
   }
@@ -1036,7 +1553,10 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
           return Center(
             child: Text(
               'Error: ${snapshot.error}',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontSize: 11, // Reduced font size
+              ),
             ),
           );
         }
@@ -1053,8 +1573,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                 child: Text(
                   'No ${collection.id} found here. Click the "+" button to add one.',
                   style: TextStyle(
-                    color: Colors.grey.shade600,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.6),
                     fontStyle: FontStyle.italic,
+                    fontSize: 11, // Reduced font size
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -1076,25 +1599,32 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
           itemBuilder: (context, index) {
             final item = items[index];
             return Card(
-              elevation: 0,
-              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              elevation: 2,
+              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.1),
+                ),
               ),
               child: ExpansionTile(
                 key: ValueKey(item.id),
                 tilePadding: const EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: 8,
+                  vertical: 12,
                 ),
                 leading: Icon(
                   Icons.folder,
                   color: Theme.of(context).colorScheme.primary,
+                  size: 24, // Reduced icon size
                 ),
                 title: Text(
                   item.name,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                    // Changed to titleMedium
+                    fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
@@ -1102,14 +1632,22 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                     item.description != null && item.description!.isNotEmpty
                     ? Text(
                         item.description!,
-                        style: TextStyle(color: Colors.grey.shade600),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          // Using bodySmall, which is typically smaller than default
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withOpacity(0.6),
+                          fontSize: 11, // Explicitly set smaller font size
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       )
                     : null,
                 children: [
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16.0,
-                      vertical: 8.0,
+                      vertical: 12.0,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1117,22 +1655,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                         if (item is Substation) ...[
                           if (item.address != null && item.address!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.home,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Substation Address: ${item.address}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1152,23 +1698,31 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                                 );
                                 if (city.id != -1) {
                                   return Padding(
-                                    padding: const EdgeInsets.only(bottom: 4.0),
+                                    padding: const EdgeInsets.only(bottom: 8.0),
                                     child: Row(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
                                         Icon(
                                           Icons.location_city,
-                                          size: 18,
+                                          size: 16, // Reduced icon size
                                           color: Colors.grey.shade600,
                                         ),
-                                        const SizedBox(width: 8),
+                                        const SizedBox(width: 12),
                                         Expanded(
                                           child: Text(
                                             'City: ${city.name}',
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.bodySmall,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurface
+                                                      .withOpacity(0.8),
+                                                  fontSize:
+                                                      11, // Explicitly set smaller font size
+                                                ),
                                           ),
                                         ),
                                       ],
@@ -1181,22 +1735,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                           if (item.voltageLevel != null &&
                               item.voltageLevel!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.flash_on,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Voltage Level: ${item.voltageLevel}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1204,22 +1766,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                             ),
                           if (item.type != null && item.type!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.category,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Type: ${item.type}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1228,22 +1798,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                           if (item.operation != null &&
                               item.operation!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.settings,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Operation: ${item.operation}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1251,22 +1829,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                             ),
                           if (item.sasMake != null && item.sasMake!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.precision_manufacturing,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'SAS Make: ${item.sasMake}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1274,22 +1860,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                             ),
                           if (item.commissioningDate != null)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.calendar_today,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Commissioning Date: ${item.commissioningDate!.toDate().toLocal().toString().split(' ')[0]}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1297,22 +1891,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                             ),
                           if (item.status != null && item.status!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.info_outline,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Status: ${item.status}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1321,22 +1923,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                           if (item.statusDescription != null &&
                               item.statusDescription!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.notes,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Status Description: ${item.statusDescription}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1346,22 +1956,30 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                               item.contactDesignation != null &&
                               item.contactDesignation!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 4.0),
+                              padding: const EdgeInsets.only(bottom: 8.0),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Icon(
                                     Icons.badge,
-                                    size: 18,
+                                    size: 16, // Reduced icon size
                                     color: Colors.grey.shade600,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       'Designation: ${item.contactDesignation}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.8),
+                                            fontSize:
+                                                11, // Explicitly set smaller font size
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1370,22 +1988,28 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                         ],
                         if (item.landmark != null && item.landmark!.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 4.0),
+                            padding: const EdgeInsets.only(bottom: 8.0),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Icon(
                                   Icons.flag,
-                                  size: 18,
+                                  size: 16, // Reduced icon size
                                   color: Colors.grey.shade600,
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     'Landmark: ${item.landmark}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(0.8),
+                                          fontSize:
+                                              11, // Explicitly set smaller font size
+                                        ),
                                   ),
                                 ),
                               ],
@@ -1394,22 +2018,28 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                         if (item.contactNumber != null &&
                             item.contactNumber!.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 4.0),
+                            padding: const EdgeInsets.only(bottom: 8.0),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Icon(
                                   Icons.phone,
-                                  size: 18,
+                                  size: 16, // Reduced icon size
                                   color: Colors.grey.shade600,
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     'Contact: ${item.contactNumber}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(0.8),
+                                          fontSize:
+                                              11, // Explicitly set smaller font size
+                                        ),
                                   ),
                                 ),
                               ],
@@ -1418,22 +2048,28 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                         if (item.contactPerson != null &&
                             item.contactPerson!.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 4.0),
+                            padding: const EdgeInsets.only(bottom: 8.0),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Icon(
                                   Icons.person,
-                                  size: 18,
+                                  size: 16, // Reduced icon size
                                   color: Colors.grey.shade600,
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     'Person: ${item.contactPerson}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(0.8),
+                                          fontSize:
+                                              11, // Explicitly set smaller font size
+                                        ),
                                   ),
                                 ),
                               ],
@@ -1450,8 +2086,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                     ),
                     child: Wrap(
                       alignment: WrapAlignment.end,
-                      spacing: 8.0,
-                      runSpacing: 4.0,
+                      spacing: 12.0,
+                      runSpacing: 8.0,
                       children: [
                         ElevatedButton(
                           onPressed: () {
@@ -1487,8 +2123,9 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                             ).colorScheme.onTertiary,
                             padding: const EdgeInsets.all(12),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
                             ),
+                            elevation: 2,
                           ),
                           child: const Icon(Icons.edit),
                         ),
@@ -1506,18 +2143,26 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                               backgroundColor: Theme.of(
                                 context,
                               ).colorScheme.secondary,
-                              foregroundColor: Colors.white,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSecondary,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
-                                vertical: 8,
+                                vertical: 12,
                               ),
-                              textStyle: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(fontWeight: FontWeight.bold),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(12),
                               ),
+                              elevation: 2,
                             ),
-                            child: Text('Add $nextLevelItemType'),
+                            child: Text(
+                              'Add $nextLevelItemType',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    // Smaller font for button label
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
                           ),
                         ElevatedButton(
                           onPressed: () =>
@@ -1526,11 +2171,14 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
                             backgroundColor: Theme.of(
                               context,
                             ).colorScheme.error,
-                            foregroundColor: Colors.white,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onError,
                             padding: const EdgeInsets.all(12),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
                             ),
+                            elevation: 2,
                           ),
                           child: const Icon(Icons.delete_outline),
                         ),
@@ -1589,18 +2237,27 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
           ),
           title: Text(
             'Confirm Delete',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              // Changed to titleSmall
+              color: Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           content: Text(
             'Are you sure you want to delete "$name"? This action cannot be undone.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall, // Changed to bodySmall
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: Colors.grey.shade700),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withOpacity(0.6),
               ),
+              child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -1623,11 +2280,13 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
               ),
-              child: const Text(
-                'Delete',
-                style: TextStyle(color: Colors.white),
-              ),
+              child: const Text('Delete'),
             ),
           ],
         );
@@ -1639,7 +2298,13 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.background,
-      appBar: AppBar(title: const Text('Manage Hierarchy'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('Manage Hierarchy'),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed:
             Provider.of<AppStateData>(context, listen: false).states.isNotEmpty
@@ -1648,157 +2313,186 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
         label: const Text('Add New Zone'),
         icon: const Icon(Icons.add),
         backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      body: SingleChildScrollView(
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Manage Substation Hierarchy',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 20),
-                Consumer<AppStateData>(
-                  builder: (context, appState, child) {
-                    if (appState.states.isEmpty) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Text(
-                            'No states loaded. Please ensure state_sql_command.txt is correct and loaded.',
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontStyle: FontStyle.italic,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
-                    }
-
-                    return StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('zones')
-                          .orderBy('stateName')
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return Center(
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: SingleChildScrollView(
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Manage Substation Hierarchy',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Consumer<AppStateData>(
+                    builder: (context, appState, child) {
+                      if (appState.states.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
                             child: Text(
-                              'Error: ${snapshot.error}',
+                              'No states loaded. Please ensure state_sql_command.txt is correct and loaded.',
                               style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.6),
+                                fontStyle: FontStyle.italic,
+                                fontSize: 11, // Reduced font size
                               ),
+                              textAlign: TextAlign.center,
                             ),
-                          );
-                        }
+                          ),
+                        );
+                      }
 
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-
-                        if (snapshot.data!.docs.isEmpty) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('zones')
+                            .orderBy('stateName')
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Center(
                               child: Text(
-                                'No zones found in any state. Click "Add New Zone" to get started!',
+                                'Error: ${snapshot.error}',
                                 style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontStyle: FontStyle.italic,
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontSize: 11, // Reduced font size
                                 ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          );
-                        }
-
-                        final Set<String> uniqueStatesInZones = {};
-                        for (var doc in snapshot.data!.docs) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          if (data.containsKey('stateName') &&
-                              data['stateName'] != null &&
-                              data['stateName'].isNotEmpty) {
-                            uniqueStatesInZones.add(data['stateName']);
-                          }
-                        }
-
-                        if (uniqueStatesInZones.isEmpty) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Text(
-                                'No zones with state information found. Add a zone with a state!',
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          );
-                        }
-
-                        final sortedStates = uniqueStatesInZones.toList()
-                          ..sort();
-
-                        return ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: sortedStates.length,
-                          itemBuilder: (context, index) {
-                            final stateName = sortedStates.elementAt(index);
-                            return Card(
-                              elevation: 2,
-                              margin: const EdgeInsets.symmetric(
-                                vertical: 8,
-                                horizontal: 0,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: ExpansionTile(
-                                key: ValueKey('state-$stateName'),
-                                leading: Icon(
-                                  Icons.map,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                title: Text(
-                                  stateName,
-                                  style: Theme.of(context).textTheme.titleLarge
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                      ),
-                                ),
-                                children: [
-                                  _buildHierarchyList<Zone>(
-                                    FirebaseFirestore.instance.collection(
-                                      'zones',
-                                    ),
-                                    Zone.fromFirestore,
-                                    stateNameFilter: stateName,
-                                    nextLevelItemType: 'Circle',
-                                  ),
-                                  const SizedBox(height: 8),
-                                ],
                               ),
                             );
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              ],
+                          }
+
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+
+                          if (snapshot.data!.docs.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  'No zones found in any state. Click "Add New Zone" to get started!',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.6),
+                                    fontStyle: FontStyle.italic,
+                                    fontSize: 11, // Reduced font size
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final Set<String> uniqueStatesInZones = {};
+                          for (var doc in snapshot.data!.docs) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            if (data.containsKey('stateName') &&
+                                data['stateName'] != null &&
+                                data['stateName'].isNotEmpty) {
+                              uniqueStatesInZones.add(data['stateName']);
+                            }
+                          }
+
+                          if (uniqueStatesInZones.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  'No zones with state information found. Add a zone with a state!',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.6),
+                                    fontStyle: FontStyle.italic,
+                                    fontSize: 11, // Reduced font size
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final sortedStates = uniqueStatesInZones.toList()
+                            ..sort();
+
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: sortedStates.length,
+                            itemBuilder: (context, index) {
+                              final stateName = sortedStates.elementAt(index);
+                              return Card(
+                                elevation: 2,
+                                margin: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                  horizontal: 0,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.1),
+                                  ),
+                                ),
+                                child: ExpansionTile(
+                                  key: ValueKey('state-$stateName'),
+                                  leading: Icon(
+                                    Icons.map,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    size: 24, // Reduced icon size
+                                  ),
+                                  title: Text(
+                                    stateName,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium // Changed to titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                        ),
+                                  ),
+                                  children: [
+                                    _buildHierarchyList<Zone>(
+                                      FirebaseFirestore.instance.collection(
+                                        'zones',
+                                      ),
+                                      Zone.fromFirestore,
+                                      stateNameFilter: stateName,
+                                      nextLevelItemType: 'Circle',
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
