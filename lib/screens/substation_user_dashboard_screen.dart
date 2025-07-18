@@ -38,6 +38,7 @@ class _SubstationUserDashboardScreenState
     _loadAccessibleSubstations();
 
     // Initialize TabController
+    // Ensure tabCount is calculated correctly before initializing _tabController
     final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
         ? 4
         : 3;
@@ -121,180 +122,165 @@ class _SubstationUserDashboardScreenState
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingSubstations) {
-      return const Center(child: CircularProgressIndicator());
-    } else if (_accessibleSubstations.isEmpty && !_isLoadingSubstations) {
-      // Only show message if loading is done and no substations
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 80,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Welcome, ${widget.currentUser.email}!',
-                style: Theme.of(context).textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Role: ${widget.currentUser.role.toString().split('.').last}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: Colors.grey.shade700),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'No substations assigned or found for your role. Please contact your administrator.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else {
-      // Determine if substation dropdown should be shown
-      // It should be shown if:
-      // 1. We are NOT on the "Assets" tab (index 3 for Subdivision Managers)
-      // 2. There's more than one accessible substation
-      // 3. Or if no substation has been selected yet (forcing selection for main tabs)
-      final bool shouldShowGlobalSubstationDropdown =
-          (_currentTabIndex < 3) && // Hide for Assets tab (index 3)
-          (_accessibleSubstations.length > 1 ||
-              _selectedSubstationForLogsheet == null);
+    // Determine the number of tabs here, before the Scaffold, as it's needed for TabController
+    final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
+        ? 4
+        : 3;
 
-      // Define the number of tabs conditionally
-      final int tabCount =
-          widget.currentUser.role == UserRole.subdivisionManager ? 4 : 3;
-
-      return DefaultTabController(
-        // DefaultTabController is fine, just access its controller
-        length: tabCount,
-        child: Column(
-          children: [
-            // Substation Dropdown (conditionally shown based on tab and selection)
-            if (shouldShowGlobalSubstationDropdown)
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: DropdownSearch<Substation>(
-                  popupProps: PopupProps.menu(
-                    showSearchBox: true,
-                    menuProps: MenuProps(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    searchFieldProps: TextFieldProps(
-                      decoration: InputDecoration(
-                        labelText: 'Search Substation',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                  ),
-                  dropdownDecoratorProps: DropDownDecoratorProps(
-                    dropdownSearchDecoration: InputDecoration(
-                      labelText: 'Select Substation',
-                      hintText: 'Choose a substation to view details',
-                      prefixIcon: const Icon(Icons.electrical_services),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  itemAsString: (Substation s) => s.name,
-                  selectedItem: _selectedSubstationForLogsheet,
-                  items: _accessibleSubstations,
-                  onChanged: (Substation? newValue) {
-                    setState(() {
-                      _selectedSubstationForLogsheet = newValue;
-                    });
-                  },
-                  validator: (value) =>
-                      value == null ? 'Please select a Substation' : null,
-                ),
-              ),
-            // TabBarView is now always rendered
-            Expanded(
-              child: TabBarView(
-                controller: _tabController, // Assign the controller
-                children: [
-                  // Operations (Hourly) Tab
-                  BayReadingsOverviewScreen(
-                    substationId:
-                        _selectedSubstationForLogsheet?.id ??
-                        '', // Pass ID, handle null in screen
-                    substationName:
-                        _selectedSubstationForLogsheet?.name ??
-                        'N/A', // Pass name, handle null
-                    currentUser: widget.currentUser,
-                    frequencyType: 'hourly',
-                  ),
-                  // Energy (Daily) Tab
-                  BayReadingsOverviewScreen(
-                    substationId: _selectedSubstationForLogsheet?.id ?? '',
-                    substationName:
-                        _selectedSubstationForLogsheet?.name ?? 'N/A',
-                    currentUser: widget.currentUser,
-                    frequencyType: 'daily',
-                  ),
-                  // Tripping & Shutdown Tab
-                  TrippingShutdownOverviewScreen(
-                    substationId: _selectedSubstationForLogsheet?.id ?? '',
-                    substationName:
-                        _selectedSubstationForLogsheet?.name ?? 'N/A',
-                    currentUser: widget.currentUser,
-                  ),
-                  // NEW: Subdivision Manager's Asset Management Tab
-                  if (widget.currentUser.role == UserRole.subdivisionManager)
-                    SubdivisionAssetManagementScreen(
-                      // Actual screen instance now
-                      subdivisionId:
-                          widget.currentUser.assignedLevels!['subdivisionId']!,
-                      currentUser: widget.currentUser,
-                      // selectedSubstationId is NOT passed here anymore
-                    ),
-                ],
-              ),
-            ),
-            // TabBar is now always rendered
-            Padding(
-              padding: EdgeInsets.zero, // No extra padding for the TabBar
-              child: TabBar(
-                controller: _tabController, // Assign the controller
-                labelColor: Theme.of(context).colorScheme.primary,
-                unselectedLabelColor: Colors.grey,
-                indicatorColor: Theme.of(context).colorScheme.primary,
-                tabs: [
-                  const Tab(
-                    text: 'Operations',
-                    icon: Icon(Icons.access_time_filled),
-                  ),
-                  const Tab(text: 'Energy', icon: Icon(Icons.electric_meter)),
-                  const Tab(
-                    text: 'Tripping & Shutdown',
-                    icon: Icon(Icons.warning),
-                  ),
-                  // Add the new tab only for subdivision managers
-                  if (widget.currentUser.role == UserRole.subdivisionManager)
-                    const Tab(text: 'Assets', icon: Icon(Icons.construction)),
-                ],
-              ),
-            ),
+    return Scaffold(
+      // <--- Added Scaffold here
+      appBar: AppBar(
+        title: const Text('Substation Dashboard'),
+        bottom: TabBar(
+          // Moved TabBar to AppBar.bottom for consistent display
+          controller: _tabController,
+          labelColor: Theme.of(context).colorScheme.primary,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Theme.of(context).colorScheme.primary,
+          tabs: [
+            const Tab(text: 'Operations', icon: Icon(Icons.access_time_filled)),
+            const Tab(text: 'Energy', icon: Icon(Icons.electric_meter)),
+            const Tab(text: 'Tripping & Shutdown', icon: Icon(Icons.warning)),
+            // Add the new tab only for subdivision managers
+            if (widget.currentUser.role == UserRole.subdivisionManager)
+              const Tab(text: 'Assets', icon: Icon(Icons.construction)),
           ],
         ),
-      );
-    }
+      ),
+      body: _isLoadingSubstations
+          ? const Center(child: CircularProgressIndicator())
+          : _accessibleSubstations.isEmpty && !_isLoadingSubstations
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 80,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Welcome, ${widget.currentUser.email}!',
+                      style: Theme.of(context).textTheme.titleLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Role: ${widget.currentUser.role.toString().split('.').last}',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'No substations assigned or found for your role. Please contact your administrator.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : Column(
+              // Use Column here to hold the dropdown and TabBarView
+              children: [
+                // Substation Dropdown (conditionally shown based on tab and selection)
+                if ((_currentTabIndex <
+                        tabCount -
+                            1) && // Hide for the last tab (Assets for SM, or Tripping for SU)
+                    (_accessibleSubstations.length > 1 ||
+                        _selectedSubstationForLogsheet == null))
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: DropdownSearch<Substation>(
+                      popupProps: PopupProps.menu(
+                        showSearchBox: true,
+                        menuProps: MenuProps(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        searchFieldProps: TextFieldProps(
+                          decoration: InputDecoration(
+                            labelText: 'Search Substation',
+                            prefixIcon: const Icon(Icons.search),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      dropdownDecoratorProps: DropDownDecoratorProps(
+                        dropdownSearchDecoration: InputDecoration(
+                          labelText: 'Select Substation',
+                          hintText: 'Choose a substation to view details',
+                          prefixIcon: const Icon(Icons.electrical_services),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      itemAsString: (Substation s) => s.name,
+                      selectedItem: _selectedSubstationForLogsheet,
+                      items: _accessibleSubstations,
+                      onChanged: (Substation? newValue) {
+                        setState(() {
+                          _selectedSubstationForLogsheet = newValue;
+                        });
+                      },
+                      validator: (value) =>
+                          value == null ? 'Please select a Substation' : null,
+                    ),
+                  ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // Operations (Hourly) Tab
+                      BayReadingsOverviewScreen(
+                        substationId:
+                            _selectedSubstationForLogsheet?.id ??
+                            '', // Pass ID, handle null in screen
+                        substationName:
+                            _selectedSubstationForLogsheet?.name ??
+                            'N/A', // Pass name, handle null
+                        currentUser: widget.currentUser,
+                        frequencyType: 'hourly',
+                      ),
+                      // Energy (Daily) Tab
+                      BayReadingsOverviewScreen(
+                        substationId: _selectedSubstationForLogsheet?.id ?? '',
+                        substationName:
+                            _selectedSubstationForLogsheet?.name ?? 'N/A',
+                        currentUser: widget.currentUser,
+                        frequencyType: 'daily',
+                      ),
+                      // Tripping & Shutdown Tab
+                      TrippingShutdownOverviewScreen(
+                        substationId: _selectedSubstationForLogsheet?.id ?? '',
+                        substationName:
+                            _selectedSubstationForLogsheet?.name ?? 'N/A',
+                        currentUser: widget.currentUser,
+                      ),
+                      // NEW: Subdivision Manager's Asset Management Tab
+                      if (widget.currentUser.role ==
+                          UserRole.subdivisionManager)
+                        SubdivisionAssetManagementScreen(
+                          subdivisionId: widget
+                              .currentUser
+                              .assignedLevels!['subdivisionId']!,
+                          currentUser: widget.currentUser,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
   }
 }
