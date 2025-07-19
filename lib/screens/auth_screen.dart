@@ -200,7 +200,7 @@ class _AuthScreenState extends State<AuthScreen>
                       children: [
                         // App Logo
                         Image.asset(
-                          'assets/app_logo.png', // Replace with your app logo
+                          'assets/logo.png', // Replace with your app logo
                           height: 80,
                           width: 80,
                           semanticLabel: 'App Logo',

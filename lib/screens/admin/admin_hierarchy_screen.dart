@@ -7,9 +7,12 @@ import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart'; // Contains StateModel and CityModel
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart'; // Required for Consumer and Provider.of
-import '../../models/bay_model.dart';
+// REMOVED: import '../../models/bay_model.dart'; // No longer needed
+import '../../models/user_model.dart'; // Assuming AppUser model exists
+import '../../utils/snackbar_utils.dart'; // Assuming SnackBarUtils exists
 import 'package:flutter/foundation.dart'; // Import for debugPrint
 
+// --- _AddEditHierarchyItemForm ---
 class _AddEditHierarchyItemForm extends StatefulWidget {
   final String itemType;
   final String? parentId;
@@ -47,27 +50,31 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
   final TextEditingController landmarkController = TextEditingController();
   final TextEditingController contactNumberController = TextEditingController();
   final TextEditingController contactPersonController = TextEditingController();
-  final TextEditingController addressController =
-      TextEditingController(); // New: General address controller
+  final TextEditingController addressController = TextEditingController();
   final TextEditingController substationAddressController =
-      TextEditingController(); // Kept for specific substation address if needed
+      TextEditingController();
   final TextEditingController statusDescriptionController =
       TextEditingController();
   final TextEditingController voltageLevelController = TextEditingController();
   final TextEditingController typeController = TextEditingController();
   final TextEditingController sasMakeController = TextEditingController();
-  final TextEditingController multiplyingFactorController =
-      TextEditingController();
+  // REMOVED: final TextEditingController multiplyingFactorController = TextEditingController();
 
   Timestamp? commissioningDate;
-  String? bottomSheetSelectedState;
-  String? bottomSheetSelectedCompany; // New: To select parent company for Zone
+  String?
+  bottomSheetSelectedState; // Stores StateModel.id.toString() (e.g., "34.0")
+  String? bottomSheetSelectedCompany;
+  String? bottomSheetSelectedZone;
+  String? bottomSheetSelectedCircle;
+  String? bottomSheetSelectedDivision;
+  String? bottomSheetSelectedSubdivision;
+
   double? selectedCityId;
-  String? selectedCityName;
+  String? selectedCityName; // Used for displaying city name in DropdownSearch
   String? selectedVoltageLevel;
-  String? selectedBayType;
+  // REMOVED: String? selectedBayType;
   String? selectedContactDesignation;
-  String? selectedOperation; // New: For Operation dropdown
+  String? selectedOperation;
   String? selectedStatus;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -81,18 +88,12 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
     'Control Room',
   ];
 
-  final List<String> bayTypes = [
-    'Line',
-    'Transformer',
-    'Feeder',
-    'Capacitor Bank',
-    'Reactor',
-    'Bus Coupler',
-    'Busbar',
-  ];
+  // REMOVED: final List<String> bayTypes = [...];
 
-  // List for Operation dropdown
   final List<String> operationTypes = ['Manual', 'SAS'];
+
+  // Add a boolean flag to track if initialization is complete
+  bool _isInitializing = true;
 
   @override
   void initState() {
@@ -106,7 +107,18 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
       curve: Curves.easeInOut,
     );
     _animationController.forward();
-    _initializeFormFields();
+
+    // Delay initialization until after the first frame to ensure context is available
+    // and Provider data (`AppStateData`) has had a chance to load.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeFormFields().then((_) {
+        if (mounted) {
+          setState(() {
+            _isInitializing = false; // Mark initialization as complete
+          });
+        }
+      });
+    });
   }
 
   @override
@@ -116,13 +128,13 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
     landmarkController.dispose();
     contactNumberController.dispose();
     contactPersonController.dispose();
-    addressController.dispose(); // Dispose the new address controller
+    addressController.dispose();
     substationAddressController.dispose();
     voltageLevelController.dispose();
     typeController.dispose();
     sasMakeController.dispose();
     statusDescriptionController.dispose();
-    multiplyingFactorController.dispose();
+    // REMOVED: multiplyingFactorController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -131,6 +143,8 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
     debugPrint(
       'DEBUG: _AddEditHierarchyItemFormState: Initializing form for itemType: ${widget.itemType}',
     );
+
+    // Common fields initialization (for editing existing items)
     if (widget.itemToEdit != null) {
       debugPrint(
         'DEBUG: _AddEditHierarchyItemFormState: Item to edit found: ${widget.itemToEdit!.name} (ID: ${widget.itemToEdit!.id})',
@@ -141,229 +155,230 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
       contactNumberController.text = widget.itemToEdit!.contactNumber ?? '';
       contactPersonController.text = widget.itemToEdit!.contactPerson ?? '';
       selectedContactDesignation = widget.itemToEdit!.contactDesignation;
-      addressController.text =
-          widget.itemToEdit!.address ?? ''; // Initialize general address
+      addressController.text = widget.itemToEdit!.address ?? '';
 
-      if (widget.itemToEdit is AppScreenState) {
-        bottomSheetSelectedState = (widget.itemToEdit as AppScreenState).name;
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Editing AppScreenState: $bottomSheetSelectedState',
-        );
-      } else if (widget.itemToEdit is Company) {
-        bottomSheetSelectedState = (widget.itemToEdit as Company).stateId;
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Editing Company, stateId: $bottomSheetSelectedState',
-        );
-      } else if (widget.itemToEdit is Zone) {
-        bottomSheetSelectedCompany = (widget.itemToEdit as Zone).companyId;
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Editing Zone, companyId: $bottomSheetSelectedCompany',
-        );
-        if (bottomSheetSelectedCompany != null) {
-          String? derivedState = await _findStateNameForCompany(
-            bottomSheetSelectedCompany!,
-          );
-          if (mounted) {
-            setState(() {
-              bottomSheetSelectedState = derivedState;
-            });
-            debugPrint(
-              'DEBUG: _AddEditHierarchyItemFormState: Derived state for Zone: $bottomSheetSelectedState',
-            );
-          }
-        }
-      } else if (widget.itemToEdit is Bay) {
-        final bay = widget.itemToEdit as Bay;
-        multiplyingFactorController.text =
-            bay.multiplyingFactor?.toString() ?? '';
-        selectedBayType = bay.bayType;
-        selectedVoltageLevel = bay.voltageLevel;
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Editing Bay, type: $selectedBayType, voltage: $selectedVoltageLevel',
-        );
-      } else if (widget.itemToEdit is Substation) {
-        Substation substation = widget.itemToEdit as Substation;
-        substationAddressController.text =
-            substation.address ?? ''; // Substation specific address
-        voltageLevelController.text = substation.voltageLevel ?? '';
-        typeController.text = substation.type ?? '';
-        sasMakeController.text = substation.sasMake ?? '';
-        commissioningDate = substation.commissioningDate;
-        selectedVoltageLevel = substation.voltageLevel;
-        selectedOperation =
-            substation.operation; // Initialize from existing data
-        if (selectedOperation == 'SAS') {
-          _animationController.forward(); // Show SAS Make field if SAS
-        }
-        selectedStatus = substation.status;
-        statusDescriptionController.text = substation.statusDescription ?? '';
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Editing Substation, voltage: $selectedVoltageLevel, type: ${substation.type}, operation: ${substation.operation}',
-        );
+      // Set specific fields for Substation if editing a Substation
+      if (widget.itemToEdit is Substation) {
+        final item = widget.itemToEdit as Substation;
+        substationAddressController.text = item.address ?? '';
+        voltageLevelController.text = item.voltageLevel ?? '';
+        typeController.text = item.type ?? '';
+        sasMakeController.text = item.sasMake ?? '';
+        commissioningDate = item.commissioningDate;
+        selectedVoltageLevel = item.voltageLevel;
+        selectedOperation = item.operation;
+        selectedStatus = item.status;
+        statusDescriptionController.text = item.statusDescription ?? '';
 
-        if (substation.subdivisionId != null) {
-          String? derivedCompanyId = await _findCompanyIdForSubdivision(
-            substation.subdivisionId!,
-          );
-          if (derivedCompanyId != null) {
-            bottomSheetSelectedCompany = derivedCompanyId;
-            String? derivedState = await _findStateNameForCompany(
-              derivedCompanyId,
-            );
-            if (mounted) {
-              setState(() {
-                bottomSheetSelectedState = derivedState;
-              });
-              debugPrint(
-                'DEBUG: _AddEditHierarchyItemFormState: Derived company and state for Substation: $bottomSheetSelectedCompany, $bottomSheetSelectedState',
-              );
-            }
-          }
-        }
-
-        if (substation.cityId != null) {
-          selectedCityId = double.tryParse(substation.cityId!);
+        if (item.cityId != null) {
+          selectedCityId = double.tryParse(item.cityId!);
+          // Access AppStateData after first frame to ensure it's initialized
           final appState = Provider.of<AppStateData>(context, listen: false);
           final city = appState.allCityModels.firstWhere(
             (c) => c.id == selectedCityId,
             orElse: () => CityModel(id: -1, name: '', stateId: -1),
           );
-          if (city.id != -1) {
-            selectedCityName = city.name;
-            debugPrint(
-              'DEBUG: _AddEditHierarchyItemFormState: Selected city for Substation: $selectedCityName (ID: $selectedCityId)',
-            );
-          }
+          if (city.id != -1) selectedCityName = city.name;
         }
       }
     } else {
       debugPrint('DEBUG: _AddEditHierarchyItemFormState: Adding new item.');
-      // For new items, pre-select parent if available from widget.parentId
-      if (widget.parentCollectionName == 'appscreenstates') {
-        bottomSheetSelectedState = widget.parentId;
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Pre-selected state from parentId: $bottomSheetSelectedState',
+      selectedOperation = 'Manual'; // Default for new substations
+      selectedStatus = 'Working'; // Default for new substations
+    }
+
+    String?
+    directParentIdFromFirestore; // This will hold the actual Firestore ID of the direct parent
+    String?
+    directParentCollection; // This will hold the collection name of the direct parent
+
+    if (widget.itemToEdit != null) {
+      // When editing, retrieve the direct parent's ID and collection from the itemToEdit itself
+      if (widget.itemToEdit is Company) {
+        // For Company, its stateId is the document ID (name) of the state.
+        directParentIdFromFirestore = (widget.itemToEdit as Company).stateId;
+        directParentCollection = 'appscreenstates';
+      } else if (widget.itemToEdit is Zone) {
+        directParentIdFromFirestore = (widget.itemToEdit as Zone).companyId;
+        directParentCollection = 'companys';
+      } else if (widget.itemToEdit is Circle) {
+        directParentIdFromFirestore = (widget.itemToEdit as Circle).zoneId;
+        directParentCollection = 'zones';
+      } else if (widget.itemToEdit is Division) {
+        directParentIdFromFirestore = (widget.itemToEdit as Division).circleId;
+        directParentCollection = 'circles';
+      } else if (widget.itemToEdit is Subdivision) {
+        directParentIdFromFirestore =
+            (widget.itemToEdit as Subdivision).divisionId;
+        directParentCollection = 'divisions';
+      } else if (widget.itemToEdit is Substation) {
+        directParentIdFromFirestore =
+            (widget.itemToEdit as Substation).subdivisionId;
+        directParentCollection = 'subdivisions';
+      }
+    } else if (widget.parentId != null && widget.parentCollectionName != null) {
+      // When adding, use the provided parentId and parentCollectionName
+      directParentIdFromFirestore = widget.parentId;
+      directParentCollection = widget.parentCollectionName;
+    }
+
+    // Now, use the identified direct parent to find the full ancestry of IDs
+    if (directParentIdFromFirestore != null && directParentCollection != null) {
+      final appState = Provider.of<AppStateData>(context, listen: false);
+
+      if (directParentCollection == 'appscreenstates') {
+        // If the direct parent is an AppScreenState, its Firestore ID is its name.
+        // We need to convert this name to the numeric ID for `bottomSheetSelectedState`.
+        final stateNameFromFirestore = directParentIdFromFirestore;
+        final stateModel = appState.allStateModels.firstWhere(
+          (s) => s.name == stateNameFromFirestore,
+          orElse: () => StateModel(id: -1, name: ''), // Fallback
         );
-      } else if (widget.parentCollectionName == 'companys') {
-        // Corrected
-        bottomSheetSelectedCompany = widget.parentId;
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Pre-selected company from parentId: $bottomSheetSelectedCompany',
-        );
-        if (bottomSheetSelectedCompany != null) {
-          String? derivedState = await _findStateNameForCompany(
-            bottomSheetSelectedCompany!,
-          );
+        if (stateModel.id != -1) {
           if (mounted) {
             setState(() {
-              bottomSheetSelectedState = derivedState;
-            });
-            debugPrint(
-              'DEBUG: _AddEditHierarchyItemFormState: Derived state for new item: $bottomSheetSelectedState',
-            );
-          }
-        }
-      } else if (widget.parentCollectionName == 'subdivisions' &&
-          widget.parentId != null) {
-        String? derivedCompanyId = await _findCompanyIdForSubdivision(
-          widget.parentId!,
-        );
-        if (derivedCompanyId != null) {
-          bottomSheetSelectedCompany = derivedCompanyId;
-          String? derivedState = await _findStateNameForCompany(
-            derivedCompanyId,
-          );
-          if (mounted) {
-            setState(() {
-              bottomSheetSelectedState = derivedState;
-            });
-            debugPrint(
-              'DEBUG: _AddEditHierarchyItemFormState: Derived company and state for new item: $bottomSheetSelectedCompany, $bottomSheetSelectedState',
-            );
-          }
-        }
-      }
-      selectedOperation = 'Manual'; // Default to Manual for new substations
-      selectedStatus = 'Working'; // Default to Working for new substations
-    }
-  }
-
-  Future<String?> _findStateNameForCompany(String companyId) async {
-    debugPrint(
-      'DEBUG: _AddEditHierarchyItemFormState: _findStateNameForCompany called for companyId: $companyId',
-    );
-    try {
-      DocumentSnapshot companyDoc = await FirebaseFirestore.instance
-          .collection('companys') // Corrected
-          .doc(companyId)
-          .get();
-      debugPrint(
-        'DEBUG: _AddEditHierarchyItemFormState: Company doc exists: ${companyDoc.exists}, data: ${companyDoc.data()}',
-      );
-      if (companyDoc.exists && companyDoc.data() != null) {
-        return (companyDoc.data() as Map<String, dynamic>)['stateId'];
-      }
-    } catch (e) {
-      debugPrint(
-        "ERROR: _AddEditHierarchyItemFormState: Error finding state for company $companyId: $e",
-      );
-    }
-    return null;
-  }
-
-  Future<String?> _findCompanyIdForSubdivision(String subdivisionId) async {
-    debugPrint(
-      'DEBUG: _AddEditHierarchyItemFormState: _findCompanyIdForSubdivision called for subdivisionId: $subdivisionId',
-    );
-    try {
-      DocumentSnapshot subdivisionDoc = await FirebaseFirestore.instance
-          .collection('subdivisions')
-          .doc(subdivisionId)
-          .get();
-      debugPrint(
-        'DEBUG: _AddEditHierarchyItemFormState: Subdivision doc exists: ${subdivisionDoc.exists}, data: ${subdivisionDoc.data()}',
-      );
-      if (subdivisionDoc.exists && subdivisionDoc.data() != null) {
-        String? divisionId =
-            (subdivisionDoc.data() as Map<String, dynamic>)['divisionId'];
-        debugPrint(
-          'DEBUG: _AddEditHierarchyItemFormState: Derived divisionId: $divisionId',
-        );
-        if (divisionId != null) {
-          DocumentSnapshot divisionDoc = await FirebaseFirestore.instance
-              .collection('divisions')
-              .doc(divisionId)
-              .get();
-          debugPrint(
-            'DEBUG: _AddEditHierarchyItemFormState: Division doc exists: ${divisionDoc.exists}, data: ${divisionDoc.data()}',
-          );
-          if (divisionDoc.exists && divisionDoc.data() != null) {
-            String? circleId =
-                (divisionDoc.data() as Map<String, dynamic>)['circleId'];
-            debugPrint(
-              'DEBUG: _AddEditHierarchyItemFormState: Derived circleId: $circleId',
-            );
-            if (circleId != null) {
-              DocumentSnapshot circleDoc = await FirebaseFirestore.instance
-                  .collection('circles')
-                  .doc(circleId)
-                  .get();
+              bottomSheetSelectedState = stateModel.id.toString();
               debugPrint(
-                'DEBUG: _AddEditHierarchyItemFormState: Circle doc exists: ${circleDoc.exists}, data: ${circleDoc.data()}',
+                'DEBUG: Initialized State to ID: $bottomSheetSelectedState (from name: $stateNameFromFirestore)',
               );
-              if (circleDoc.exists && circleDoc.data() != null) {
-                return (circleDoc.data() as Map<String, dynamic>)['companyId'];
-              }
-            }
+            });
           }
+        } else {
+          debugPrint(
+            'WARNING: _initializeFormFields: State name "$stateNameFromFirestore" (from Firestore) not found in AppStateData.',
+          );
+        }
+      } else {
+        // For other hierarchy levels, _findParentHierarchy will get the chain of parent IDs.
+        final Map<String, String?> parents = await _findParentHierarchy(
+          directParentCollection,
+          directParentIdFromFirestore,
+        );
+
+        if (mounted) {
+          setState(() {
+            // Apply IDs to all relevant dropdowns.
+            // For 'stateId', ensure we fetch the numeric ID from AppStateData if `parents['stateId']` is a name.
+            if (parents['stateId'] != null) {
+              final stateModel = appState.allStateModels.firstWhere(
+                (s) =>
+                    s.name ==
+                    parents['stateId'], // Assuming parents['stateId'] is the state name from AppScreenState document
+                orElse: () => StateModel(id: -1, name: ''),
+              );
+              if (stateModel.id != -1) {
+                bottomSheetSelectedState = stateModel.id.toString();
+                debugPrint(
+                  'DEBUG: Initialized State to ID: $bottomSheetSelectedState (from _findParentHierarchy name: ${parents['stateId']})',
+                );
+              } else {
+                debugPrint(
+                  'WARNING: _initializeFormFields: State ID from hierarchy (${parents['stateId']}) not found in AppStateData for parent chain.',
+                );
+              }
+            } else {
+              bottomSheetSelectedState = null; // No state found in hierarchy
+            }
+
+            bottomSheetSelectedCompany = parents['companyId'];
+            bottomSheetSelectedZone = parents['zoneId'];
+            bottomSheetSelectedCircle = parents['circleId'];
+            bottomSheetSelectedDivision = parents['divisionId'];
+            bottomSheetSelectedSubdivision = parents['subdivisionId'];
+          });
+        }
+      }
+    }
+
+    // Mark initialization complete
+    if (mounted) {
+      setState(() {
+        _isInitializing = false;
+      });
+    }
+  }
+
+  Future<Map<String, String?>> _findParentHierarchy(
+    String childCollection,
+    String childId,
+  ) async {
+    Map<String, String?> hierarchy = {};
+    try {
+      DocumentSnapshot childDoc = await FirebaseFirestore.instance
+          .collection(childCollection)
+          .doc(childId)
+          .get();
+
+      if (!childDoc.exists || childDoc.data() == null) {
+        debugPrint(
+          'WARNING: _findParentHierarchy: Child doc $childId in $childCollection not found.',
+        );
+        return hierarchy;
+      }
+
+      final data = childDoc.data() as Map<String, dynamic>;
+
+      // Recursively find all parents up the chain
+      // Note: For 'appscreenstates', the 'id' of the StateModel is a double,
+      // but the Firestore document ID is the state name string.
+      // So, data['stateId'] from Company will be the state *name*.
+      // We need to return this 'name' as stateId here, and convert it later
+      // when assigning to bottomSheetSelectedState.
+      if (childCollection == 'companys') {
+        hierarchy['stateId'] =
+            data['stateId']; // This will be the state name (e.g., "Uttar Pradesh")
+      } else if (childCollection == 'zones') {
+        hierarchy['companyId'] = data['companyId'];
+        if (data['companyId'] != null) {
+          final companyParents = await _findParentHierarchy(
+            'companys',
+            data['companyId'],
+          );
+          hierarchy.addAll(companyParents);
+        }
+      } else if (childCollection == 'circles') {
+        hierarchy['zoneId'] = data['zoneId'];
+        if (data['zoneId'] != null) {
+          final zoneParents = await _findParentHierarchy(
+            'zones',
+            data['zoneId'],
+          );
+          hierarchy.addAll(zoneParents);
+        }
+      } else if (childCollection == 'divisions') {
+        hierarchy['circleId'] = data['circleId'];
+        if (data['circleId'] != null) {
+          final circleParents = await _findParentHierarchy(
+            'circles',
+            data['circleId'],
+          );
+          hierarchy.addAll(circleParents);
+        }
+      } else if (childCollection == 'subdivisions') {
+        hierarchy['divisionId'] = data['divisionId'];
+        if (data['divisionId'] != null) {
+          final divisionParents = await _findParentHierarchy(
+            'divisions',
+            data['divisionId'],
+          );
+          hierarchy.addAll(divisionParents);
+        }
+      } else if (childCollection == 'substations') {
+        hierarchy['subdivisionId'] = data['subdivisionId'];
+        if (data['subdivisionId'] != null) {
+          final subdivisionParents = await _findParentHierarchy(
+            'subdivisions',
+            data['subdivisionId'],
+          );
+          hierarchy.addAll(subdivisionParents);
         }
       }
     } catch (e) {
       debugPrint(
-        "ERROR: _AddEditHierarchyItemFormState: Error finding company for subdivision $subdivisionId: $e",
+        "ERROR: _findParentHierarchy: Error finding parent hierarchy for $childCollection/$childId: $e",
       );
     }
-    return null;
+    return hierarchy;
   }
 
   Future<void> _selectCommissioningDate(BuildContext context) async {
@@ -409,6 +424,19 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
     debugPrint(
       'DEBUG: _AddEditHierarchyItemFormState: Building form for itemType: ${widget.itemType}, isEditing: $isEditing',
     );
+
+    // Show a loading indicator if initialization is still in progress
+    if (_isInitializing) {
+      return Container(
+        height: 200, // Or adjust as needed
+        alignment: Alignment.center,
+        child: const CircularProgressIndicator(),
+      );
+    }
+
+    // Get AppStateData for dropdowns
+    final appState = Provider.of<AppStateData>(context);
+
     return FadeTransition(
       opacity: _fadeAnimation,
       child: Padding(
@@ -442,11 +470,10 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  // Updated Text for 'Add New State'
                   isEditing
                       ? 'Edit ${widget.itemType}'
                       : widget.itemType == 'AppScreenState'
-                      ? 'Add New State' // Specific text for adding states
+                      ? 'Add New State'
                       : 'Add New ${widget.itemType}',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
@@ -471,10 +498,13 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Conditional input for AppScreenState
+                      // Conditional input for AppScreenState (only for adding a new top-level state)
+                      // This dropdown is for selecting a *name* to be the document ID for the state.
                       if (widget.itemType == 'AppScreenState')
                         DropdownSearch<String>(
-                          selectedItem: bottomSheetSelectedState,
+                          selectedItem: nameController.text.isNotEmpty
+                              ? nameController.text
+                              : null, // Set name directly
                           popupProps: PopupProps.menu(
                             showSearchBox: true,
                             menuProps: MenuProps(
@@ -513,14 +543,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           ),
                           itemAsString: (String s) => s,
                           asyncItems: (String filter) async {
-                            debugPrint(
-                              'DEBUG: DropdownSearch: Fetching states for filter: "$filter"',
-                            );
-                            final appState = Provider.of<AppStateData>(
-                              context,
-                              listen: false,
-                            );
-                            // Get existing states in Firestore to filter out already added states
                             final existingFirestoreStates =
                                 await FirebaseFirestore.instance
                                     .collection('appscreenstates')
@@ -529,32 +551,26 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                       (snapshot) => snapshot.docs
                                           .map((doc) => doc.id)
                                           .toSet(),
-                                    ); // Assuming doc.id is the state name
-                            debugPrint(
-                              'DEBUG: DropdownSearch: Found ${existingFirestoreStates.length} existing Firestore states.',
-                            );
-
-                            // Filter available states by search query and exclude already added states
+                                    );
                             final filteredStates = appState.states
                                 .where(
                                   (stateName) =>
                                       stateName.toLowerCase().contains(
                                         filter.toLowerCase(),
                                       ) &&
+                                      // Only show states not already in Firestore as a top-level item
                                       !existingFirestoreStates.contains(
                                         stateName,
                                       ),
                                 )
                                 .toList();
-                            debugPrint(
-                              'DEBUG: DropdownSearch: Returning ${filteredStates.length} filtered states.',
-                            );
                             return filteredStates;
                           },
                           dropdownDecoratorProps: DropDownDecoratorProps(
                             dropdownSearchDecoration: InputDecoration(
-                              labelText: 'Select State',
-                              hintText: 'Choose a state to add',
+                              labelText: 'Select State Name',
+                              hintText:
+                                  'Choose a state name for the new record',
                               prefixIcon: Icon(
                                 Icons.map,
                                 color: Theme.of(context).colorScheme.primary,
@@ -578,28 +594,28 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                 ),
                               ),
                               helperText:
-                                  'Search or select a state from the list',
+                                  'Search or select a state from the list to create a top-level entry',
                             ),
                           ),
                           onChanged: (String? newValue) {
                             setState(() {
+                              // For AppScreenState, the name *is* the ID in Firestore, and the display value.
+                              // So, we set both nameController and bottomSheetSelectedState to the name.
+                              nameController.text = newValue ?? '';
                               bottomSheetSelectedState = newValue;
-                              nameController.text =
-                                  newValue ??
-                                  ''; // Set nameController for form submission
                               debugPrint(
-                                'DEBUG: DropdownSearch: Selected state: $newValue',
+                                'DEBUG: AppScreenState selected: $newValue',
                               );
                             });
                           },
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Please select a state';
+                              return 'Please select a state name';
                             }
                             return null;
                           },
                         ),
-                      // General name field for other hierarchy items
+                      // General name field for other hierarchy items (Company, Zone, etc.)
                       if (widget.itemType != 'AppScreenState')
                         TextFormField(
                           controller: nameController,
@@ -637,51 +653,24 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           },
                         ),
 
-                      // Start of conditional fields for various item types
-                      // Fields for Company, Zone, Substation (parent state selection)
-                      if (widget.itemType == 'Company' ||
-                          widget.itemType == 'Substation' ||
-                          widget.itemType == 'Zone') ...[
+                      // Parent State selection (AppScreenState is excluded as it's the top level)
+                      if (widget.itemType != 'AppScreenState') ...[
                         const SizedBox(height: 16),
-                        // This dropdown is for selecting the PARENT state (from already added states in Firestore)
-                        StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance
-                              .collection('appscreenstates')
-                              .orderBy('name')
-                              .snapshots(),
-                          builder: (context, snapshot) {
-                            debugPrint(
-                              'DEBUG: Parent State Dropdown: StreamBuilder status: ${snapshot.connectionState}, hasError: ${snapshot.hasError}, hasData: ${snapshot.hasData}',
-                            );
-                            if (snapshot.hasError) {
-                              debugPrint(
-                                'ERROR: Parent State Dropdown: ${snapshot.error}',
-                              );
-                              return Text(
-                                'Error loading states: ${snapshot.error}',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                  fontSize: 11,
-                                ),
-                              );
-                            }
-                            if (!snapshot.hasData ||
-                                snapshot.data!.docs.isEmpty) {
-                              debugPrint(
-                                'DEBUG: Parent State Dropdown: No states found or data not yet available. Docs count: ${snapshot.hasData ? snapshot.data!.docs.length : "N/A"}',
-                              );
-                              return const Text(
-                                'No states found in hierarchy. Please add states first.',
-                              );
-                            }
-                            final statesInHierarchy = snapshot.data!.docs
-                                .map((doc) => AppScreenState.fromFirestore(doc))
-                                .toList();
-                            debugPrint(
-                              'DEBUG: Parent State Dropdown: Loaded ${statesInHierarchy.length} states from Firestore.',
-                            );
-                            return DropdownButtonFormField<String>(
-                              value: bottomSheetSelectedState,
+                        InkWell(
+                          onTap: bottomSheetSelectedState != null && isEditing
+                              ? () {
+                                  SnackBarUtils.showSnackBar(
+                                    context,
+                                    'State is pre-filled and cannot be changed for existing items.',
+                                  );
+                                }
+                              : null,
+                          child: AbsorbPointer(
+                            absorbing:
+                                bottomSheetSelectedState != null && isEditing,
+                            child: DropdownButtonFormField<String>(
+                              value:
+                                  bottomSheetSelectedState, // This MUST be the StateModel.id.toString()
                               decoration: InputDecoration(
                                 labelText: 'Parent State',
                                 prefixIcon: Icon(
@@ -711,12 +700,12 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                 ),
                               ),
                               isExpanded: true,
-                              items: statesInHierarchy.map((stateItem) {
+                              items: appState.allStateModels.map((stateItem) {
                                 return DropdownMenuItem<String>(
-                                  value: stateItem
-                                      .id, // Use the Firestore document ID (state name in this case)
+                                  value: stateItem.id
+                                      .toString(), // Value is the numeric ID as a string
                                   child: Text(
-                                    stateItem.name,
+                                    stateItem.name, // Display is the state name
                                     overflow: TextOverflow.ellipsis,
                                     maxLines: 1,
                                     style: Theme.of(
@@ -725,58 +714,72 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                   ),
                                 );
                               }).toList(),
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  bottomSheetSelectedState = newValue;
-                                  selectedCityId = null;
-                                  selectedCityName = null;
-                                  bottomSheetSelectedCompany = null;
-                                  debugPrint(
-                                    'DEBUG: Parent State selected: $newValue',
-                                  );
-                                });
-                              },
+                              onChanged:
+                                  isEditing // Disable onChanged if editing
+                                  ? null
+                                  : (String? newValue) {
+                                      setState(() {
+                                        bottomSheetSelectedState = newValue;
+                                        // Reset all dependent dropdowns when state changes
+                                        bottomSheetSelectedCompany = null;
+                                        bottomSheetSelectedZone = null;
+                                        bottomSheetSelectedCircle = null;
+                                        bottomSheetSelectedDivision = null;
+                                        bottomSheetSelectedSubdivision = null;
+                                        selectedCityId = null;
+                                        selectedCityName = null;
+                                        debugPrint(
+                                          'DEBUG: Parent State selected: $newValue',
+                                        );
+                                      });
+                                    },
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
                                   return 'Please select a parent state';
                                 }
                                 return null;
                               },
-                            );
-                          },
+                            ),
+                          ),
                         ),
                       ],
 
-                      // Company selection for Zone and Substation
-                      if (widget.itemType == 'Zone' ||
-                          widget.itemType == 'Substation') ...[
+                      // Company selection
+                      if (widget.itemType != 'AppScreenState' &&
+                          widget.itemType != 'Company') ...[
                         const SizedBox(height: 16),
                         StreamBuilder<QuerySnapshot>(
                           stream: FirebaseFirestore.instance
-                              .collection('companys') // Corrected to 'companys'
+                              .collection('companys')
                               .where(
                                 'stateId',
-                                isEqualTo: bottomSheetSelectedState,
+                                isEqualTo: bottomSheetSelectedState != null
+                                    ? appState.allStateModels
+                                          .firstWhere(
+                                            (s) =>
+                                                s.id.toString() ==
+                                                bottomSheetSelectedState,
+                                            orElse: () =>
+                                                StateModel(id: -1, name: ''),
+                                          )
+                                          .name // Convert ID back to name for Firestore query
+                                    : null,
                               )
                               .orderBy('name')
                               .snapshots(),
                           builder: (context, snapshot) {
-                            debugPrint(
-                              'DEBUG: Company Dropdown: StreamBuilder status: ${snapshot.connectionState}, hasError: ${snapshot.hasError}, hasData: ${snapshot.hasData}, stateIdFilter: $bottomSheetSelectedState',
-                            );
                             if (snapshot.hasError) {
-                              debugPrint(
-                                'ERROR: Company Dropdown: ${snapshot.error}',
-                              );
                               return Text(
                                 'Error loading companies: ${snapshot.error}',
                               );
                             }
+                            if (bottomSheetSelectedState == null) {
+                              return const Text(
+                                'Select a state first to load companies.',
+                              );
+                            }
                             if (!snapshot.hasData ||
                                 snapshot.data!.docs.isEmpty) {
-                              debugPrint(
-                                'DEBUG: Company Dropdown: No companies found or data not yet available. Docs count: ${snapshot.hasData ? snapshot.data!.docs.length : "N/A"}',
-                              );
                               return const Text(
                                 'No companies available for the selected state.',
                               );
@@ -784,215 +787,595 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             final companies = snapshot.data!.docs
                                 .map((doc) => Company.fromFirestore(doc))
                                 .toList();
-                            debugPrint(
-                              'DEBUG: Company Dropdown: Loaded ${companies.length} companies from Firestore.',
-                            );
-                            return DropdownButtonFormField<String>(
-                              value: bottomSheetSelectedCompany,
-                              decoration: InputDecoration(
-                                labelText: 'Select Company',
-                                prefixIcon: Icon(
-                                  Icons.business,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                helperText: 'Choose a company',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withOpacity(0.2),
+                            return InkWell(
+                              onTap:
+                                  bottomSheetSelectedCompany != null &&
+                                      isEditing
+                                  ? () {
+                                      SnackBarUtils.showSnackBar(
+                                        context,
+                                        'Company is pre-filled and cannot be changed for existing items.',
+                                      );
+                                    }
+                                  : null,
+                              child: AbsorbPointer(
+                                absorbing:
+                                    bottomSheetSelectedCompany != null &&
+                                    isEditing,
+                                child: DropdownButtonFormField<String>(
+                                  value: bottomSheetSelectedCompany,
+                                  decoration: InputDecoration(
+                                    labelText: 'Select Company',
+                                    prefixIcon: Icon(
+                                      Icons.business,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                    helperText: 'Choose a company',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withOpacity(0.2),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    width: 2,
-                                  ),
+                                  isExpanded: true,
+                                  items: companies.map((company) {
+                                    return DropdownMenuItem<String>(
+                                      value: company.id,
+                                      child: Text(
+                                        company.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: isEditing
+                                      ? null
+                                      : (String? newValue) {
+                                          setState(() {
+                                            bottomSheetSelectedCompany =
+                                                newValue;
+                                            bottomSheetSelectedZone = null;
+                                            bottomSheetSelectedCircle = null;
+                                            bottomSheetSelectedDivision = null;
+                                            bottomSheetSelectedSubdivision =
+                                                null;
+                                            selectedCityId = null;
+                                            selectedCityName = null;
+                                            debugPrint(
+                                              'DEBUG: Parent Company selected: $newValue',
+                                            );
+                                          });
+                                        },
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please select a company';
+                                    }
+                                    return null;
+                                  },
                                 ),
                               ),
-                              isExpanded: true,
-                              items: companies.map((company) {
-                                return DropdownMenuItem<String>(
-                                  value: company.id,
-                                  child: Text(
-                                    company.name,
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  bottomSheetSelectedCompany = newValue;
-                                  debugPrint(
-                                    'DEBUG: Company selected: $newValue',
-                                  );
-                                });
-                              },
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please select a company';
-                                }
-                                return null;
-                              },
                             );
                           },
                         ),
                       ],
 
-                      // Bay-specific fields
-                      if (widget.itemType == 'Bay') ...[
+                      // Zone selection
+                      if (widget.itemType != 'AppScreenState' &&
+                          widget.itemType != 'Company' &&
+                          widget.itemType != 'Zone') ...[
                         const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: selectedBayType,
-                          decoration: InputDecoration(
-                            labelText: 'Bay Type',
-                            prefixIcon: Icon(
-                              Icons.category,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            helperText: 'Select the type of bay',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.2),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          items: bayTypes.map((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value),
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              selectedBayType = newValue;
-                              debugPrint('DEBUG: Bay Type selected: $newValue');
-                            });
-                          },
-                          validator: (value) =>
-                              value == null ? 'Please select a bay type' : null,
-                        ),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: selectedVoltageLevel,
-                          decoration: InputDecoration(
-                            labelText: 'Voltage Level',
-                            prefixIcon: Icon(
-                              Icons.flash_on,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            helperText: 'Select the voltage level',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.2),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          items:
-                              <String>[
-                                '765kV',
-                                '400kV',
-                                '220kV',
-                                '132kV',
-                                '33kV',
-                                '11kV',
-                              ].map((String value) {
-                                return DropdownMenuItem<String>(
-                                  value: value,
-                                  child: Text(value),
-                                );
-                              }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              selectedVoltageLevel = newValue;
-                              debugPrint(
-                                'DEBUG: Voltage Level selected: $newValue',
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('zones')
+                              .where(
+                                'companyId',
+                                isEqualTo: bottomSheetSelectedCompany,
+                              )
+                              .orderBy('name')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Text(
+                                'Error loading zones: ${snapshot.error}',
                               );
-                            });
-                          },
-                          validator: (value) => value == null
-                              ? 'Please select a voltage level'
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: multiplyingFactorController,
-                          decoration: InputDecoration(
-                            labelText: 'Multiplying Factor (MF)',
-                            prefixIcon: Icon(
-                              Icons.clear,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            helperText: 'Optional numerical value',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.2),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          keyboardType: TextInputType.number,
-                          validator: (value) {
-                            if (value != null &&
-                                value.isNotEmpty &&
-                                double.tryParse(value) == null) {
-                              return 'Please enter a valid number for MF';
                             }
-                            return null;
+                            if (bottomSheetSelectedCompany == null) {
+                              return const Text(
+                                'Select a company first to load zones.',
+                              );
+                            }
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const Text(
+                                'No zones available for the selected company.',
+                              );
+                            }
+                            final zones = snapshot.data!.docs
+                                .map((doc) => Zone.fromFirestore(doc))
+                                .toList();
+                            return InkWell(
+                              onTap:
+                                  bottomSheetSelectedZone != null && isEditing
+                                  ? () {
+                                      SnackBarUtils.showSnackBar(
+                                        context,
+                                        'Zone is pre-filled and cannot be changed for existing items.',
+                                      );
+                                    }
+                                  : null,
+                              child: AbsorbPointer(
+                                absorbing:
+                                    bottomSheetSelectedZone != null &&
+                                    isEditing,
+                                child: DropdownButtonFormField<String>(
+                                  value: bottomSheetSelectedZone,
+                                  decoration: InputDecoration(
+                                    labelText: 'Select Zone',
+                                    prefixIcon: Icon(
+                                      Icons.location_on,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                    helperText: 'Choose a zone',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withOpacity(0.2),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                  isExpanded: true,
+                                  items: zones.map((zone) {
+                                    return DropdownMenuItem<String>(
+                                      value: zone.id,
+                                      child: Text(
+                                        zone.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: isEditing
+                                      ? null
+                                      : (String? newValue) {
+                                          setState(() {
+                                            bottomSheetSelectedZone = newValue;
+                                            bottomSheetSelectedCircle = null;
+                                            bottomSheetSelectedDivision = null;
+                                            bottomSheetSelectedSubdivision =
+                                                null;
+                                            selectedCityId = null;
+                                            selectedCityName = null;
+                                            debugPrint(
+                                              'DEBUG: Parent Zone selected: $newValue',
+                                            );
+                                          });
+                                        },
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please select a zone';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            );
                           },
                         ),
                       ],
 
-                      // Substation-specific fields
+                      // Circle selection
+                      if (widget.itemType != 'AppScreenState' &&
+                          widget.itemType != 'Company' &&
+                          widget.itemType != 'Zone' &&
+                          widget.itemType != 'Circle') ...[
+                        const SizedBox(height: 16),
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('circles')
+                              .where(
+                                'zoneId',
+                                isEqualTo: bottomSheetSelectedZone,
+                              )
+                              .orderBy('name')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Text(
+                                'Error loading circles: ${snapshot.error}',
+                              );
+                            }
+                            if (bottomSheetSelectedZone == null) {
+                              return const Text(
+                                'Select a zone first to load circles.',
+                              );
+                            }
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const Text(
+                                'No circles available for the selected zone.',
+                              );
+                            }
+                            final circles = snapshot.data!.docs
+                                .map((doc) => Circle.fromFirestore(doc))
+                                .toList();
+                            return InkWell(
+                              onTap:
+                                  bottomSheetSelectedCircle != null && isEditing
+                                  ? () {
+                                      SnackBarUtils.showSnackBar(
+                                        context,
+                                        'Circle is pre-filled and cannot be changed for existing items.',
+                                      );
+                                    }
+                                  : null,
+                              child: AbsorbPointer(
+                                absorbing:
+                                    bottomSheetSelectedCircle != null &&
+                                    isEditing,
+                                child: DropdownButtonFormField<String>(
+                                  value: bottomSheetSelectedCircle,
+                                  decoration: InputDecoration(
+                                    labelText: 'Select Circle',
+                                    prefixIcon: Icon(
+                                      Icons.radio_button_checked,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                    helperText: 'Choose a circle',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withOpacity(0.2),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                  isExpanded: true,
+                                  items: circles.map((circle) {
+                                    return DropdownMenuItem<String>(
+                                      value: circle.id,
+                                      child: Text(
+                                        circle.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: isEditing
+                                      ? null
+                                      : (String? newValue) {
+                                          setState(() {
+                                            bottomSheetSelectedCircle =
+                                                newValue;
+                                            bottomSheetSelectedDivision = null;
+                                            bottomSheetSelectedSubdivision =
+                                                null;
+                                            selectedCityId = null;
+                                            selectedCityName = null;
+                                            debugPrint(
+                                              'DEBUG: Parent Circle selected: $newValue',
+                                            );
+                                          });
+                                        },
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please select a circle';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+
+                      // Division selection
+                      if (widget.itemType != 'AppScreenState' &&
+                          widget.itemType != 'Company' &&
+                          widget.itemType != 'Zone' &&
+                          widget.itemType != 'Circle' &&
+                          widget.itemType != 'Division') ...[
+                        const SizedBox(height: 16),
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('divisions')
+                              .where(
+                                'circleId',
+                                isEqualTo: bottomSheetSelectedCircle,
+                              )
+                              .orderBy('name')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Text(
+                                'Error loading divisions: ${snapshot.error}',
+                              );
+                            }
+                            if (bottomSheetSelectedCircle == null) {
+                              return const Text(
+                                'Select a circle first to load divisions.',
+                              );
+                            }
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const Text(
+                                'No divisions available for the selected circle.',
+                              );
+                            }
+                            final divisions = snapshot.data!.docs
+                                .map((doc) => Division.fromFirestore(doc))
+                                .toList();
+                            return InkWell(
+                              onTap:
+                                  bottomSheetSelectedDivision != null &&
+                                      isEditing
+                                  ? () {
+                                      SnackBarUtils.showSnackBar(
+                                        context,
+                                        'Division is pre-filled and cannot be changed for existing items.',
+                                      );
+                                    }
+                                  : null,
+                              child: AbsorbPointer(
+                                absorbing:
+                                    bottomSheetSelectedDivision != null &&
+                                    isEditing,
+                                child: DropdownButtonFormField<String>(
+                                  value: bottomSheetSelectedDivision,
+                                  decoration: InputDecoration(
+                                    labelText: 'Select Division',
+                                    prefixIcon: Icon(
+                                      Icons.group_work,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                    helperText: 'Choose a division',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withOpacity(0.2),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                  isExpanded: true,
+                                  items: divisions.map((division) {
+                                    return DropdownMenuItem<String>(
+                                      value: division.id,
+                                      child: Text(
+                                        division.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: isEditing
+                                      ? null
+                                      : (String? newValue) {
+                                          setState(() {
+                                            bottomSheetSelectedDivision =
+                                                newValue;
+                                            bottomSheetSelectedSubdivision =
+                                                null;
+                                            selectedCityId = null;
+                                            selectedCityName = null;
+                                            debugPrint(
+                                              'DEBUG: Parent Division selected: $newValue',
+                                            );
+                                          });
+                                        },
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please select a division';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+
+                      // Subdivision selection (only for Substation)
+                      if (widget.itemType == 'Substation') ...[
+                        const SizedBox(height: 16),
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('subdivisions')
+                              .where(
+                                'divisionId',
+                                isEqualTo: bottomSheetSelectedDivision,
+                              )
+                              .orderBy('name')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Text(
+                                'Error loading subdivisions: ${snapshot.error}',
+                              );
+                            }
+                            if (bottomSheetSelectedDivision == null) {
+                              return const Text(
+                                'Select a division first to load subdivisions.',
+                              );
+                            }
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const Text(
+                                'No subdivisions available for the selected division.',
+                              );
+                            }
+                            final subdivisions = snapshot.data!.docs
+                                .map((doc) => Subdivision.fromFirestore(doc))
+                                .toList();
+                            return InkWell(
+                              onTap:
+                                  bottomSheetSelectedSubdivision != null &&
+                                      isEditing
+                                  ? () {
+                                      SnackBarUtils.showSnackBar(
+                                        context,
+                                        'Subdivision is pre-filled and cannot be changed for existing items.',
+                                      );
+                                    }
+                                  : null,
+                              child: AbsorbPointer(
+                                absorbing:
+                                    bottomSheetSelectedSubdivision != null &&
+                                    isEditing,
+                                child: DropdownButtonFormField<String>(
+                                  value: bottomSheetSelectedSubdivision,
+                                  decoration: InputDecoration(
+                                    labelText: 'Select Subdivision',
+                                    prefixIcon: Icon(
+                                      Icons.scatter_plot,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                    helperText: 'Choose a subdivision',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withOpacity(0.2),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                  isExpanded: true,
+                                  items: subdivisions.map((subdivision) {
+                                    return DropdownMenuItem<String>(
+                                      value: subdivision.id,
+                                      child: Text(
+                                        subdivision.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: isEditing
+                                      ? null
+                                      : (String? newValue) {
+                                          setState(() {
+                                            bottomSheetSelectedSubdivision =
+                                                newValue;
+                                            selectedCityId = null;
+                                            selectedCityName = null;
+                                            debugPrint(
+                                              'DEBUG: Parent Subdivision selected: $newValue',
+                                            );
+                                          });
+                                        },
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please select a subdivision';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+
+                      // Substation-specific fields (rest remain the same)
                       if (widget.itemType == 'Substation') ...[
                         const SizedBox(height: 16),
                         Text(
@@ -1056,8 +1439,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             });
                           },
                           validator: (value) {
-                            if (widget.itemType == 'Substation' &&
-                                value == null) {
+                            if (value == null || value.isEmpty) {
                               return 'Please select a voltage level';
                             }
                             return null;
@@ -1109,8 +1491,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             });
                           },
                           validator: (value) {
-                            if (widget.itemType == 'Substation' &&
-                                value == null) {
+                            if (value == null || value.isEmpty) {
                               return 'Please select a type';
                             }
                             return null;
@@ -1118,7 +1499,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                         ),
                         const SizedBox(height: 16),
 
-                        // OPERATION DROPDOWN (Replacing SwitchListTile)
+                        // OPERATION DROPDOWN
                         DropdownButtonFormField<String>(
                           value: selectedOperation,
                           decoration: InputDecoration(
@@ -1156,7 +1537,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           onChanged: (String? newValue) {
                             setState(() {
                               selectedOperation = newValue;
-                              // Hide/show sasMakeController based on selection
                               if (selectedOperation != 'SAS') {
                                 sasMakeController.clear();
                               }
@@ -1258,8 +1638,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             });
                           },
                           validator: (value) {
-                            if (widget.itemType == 'Substation' &&
-                                value == null) {
+                            if (value == null || value.isEmpty) {
                               return 'Please select a status';
                             }
                             return null;
@@ -1289,13 +1668,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                   ).colorScheme.onSurface.withOpacity(0.2),
                                 ),
                               ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  width: 2,
-                                ),
-                              ),
                             ),
                             maxLines: 3,
                             validator: (value) {
@@ -1307,7 +1679,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             },
                           ),
                         const SizedBox(height: 16),
-                        // Date of Commissioning - Made Mandatory with updated typography
+                        // Date of Commissioning - Made Mandatory
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1377,13 +1749,11 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                 ),
                               ),
                             ),
-                            // Validator for Date of Commissioning
-                            // This validator will show only if the form is already attempting to validate
-                            // and the date is null. The manual check before submission in onPressed
-                            // handles the initial mandatory requirement.
                             if (commissioningDate == null &&
-                                (_formKey.currentState?.validate() == true &&
-                                    !isEditing))
+                                (!isEditing &&
+                                    _formKey.currentState?.validate() == false))
+                              // Removed the redundant validation check here, as it's better handled on button press.
+                              // The direct form.validate() on button press is sufficient for indicating missing fields.
                               Padding(
                                 padding: const EdgeInsets.only(
                                   top: 8.0,
@@ -1413,10 +1783,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                         const SizedBox(height: 8),
                         DropdownSearch<CityModel>(
                           selectedItem: selectedCityId != null
-                              ? Provider.of<AppStateData>(
-                                  context,
-                                  listen: false,
-                                ).allCityModels.firstWhere(
+                              ? appState.allCityModels.firstWhere(
                                   (c) => c.id == selectedCityId,
                                   orElse: () =>
                                       CityModel(id: -1, name: '', stateId: -1),
@@ -1460,23 +1827,33 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           ),
                           itemAsString: (CityModel c) => c.name,
                           asyncItems: (String filter) async {
-                            debugPrint(
-                              'DEBUG: City Dropdown: Fetching cities for filter: "$filter", selectedState: $bottomSheetSelectedState',
-                            );
                             if (bottomSheetSelectedState == null) {
-                              _showSnackBar(
+                              SnackBarUtils.showSnackBar(
+                                context,
                                 'Please select a state first.',
                                 isError: true,
                               );
-                              debugPrint(
-                                'ERROR: City Dropdown: State not selected.',
-                              );
                               return [];
                             }
-                            final cities = Provider.of<AppStateData>(
-                              context,
-                              listen: false,
-                            ).getCitiesForStateName(bottomSheetSelectedState!);
+                            // Convert the stored state ID back to the state name for getCitiesForStateName
+                            final selectedStateName = appState.allStateModels
+                                .firstWhere(
+                                  (s) =>
+                                      s.id.toString() ==
+                                      bottomSheetSelectedState,
+                                  orElse: () => StateModel(id: -1, name: ''),
+                                )
+                                .name;
+
+                            if (selectedStateName.isEmpty ||
+                                selectedStateName == 'null') {
+                              // Check for invalid state name from mapping
+                              return [];
+                            }
+
+                            final cities = appState.getCitiesForStateName(
+                              selectedStateName,
+                            );
                             final filteredCities = cities
                                 .where(
                                   (city) => city.name.toLowerCase().contains(
@@ -1484,9 +1861,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                   ),
                                 )
                                 .toList();
-                            debugPrint(
-                              'DEBUG: City Dropdown: Returning ${filteredCities.length} filtered cities.',
-                            );
                             return filteredCities;
                           },
                           dropdownDecoratorProps: DropDownDecoratorProps(
@@ -1528,8 +1902,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             });
                           },
                           validator: (value) {
-                            if (widget.itemType == 'Substation' &&
-                                selectedCityId == null) {
+                            if (selectedCityId == null) {
                               return 'Please select a city';
                             }
                             return null;
@@ -1571,7 +1944,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                         const SizedBox(height: 16),
                       ],
 
-                      // General address field for all non-AppScreenState items (Company, Zone, Circle, Division, Subdivision, Bay)
+                      // General address field for all non-AppScreenState, non-Substation items
                       if (widget.itemType != 'AppScreenState' &&
                           widget.itemType != 'Substation') ...[
                         const SizedBox(height: 16),
@@ -1609,7 +1982,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                       ],
 
                       // Optional fields common to many HierarchyItems (e.g., Description, Landmark, Contact Info)
-                      // These fields will be hidden for AppScreenState
                       if (widget.itemType != 'AppScreenState') ...[
                         TextFormField(
                           controller: landmarkController,
@@ -1672,36 +2044,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           keyboardType: TextInputType.phone,
                         ),
                         const SizedBox(height: 16),
-                        TextFormField(
-                          controller: contactPersonController,
-                          decoration: InputDecoration(
-                            labelText: 'Contact Person Name (Optional)',
-                            prefixIcon: Icon(
-                              Icons.person,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            helperText: 'Name of contact',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.2),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
                           value: selectedContactDesignation,
                           decoration: InputDecoration(
@@ -1746,7 +2088,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           },
                         ),
                         const SizedBox(height: 16),
-                        // Only show description for AppScreenState, or for other types as a generic description
                         TextFormField(
                           controller: descriptionController,
                           decoration: InputDecoration(
@@ -1812,40 +2153,21 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                           debugPrint(
                             'DEBUG: Add/Edit form: Form validation failed.',
                           );
-                          // Explicitly trigger validation for the date picker if it's mandatory
                           if (widget.itemType == 'Substation' &&
                               commissioningDate == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Date of Commissioning is mandatory.',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onError,
-                                      ),
-                                ),
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.error,
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                margin: const EdgeInsets.all(16),
-                                duration: const Duration(seconds: 3),
-                                elevation: 4,
-                              ),
+                            SnackBarUtils.showSnackBar(
+                              context,
+                              'Date of Commissioning is mandatory.',
+                              isError: true,
                             );
                           }
                           return;
                         }
 
-                        // Validate commissioningDate for Substation as it's now mandatory
                         if (widget.itemType == 'Substation' &&
                             commissioningDate == null) {
-                          _showSnackBar(
+                          SnackBarUtils.showSnackBar(
+                            context,
                             'Date of Commissioning is mandatory.',
                             isError: true,
                           );
@@ -1867,7 +2189,6 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                               ? null
                               : contactPersonController.text,
                           'contactDesignation': selectedContactDesignation,
-                          // Add the general address field
                           'address': widget.itemType == 'Substation'
                               ? substationAddressController.text.isEmpty
                                     ? null
@@ -1885,51 +2206,55 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             : null;
 
                         if (widget.itemType == 'AppScreenState') {
-                          // When adding a new state, use the selected state name as docId
                           docToUseId = nameController
-                              .text; // nameController now holds the selected state name
+                              .text; // The state name is its Firestore ID
                           data['name'] = nameController.text;
                           debugPrint(
                             'DEBUG: Add/Edit form: AppScreenState logic - docId: $docToUseId',
                           );
-                        } else if (widget.parentCollectionName != null &&
-                            widget.parentId != null) {
-                          final parentIdKey =
-                              '${widget.parentCollectionName!.substring(0, widget.parentCollectionName!.length - 1)}Id';
-                          data[parentIdKey] = widget.parentId;
-                          debugPrint(
-                            'DEBUG: Add/Edit form: Parent ID added - $parentIdKey: ${widget.parentId}',
-                          );
                         }
 
-                        if (widget.itemType == 'Company') {
-                          data['stateId'] = bottomSheetSelectedState;
-                          debugPrint(
-                            'DEBUG: Add/Edit form: Company logic - stateId: $bottomSheetSelectedState',
-                          );
-                        } else if (widget.itemType == 'Zone') {
+                        // Add all currently selected parent IDs (if not null)
+                        // These are now reliably set in _initializeFormFields as string IDs from AppStateData.
+                        if (bottomSheetSelectedState != null) {
+                          // For Firestore, we need the actual state name as the ID
+                          final stateNameForFirestore = appState.allStateModels
+                              .firstWhere(
+                                (s) =>
+                                    s.id.toString() == bottomSheetSelectedState,
+                                orElse: () => StateModel(id: -1, name: ''),
+                              )
+                              .name;
+                          if (stateNameForFirestore.isNotEmpty &&
+                              stateNameForFirestore != 'null') {
+                            data['stateId'] = stateNameForFirestore;
+                          } else {
+                            data['stateId'] =
+                                null; // Or handle as an error if state is mandatory
+                          }
+                        } else {
+                          data['stateId'] = null;
+                        }
+
+                        if (bottomSheetSelectedCompany != null)
                           data['companyId'] = bottomSheetSelectedCompany;
-                          debugPrint(
-                            'DEBUG: Add/Edit form: Zone logic - companyId: $bottomSheetSelectedCompany',
-                          );
-                        } else if (widget.itemType == 'Bay') {
-                          data['bayType'] = selectedBayType;
-                          data['voltageLevel'] = selectedVoltageLevel;
-                          data['multiplyingFactor'] = double.tryParse(
-                            multiplyingFactorController.text,
-                          );
-                          debugPrint(
-                            'DEBUG: Add/Edit form: Bay logic - bayType: $selectedBayType, voltage: $selectedVoltageLevel, MF: ${data['multiplyingFactor']}',
-                          );
-                        } else if (widget.itemType == 'Substation') {
-                          // Substation address is already handled above in the general 'address' field
+                        if (bottomSheetSelectedZone != null)
+                          data['zoneId'] = bottomSheetSelectedZone;
+                        if (bottomSheetSelectedCircle != null)
+                          data['circleId'] = bottomSheetSelectedCircle;
+                        if (bottomSheetSelectedDivision != null)
+                          data['divisionId'] = bottomSheetSelectedDivision;
+                        if (bottomSheetSelectedSubdivision != null)
+                          data['subdivisionId'] =
+                              bottomSheetSelectedSubdivision;
+
+                        if (widget.itemType == 'Substation') {
                           data['cityId'] = selectedCityId?.toString();
                           data['voltageLevel'] = selectedVoltageLevel;
                           data['type'] = typeController.text.isEmpty
                               ? null
                               : typeController.text;
-                          data['operation'] =
-                              selectedOperation; // Use dropdown value
+                          data['operation'] = selectedOperation;
                           data['sasMake'] = sasMakeController.text.isEmpty
                               ? null
                               : sasMakeController.text;
@@ -1943,6 +2268,12 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                             'DEBUG: Add/Edit form: Substation logic - cityId: ${data['cityId']}, voltage: ${data['voltageLevel']}, status: ${data['status']}',
                           );
                         }
+                        // REMOVED: Bay data creation logic
+                        // else if (widget.itemType == 'Bay') {
+                        //   data['bayType'] = selectedBayType;
+                        //   data['voltageLevel'] = selectedVoltageLevel;
+                        //   data['multiplyingFactor'] = double.tryParse(multiplyingFactorController.text);
+                        // }
 
                         widget.onAddItem(
                           '${widget.itemType.toLowerCase()}s',
@@ -1981,25 +2312,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    // This is already a debug tool, no extra debugPrint needed for itself
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-        backgroundColor: isError
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary.withOpacity(0.9),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 3),
-        elevation: 4,
-      ),
-    );
+    SnackBarUtils.showSnackBar(context, message, isError: isError);
   }
 }
 
@@ -2049,7 +2362,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
     );
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      _showSnackBar('Error: User not logged in.', isError: true);
+      SnackBarUtils.showSnackBar(
+        context,
+        'Error: User not logged in.',
+        isError: true,
+      );
       debugPrint('ERROR: _addHierarchyItem: User not logged in.');
       return;
     }
@@ -2069,7 +2386,10 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
           'createdBy': currentUser.uid,
           'createdAt': FieldValue.serverTimestamp(),
         });
-        _showSnackBar('$collectionName added successfully!');
+        SnackBarUtils.showSnackBar(
+          context,
+          '$collectionName added successfully!',
+        );
         debugPrint(
           'DEBUG: _addHierarchyItem: Document added successfully to $collectionName.',
         );
@@ -2080,13 +2400,15 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         await FirebaseFirestore.instance.collection(collectionName).doc(docId).set(
           {
             ...data,
-            'createdBy': currentUser.uid, // Keep creator info
-            'createdAt':
+            'updatedAt':
                 FieldValue.serverTimestamp(), // Update timestamp on modification
           },
           SetOptions(merge: true), // Merge existing fields with new data
         );
-        _showSnackBar('$collectionName updated successfully!');
+        SnackBarUtils.showSnackBar(
+          context,
+          '$collectionName updated successfully!',
+        );
         debugPrint(
           'DEBUG: _addHierarchyItem: Document $docId updated/set successfully in $collectionName.',
         );
@@ -2099,7 +2421,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         );
       }
     } catch (e) {
-      _showSnackBar(
+      SnackBarUtils.showSnackBar(
+        context,
         'Failed to ${docId == null ? 'add' : 'update'} $collectionName: ${e.toString()}',
         isError: true,
       );
@@ -2119,6 +2442,17 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
     debugPrint(
       'DEBUG: _showAddBottomSheet: Opening bottom sheet for itemType: $itemType, parentId: $parentId, parentCollectionName: $parentCollectionName, itemToEdit: ${itemToEdit?.name}',
     );
+    // User check should ideally be done here before opening bottom sheet
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'You must be logged in to add/edit items.',
+        isError: true,
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2139,28 +2473,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
     );
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
-    // This is already a debug tool, no extra debugPrint needed for itself
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-        backgroundColor: isError
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary.withOpacity(0.9),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 3),
-        elevation: 4,
-      ),
-    );
-  }
-
   // Helper to determine the next collection name based on itemType
   String _getNextCollectionName(String currentItemType) {
     switch (currentItemType) {
@@ -2176,8 +2488,9 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
         return 'subdivisions';
       case 'Subdivision':
         return 'substations';
+      // Removed 'Bay' from here. Substation is the last level.
       case 'Substation':
-        return 'bays';
+        return ''; // No children for Substation anymore
       default:
         return ''; // No children
     }
@@ -2186,28 +2499,26 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
   // Helper to determine the parent ID field name for the next collection
   String _getParentIdFieldName(String currentItemType) {
     switch (currentItemType) {
-      case 'Company': // Companies have stateId as parent
+      case 'Company':
         return 'stateId';
-      case 'Zone': // Zones have companyId as parent
+      case 'Zone':
         return 'companyId';
-      case 'Circle': // Circles have zoneId as parent
+      case 'Circle':
         return 'zoneId';
-      case 'Division': // Divisions have circleId as parent
+      case 'Division':
         return 'circleId';
-      case 'Subdivision': // Subdivisions have divisionId as parent
+      case 'Subdivision':
         return 'divisionId';
-      case 'Substation': // Substations have subdivisionId as parent
+      case 'Substation':
         return 'subdivisionId';
-      case 'Bay': // Bays have substationId as parent
-        return 'substationId';
+      // Removed 'Bay' from here.
       default:
-        return ''; // AppScreenState is top-level, no parentIdField for its children
+        return '';
     }
   }
 
   // Recursive function to check for children
   Future<bool> _hasChildren(String collectionName, String parentId) async {
-    // Get the next level's collection name
     final nextCollectionName = _getNextCollectionName(
       collectionName.replaceAll('s', ''), // e.g., 'companys' -> 'company'
     );
@@ -2216,48 +2527,53 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
       debugPrint(
         'DEBUG: _hasChildren: No further collections for $collectionName. No children to check.',
       );
-      return false; // No more levels down, so no children from here
+      return false; // No more levels down, so no children from here (e.g., Substation)
     }
 
-    // Determine the field name for the parent ID in the child collection
-    String parentIdFieldName;
-    switch (collectionName) {
-      case 'appscreenstates':
-        parentIdFieldName = 'stateId';
+    // Ensure the parentIdFieldName is correctly retrieved for the *current* collection type
+    // This is important to query the *next* collection using the correct foreign key
+    String currentItemType = collectionName.replaceAll(
+      's',
+      '',
+    ); // e.g., 'companys' -> 'company'
+    String parentIdFieldNameForNextCollection;
+
+    switch (currentItemType) {
+      case 'appscreenstate': // Children are 'companys', parentId in 'companys' is 'stateId'
+        parentIdFieldNameForNextCollection = 'stateId';
         break;
-      case 'companys':
-        parentIdFieldName = 'companyId';
+      case 'company': // Children are 'zones', parentId in 'zones' is 'companyId'
+        parentIdFieldNameForNextCollection = 'companyId';
         break;
-      case 'zones':
-        parentIdFieldName = 'zoneId';
+      case 'zone': // Children are 'circles', parentId in 'circles' is 'zoneId'
+        parentIdFieldNameForNextCollection = 'zoneId';
         break;
-      case 'circles':
-        parentIdFieldName = 'circleId';
+      case 'circle': // Children are 'divisions', parentId in 'divisions' is 'circleId'
+        parentIdFieldNameForNextCollection = 'circleId';
         break;
-      case 'divisions':
-        parentIdFieldName = 'divisionId';
+      case 'division': // Children are 'subdivisions', parentId in 'subdivisions' is 'divisionId'
+        parentIdFieldNameForNextCollection = 'divisionId';
         break;
-      case 'subdivisions':
-        parentIdFieldName = 'subdivisionId';
+      case 'subdivision': // Children are 'substations', parentId in 'substations' is 'subdivisionId'
+        parentIdFieldNameForNextCollection = 'subdivisionId';
         break;
-      case 'substations':
-        parentIdFieldName = 'substationId';
-        break;
+      case 'substation': // No children for substation, already handled by nextCollectionName.isEmpty
+        return false;
       default:
         debugPrint(
-          'WARNING: _hasChildren: Unrecognized collection: $collectionName. Assuming no children check available.',
+          'WARNING: _hasChildren: Unrecognized collection type for parentIdFieldName lookup: $currentItemType.',
         );
         return false;
     }
 
     final querySnapshot = await FirebaseFirestore.instance
         .collection(nextCollectionName)
-        .where(parentIdFieldName, isEqualTo: parentId)
+        .where(parentIdFieldNameForNextCollection, isEqualTo: parentId)
         .limit(1) // Just need to know if at least one exists
         .get();
 
     debugPrint(
-      'DEBUG: _hasChildren: Checking $nextCollectionName for parent $parentIdFieldName=$parentId. Found ${querySnapshot.docs.length} children.',
+      'DEBUG: _hasChildren: Checking $nextCollectionName for parent $parentIdFieldNameForNextCollection=$parentId. Found ${querySnapshot.docs.length} children.',
     );
     return querySnapshot.docs.isNotEmpty;
   }
@@ -2297,7 +2613,9 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                 return Text('Error checking children: ${snapshot.error}');
               }
 
-              final hasChildren = snapshot.data ?? false;
+              final hasChildren =
+                  snapshot.data ??
+                  false; // Default to false unless explicitly true
               if (hasChildren) {
                 return Text(
                   'Cannot delete "$name" as it still contains lower-level hierarchy items. Please delete all child items first.',
@@ -2331,7 +2649,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
               builder: (context, snapshot) {
                 final hasChildren =
                     snapshot.data ??
-                    true; // Default to true to keep button disabled
+                    false; // Default to false unless explicitly true
                 return ElevatedButton(
                   onPressed: hasChildren
                       ? null // Disable button if children exist
@@ -2344,7 +2662,10 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                 .collection(collection)
                                 .doc(docId)
                                 .delete();
-                            _showSnackBar('$name deleted successfully!');
+                            SnackBarUtils.showSnackBar(
+                              context,
+                              '$name deleted successfully!',
+                            );
                             debugPrint(
                               'DEBUG: Delete dialog: Item $name deleted successfully.',
                             );
@@ -2352,7 +2673,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                               Navigator.of(context).pop();
                             }
                           } catch (e) {
-                            _showSnackBar(
+                            SnackBarUtils.showSnackBar(
+                              context,
                               'Failed to delete $name: ${e.toString()}',
                               isError: true,
                             );
@@ -2382,43 +2704,50 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
   Widget _buildHierarchyList<T extends HierarchyItem>(
     CollectionReference collection,
     T Function(DocumentSnapshot) fromFirestore, {
-    String? parentIdField,
-    String? parentId,
-    String? stateIdFilter,
+    String?
+    stateIdFilter, // This will now be the state NAME for Firestore queries
     String? companyIdFilter,
+    String? zoneIdFilter,
+    String? circleIdFilter,
+    String? divisionIdFilter,
+    String? subdivisionIdFilter,
     String nextLevelItemType = '',
   }) {
     debugPrint(
       'DEBUG: _buildHierarchyList: Building list for collection: ${collection.id}',
     );
     debugPrint(
-      'DEBUG: _buildHierarchyList: Filters - parentIdField: $parentIdField, parentId: $parentId, stateIdFilter: $stateIdFilter, companyIdFilter: $companyIdFilter',
+      'DEBUG: _buildHierarchyList: Filters - stateIdFilter: $stateIdFilter, companyIdFilter: $companyIdFilter, zoneIdFilter: $zoneIdFilter, circleIdFilter: $circleIdFilter, divisionIdFilter: $divisionIdFilter, subdivisionIdFilter: $subdivisionIdFilter',
     );
 
     Query query = collection;
+    final appState = Provider.of<AppStateData>(context, listen: false);
 
-    // Apply state filter for Companies
+    // Apply specific filters based on current collection and its parent relationships
     if (collection.id == 'companys' && stateIdFilter != null) {
-      // Corrected
-      query = query.where('stateId', isEqualTo: stateIdFilter);
-      debugPrint(
-        'DEBUG: _buildHierarchyList: Applying stateId filter: $stateIdFilter',
-      );
-    }
-
-    // Apply company filter for Zones
-    if (collection.id == 'zones' && companyIdFilter != null) {
+      // For 'companys', the 'stateId' in Firestore is the STATE NAME (AppScreenState document ID)
+      // So, if stateIdFilter is the numeric ID from StateModel, we need to convert it to the name.
+      final stateNameForQuery = appState.allStateModels
+          .firstWhere(
+            (s) =>
+                s.id.toString() ==
+                stateIdFilter, // stateIdFilter is the numeric ID as string
+            orElse: () => StateModel(id: -1, name: ''),
+          )
+          .name;
+      if (stateNameForQuery.isNotEmpty && stateNameForQuery != 'null') {
+        query = query.where('stateId', isEqualTo: stateNameForQuery);
+      }
+    } else if (collection.id == 'zones' && companyIdFilter != null) {
       query = query.where('companyId', isEqualTo: companyIdFilter);
-      debugPrint(
-        'DEBUG: _buildHierarchyList: Applying companyId filter: $companyIdFilter',
-      );
-    }
-
-    if (parentIdField != null && parentId != null) {
-      query = query.where(parentIdField, isEqualTo: parentId);
-      debugPrint(
-        'DEBUG: _buildHierarchyList: Applying parentId filter: $parentIdField = $parentId',
-      );
+    } else if (collection.id == 'circles' && zoneIdFilter != null) {
+      query = query.where('zoneId', isEqualTo: zoneIdFilter);
+    } else if (collection.id == 'divisions' && circleIdFilter != null) {
+      query = query.where('circleId', isEqualTo: circleIdFilter);
+    } else if (collection.id == 'subdivisions' && divisionIdFilter != null) {
+      query = query.where('divisionId', isEqualTo: divisionIdFilter);
+    } else if (collection.id == 'substations' && subdivisionIdFilter != null) {
+      query = query.where('subdivisionId', isEqualTo: subdivisionIdFilter);
     }
 
     query = query.orderBy('name');
@@ -2546,25 +2875,21 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                       )
                     : null,
                 children: [
-                  // Action buttons for the current item
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16.0,
                       vertical: 8.0,
                     ),
                     child: Wrap(
-                      alignment: WrapAlignment
-                          .end, // Changed alignment for better button flow
+                      alignment: WrapAlignment.start,
                       spacing: 12.0,
                       runSpacing: 8.0,
                       children: [
-                        // Edit button (for the current item)
                         ElevatedButton.icon(
                           onPressed: () {
                             debugPrint(
                               'DEBUG: Edit button pressed for item: ${item.name} (Type: ${item.runtimeType})',
                             );
-                            // Determine itemType string for the _showAddBottomSheet
                             String currentItemTypeString;
                             if (item is AppScreenState) {
                               currentItemTypeString = 'AppScreenState';
@@ -2580,9 +2905,9 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                               currentItemTypeString = 'Subdivision';
                             } else if (item is Substation) {
                               currentItemTypeString = 'Substation';
-                            } else if (item is Bay) {
-                              currentItemTypeString = 'Bay';
-                            } else {
+                            }
+                            // REMOVED: else if (item is Bay) logic
+                            else {
                               currentItemTypeString = 'Unknown';
                             }
                             _showAddBottomSheet(
@@ -2609,7 +2934,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                             elevation: 2,
                           ),
                         ),
-                        // Add Child button (if applicable)
                         if (nextLevelItemType.isNotEmpty)
                           ElevatedButton.icon(
                             onPressed: () {
@@ -2618,7 +2942,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                               );
                               _showAddBottomSheet(
                                 itemType: nextLevelItemType,
-                                parentId: item.id,
+                                parentId: item
+                                    .id, // Firestore document ID (name for AppScreenState)
                                 parentName: item.name,
                                 parentCollectionName: collection.id,
                               );
@@ -2642,7 +2967,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                               elevation: 2,
                             ),
                           ),
-                        // Delete button (for the current item)
                         ElevatedButton.icon(
                           onPressed: () {
                             debugPrint(
@@ -2674,69 +2998,50 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                   ),
                   const SizedBox(height: 12),
                   // Recursive calls for next level of hierarchy
-                  if (collection.id ==
-                      'appscreenstates') // Check if it's a state item
+                  if (collection.id == 'appscreenstates')
                     _buildHierarchyList<Company>(
-                      FirebaseFirestore.instance.collection(
-                        'companys',
-                      ), // Corrected to 'companys'
-
+                      FirebaseFirestore.instance.collection('companys'),
                       Company.fromFirestore,
-                      stateIdFilter: item.id,
+                      stateIdFilter:
+                          item.id, // This is the state NAME as Firestore ID
+                      nextLevelItemType: 'Company',
+                    ),
+                  if (collection.id == 'companys')
+                    _buildHierarchyList<Zone>(
+                      FirebaseFirestore.instance.collection('zones'),
+                      Zone.fromFirestore,
+                      companyIdFilter: item.id,
                       nextLevelItemType: 'Zone',
                     ),
-                  if (collection.id ==
-                      'companys') // Check if it's a company item
-                    _buildHierarchyList<Zone>(
-                      FirebaseFirestore.instance.collection(
-                        'zones',
-                      ), // Corrected to 'companys'
-
-                      Zone.fromFirestore,
-                      parentIdField: 'companyId',
-                      companyIdFilter: item.id,
-                      nextLevelItemType: 'Circle',
-                    ),
-                  if (nextLevelItemType == 'Circle' && item is Zone)
+                  if (collection.id == 'zones')
                     _buildHierarchyList<Circle>(
                       FirebaseFirestore.instance.collection('circles'),
                       Circle.fromFirestore,
-                      parentIdField: 'zoneId',
-                      parentId: item.id,
-                      nextLevelItemType: 'Division',
+                      zoneIdFilter: item.id,
+                      nextLevelItemType: 'Circle',
                     ),
-                  if (nextLevelItemType == 'Division' && item is Circle)
+                  if (collection.id == 'circles')
                     _buildHierarchyList<Division>(
                       FirebaseFirestore.instance.collection('divisions'),
                       Division.fromFirestore,
-                      parentIdField: 'circleId',
-                      parentId: item.id,
-                      nextLevelItemType: 'Subdivision',
+                      circleIdFilter: item.id,
+                      nextLevelItemType: 'Division',
                     ),
-                  if (nextLevelItemType == 'Subdivision' && item is Division)
+                  if (collection.id == 'divisions')
                     _buildHierarchyList<Subdivision>(
                       FirebaseFirestore.instance.collection('subdivisions'),
                       Subdivision.fromFirestore,
-                      parentIdField: 'divisionId',
-                      parentId: item.id,
-                      nextLevelItemType: 'Substation',
+                      divisionIdFilter: item.id,
+                      nextLevelItemType: 'Substation', // Corrected
                     ),
-                  if (nextLevelItemType == 'Substation' && item is Subdivision)
+                  if (collection.id == 'subdivisions')
                     _buildHierarchyList<Substation>(
                       FirebaseFirestore.instance.collection('substations'),
                       Substation.fromFirestore,
-                      parentIdField: 'subdivisionId',
-                      parentId: item.id,
-                      nextLevelItemType: 'Bay',
+                      subdivisionIdFilter: item.id,
+                      nextLevelItemType: '', // Substation is the last level
                     ),
-                  if (nextLevelItemType == 'Bay' && item is Substation)
-                    _buildHierarchyList<Bay>(
-                      FirebaseFirestore.instance.collection('bays'),
-                      Bay.fromFirestore,
-                      parentIdField: 'substationId',
-                      parentId: item.id,
-                      nextLevelItemType: '', // No further levels below Bay
-                    ),
+                  // REMOVED: Bay list as it's no longer created here
                   const SizedBox(height: 8),
                 ],
               ),
@@ -2749,7 +3054,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
 
   @override
   Widget build(BuildContext nullContext) {
-    // Changed parameter name to nullContext to avoid conflict
     debugPrint(
       'DEBUG: AdminHierarchyScreenState: Building AdminHierarchyScreen.',
     );
@@ -2820,9 +3124,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
 
                       return StreamBuilder<QuerySnapshot>(
                         stream: FirebaseFirestore.instance
-                            .collection(
-                              'appscreenstates',
-                            ) // Corrected collection name
+                            .collection('appscreenstates')
                             .orderBy('name')
                             .snapshots(),
                         builder: (context, snapshot) {
@@ -2934,19 +3236,16 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                         ),
                                   ),
                                   children: [
-                                    // Action buttons for the current state (Edit, Add Company, Delete)
                                     Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16.0,
                                         vertical: 8.0,
                                       ),
                                       child: Wrap(
-                                        alignment: WrapAlignment
-                                            .start, // Changed alignment for better button flow
+                                        alignment: WrapAlignment.start,
                                         spacing: 12.0,
                                         runSpacing: 8.0,
                                         children: [
-                                          // Edit State button
                                           ElevatedButton.icon(
                                             onPressed: () {
                                               debugPrint(
@@ -2978,7 +3277,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                               elevation: 2,
                                             ),
                                           ),
-                                          // Add Company button
                                           ElevatedButton.icon(
                                             onPressed: () {
                                               debugPrint(
@@ -2986,10 +3284,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                               );
                                               _showAddBottomSheet(
                                                 itemType: 'Company',
-                                                parentId: stateItem.id,
+                                                parentId: stateItem
+                                                    .id, // This is the state NAME (Firestore ID)
                                                 parentName: stateItem.name,
                                                 parentCollectionName:
-                                                    'appscreenstates', // Parent is 'appscreenstates' for 'Company'
+                                                    'appscreenstates',
                                               );
                                             },
                                             icon: const Icon(Icons.add),
@@ -3013,7 +3312,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                               elevation: 2,
                                             ),
                                           ),
-                                          // Delete State button
                                           ElevatedButton.icon(
                                             onPressed: () {
                                               debugPrint(
@@ -3021,7 +3319,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                               );
                                               _confirmDelete(
                                                 'appscreenstates',
-                                                stateItem.id,
+                                                stateItem
+                                                    .id, // This is the state NAME (Firestore ID)
                                                 stateItem.name,
                                               );
                                             },
@@ -3056,11 +3355,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen>
                                     _buildHierarchyList<Company>(
                                       FirebaseFirestore.instance.collection(
                                         'companys',
-                                      ), // Corrected to 'companys'
+                                      ),
                                       Company.fromFirestore,
                                       stateIdFilter: stateItem
-                                          .id, // Filter companies by this state's ID
-                                      nextLevelItemType: 'Zone',
+                                          .id, // This is the state NAME as Firestore ID
+                                      nextLevelItemType: 'Company',
                                     ),
                                     const SizedBox(height: 8),
                                   ],
