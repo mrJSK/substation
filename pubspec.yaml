@@ -72,9 +72,15 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/logo.png
     - assets/google_logo.webp
     - assets/state_sql_command.txt # NEW: Add your state SQL file as an asset
     - assets/city_sql_command.txt # NEW: Add your city SQL file as an asset
+
+flutter_launcher_icons:
+  android: "launcher_icon" # Can be a boolean or a string (e.g., "true" or "your_app_icon")
+  ios: true # Set to true for iOS, or "true"
+  image_path: "assets/logo.png" # Path to your single, high-res PNG image
 
 
   # To add assets to your application, add an assets section, like this:

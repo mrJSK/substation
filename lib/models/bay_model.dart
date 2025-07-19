@@ -23,6 +23,8 @@ class Bay implements HierarchyItem {
   final String? contactPerson;
   @override
   final String? contactDesignation;
+  @override // Added missing override for address
+  final String? address; // Added missing address property
   final bool? isGovernmentFeeder;
   final String? feederType;
   final double? multiplyingFactor;
@@ -67,6 +69,7 @@ class Bay implements HierarchyItem {
     this.contactNumber,
     this.contactPerson,
     this.contactDesignation,
+    this.address, // Added to constructor
     this.isGovernmentFeeder,
     this.feederType,
     this.multiplyingFactor,
@@ -122,6 +125,7 @@ class Bay implements HierarchyItem {
       contactNumber: data['contactNumber'],
       contactPerson: data['contactPerson'],
       contactDesignation: data['contactDesignation'],
+      address: data['address'], // Added to fromFirestore
       isGovernmentFeeder: data['isGovernmentFeeder'],
       feederType: data['feederType'],
       multiplyingFactor: (data['multiplyingFactor'] as num?)?.toDouble(),
@@ -154,6 +158,7 @@ class Bay implements HierarchyItem {
     );
   }
 
+  @override
   Map<String, dynamic> toFirestore() {
     return {
       'name': name,
@@ -167,6 +172,7 @@ class Bay implements HierarchyItem {
       'contactNumber': contactNumber,
       'contactPerson': contactPerson,
       'contactDesignation': contactDesignation,
+      'address': address, // Added to toFirestore
       'isGovernmentFeeder': isGovernmentFeeder,
       'feederType': feederType,
       'multiplyingFactor': multiplyingFactor,
@@ -216,6 +222,7 @@ class Bay implements HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
+    String? address, // Added to copyWith
     bool? isGovernmentFeeder,
     String? feederType,
     double? multiplyingFactor,
@@ -258,6 +265,7 @@ class Bay implements HierarchyItem {
       contactNumber: contactNumber ?? this.contactNumber,
       contactPerson: contactPerson ?? this.contactPerson,
       contactDesignation: contactDesignation ?? this.contactDesignation,
+      address: address ?? this.address, // Added to copyWith
       isGovernmentFeeder: isGovernmentFeeder ?? this.isGovernmentFeeder,
       feederType: feederType ?? this.feederType,
       multiplyingFactor: multiplyingFactor ?? this.multiplyingFactor,
