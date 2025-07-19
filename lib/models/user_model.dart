@@ -4,13 +4,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 // Define the roles for clarity and type safety
 enum UserRole {
   admin,
-  stateManager, // Explicitly confirmed as existing
+  superAdmin,
+  stateManager, // new: state-level manager
+  companyManager, // new: company-level user
   zoneManager,
   circleManager,
   divisionManager,
   subdivisionManager,
   substationUser,
-  pending, // For users awaiting admin approval after sign-up
+  pending,
 }
 
 class AppUser {
