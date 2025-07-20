@@ -1,4 +1,3 @@
-
 // lib/models/app_state_data.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -966,6 +965,12 @@ class AppStateData extends ChangeNotifier {
       notifyListeners();
       print('DEBUG: AppStateData: Data fully loaded and flag set to true.');
     }
+  }
+
+  List<CityModel> getCitiesForStateId(String stateId) {
+    return allCityModels
+        .where((city) => city.stateId.toString() == stateId)
+        .toList();
   }
 
   List<CityModel> getCitiesForStateName(String stateName) {

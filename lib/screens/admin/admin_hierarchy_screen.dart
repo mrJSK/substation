@@ -1360,7 +1360,7 @@ class _AddEditHierarchyItemFormState extends State<_AddEditHierarchyItemForm>
                                 isEmpty: commissioningDate == null,
                                 child: Text(
                                   commissioningDate == null
-                                      ? 'No date chosen'
+                                      ? ''
                                       : commissioningDate!
                                             .toDate()
                                             .toLocal()

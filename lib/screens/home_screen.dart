@@ -32,6 +32,8 @@ abstract class BaseHomeScreen extends StatefulWidget {
 abstract class BaseHomeScreenState<T extends BaseHomeScreen> extends State<T> {
   Widget buildDrawer(BuildContext context);
 
+  List<Widget> buildAppBarActions(BuildContext context) => [];
+
   @override
   Widget build(BuildContext context) {
     final appStateData = Provider.of<AppStateData>(context);
@@ -51,6 +53,7 @@ abstract class BaseHomeScreenState<T extends BaseHomeScreen> extends State<T> {
             );
           },
         ),
+        actions: buildAppBarActions(context),
       ),
       drawer: buildDrawer(context),
       body: buildBody(context),
@@ -214,67 +217,71 @@ class _SubstationUserHomeScreenState
   }
 
   @override
+  List<Widget> buildAppBarActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.flash_on),
+        tooltip: 'Energy SLD',
+        onPressed: () async {
+          Substation? substationToView;
+          if (widget.appUser.assignedLevels != null &&
+              widget.appUser.assignedLevels!.containsKey('substationId')) {
+            final substationDoc = await FirebaseFirestore.instance
+                .collection('substations')
+                .doc(widget.appUser.assignedLevels!['substationId'])
+                .get();
+            if (substationDoc.exists) {
+              substationToView = Substation.fromFirestore(substationDoc);
+            }
+          }
+
+          if (substationToView != null && context.mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => ChangeNotifierProvider<SldController>(
+                  create: (context) => SldController(
+                    substationId: substationToView!.id,
+                    transformationController: TransformationController(),
+                  ),
+                  child: EnergySldScreen(
+                    substationId: substationToView!.id,
+                    substationName: substationToView.name,
+                    currentUser: widget.appUser,
+                  ),
+                ),
+              ),
+            );
+          } else if (context.mounted) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'No substation assigned for Energy SLD.',
+              isError: true,
+            );
+          }
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.history),
+        tooltip: 'View Saved SLDs',
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) =>
+                  SavedSldListScreen(currentUser: widget.appUser),
+            ),
+          );
+        },
+      ),
+    ];
+  }
+
+  @override
   Widget buildDrawer(BuildContext context) {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           _buildDrawerHeader(context),
-          ListTile(
-            leading: const Icon(Icons.flash_on),
-            title: const Text('Energy SLD'),
-            onTap: () async {
-              Navigator.of(context).pop();
-              Substation? substationToView;
-              if (widget.appUser.assignedLevels != null &&
-                  widget.appUser.assignedLevels!.containsKey('substationId')) {
-                final substationDoc = await FirebaseFirestore.instance
-                    .collection('substations')
-                    .doc(widget.appUser.assignedLevels!['substationId'])
-                    .get();
-                if (substationDoc.exists) {
-                  substationToView = Substation.fromFirestore(substationDoc);
-                }
-              }
-
-              if (substationToView != null) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ChangeNotifierProvider<SldController>(
-                      create: (context) => SldController(
-                        substationId: substationToView!.id,
-                        transformationController: TransformationController(),
-                      ),
-                      child: EnergySldScreen(
-                        substationId: substationToView!.id,
-                        substationName: substationToView.name,
-                        currentUser: widget.appUser,
-                      ),
-                    ),
-                  ),
-                );
-              } else {
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'No substation assigned for Energy SLD.',
-                  isError: true,
-                );
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('View Saved SLDs'),
-            onTap: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      SavedSldListScreen(currentUser: widget.appUser),
-                ),
-              );
-            },
-          ),
           const Divider(),
           _buildThemeToggle(context),
           const Divider(),
@@ -327,47 +334,12 @@ class SubdivisionManagerHomeScreen extends BaseHomeScreen {
 
 class _SubdivisionManagerHomeScreenState
     extends BaseHomeScreenState<SubdivisionManagerHomeScreen> {
-  // We no longer need _selectedIndex or _substations here as SubdivisionDashboardScreen manages the substation selection internally.
-  // The _selectedIndex was used for the BottomNavigationBar which is now moved to SubdivisionDashboardScreen.
-  // _substations was also used to populate that BottomNavigationBar.
-
   @override
   String getAppBarTitle() => 'Subdivision Dashboard';
 
   @override
   Widget buildBody(BuildContext context) {
-    // SubdivisionDashboardScreen now handles its own internal state, including substation selection and tabs.
-    return SubdivisionDashboardScreen(
-      currentUser: widget.appUser,
-      // No need to pass selectedSubstationId here, as it's managed internally
-      // and selected by the user via the dropdown in SubdivisionDashboardScreen's AppBar.
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // The Scaffold here is for the overall structure of the SubdivisionManagerHomeScreen.
-    // The SubdivisionDashboardScreen will have its own Scaffold and BottomNavigationBar.
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(getAppBarTitle()),
-        centerTitle: true,
-        leading: Builder(
-          builder: (BuildContext context) {
-            return IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
-            );
-          },
-        ),
-      ),
-      drawer: buildDrawer(context),
-      body: buildBody(context), // This will render SubdivisionDashboardScreen
-      // Removed bottomNavigationBar from here as SubdivisionDashboardScreen has its own
-    );
+    return SubdivisionDashboardScreen(currentUser: widget.appUser);
   }
 
   @override
@@ -381,8 +353,7 @@ class _SubdivisionManagerHomeScreenState
             leading: const Icon(Icons.dashboard),
             title: const Text('Subdivision Dashboard'),
             onTap: () {
-              Navigator.of(context).pop(); // Just close the drawer
-              // No navigation needed, as this is the current screen
+              Navigator.of(context).pop();
             },
           ),
           ListTile(
@@ -392,19 +363,15 @@ class _SubdivisionManagerHomeScreenState
               Navigator.of(context).pop();
               if (widget.appUser.assignedLevels != null &&
                   widget.appUser.assignedLevels!.containsKey('subdivisionId')) {
-                Navigator.of(context)
-                    .push(
-                      MaterialPageRoute(
-                        builder: (context) => ReadingConfigurationScreen(
-                          currentUser: widget.appUser,
-                          subdivisionId:
-                              widget.appUser.assignedLevels!['subdivisionId']!,
-                        ),
-                      ),
-                    )
-                    .then((_) {
-                      // No need to refresh substations here anymore, as SubdivisionDashboardScreen manages its own data loading.
-                    });
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ReadingConfigurationScreen(
+                      currentUser: widget.appUser,
+                      subdivisionId:
+                          widget.appUser.assignedLevels!['subdivisionId']!,
+                    ),
+                  ),
+                );
               } else {
                 SnackBarUtils.showSnackBar(
                   context,

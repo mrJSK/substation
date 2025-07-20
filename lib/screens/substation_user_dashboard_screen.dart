@@ -23,13 +23,11 @@ class SubstationUserDashboardScreen extends StatefulWidget {
 class _SubstationUserDashboardScreenState
     extends State<SubstationUserDashboardScreen>
     with SingleTickerProviderStateMixin {
-  // Added SingleTickerProviderStateMixin
-
   Substation? _selectedSubstationForLogsheet;
   List<Substation> _accessibleSubstations = [];
   bool _isLoadingSubstations = true;
 
-  late TabController _tabController; // Declare TabController
+  late TabController _tabController;
   int _currentTabIndex = 0; // Track current tab index
 
   @override
@@ -39,9 +37,10 @@ class _SubstationUserDashboardScreenState
 
     // Initialize TabController
     // Ensure tabCount is calculated correctly before initializing _tabController
+    // The tabCount determines the number of items in the TabBarView and BottomNavigationBar
     final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
-        ? 4
-        : 3;
+        ? 4 // Operations, Energy, Tripping & Shutdown, Assets
+        : 3; // Operations, Energy, Tripping & Shutdown
     _tabController = TabController(length: tabCount, vsync: this);
     _tabController.addListener(_handleTabSelection);
   }
@@ -128,25 +127,10 @@ class _SubstationUserDashboardScreenState
         : 3;
 
     return Scaffold(
-      // <--- Added Scaffold here
-      appBar: AppBar(
-        title: const Text('Substation Dashboard'),
-        bottom: TabBar(
-          // Moved TabBar to AppBar.bottom for consistent display
-          controller: _tabController,
-          labelColor: Theme.of(context).colorScheme.primary,
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: Theme.of(context).colorScheme.primary,
-          tabs: [
-            const Tab(text: 'Operations', icon: Icon(Icons.access_time_filled)),
-            const Tab(text: 'Energy', icon: Icon(Icons.electric_meter)),
-            const Tab(text: 'Tripping & Shutdown', icon: Icon(Icons.warning)),
-            // Add the new tab only for subdivision managers
-            if (widget.currentUser.role == UserRole.subdivisionManager)
-              const Tab(text: 'Assets', icon: Icon(Icons.construction)),
-          ],
-        ),
-      ),
+      // Removed the AppBar from here. The parent screen (HomeScreen) is expected
+      // to provide the main AppBar. If this screen is the top-level,
+      // you might want to add a custom header in the body.
+      // For this request, the title "Substation Dashboard" is moved to the body.
       body: _isLoadingSubstations
           ? const Center(child: CircularProgressIndicator())
           : _accessibleSubstations.isEmpty && !_isLoadingSubstations
@@ -189,8 +173,23 @@ class _SubstationUserDashboardScreenState
               ),
             )
           : Column(
-              // Use Column here to hold the dropdown and TabBarView
+              // Use Column here to hold the dropdown, title and TabBarView
               children: [
+                // Added a Text widget for the title, as AppBar is removed.
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16.0,
+                    horizontal: 16.0,
+                  ),
+                  child: Text(
+                    'Substation Dashboard',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 // Substation Dropdown (conditionally shown based on tab and selection)
                 if ((_currentTabIndex <
                         tabCount -
@@ -281,6 +280,39 @@ class _SubstationUserDashboardScreenState
                 ),
               ],
             ),
+      // Moved TabBar content to bottomNavigationBar
+      bottomNavigationBar: BottomNavigationBar(
+        // Removed 'controller: _tabController' as BottomNavigationBar does not have this parameter.
+        currentIndex: _currentTabIndex,
+        onTap: (index) {
+          setState(() {
+            _currentTabIndex = index;
+            _tabController.animateTo(index); // Animate to selected tab
+          });
+        },
+        type: BottomNavigationBarType.fixed, // Ensures all items are visible
+        selectedItemColor: Theme.of(context).colorScheme.primary,
+        unselectedItemColor: Colors.grey,
+        items: [
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.access_time_filled),
+            label: 'Operations',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.electric_meter),
+            label: 'Energy',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.warning),
+            label: 'Tripping & Shutdown',
+          ),
+          if (widget.currentUser.role == UserRole.subdivisionManager)
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.construction),
+              label: 'Assets',
+            ),
+        ],
+      ),
     );
   }
 }
