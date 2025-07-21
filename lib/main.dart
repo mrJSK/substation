@@ -1,53 +1,51 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../firebase_options.dart';
-
-import '../screens/splash_screen.dart';
-import '../screens/auth_screen.dart';
-import '../screens/home_screen.dart';
-import '../models/user_model.dart';
-import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart';
 
+import '../firebase_options.dart'; // Ensure this path is correct
 import '../models/app_state_data.dart';
+import '../screens/auth_screen.dart';
+import '../screens/home_screen.dart'; // This will be the new routing screen
+import '../screens/splash_screen.dart'; // The initial splash screen
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize Firebase once at the application start
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   runApp(
+    // Provide AppStateData globally
     ChangeNotifierProvider(
-      create: (context) => AppStateData(), // Provide AppStateData
+      create: (context) => AppStateData(),
       child: const MyApp(),
     ),
   );
 }
 
 class MyApp extends StatefulWidget {
-  // Changed to StatefulWidget
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState(); // Create a State
+  State<MyApp> createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
+  // Define your color scheme constants here
+  static const Color primaryBlue = Color(0xFF0D6EFD);
+  static const Color secondaryGreen = Color(0xFF28A745);
+  static const Color tertiaryYellow = Color(0xFFFFC107);
+  static const Color errorRed = Color(0xFFDC3545);
+
   @override
   Widget build(BuildContext context) {
-    const Color primaryBlue = Color(0xFF0D6EFD);
-    const Color secondaryGreen = Color(0xFF28A745);
-    const Color tertiaryYellow = Color(0xFFFFC107);
-    const Color errorRed = Color(0xFFDC3545);
-
-    // Listen to AppStateData for theme changes
-    final appStateData = Provider.of<AppStateData>(context); //
+    // Access AppStateData to react to theme changes and initialization status
+    final appStateData = Provider.of<AppStateData>(context);
 
     return MaterialApp(
       title: 'Substation Manager Pro',
       debugShowCheckedModeBanner: false,
+      // Define light theme
       theme: ThemeData(
         brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(
@@ -176,6 +174,7 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: Colors.white,
       ),
+      // Define dark theme
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
@@ -305,7 +304,22 @@ class _MyAppState extends State<MyApp> {
         scaffoldBackgroundColor: Colors.black,
       ),
       themeMode: appStateData.themeMode, // Use themeMode from AppStateData
-      home: const SplashScreen(),
+      // Use a FutureBuilder to wait for AppStateData to be initialized
+      home: FutureBuilder(
+        // The future to await is the initialization of AppStateData
+        // We'll expose a Future from AppStateData for this purpose
+        future: appStateData.isInitialized
+            ? Future.value(true)
+            : null, // Only run if not already initialized
+        builder: (context, snapshot) {
+          // If AppStateData is still loading, show the SplashScreen
+          if (!appStateData.isInitialized) {
+            return const SplashScreen();
+          }
+          // Once AppStateData is initialized, HomeRouter handles further routing
+          return const HomeRouter();
+        },
+      ),
     );
   }
 }

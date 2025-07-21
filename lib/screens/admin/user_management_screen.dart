@@ -337,8 +337,16 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             );
           }).toList();
 
+          // Check if currentValue is present in the new list of items.
+          // If not, set it to null to avoid the assertion error.
+          String? validatedCurrentValue = currentValue;
+          if (currentValue != null &&
+              !dropdownItems.any((item) => item.value == currentValue)) {
+            validatedCurrentValue = null;
+          }
+
           return DropdownButtonFormField<String>(
-            value: currentValue,
+            value: validatedCurrentValue, // Use the validated value
             decoration: InputDecoration(
               labelText: label,
               border: const OutlineInputBorder(),

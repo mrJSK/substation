@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../models/user_model.dart';
 import '../models/hierarchy_models.dart';
-import '../models/app_state_data.dart';
+import '../models/app_state_data.dart'; // Import the updated AppStateData
 import '../screens/auth_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/equipment_hierarchy_selection_screen.dart';
@@ -19,53 +20,119 @@ import '../screens/readings_configuration_screen.dart';
 import '../controllers/sld_controller.dart';
 import '../utils/snackbar_utils.dart';
 
+// NEW: HomeRouter - This widget will handle routing based on authentication and user role
+class HomeRouter extends StatelessWidget {
+  const HomeRouter({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Listen to AppStateData for current user and initialization status
+    final appStateData = Provider.of<AppStateData>(context);
+
+    // Show a loading indicator if AppStateData is not yet fully initialized
+    if (!appStateData.isInitialized) {
+      // This state should ideally be handled by the FutureBuilder in main.dart
+      // but as a fallback, if we somehow reach here before full init, show a simple loading.
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final AppUser? currentUser = appStateData.currentUser;
+
+    if (currentUser == null) {
+      // No user is authenticated, navigate to AuthScreen
+      return const AuthScreen();
+    } else {
+      // User is authenticated, check approval status and role
+      if (currentUser.approved) {
+        switch (currentUser.role) {
+          case UserRole.admin:
+            return AdminHomeScreen(appUser: currentUser);
+          case UserRole.substationUser:
+            return SubstationUserHomeScreen(appUser: currentUser);
+          case UserRole.subdivisionManager:
+            return SubdivisionManagerHomeScreen(appUser: currentUser);
+          default:
+            // Handle unrecognized roles or default to AuthScreen with a message
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              SnackBarUtils.showSnackBar(
+                context,
+                'Your user role is not recognized. Please log in again or contact support.',
+                isError: true,
+              );
+              // Force sign out if role is unrecognized
+              FirebaseAuth.instance.signOut();
+              GoogleSignIn().signOut();
+            });
+            return const AuthScreen();
+        }
+      } else {
+        // User is not approved, show pending approval screen
+        return const Scaffold(
+          body: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.hourglass_empty, size: 80, color: Colors.blue),
+                  SizedBox(height: 20),
+                  Text(
+                    'Your account is pending approval by an admin.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    'Please wait while an administrator reviews your registration.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+  }
+}
+
 // Base Home Screen class for shared functionality
 abstract class BaseHomeScreen extends StatefulWidget {
   final AppUser appUser;
+  final Widget? drawer; // NEW: Add a drawer property
 
-  const BaseHomeScreen({super.key, required this.appUser});
+  const BaseHomeScreen({
+    super.key,
+    required this.appUser,
+    this.drawer,
+  }); // NEW: Add drawer to constructor
 
   @override
   BaseHomeScreenState createState();
 }
 
 abstract class BaseHomeScreenState<T extends BaseHomeScreen> extends State<T> {
-  Widget buildDrawer(BuildContext context);
-
-  List<Widget> buildAppBarActions(BuildContext context) => [];
+  // buildDrawer is REMOVED from here. Each dashboard will provide its drawer to BaseHomeScreen.
 
   @override
   Widget build(BuildContext context) {
-    final appStateData = Provider.of<AppStateData>(context);
+    // AppStateData is now handled by MyApp and HomeRouter for theme
+    // We still need it here for the theme toggle in the drawer
+    final appStateData = Provider.of<AppStateData>(
+      context,
+    ); // Keep for theme toggle in common drawer widgets
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(getAppBarTitle()),
-        centerTitle: true,
-        leading: Builder(
-          builder: (BuildContext context) {
-            return IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
-            );
-          },
-        ),
-        actions: buildAppBarActions(context),
-      ),
-      drawer: buildDrawer(context),
-      body: buildBody(context),
-    );
+    // The Scaffold is now built WITHIN the AdminDashboardScreen, SubstationUserDashboardScreen, etc.
+    // BaseHomeScreenState's build method will simply return the dashboard screen.
+    return buildBody(context); // buildBody will now return a Scaffold
   }
 
-  String getAppBarTitle();
-
+  // This method will now return a Scaffold (which contains its own AppBar and body)
   Widget buildBody(BuildContext context);
 }
 
-// Admin Home Screen
+// Admin Home Screen (remains largely the same)
 class AdminHomeScreen extends BaseHomeScreen {
   static const String routeName = '/admin_home';
 
@@ -77,20 +144,22 @@ class AdminHomeScreen extends BaseHomeScreen {
 
 class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
   @override
-  String getAppBarTitle() => 'Admin Dashboard';
-
-  @override
   Widget buildBody(BuildContext context) {
-    return AdminDashboardScreen(adminUser: widget.appUser);
+    // AdminDashboardScreen will now contain its own Scaffold and AppBar
+    return AdminDashboardScreen(
+      adminUser: widget.appUser,
+      // Pass the common drawer to the dashboard screen
+      drawer: _buildAdminDrawer(context),
+    );
   }
 
-  @override
-  Widget buildDrawer(BuildContext context) {
+  // Admin specific drawer
+  Widget _buildAdminDrawer(BuildContext context) {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
-          _buildDrawerHeader(context),
+          _buildDrawerHeader(context, 'Admin'),
           ListTile(
             leading: const Icon(Icons.rule),
             title: const Text('Reading Templates'),
@@ -119,6 +188,7 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
                       )
                       as Substation?;
               if (selectedSubstation != null) {
+                if (!mounted) return; // Add mounted check
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => ChangeNotifierProvider<SldController>(
@@ -135,6 +205,7 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
                   ),
                 );
               } else {
+                if (!mounted) return; // Add mounted check
                 SnackBarUtils.showSnackBar(
                   context,
                   'No substation selected for Energy SLD.',
@@ -165,7 +236,7 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
     );
   }
 
-  Widget _buildDrawerHeader(BuildContext context) {
+  Widget _buildDrawerHeader(BuildContext context, String role) {
     return DrawerHeader(
       decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
       child: Column(
@@ -185,7 +256,7 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
             ),
           ),
           Text(
-            'Role: Admin',
+            'Role: $role',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
             ),
@@ -209,79 +280,21 @@ class SubstationUserHomeScreen extends BaseHomeScreen {
 class _SubstationUserHomeScreenState
     extends BaseHomeScreenState<SubstationUserHomeScreen> {
   @override
-  String getAppBarTitle() => 'Substation Dashboard';
-
-  @override
   Widget buildBody(BuildContext context) {
-    return SubstationUserDashboardScreen(currentUser: widget.appUser);
+    // SubstationUserDashboardScreen will now contain its own Scaffold and AppBar
+    return SubstationUserDashboardScreen(
+      currentUser: widget.appUser,
+      // Pass the common drawer to the dashboard screen
+      drawer: _buildSubstationUserDrawer(context),
+    );
   }
 
-  @override
-  List<Widget> buildAppBarActions(BuildContext context) {
-    return [
-      IconButton(
-        icon: const Icon(Icons.flash_on),
-        tooltip: 'Energy SLD',
-        onPressed: () async {
-          Substation? substationToView;
-          if (widget.appUser.assignedLevels != null &&
-              widget.appUser.assignedLevels!.containsKey('substationId')) {
-            final substationDoc = await FirebaseFirestore.instance
-                .collection('substations')
-                .doc(widget.appUser.assignedLevels!['substationId'])
-                .get();
-            if (substationDoc.exists) {
-              substationToView = Substation.fromFirestore(substationDoc);
-            }
-          }
-
-          if (substationToView != null && context.mounted) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => ChangeNotifierProvider<SldController>(
-                  create: (context) => SldController(
-                    substationId: substationToView!.id,
-                    transformationController: TransformationController(),
-                  ),
-                  child: EnergySldScreen(
-                    substationId: substationToView!.id,
-                    substationName: substationToView.name,
-                    currentUser: widget.appUser,
-                  ),
-                ),
-              ),
-            );
-          } else if (context.mounted) {
-            SnackBarUtils.showSnackBar(
-              context,
-              'No substation assigned for Energy SLD.',
-              isError: true,
-            );
-          }
-        },
-      ),
-      IconButton(
-        icon: const Icon(Icons.history),
-        tooltip: 'View Saved SLDs',
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) =>
-                  SavedSldListScreen(currentUser: widget.appUser),
-            ),
-          );
-        },
-      ),
-    ];
-  }
-
-  @override
-  Widget buildDrawer(BuildContext context) {
+  Widget _buildSubstationUserDrawer(BuildContext context) {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
-          _buildDrawerHeader(context),
+          _buildDrawerHeader(context, 'Substation User'),
           const Divider(),
           _buildThemeToggle(context),
           const Divider(),
@@ -291,7 +304,7 @@ class _SubstationUserHomeScreenState
     );
   }
 
-  Widget _buildDrawerHeader(BuildContext context) {
+  Widget _buildDrawerHeader(BuildContext context, String role) {
     return DrawerHeader(
       decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
       child: Column(
@@ -311,7 +324,7 @@ class _SubstationUserHomeScreenState
             ),
           ),
           Text(
-            'Role: Substation User',
+            'Role: $role',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
             ),
@@ -335,20 +348,21 @@ class SubdivisionManagerHomeScreen extends BaseHomeScreen {
 class _SubdivisionManagerHomeScreenState
     extends BaseHomeScreenState<SubdivisionManagerHomeScreen> {
   @override
-  String getAppBarTitle() => 'Subdivision Dashboard';
-
-  @override
   Widget buildBody(BuildContext context) {
-    return SubdivisionDashboardScreen(currentUser: widget.appUser);
+    // SubdivisionDashboardScreen will now contain its own Scaffold and AppBar
+    return SubdivisionDashboardScreen(
+      currentUser: widget.appUser,
+      // Pass the common drawer to the dashboard screen
+      drawer: _buildSubdivisionManagerDrawer(context),
+    );
   }
 
-  @override
-  Widget buildDrawer(BuildContext context) {
+  Widget _buildSubdivisionManagerDrawer(BuildContext context) {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
-          _buildDrawerHeader(context),
+          _buildDrawerHeader(context, 'Subdivision Manager'),
           ListTile(
             leading: const Icon(Icons.dashboard),
             title: const Text('Subdivision Dashboard'),
@@ -363,6 +377,7 @@ class _SubdivisionManagerHomeScreenState
               Navigator.of(context).pop();
               if (widget.appUser.assignedLevels != null &&
                   widget.appUser.assignedLevels!.containsKey('subdivisionId')) {
+                if (!mounted) return; // Add mounted check
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => ReadingConfigurationScreen(
@@ -373,6 +388,7 @@ class _SubdivisionManagerHomeScreenState
                   ),
                 );
               } else {
+                if (!mounted) return; // Add mounted check
                 SnackBarUtils.showSnackBar(
                   context,
                   'No subdivision assigned to this user.',
@@ -397,6 +413,7 @@ class _SubdivisionManagerHomeScreenState
                       )
                       as Substation?;
               if (selectedSubstation != null) {
+                if (!mounted) return; // Add mounted check
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => ChangeNotifierProvider<SldController>(
@@ -413,6 +430,7 @@ class _SubdivisionManagerHomeScreenState
                   ),
                 );
               } else {
+                if (!mounted) return; // Add mounted check
                 SnackBarUtils.showSnackBar(
                   context,
                   'No substation selected for Energy SLD.',
@@ -443,7 +461,7 @@ class _SubdivisionManagerHomeScreenState
     );
   }
 
-  Widget _buildDrawerHeader(BuildContext context) {
+  Widget _buildDrawerHeader(BuildContext context, String role) {
     return DrawerHeader(
       decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
       child: Column(
@@ -463,7 +481,7 @@ class _SubdivisionManagerHomeScreenState
             ),
           ),
           Text(
-            'Role: Subdivision Manager',
+            'Role: $role',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
             ),
@@ -474,6 +492,7 @@ class _SubdivisionManagerHomeScreenState
   }
 }
 
+// Common widgets for drawer
 Widget _buildThemeToggle(BuildContext context) {
   final appStateData = Provider.of<AppStateData>(context, listen: false);
   return ListTile(
@@ -498,15 +517,10 @@ Widget _buildLogoutTile(BuildContext context) {
     leading: const Icon(Icons.logout),
     title: const Text('Logout'),
     onTap: () async {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(); // Close drawer
       await FirebaseAuth.instance.signOut();
       await GoogleSignIn().signOut();
-      if (context.mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const AuthScreen()),
-          (Route<dynamic> route) => false,
-        );
-      }
+      // No need to navigate here, HomeRouter will react to auth state change
     },
   );
 }

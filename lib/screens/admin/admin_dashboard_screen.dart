@@ -11,8 +11,13 @@ import 'bay_relationship_management_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final AppUser adminUser;
+  final Widget? drawer; // NEW: Add drawer property
 
-  const AdminDashboardScreen({super.key, required this.adminUser});
+  const AdminDashboardScreen({
+    super.key,
+    required this.adminUser,
+    this.drawer,
+  }); // NEW: Add drawer to constructor
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -105,6 +110,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     ];
 
     return Scaffold(
+      appBar: AppBar(
+        // ADDED AppBar
+        title: const Text('Admin Dashboard'),
+        centerTitle: true,
+        leading: Builder(
+          // ADDED Builder for leading icon
+          builder: (BuildContext context) {
+            return IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () {
+                Scaffold.of(
+                  context,
+                ).openDrawer(); // Access the parent Scaffold's drawer
+              },
+              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+            );
+          },
+        ),
+      ),
+      drawer: widget.drawer, // NEW: Use the passed drawer
       body: FadeTransition(
         opacity: _fadeAnimation,
         child: SingleChildScrollView(

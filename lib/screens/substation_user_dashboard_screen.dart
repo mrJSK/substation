@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart'; // For Substation model
@@ -9,11 +10,20 @@ import '../../utils/snackbar_utils.dart';
 import 'bay_readings_overview_screen.dart'; // Correct import for BayReadingsOverviewScreen
 import 'tripping_shutdown_overview_screen.dart'; // Import TrippingShutdownOverviewScreen
 import 'subdivision_asset_management_screen.dart'; // Import the new asset management screen
+import 'equipment_hierarchy_selection_screen.dart'; // For Energy SLD navigation
+import 'energy_sld_screen.dart'; // For Energy SLD navigation
+import '../../controllers/sld_controller.dart'; // For Energy SLD navigation
+import 'saved_sld_list_screen.dart'; // For Saved SLD navigation
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
+  final Widget? drawer; // NEW: Add drawer property
 
-  const SubstationUserDashboardScreen({super.key, required this.currentUser});
+  const SubstationUserDashboardScreen({
+    super.key,
+    required this.currentUser,
+    this.drawer,
+  }); // NEW: Add drawer to constructor
 
   @override
   State<SubstationUserDashboardScreen> createState() =>
@@ -61,6 +71,7 @@ class _SubstationUserDashboardScreenState
   }
 
   Future<void> _loadAccessibleSubstations() async {
+    if (!mounted) return; // Add mounted check at the start of async method
     setState(() {
       _isLoadingSubstations = true;
     });
@@ -86,23 +97,31 @@ class _SubstationUserDashboardScreenState
       } else {
         // Roles not explicitly handled or without assigned levels
         _accessibleSubstations = [];
-        _isLoadingSubstations = false;
+        if (mounted) {
+          // Ensure mounted before setState
+          setState(() {
+            _isLoadingSubstations = false;
+          });
+        }
         return;
       }
 
       final snapshot = await query.orderBy('name').get();
-      setState(() {
-        _accessibleSubstations = snapshot.docs
-            .map((doc) => Substation.fromFirestore(doc))
-            .toList();
-        // Automatically select the substation if it's a SubstationUser with one assigned
-        // OR if it's a Subdivision Manager with only one substation in their subdivision
-        if ((widget.currentUser.role == UserRole.substationUser ||
-                widget.currentUser.role == UserRole.subdivisionManager) &&
-            _accessibleSubstations.length == 1) {
-          _selectedSubstationForLogsheet = _accessibleSubstations.first;
-        }
-      });
+      if (mounted) {
+        // Ensure mounted before setState
+        setState(() {
+          _accessibleSubstations = snapshot.docs
+              .map((doc) => Substation.fromFirestore(doc))
+              .toList();
+          // Automatically select the substation if it's a SubstationUser with one assigned
+          // OR if it's a Subdivision Manager with only one substation in their subdivision
+          if ((widget.currentUser.role == UserRole.substationUser ||
+                  widget.currentUser.role == UserRole.subdivisionManager) &&
+              _accessibleSubstations.length == 1) {
+            _selectedSubstationForLogsheet = _accessibleSubstations.first;
+          }
+        });
+      }
     } catch (e) {
       print("Error loading accessible substations: $e");
       if (mounted) {
@@ -113,9 +132,12 @@ class _SubstationUserDashboardScreenState
         );
       }
     } finally {
-      setState(() {
-        _isLoadingSubstations = false;
-      });
+      if (mounted) {
+        // Ensure mounted before setState
+        setState(() {
+          _isLoadingSubstations = false;
+        });
+      }
     }
   }
 
@@ -127,10 +149,84 @@ class _SubstationUserDashboardScreenState
         : 3;
 
     return Scaffold(
-      // Removed the AppBar from here. The parent screen (HomeScreen) is expected
-      // to provide the main AppBar. If this screen is the top-level,
-      // you might want to add a custom header in the body.
-      // For this request, the title "Substation Dashboard" is moved to the body.
+      appBar: AppBar(
+        // ADDED AppBar
+        title: const Text('Substation Dashboard'),
+        centerTitle: true,
+        leading: Builder(
+          // ADDED Builder for leading icon
+          builder: (BuildContext context) {
+            return IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () {
+                Scaffold.of(
+                  context,
+                ).openDrawer(); // Access the parent Scaffold's drawer
+              },
+              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+            );
+          },
+        ),
+        actions: [
+          // ADDED AppBar actions for this specific dashboard
+          IconButton(
+            icon: const Icon(Icons.flash_on),
+            tooltip: 'Energy SLD',
+            onPressed: () async {
+              Substation? substationToView;
+              if (widget.currentUser.assignedLevels != null &&
+                  widget.currentUser.assignedLevels!.containsKey(
+                    'substationId',
+                  )) {
+                final substationDoc = await FirebaseFirestore.instance
+                    .collection('substations')
+                    .doc(widget.currentUser.assignedLevels!['substationId'])
+                    .get();
+                if (substationDoc.exists) {
+                  substationToView = Substation.fromFirestore(substationDoc);
+                }
+              }
+
+              if (substationToView != null && mounted) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ChangeNotifierProvider<SldController>(
+                      create: (context) => SldController(
+                        substationId: substationToView!.id,
+                        transformationController: TransformationController(),
+                      ),
+                      child: EnergySldScreen(
+                        substationId: substationToView!.id,
+                        substationName: substationToView.name,
+                        currentUser: widget.currentUser,
+                      ),
+                    ),
+                  ),
+                );
+              } else if (mounted) {
+                SnackBarUtils.showSnackBar(
+                  context,
+                  'No substation assigned for Energy SLD.',
+                  isError: true,
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'View Saved SLDs',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) =>
+                      SavedSldListScreen(currentUser: widget.currentUser),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      drawer: widget.drawer, // NEW: Use the passed drawer
       body: _isLoadingSubstations
           ? const Center(child: CircularProgressIndicator())
           : _accessibleSubstations.isEmpty && !_isLoadingSubstations
@@ -175,21 +271,6 @@ class _SubstationUserDashboardScreenState
           : Column(
               // Use Column here to hold the dropdown, title and TabBarView
               children: [
-                // Added a Text widget for the title, as AppBar is removed.
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16.0,
-                    horizontal: 16.0,
-                  ),
-                  child: Text(
-                    'Substation Dashboard',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
                 // Substation Dropdown (conditionally shown based on tab and selection)
                 if ((_currentTabIndex <
                         tabCount -
@@ -246,8 +327,7 @@ class _SubstationUserDashboardScreenState
                             _selectedSubstationForLogsheet?.id ??
                             '', // Pass ID, handle null in screen
                         substationName:
-                            _selectedSubstationForLogsheet?.name ??
-                            'N/A', // Pass name, handle null
+                            _selectedSubstationForLogsheet?.name ?? 'N/A',
                         currentUser: widget.currentUser,
                         frequencyType: 'hourly',
                       ),

@@ -1,6 +1,11 @@
 // lib/models/app_state_data.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'user_model.dart'; // Ensure this import is correct
+import 'hierarchy_models.dart'; // Ensure this import is correct
 
 // Your provided StateModel class
 class StateModel {
@@ -17,7 +22,6 @@ class StateModel {
     return {'id': id, 'name': name};
   }
 
-  // Add equals and hashCode for proper comparison in dropdowns if needed, though toString() comparison for ID string is used.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -70,33 +74,64 @@ class CityModel {
   }
 }
 
-// Your provided AppStateData class with static data loading added
 class AppStateData extends ChangeNotifier {
+  // Singleton pattern for AppStateData
   static final AppStateData _instance = AppStateData._internal();
-  ThemeMode _themeMode = ThemeMode.light; // Default to light until loaded
 
+  // Private fields for state
+  ThemeMode _themeMode = ThemeMode.light; // Default to light
+  bool _isThemeLoaded = false;
+  List<StateModel> _allStateModels = [];
+  List<CityModel> _allCityModels = [];
+  bool _isStaticDataLoaded = false; // Renamed for clarity
+  AppUser? _currentUser; // To store the authenticated AppUser
+  bool _isAuthStatusChecked =
+      false; // Flag to indicate if auth status has been initially checked
+
+  // Public getters for state
   ThemeMode get themeMode => _themeMode;
-
-  List<StateModel> _allStateModels = []; // Renamed to private
-  List<CityModel> _allCityModels = []; // Renamed to private
-
-  // Public getters for the data lists
+  bool get isThemeLoaded => _isThemeLoaded;
   List<StateModel> get allStateModels => List.unmodifiable(_allStateModels);
   List<CityModel> get allCityModels => List.unmodifiable(_allCityModels);
+  bool get isStaticDataLoaded => _isStaticDataLoaded; // Renamed getter
+  AppUser? get currentUser => _currentUser;
+  bool get isAuthStatusChecked => _isAuthStatusChecked;
 
-  bool _isDataLoaded = false;
-  bool get isDataLoaded => _isDataLoaded;
+  // Combined readiness flag for initial app setup
+  bool get isInitialized =>
+      _isThemeLoaded && _isStaticDataLoaded && _isAuthStatusChecked;
 
-  AppStateData._internal() {
-    // Load theme asynchronously. No need to await here as notifyListeners handles rebuild
-    _loadThemeFromPrefs();
-    _loadStaticData(); // Load static data when instance is created
-  }
-
+  // Factory constructor to return the singleton instance
   factory AppStateData() {
     return _instance;
   }
 
+  // Private constructor for the singleton
+  AppStateData._internal() {
+    _initialize(); // Start initialization process
+    _setupAuthListener(); // Set up Firebase Auth listener
+  }
+
+  // --- Initialization Methods ---
+
+  // Main initialization method to load all necessary data concurrently
+  Future<void> _initialize() async {
+    try {
+      // Load theme and static data concurrently
+      await Future.wait([_loadThemeFromPrefs(), _loadStaticData()]);
+      print(
+        'DEBUG: AppStateData: Core initialization (theme, static data) complete.',
+      );
+    } catch (e) {
+      print('ERROR: AppStateData: Core initialization failed: $e');
+      // Ensure flags are set even on error to prevent indefinite loading state
+      _isThemeLoaded = true;
+      _isStaticDataLoaded = true;
+      notifyListeners(); // Notify to potentially unblock UI
+    }
+  }
+
+  // Loads theme preference from SharedPreferences
   Future<void> _loadThemeFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -104,12 +139,15 @@ class AppStateData extends ChangeNotifier {
       _themeMode = savedTheme == 'dark' ? ThemeMode.dark : ThemeMode.light;
       print('DEBUG: AppStateData: Loaded theme from prefs: $_themeMode');
     } catch (e) {
-      print('ERROR: AppStateData: Failed to load theme: $e');
-      _themeMode = ThemeMode.light; // Fallback to light theme
+      print('ERROR: AppStateData: Failed to load theme from prefs: $e');
+      _themeMode = ThemeMode.light; // Fallback
+    } finally {
+      _isThemeLoaded = true;
+      notifyListeners(); // Notify listeners after theme is loaded
     }
-    notifyListeners(); // Notify listeners after theme is loaded
   }
 
+  // Toggles the theme mode and saves it to SharedPreferences
   Future<void> toggleTheme() async {
     _themeMode = _themeMode == ThemeMode.light
         ? ThemeMode.dark
@@ -119,6 +157,7 @@ class AppStateData extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Saves the current theme mode to SharedPreferences
   Future<void> _saveThemeToPrefs(ThemeMode themeMode) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -130,13 +169,16 @@ class AppStateData extends ChangeNotifier {
         'DEBUG: AppStateData: Saved theme to prefs: ${themeMode == ThemeMode.dark ? 'dark' : 'light'}',
       );
     } catch (e) {
-      print('ERROR: AppStateData: Failed to save theme: $e');
+      print('ERROR: AppStateData: Failed to save theme to prefs: $e');
     }
   }
 
-  // --- Static Data Loading ---
-  void _loadStaticData() {
+  // Loads static data (states and cities)
+  Future<void> _loadStaticData() async {
     print('DEBUG: AppStateData: Starting static data load.');
+    // Simulate network delay if needed for testing splash screen
+    // await Future.delayed(const Duration(seconds: 2));
+
     _allStateModels = [
       StateModel(id: 1, name: 'Andaman Nicobar'),
       StateModel(id: 2, name: 'Andhra Pradesh'),
@@ -948,23 +990,54 @@ class AppStateData extends ChangeNotifier {
     print(
       'DEBUG: AppStateData: Static data loaded. States: ${_allStateModels.length}, Cities: ${_allCityModels.length}',
     );
-    _checkAndSetLoaded(); // Indicate that data is loaded
+    _isStaticDataLoaded = true; // Set flag
+    notifyListeners(); // Notify listeners
   }
 
-  // Getter for convenience, if still needed by other parts for just names
+  // Sets up a listener for Firebase Authentication state changes
+  void _setupAuthListener() {
+    FirebaseAuth.instance.authStateChanges().listen((user) async {
+      print('DEBUG: AppStateData: Auth state changed. User: ${user?.email}');
+      if (user == null) {
+        _currentUser = null;
+      } else {
+        // Fetch or update AppUser from Firestore
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get();
+          if (userDoc.exists) {
+            _currentUser = AppUser.fromFirestore(userDoc);
+            print(
+              'DEBUG: AppStateData: Fetched AppUser: ${_currentUser?.email}, Role: ${_currentUser?.role}',
+            );
+          } else {
+            // This case should ideally be handled during sign-up.
+            // If a Firebase user exists but no Firestore doc, it's an inconsistent state.
+            // Consider logging them out or creating a pending user doc.
+            print(
+              'WARNING: AppStateData: Firebase user exists but no Firestore document. Logging out.',
+            );
+            await FirebaseAuth.instance.signOut();
+            _currentUser = null;
+          }
+        } catch (e) {
+          print(
+            'ERROR: AppStateData: Failed to fetch AppUser from Firestore: $e',
+          );
+          _currentUser = null; // Clear user on error
+        }
+      }
+      _isAuthStatusChecked =
+          true; // Mark that initial auth status has been checked
+      notifyListeners(); // Notify UI about user change
+    });
+  }
+
+  // Getters for convenience, if still needed by other parts for just names
   List<String> get states {
     return _allStateModels.map((s) => s.name).toList();
-  }
-
-  // The previous setAllStateModels and setAllCityModels are no longer needed
-  // as data is loaded directly into _allStateModels and _allCityModels in _loadStaticData.
-
-  void _checkAndSetLoaded() {
-    if (_allStateModels.isNotEmpty && _allCityModels.isNotEmpty) {
-      _isDataLoaded = true;
-      notifyListeners();
-      print('DEBUG: AppStateData: Data fully loaded and flag set to true.');
-    }
   }
 
   List<CityModel> getCitiesForStateId(String stateId) {

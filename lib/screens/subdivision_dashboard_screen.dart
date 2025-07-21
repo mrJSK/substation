@@ -673,11 +673,13 @@ class _ReportGenerationSectionState extends State<ReportGenerationSection> {
 class SubdivisionDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
   final String? selectedSubstationId;
+  final Widget? drawer; // NEW: Add drawer property
 
   const SubdivisionDashboardScreen({
     Key? key,
     required this.currentUser,
     this.selectedSubstationId,
+    this.drawer, // NEW: Add drawer to constructor
   }) : super(key: key);
 
   @override
@@ -707,7 +709,7 @@ class _SubdivisionDashboardScreenState
   }
 
   Future<void> _loadConfigAndFetchData() async {
-    if (!mounted) return;
+    if (!mounted) return; // Add mounted check
     setState(() => _isLoading = true);
     try {
       final userId = widget.currentUser.uid;
@@ -743,7 +745,10 @@ class _SubdivisionDashboardScreenState
         }
         await _fetchData();
       } else {
-        setState(() => _isLoading = false);
+        if (mounted) {
+          // Add mounted check
+          setState(() => _isLoading = false);
+        }
       }
     } catch (e) {
       print('Error loading configuration: $e');
@@ -755,12 +760,15 @@ class _SubdivisionDashboardScreenState
         );
       }
       _startTime = DateTime.now().subtract(const Duration(hours: 48));
-      setState(() => _isLoading = false);
+      if (mounted) {
+        // Add mounted check
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _fetchSubstations() async {
-    if (!mounted) return;
+    if (!mounted) return; // Add mounted check
     setState(() => _isLoading = true);
     try {
       final AppUser currentUser = widget.currentUser;
@@ -802,21 +810,27 @@ class _SubdivisionDashboardScreenState
           isError: true,
         );
       }
-      setState(() => _isLoading = false);
+      if (mounted) {
+        // Add mounted check
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _fetchData() async {
-    if (!mounted) return;
+    if (!mounted) return; // Add mounted check
     setState(() => _isLoading = true);
     try {
       if (_selectedSubstationId == null) {
-        setState(() {
-          _isLoading = false;
-          _trippingShutdownEvents = [];
-          _transformerReadings = {};
-          _baysMap = {};
-        });
+        if (mounted) {
+          // Add mounted check
+          setState(() {
+            _isLoading = false;
+            _trippingShutdownEvents = [];
+            _transformerReadings = {};
+            _baysMap = {};
+          });
+        }
         return;
       }
 
@@ -897,13 +911,17 @@ class _SubdivisionDashboardScreenState
       setState(() => _isLoading = false);
     } catch (e) {
       print('Error loading data for Subdivision Dashboard: $e');
-      if (!mounted) return;
-      SnackBarUtils.showSnackBar(
-        context,
-        'Error loading dashboard data: $e',
-        isError: true,
-      );
-      setState(() => _isLoading = false);
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error loading dashboard data: $e',
+          isError: true,
+        );
+      }
+      if (mounted) {
+        // Add mounted check
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -1047,6 +1065,26 @@ class _SubdivisionDashboardScreenState
     ];
 
     return Scaffold(
+      appBar: AppBar(
+        // ADDED AppBar
+        title: const Text('Subdivision Dashboard'),
+        centerTitle: true,
+        leading: Builder(
+          // ADDED Builder for leading icon
+          builder: (BuildContext context) {
+            return IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () {
+                Scaffold.of(
+                  context,
+                ).openDrawer(); // Access the parent Scaffold's drawer
+              },
+              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+            );
+          },
+        ),
+      ),
+      drawer: widget.drawer, // NEW: Use the passed drawer
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
