@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async'; // For debouncing
 import '../../models/reading_models.dart';
 import '../../models/bay_model.dart';
 import '../../utils/snackbar_utils.dart';
@@ -275,52 +276,69 @@ class _ReadingTemplateManagementScreenState
   };
 
   final Map<String, List<ReadingField>> _defaultDailyFields = {
-    'Battery': [
-      ReadingField(
-        name: 'Positive to earth',
-        unit: 'V',
-        dataType: ReadingFieldDataType.number,
+    'Battery': List.generate(
+      8,
+      (i) => ReadingField(
+        name: 'Cell ${i + 1}',
+        dataType: ReadingFieldDataType.group,
         isMandatory: true,
         frequency: ReadingFrequency.daily,
-      ),
-      ReadingField(
-        name: 'Negative to earth',
-        unit: 'V',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.daily,
-      ),
-      ReadingField(
-        name: 'Positive to Negative',
-        unit: 'V',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.daily,
-      ),
-      ...List.generate(55, (i) {
-        final readingFields = <ReadingField>[];
-        readingFields.add(
+        nestedFields: [
           ReadingField(
-            name: 'Specific Gravity ${i + 1}',
-            unit: '',
+            name: 'Cell Number',
             dataType: ReadingFieldDataType.number,
             isMandatory: true,
-            frequency: ReadingFrequency.daily,
           ),
-        );
-        readingFields.add(
           ReadingField(
-            name: 'Cell voltage ${i + 1}',
+            name: 'Voltage',
             unit: 'V',
             dataType: ReadingFieldDataType.number,
             isMandatory: true,
-            frequency: ReadingFrequency.daily,
           ),
-        );
-        return readingFields;
-      }).expand((pair) => pair).toList(),
-    ],
+          ReadingField(
+            name: 'Specific Gravity',
+            unit: '',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+          ),
+        ],
+      ),
+    ),
   };
+
+  final Map<String, List<ReadingField>> _defaultMonthlyFields = {
+    'Battery': List.generate(
+      55,
+      (i) => ReadingField(
+        name: 'Cell ${i + 1}',
+        dataType: ReadingFieldDataType.group,
+        isMandatory: true,
+        frequency: ReadingFrequency.monthly,
+        nestedFields: [
+          ReadingField(
+            name: 'Cell Number',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+          ),
+          ReadingField(
+            name: 'Voltage',
+            unit: 'V',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+          ),
+          ReadingField(
+            name: 'Specific Gravity',
+            unit: '',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+          ),
+        ],
+      ),
+    ),
+  };
+
+  // Debounce timer for input fields
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -330,6 +348,7 @@ class _ReadingTemplateManagementScreenState
 
   @override
   void dispose() {
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -404,6 +423,11 @@ class _ReadingTemplateManagementScreenState
           ) ??
           false)
         return true;
+      if (_defaultMonthlyFields[_selectedBayType]?.any(
+            (field) => field.name == fieldName,
+          ) ??
+          false)
+        return true;
     }
     return false;
   }
@@ -422,6 +446,7 @@ class _ReadingTemplateManagementScreenState
         }
         defaultFields.addAll(_defaultHourlyFields[newBayType] ?? []);
         defaultFields.addAll(_defaultDailyFields[newBayType] ?? []);
+        defaultFields.addAll(_defaultMonthlyFields[newBayType] ?? []);
 
         final defaultFieldsAsMaps = defaultFields
             .map((field) => field.toMap()..['isDefault'] = true)
@@ -449,6 +474,37 @@ class _ReadingTemplateManagementScreenState
         'frequency': ReadingFrequency.daily.toString().split('.').last,
         'description_remarks': '',
         'isDefault': false,
+        'nestedFields': null,
+      });
+    });
+  }
+
+  void _addGroupReadingField() {
+    setState(() {
+      _templateReadingFields.add({
+        'name': '',
+        'dataType': ReadingFieldDataType.group.toString().split('.').last,
+        'unit': '',
+        'options': [],
+        'isMandatory': false,
+        'frequency': ReadingFrequency.daily.toString().split('.').last,
+        'description_remarks': '',
+        'isDefault': false,
+        'nestedFields': <Map<String, dynamic>>[],
+      });
+    });
+  }
+
+  void _addNestedReadingField(Map<String, dynamic> groupField) {
+    setState(() {
+      (groupField['nestedFields'] as List<dynamic>).add({
+        'name': '',
+        'dataType': ReadingFieldDataType.text.toString().split('.').last,
+        'unit': '',
+        'options': [],
+        'isMandatory': false,
+        // No frequency for nested fields
+        'description_remarks': '',
       });
     });
   }
@@ -456,6 +512,15 @@ class _ReadingTemplateManagementScreenState
   void _removeReadingField(int index) {
     setState(() {
       _templateReadingFields.removeAt(index);
+    });
+  }
+
+  void _removeNestedReadingField(
+    Map<String, dynamic> groupField,
+    int nestedIndex,
+  ) {
+    setState(() {
+      (groupField['nestedFields'] as List<dynamic>).removeAt(nestedIndex);
     });
   }
 
@@ -574,6 +639,14 @@ class _ReadingTemplateManagementScreenState
           );
       }
     }
+  }
+
+  // Debounced update method
+  void _debouncedUpdate(VoidCallback callback) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(callback);
+    });
   }
 
   @override
@@ -759,133 +832,245 @@ class _ReadingTemplateManagementScreenState
                 margin: const EdgeInsets.symmetric(vertical: 8.0),
                 elevation: 2,
                 color: isDefault ? Colors.grey.shade200 : null,
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        initialValue: field['name'] as String,
-                        decoration: const InputDecoration(
-                          labelText: 'Reading Field Name',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) => field['name'] = value,
-                        validator: (value) =>
-                            value == null || value.trim().isEmpty
-                            ? 'Field name required'
-                            : null,
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        value: field['dataType'] as String,
-                        decoration: const InputDecoration(
-                          labelText: 'Data Type',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: _dataTypes
-                            .map(
-                              (type) => DropdownMenuItem(
-                                value: type,
-                                child: Text(type),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) => setState(() {
-                          field['dataType'] = value!;
-                          if (value != 'dropdown') field['options'] = [];
-                          if (value != 'number') field['unit'] = '';
-                          if (value != 'boolean')
-                            field['description_remarks'] = '';
-                        }),
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        value: field['frequency'] as String,
-                        decoration: const InputDecoration(
-                          labelText: 'Reading Frequency',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: _frequencies
-                            .map(
-                              (freq) => DropdownMenuItem(
-                                value: freq,
-                                child: Text(freq),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) =>
-                            setState(() => field['frequency'] = value!),
-                      ),
-                      const SizedBox(height: 10),
-                      if (field['dataType'] == 'dropdown')
-                        TextFormField(
-                          initialValue: (field['options'] as List<dynamic>?)
-                              ?.join(','),
-                          decoration: const InputDecoration(
-                            labelText: 'Options (comma-separated)',
-                            hintText: 'e.g., Option1, Option2',
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (value) => field['options'] = value
-                              .split(',')
-                              .map((e) => e.trim())
-                              .where((e) => e.isNotEmpty)
-                              .toList(),
-                        ),
-                      if (field['dataType'] == 'number')
-                        TextFormField(
-                          initialValue: field['unit'] as String?,
-                          decoration: const InputDecoration(
-                            labelText: 'Unit (e.g., V, A, kW)',
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (value) => field['unit'] = value,
-                        ),
-                      if (field['dataType'] == 'boolean')
-                        TextFormField(
-                          initialValue: field['description_remarks'] as String?,
-                          decoration: const InputDecoration(
-                            labelText: 'Description / Remarks (Optional)',
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (value) =>
-                              field['description_remarks'] = value,
-                          maxLines: 2,
-                        ),
-                      CheckboxListTile(
-                        title: const Text('Mandatory'),
-                        value: field['isMandatory'] as bool,
-                        onChanged: (value) =>
-                            setState(() => field['isMandatory'] = value!),
-                        controlAffinity: ListTileControlAffinity.leading,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: IconButton(
-                          icon: Icon(
-                            Icons.remove_circle_outline,
-                            color: isDefault ? Colors.grey : colorScheme.error,
-                          ),
-                          onPressed: isDefault
-                              ? null
-                              : () => _removeReadingField(index),
-                        ),
-                      ),
-                    ],
-                  ),
+                child: _buildReadingFieldDefinitionInput(
+                  field,
+                  index,
+                  fieldsList,
+                  colorScheme,
+                  isDefault: isDefault,
                 ),
               ),
             );
           },
         ),
-        ElevatedButton.icon(
-          onPressed: _addReadingField,
-          icon: const Icon(Icons.add),
-          label: const Text('Add Reading Field'),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _addReadingField,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Field'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _addGroupReadingField,
+                icon: const Icon(Icons.playlist_add),
+                label: const Text('Grouped Field'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colorScheme.secondary,
+                  foregroundColor: colorScheme.onSecondary,
+                ),
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildReadingFieldDefinitionInput(
+    Map<String, dynamic> fieldDef,
+    int index,
+    List<Map<String, dynamic>> parentList,
+    ColorScheme colorScheme, {
+    required bool isDefault,
+    bool isNested = false,
+  }) {
+    final fieldName = fieldDef['name'] as String;
+    final dataType = fieldDef['dataType'] as String;
+    final isMandatory = fieldDef['isMandatory'] as bool;
+    final isGroupField =
+        dataType == ReadingFieldDataType.group.toString().split('.').last;
+
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextFormField(
+            initialValue: fieldName,
+            decoration: InputDecoration(
+              labelText: isNested ? 'Item Name' : 'Reading Field Name',
+              border: const OutlineInputBorder(),
+              hintText: isNested
+                  ? 'e.g., Phase A Current'
+                  : 'e.g., Voltage, Temperature',
+            ),
+            onChanged: isDefault
+                ? null
+                : (value) => _debouncedUpdate(() => fieldDef['name'] = value),
+            validator: (value) => value == null || value.trim().isEmpty
+                ? (isNested ? 'Item name required' : 'Field name required')
+                : null,
+          ),
+          const SizedBox(height: 10),
+          if (!isGroupField)
+            DropdownButtonFormField<String>(
+              value: fieldDef['dataType'] as String,
+              decoration: const InputDecoration(
+                labelText: 'Data Type',
+                border: OutlineInputBorder(),
+              ),
+              items: _dataTypes
+                  .where((type) => type != 'group' || isNested)
+                  .map(
+                    (type) => DropdownMenuItem(value: type, child: Text(type)),
+                  )
+                  .toList(),
+              onChanged: isDefault
+                  ? null
+                  : (value) => _debouncedUpdate(() {
+                      fieldDef['dataType'] = value!;
+                      if (value != 'dropdown') fieldDef['options'] = [];
+                      if (value != 'number') fieldDef['unit'] = '';
+                      if (value != 'boolean')
+                        fieldDef['description_remarks'] = '';
+                      fieldDef['nestedFields'] = null;
+                    }),
+            ),
+          if (isGroupField)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text(
+                'Data Type: Group',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic),
+              ),
+            ),
+          const SizedBox(height: 10),
+          if (!isNested)
+            DropdownButtonFormField<String>(
+              value: fieldDef['frequency'] as String,
+              decoration: const InputDecoration(
+                labelText: 'Reading Frequency',
+                border: OutlineInputBorder(),
+              ),
+              items: _frequencies
+                  .map(
+                    (freq) => DropdownMenuItem(value: freq, child: Text(freq)),
+                  )
+                  .toList(),
+              onChanged: isDefault
+                  ? null
+                  : (value) =>
+                        _debouncedUpdate(() => fieldDef['frequency'] = value!),
+            ),
+          if (!isNested) const SizedBox(height: 10),
+          if (!isGroupField) ...[
+            if (fieldDef['dataType'] == 'dropdown')
+              TextFormField(
+                initialValue: (fieldDef['options'] as List<dynamic>?)?.join(
+                  ',',
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Options (comma-separated)',
+                  hintText: 'e.g., Option1, Option2',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: isDefault
+                    ? null
+                    : (value) => _debouncedUpdate(
+                        () => fieldDef['options'] = value
+                            .split(',')
+                            .map((e) => e.trim())
+                            .where((e) => e.isNotEmpty)
+                            .toList(),
+                      ),
+              ),
+            if (fieldDef['dataType'] == 'number')
+              TextFormField(
+                initialValue: fieldDef['unit'] as String?,
+                decoration: const InputDecoration(
+                  labelText: 'Unit (e.g., V, A, kW)',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: isDefault
+                    ? null
+                    : (value) =>
+                          _debouncedUpdate(() => fieldDef['unit'] = value),
+              ),
+            if (fieldDef['dataType'] == 'boolean')
+              TextFormField(
+                initialValue: fieldDef['description_remarks'] as String?,
+                decoration: const InputDecoration(
+                  labelText: 'Description / Remarks (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: isDefault
+                    ? null
+                    : (value) => _debouncedUpdate(
+                        () => fieldDef['description_remarks'] = value,
+                      ),
+                maxLines: 2,
+              ),
+          ],
+          if (isGroupField) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Fields in this Group:',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            if ((fieldDef['nestedFields'] as List<dynamic>).isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8.0),
+                child: Text('No fields defined for this group.'),
+              ),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: (fieldDef['nestedFields'] as List<dynamic>).length,
+              itemBuilder: (context, nestedIndex) {
+                final nestedField =
+                    (fieldDef['nestedFields'] as List<dynamic>)[nestedIndex];
+                return _buildReadingFieldDefinitionInput(
+                  nestedField,
+                  nestedIndex,
+                  (fieldDef['nestedFields'] as List<dynamic>)
+                      .cast<Map<String, dynamic>>(),
+                  colorScheme,
+                  isDefault: false,
+                  isNested: true,
+                );
+              },
+            ),
+            ElevatedButton.icon(
+              onPressed: () => _addNestedReadingField(fieldDef),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Field to Group'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colorScheme.secondary,
+                foregroundColor: colorScheme.onSecondary,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          CheckboxListTile(
+            title: const Text('Mandatory'),
+            value: fieldDef['isMandatory'] as bool,
+            onChanged: isDefault
+                ? null
+                : (value) =>
+                      _debouncedUpdate(() => fieldDef['isMandatory'] = value!),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              icon: Icon(
+                Icons.remove_circle_outline,
+                color: isDefault ? Colors.grey : colorScheme.error,
+              ),
+              onPressed: isDefault ? null : () => _removeReadingField(index),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

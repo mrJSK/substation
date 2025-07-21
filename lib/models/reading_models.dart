@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart'; // For @required if not using null safety checks
 
-enum ReadingFieldDataType { text, number, boolean, date, dropdown }
+enum ReadingFieldDataType { text, number, boolean, date, dropdown, group }
 
 enum ReadingFrequency {
   hourly,
@@ -19,8 +19,9 @@ class ReadingField {
   final String? unit; // Optional for number types
   final List<String>? options; // For dropdown types
   final bool isMandatory;
-  final ReadingFrequency frequency;
+  final ReadingFrequency? frequency; // Made optional for nested fields
   final String? descriptionRemarks; // For boolean fields
+  final List<ReadingField>? nestedFields; // For group type fields
 
   ReadingField({
     required this.name,
@@ -28,8 +29,9 @@ class ReadingField {
     this.unit,
     this.options,
     this.isMandatory = false,
-    required this.frequency,
+    this.frequency, // No longer required
     this.descriptionRemarks,
+    this.nestedFields,
   });
 
   // Convert from a Map (e.g., from Firestore)
@@ -45,25 +47,41 @@ class ReadingField {
           ?.map((e) => e.toString())
           .toList(),
       isMandatory: map['isMandatory'] as bool? ?? false,
-      frequency: ReadingFrequency.values.firstWhere(
-        (e) => e.toString().split('.').last == map['frequency'],
-        orElse: () => ReadingFrequency.onDemand, // Default
-      ),
+      frequency: map['frequency'] != null
+          ? ReadingFrequency.values.firstWhere(
+              (e) => e.toString().split('.').last == map['frequency'],
+              orElse: () => ReadingFrequency.onDemand, // Default
+            )
+          : null,
       descriptionRemarks: map['description_remarks'] as String?,
+      nestedFields: (map['nestedFields'] as List<dynamic>?)
+          ?.map(
+            (fieldMap) =>
+                ReadingField.fromMap(fieldMap as Map<String, dynamic>),
+          )
+          .toList(),
     );
   }
 
   // Convert to a Map (e.g., for Firestore)
   Map<String, dynamic> toMap() {
-    return {
+    final map = {
       'name': name,
       'dataType': dataType.toString().split('.').last,
       'unit': unit,
       'options': options,
       'isMandatory': isMandatory,
-      'frequency': frequency.toString().split('.').last,
       'description_remarks': descriptionRemarks,
     };
+    if (frequency != null) {
+      map['frequency'] = frequency!.toString().split('.').last;
+    }
+    if (nestedFields != null) {
+      map['nestedFields'] = nestedFields!
+          .map((field) => field.toMap())
+          .toList();
+    }
+    return map;
   }
 }
 
