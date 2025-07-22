@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart'; // Import for DateFormat
 
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart'; // For Substation model
@@ -17,13 +18,13 @@ import 'saved_sld_list_screen.dart'; // For Saved SLD navigation
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
-  final Widget? drawer; // NEW: Add drawer property
+  final Widget? drawer;
 
   const SubstationUserDashboardScreen({
     super.key,
     required this.currentUser,
     this.drawer,
-  }); // NEW: Add drawer to constructor
+  });
 
   @override
   State<SubstationUserDashboardScreen> createState() =>
@@ -40,14 +41,18 @@ class _SubstationUserDashboardScreenState
   late TabController _tabController;
   int _currentTabIndex = 0; // Track current tab index
 
+  // Date state for all relevant tabs
+  DateTime _singleDate = DateTime.now(); // For Substation User
+  DateTime _startDate = DateTime.now().subtract(
+    const Duration(days: 7),
+  ); // For Subdivision Manager
+  DateTime _endDate = DateTime.now(); // For Subdivision Manager
+
   @override
   void initState() {
     super.initState();
     _loadAccessibleSubstations();
 
-    // Initialize TabController
-    // Ensure tabCount is calculated correctly before initializing _tabController
-    // The tabCount determines the number of items in the TabBarView and BottomNavigationBar
     final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
         ? 4 // Operations, Energy, Tripping & Shutdown, Assets
         : 3; // Operations, Energy, Tripping & Shutdown
@@ -58,7 +63,7 @@ class _SubstationUserDashboardScreenState
   @override
   void dispose() {
     _tabController.removeListener(_handleTabSelection);
-    _tabController.dispose(); // Dispose the controller
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -71,7 +76,7 @@ class _SubstationUserDashboardScreenState
   }
 
   Future<void> _loadAccessibleSubstations() async {
-    if (!mounted) return; // Add mounted check at the start of async method
+    if (!mounted) return;
     setState(() {
       _isLoadingSubstations = true;
     });
@@ -79,7 +84,6 @@ class _SubstationUserDashboardScreenState
     try {
       Query query = FirebaseFirestore.instance.collection('substations');
 
-      // Filter substations based on user's role and assigned levels
       if (widget.currentUser.role == UserRole.subdivisionManager &&
           widget.currentUser.assignedLevels != null &&
           widget.currentUser.assignedLevels!.containsKey('subdivisionId')) {
@@ -95,10 +99,8 @@ class _SubstationUserDashboardScreenState
           isEqualTo: widget.currentUser.assignedLevels!['substationId'],
         );
       } else {
-        // Roles not explicitly handled or without assigned levels
         _accessibleSubstations = [];
         if (mounted) {
-          // Ensure mounted before setState
           setState(() {
             _isLoadingSubstations = false;
           });
@@ -108,16 +110,11 @@ class _SubstationUserDashboardScreenState
 
       final snapshot = await query.orderBy('name').get();
       if (mounted) {
-        // Ensure mounted before setState
         setState(() {
           _accessibleSubstations = snapshot.docs
               .map((doc) => Substation.fromFirestore(doc))
               .toList();
-          // Automatically select the substation if it's a SubstationUser with one assigned
-          // OR if it's a Subdivision Manager with only one substation in their subdivision
-          if ((widget.currentUser.role == UserRole.substationUser ||
-                  widget.currentUser.role == UserRole.subdivisionManager) &&
-              _accessibleSubstations.length == 1) {
+          if (_accessibleSubstations.length >= 1) {
             _selectedSubstationForLogsheet = _accessibleSubstations.first;
           }
         });
@@ -133,7 +130,6 @@ class _SubstationUserDashboardScreenState
       }
     } finally {
       if (mounted) {
-        // Ensure mounted before setState
         setState(() {
           _isLoadingSubstations = false;
         });
@@ -141,34 +137,68 @@ class _SubstationUserDashboardScreenState
     }
   }
 
+  // Date picker method for Subdivision Manager (range selection)
+  Future<void> _selectDateRange(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+    );
+    if (picked != null) {
+      if (!mounted) return;
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+      });
+    }
+  }
+
+  // Date picker method for Substation User (single date selection)
+  Future<void> _selectSingleDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _singleDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      if (!mounted) return;
+      setState(() {
+        _singleDate = picked;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Determine the number of tabs here, before the Scaffold, as it's needed for TabController
     final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
         ? 4
         : 3;
 
+    final bool isSubdivisionManager =
+        widget.currentUser.role == UserRole.subdivisionManager;
+    final bool showDatePickers =
+        (_currentTabIndex == 0 ||
+        _currentTabIndex == 1 ||
+        _currentTabIndex == 2);
+
     return Scaffold(
       appBar: AppBar(
-        // ADDED AppBar
         title: const Text('Substation Dashboard'),
         centerTitle: true,
         leading: Builder(
-          // ADDED Builder for leading icon
           builder: (BuildContext context) {
             return IconButton(
               icon: const Icon(Icons.menu),
               onPressed: () {
-                Scaffold.of(
-                  context,
-                ).openDrawer(); // Access the parent Scaffold's drawer
+                Scaffold.of(context).openDrawer();
               },
               tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
             );
           },
         ),
         actions: [
-          // ADDED AppBar actions for this specific dashboard
           IconButton(
             icon: const Icon(Icons.flash_on),
             tooltip: 'Energy SLD',
@@ -226,7 +256,7 @@ class _SubstationUserDashboardScreenState
           ),
         ],
       ),
-      drawer: widget.drawer, // NEW: Use the passed drawer
+      drawer: widget.drawer,
       body: _isLoadingSubstations
           ? const Center(child: CircularProgressIndicator())
           : _accessibleSubstations.isEmpty && !_isLoadingSubstations
@@ -269,53 +299,87 @@ class _SubstationUserDashboardScreenState
               ),
             )
           : Column(
-              // Use Column here to hold the dropdown, title and TabBarView
               children: [
-                // Substation Dropdown (conditionally shown based on tab and selection)
-                if ((_currentTabIndex <
-                        tabCount -
-                            1) && // Hide for the last tab (Assets for SM, or Tripping for SU)
-                    (_accessibleSubstations.length > 1 ||
-                        _selectedSubstationForLogsheet == null))
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: DropdownSearch<Substation>(
-                      popupProps: PopupProps.menu(
-                        showSearchBox: true,
-                        menuProps: MenuProps(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        searchFieldProps: TextFieldProps(
-                          decoration: InputDecoration(
-                            labelText: 'Search Substation',
-                            prefixIcon: const Icon(Icons.search),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                        ),
+                // Substation Dropdown (always at the top)
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: DropdownSearch<Substation>(
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      menuProps: MenuProps(
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      dropdownDecoratorProps: DropDownDecoratorProps(
-                        dropdownSearchDecoration: InputDecoration(
-                          labelText: 'Select Substation',
-                          hintText: 'Choose a substation to view details',
-                          prefixIcon: const Icon(Icons.electrical_services),
+                      searchFieldProps: TextFieldProps(
+                        decoration: InputDecoration(
+                          labelText: 'Search Substation',
+                          prefixIcon: const Icon(Icons.search),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ),
-                      itemAsString: (Substation s) => s.name,
-                      selectedItem: _selectedSubstationForLogsheet,
-                      items: _accessibleSubstations,
-                      onChanged: (Substation? newValue) {
-                        setState(() {
-                          _selectedSubstationForLogsheet = newValue;
-                        });
-                      },
-                      validator: (value) =>
-                          value == null ? 'Please select a Substation' : null,
                     ),
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration(
+                        labelText: 'Select Substation',
+                        hintText: 'Choose a substation to view details',
+                        prefixIcon: const Icon(Icons.electrical_services),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    itemAsString: (Substation s) => s.name,
+                    selectedItem: _selectedSubstationForLogsheet,
+                    items: _accessibleSubstations,
+                    onChanged: (Substation? newValue) {
+                      setState(() {
+                        _selectedSubstationForLogsheet = newValue;
+                      });
+                    },
+                    validator: (value) =>
+                        value == null ? 'Please select a Substation' : null,
+                  ),
+                ),
+                // Conditional Date Pickers
+                if (showDatePickers)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 8.0,
+                    ),
+                    child: isSubdivisionManager
+                        ? Row(
+                            // Date Range for Subdivision Manager
+                            children: [
+                              Expanded(
+                                child: ListTile(
+                                  title: Text(
+                                    'From: ${DateFormat('yyyy-MM-dd').format(_startDate)}',
+                                  ),
+                                  trailing: const Icon(Icons.calendar_today),
+                                  onTap: () => _selectDateRange(context),
+                                ),
+                              ),
+                              Expanded(
+                                child: ListTile(
+                                  title: Text(
+                                    'To: ${DateFormat('yyyy-MM-dd').format(_endDate)}',
+                                  ),
+                                  trailing: const Icon(Icons.calendar_today),
+                                  onTap: () => _selectDateRange(context),
+                                ),
+                              ),
+                            ],
+                          )
+                        : ListTile(
+                            // Single Date for Substation User
+                            title: Text(
+                              'Date: ${DateFormat('yyyy-MM-dd').format(_singleDate)}',
+                            ),
+                            trailing: const Icon(Icons.calendar_today),
+                            onTap: () => _selectSingleDate(context),
+                          ),
                   ),
                 Expanded(
                   child: TabBarView(
@@ -323,13 +387,18 @@ class _SubstationUserDashboardScreenState
                     children: [
                       // Operations (Hourly) Tab
                       BayReadingsOverviewScreen(
-                        substationId:
-                            _selectedSubstationForLogsheet?.id ??
-                            '', // Pass ID, handle null in screen
+                        substationId: _selectedSubstationForLogsheet?.id ?? '',
                         substationName:
                             _selectedSubstationForLogsheet?.name ?? 'N/A',
                         currentUser: widget.currentUser,
                         frequencyType: 'hourly',
+                        // Pass appropriate date(s) based on role
+                        startDate: isSubdivisionManager
+                            ? _startDate
+                            : _singleDate,
+                        endDate: isSubdivisionManager
+                            ? _endDate
+                            : _singleDate, // For SU, endDate is same as startDate
                       ),
                       // Energy (Daily) Tab
                       BayReadingsOverviewScreen(
@@ -338,6 +407,13 @@ class _SubstationUserDashboardScreenState
                             _selectedSubstationForLogsheet?.name ?? 'N/A',
                         currentUser: widget.currentUser,
                         frequencyType: 'daily',
+                        // Pass appropriate date(s) based on role
+                        startDate: isSubdivisionManager
+                            ? _startDate
+                            : _singleDate,
+                        endDate: isSubdivisionManager
+                            ? _endDate
+                            : _singleDate, // For SU, endDate is same as startDate
                       ),
                       // Tripping & Shutdown Tab
                       TrippingShutdownOverviewScreen(
@@ -345,8 +421,21 @@ class _SubstationUserDashboardScreenState
                         substationName:
                             _selectedSubstationForLogsheet?.name ?? 'N/A',
                         currentUser: widget.currentUser,
+                        // Pass appropriate date(s) based on role
+                        startDate: isSubdivisionManager
+                            ? _startDate
+                            : _singleDate,
+                        endDate: isSubdivisionManager
+                            ? _endDate
+                            : _singleDate, // For SU, endDate is same as startDate
+                        // Substation user can only close, not create.
+                        // Admin/SM can create.
+                        canCreateTrippingEvents:
+                            widget.currentUser.role ==
+                                UserRole.subdivisionManager ||
+                            widget.currentUser.role == UserRole.admin,
                       ),
-                      // NEW: Subdivision Manager's Asset Management Tab
+                      // Subdivision Manager's Asset Management Tab
                       if (widget.currentUser.role ==
                           UserRole.subdivisionManager)
                         SubdivisionAssetManagementScreen(
@@ -360,17 +449,15 @@ class _SubstationUserDashboardScreenState
                 ),
               ],
             ),
-      // Moved TabBar content to bottomNavigationBar
       bottomNavigationBar: BottomNavigationBar(
-        // Removed 'controller: _tabController' as BottomNavigationBar does not have this parameter.
         currentIndex: _currentTabIndex,
         onTap: (index) {
           setState(() {
             _currentTabIndex = index;
-            _tabController.animateTo(index); // Animate to selected tab
+            _tabController.animateTo(index);
           });
         },
-        type: BottomNavigationBarType.fixed, // Ensures all items are visible
+        type: BottomNavigationBarType.fixed,
         selectedItemColor: Theme.of(context).colorScheme.primary,
         unselectedItemColor: Colors.grey,
         items: [

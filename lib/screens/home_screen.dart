@@ -14,9 +14,9 @@ import '../screens/equipment_hierarchy_selection_screen.dart';
 import '../screens/energy_sld_screen.dart';
 import '../screens/saved_sld_list_screen.dart';
 import '../screens/substation_user_dashboard_screen.dart';
-import '../screens/subdivision_dashboard_screen.dart';
+import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
 import '../screens/admin/reading_template_management_screen.dart';
-import '../screens/readings_configuration_screen.dart';
+import '../screens/chart_configuration_screen.dart';
 import '../controllers/sld_controller.dart';
 import '../utils/snackbar_utils.dart';
 
@@ -372,7 +372,7 @@ class _SubdivisionManagerHomeScreenState
           ),
           ListTile(
             leading: const Icon(Icons.settings),
-            title: const Text('Configure Readings'),
+            title: const Text('Configure Charts'),
             onTap: () {
               Navigator.of(context).pop();
               if (widget.appUser.assignedLevels != null &&

@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'user_model.dart'; // Ensure this import is correct
-import 'hierarchy_models.dart'; // Ensure this import is correct
+import 'hierarchy_models.dart'; // Ensure this import is correct for Substation class
 
 // Your provided StateModel class
 class StateModel {
@@ -88,6 +88,9 @@ class AppStateData extends ChangeNotifier {
   bool _isAuthStatusChecked =
       false; // Flag to indicate if auth status has been initially checked
 
+  // NEW: Add selectedSubstation property
+  Substation? _selectedSubstation;
+
   // Public getters for state
   ThemeMode get themeMode => _themeMode;
   bool get isThemeLoaded => _isThemeLoaded;
@@ -96,6 +99,8 @@ class AppStateData extends ChangeNotifier {
   bool get isStaticDataLoaded => _isStaticDataLoaded; // Renamed getter
   AppUser? get currentUser => _currentUser;
   bool get isAuthStatusChecked => _isAuthStatusChecked;
+  // NEW: Add getter for selectedSubstation
+  Substation? get selectedSubstation => _selectedSubstation;
 
   // Combined readiness flag for initial app setup
   bool get isInitialized =>
@@ -1000,6 +1005,7 @@ class AppStateData extends ChangeNotifier {
       print('DEBUG: AppStateData: Auth state changed. User: ${user?.email}');
       if (user == null) {
         _currentUser = null;
+        _selectedSubstation = null; // NEW: Clear selected substation on logout
       } else {
         // Fetch or update AppUser from Firestore
         try {
@@ -1012,6 +1018,13 @@ class AppStateData extends ChangeNotifier {
             print(
               'DEBUG: AppStateData: Fetched AppUser: ${_currentUser?.email}, Role: ${_currentUser?.role}',
             );
+            // NEW: If a subdivision manager, attempt to fetch and set a default substation
+            if (_currentUser?.role == UserRole.subdivisionManager &&
+                _currentUser?.assignedLevels?['subdivisionId'] != null) {
+              await _fetchAndSetDefaultSubstation(
+                _currentUser!.assignedLevels!['subdivisionId']!,
+              );
+            }
           } else {
             // This case should ideally be handled during sign-up.
             // If a Firebase user exists but no Firestore doc, it's an inconsistent state.
@@ -1021,18 +1034,59 @@ class AppStateData extends ChangeNotifier {
             );
             await FirebaseAuth.instance.signOut();
             _currentUser = null;
+            _selectedSubstation =
+                null; // NEW: Clear selected substation on forced logout
           }
         } catch (e) {
           print(
             'ERROR: AppStateData: Failed to fetch AppUser from Firestore: $e',
           );
           _currentUser = null; // Clear user on error
+          _selectedSubstation = null; // NEW: Clear selected substation on error
         }
       }
       _isAuthStatusChecked =
           true; // Mark that initial auth status has been checked
       notifyListeners(); // Notify UI about user change
     });
+  }
+
+  // NEW: Method to fetch and set a default substation based on subdivisionId
+  Future<void> _fetchAndSetDefaultSubstation(String subdivisionId) async {
+    try {
+      final substationDocs = await FirebaseFirestore.instance
+          .collection('substations')
+          .where('subdivisionId', isEqualTo: subdivisionId)
+          .limit(1) // Fetch just one to set as default if available
+          .get();
+      if (substationDocs.docs.isNotEmpty) {
+        _selectedSubstation = Substation.fromFirestore(
+          substationDocs.docs.first,
+        );
+        print(
+          'DEBUG: AppStateData: Default substation set: ${_selectedSubstation?.name}',
+        );
+      } else {
+        _selectedSubstation = null;
+        print(
+          'DEBUG: AppStateData: No default substation found for subdivision: $subdivisionId',
+        );
+      }
+    } catch (e) {
+      print('ERROR: AppStateData: Error fetching default substation: $e');
+      _selectedSubstation = null;
+    }
+  }
+
+  // NEW: Method to explicitly set the selected substation
+  void setSelectedSubstation(Substation substation) {
+    if (_selectedSubstation?.id != substation.id) {
+      _selectedSubstation = substation;
+      notifyListeners();
+      print(
+        'DEBUG: AppStateData: Selected substation updated to: ${substation.name}',
+      );
+    }
   }
 
   // Getters for convenience, if still needed by other parts for just names
@@ -1067,5 +1121,13 @@ class AppStateData extends ChangeNotifier {
       );
       return [];
     }
+  }
+
+  // NEW: Added signOut method as it might have been in your original AppStateData in main.dart context
+  Future<void> signOut() async {
+    await FirebaseAuth.instance.signOut();
+    _currentUser = null;
+    _selectedSubstation = null; // Clear on sign out
+    notifyListeners();
   }
 }

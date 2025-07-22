@@ -26,6 +26,9 @@ class ExportMasterDataScreen extends StatefulWidget {
     required String subdivisionId,
   });
 
+  // FIX: Add the static routeName property
+  static const routeName = '/export-master-data';
+
   @override
   State<ExportMasterDataScreen> createState() => _ExportMasterDataScreenState();
 }

@@ -13,12 +13,18 @@ class TrippingShutdownOverviewScreen extends StatefulWidget {
   final String substationId; // Now can be empty
   final String substationName; // Now can be "N/A"
   final AppUser currentUser;
+  final DateTime startDate; // NEW PARAMETER
+  final DateTime endDate; // NEW PARAMETER
+  final bool canCreateTrippingEvents; // NEW PARAMETER
 
   const TrippingShutdownOverviewScreen({
     super.key,
     required this.substationId,
     required this.substationName,
     required this.currentUser,
+    required this.startDate, // NEW
+    required this.endDate, // NEW
+    this.canCreateTrippingEvents = true, // Default to true
   });
 
   @override
@@ -39,19 +45,22 @@ class _TrippingShutdownOverviewScreenState
     super.initState();
     // Only load data if substationId is provided
     if (widget.substationId.isNotEmpty) {
-      _fetchTrippingShutdownEntries();
+      _fetchTrippingShutdownEvents();
     } else {
       _isLoading = false; // Set loading to false if no substation is selected
     }
   }
 
-  // Reload data if substationId changes
+  // Reload data if substationId or date range changes
   @override
   void didUpdateWidget(covariant TrippingShutdownOverviewScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.substationId != oldWidget.substationId) {
+    if (widget.substationId != oldWidget.substationId ||
+        widget.startDate != oldWidget.startDate || // Check for date changes
+        widget.endDate != oldWidget.endDate) {
+      // Check for date changes
       if (widget.substationId.isNotEmpty) {
-        _fetchTrippingShutdownEntries();
+        _fetchTrippingShutdownEvents();
       } else {
         setState(() {
           _isLoading = false;
@@ -63,7 +72,7 @@ class _TrippingShutdownOverviewScreenState
     }
   }
 
-  Future<void> _fetchTrippingShutdownEntries() async {
+  Future<void> _fetchTrippingShutdownEvents() async {
     setState(() {
       _isLoading = true;
       _groupedEntriesByBayType.clear();
@@ -83,11 +92,28 @@ class _TrippingShutdownOverviewScreenState
       }
 
       // 2. Fetch all tripping/shutdown entries for this substation
-      final entriesSnapshot = await FirebaseFirestore.instance
+      Query eventsQuery = FirebaseFirestore.instance
           .collection('trippingShutdownEntries')
-          .where('substationId', isEqualTo: widget.substationId)
-          .orderBy('startTime', descending: true)
-          .get();
+          .where('substationId', isEqualTo: widget.substationId);
+
+      // Apply date range filters
+      eventsQuery = eventsQuery
+          .where(
+            'startTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+          )
+          .where(
+            'startTime',
+            isLessThanOrEqualTo: Timestamp.fromDate(
+              widget.endDate
+                  .add(const Duration(days: 1))
+                  .subtract(const Duration(seconds: 1)),
+            ),
+          ); // End of day
+
+      eventsQuery = eventsQuery.orderBy('startTime', descending: true);
+
+      final entriesSnapshot = await eventsQuery.get();
 
       List<TrippingShutdownEntry> fetchedEntries = entriesSnapshot.docs
           .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
@@ -108,6 +134,7 @@ class _TrippingShutdownOverviewScreenState
       // Apply filtering based on user role and event status/reason
       fetchedEntries = fetchedEntries.where((entry) {
         if (isDivisionOrHigher) {
+          // Corrected: `isDivisionOrHigher`
           // Division Manager and higher only see CLOSED events
           return entry.status == 'CLOSED';
         } else if (isSubdivisionManager || isSubstationUser) {
@@ -133,7 +160,7 @@ class _TrippingShutdownOverviewScreenState
 
       _sortedBayTypes = _groupedEntriesByBayType.keys.toList()..sort();
     } catch (e) {
-      print("Error fetching tripping/shutdown entries: $e");
+      print("Error fetching tripping/shutdown events: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -190,7 +217,7 @@ class _TrippingShutdownOverviewScreenState
             '$eventType event deleted successfully!',
           );
         }
-        _fetchTrippingShutdownEntries();
+        _fetchTrippingShutdownEvents();
       } catch (e) {
         print("Error deleting event: $e");
         if (mounted) {
@@ -228,7 +255,7 @@ class _TrippingShutdownOverviewScreenState
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Text(
-                  'No tripping or shutdown events recorded for ${widget.substationName}. Tap "+" to add one.',
+                  'No tripping or shutdown events recorded for ${widget.substationName} in the period ${DateFormat('dd.MMM.yyyy').format(widget.startDate)} - ${DateFormat('dd.MMM.yyyy').format(widget.endDate)}.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontStyle: FontStyle.italic,
@@ -356,7 +383,7 @@ class _TrippingShutdownOverviewScreenState
                                             )
                                             .then(
                                               (_) =>
-                                                  _fetchTrippingShutdownEntries(),
+                                                  _fetchTrippingShutdownEvents(),
                                             );
                                       },
                                       icon: const Icon(Icons.flash_on),
@@ -394,33 +421,34 @@ class _TrippingShutdownOverviewScreenState
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // Only allow adding a new event if a substation is selected
-          if (widget.substationId.isEmpty) {
-            SnackBarUtils.showSnackBar(
-              context,
-              'Please select a substation first.',
-              isError: true,
-            );
-            return;
-          }
-          Navigator.of(context)
-              .push(
-                MaterialPageRoute(
-                  builder: (context) => TrippingShutdownEntryScreen(
-                    substationId: widget.substationId,
-                    currentUser: widget.currentUser,
-                    isViewOnly: false,
-                  ),
-                ),
-              )
-              .then((_) => _fetchTrippingShutdownEntries());
-        },
-        label: const Text('Add New Event'),
-        icon: const Icon(Icons.add),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-      ),
+      floatingActionButton: widget.canCreateTrippingEvents
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                if (widget.substationId.isEmpty) {
+                  SnackBarUtils.showSnackBar(
+                    context,
+                    'Please select a substation first.',
+                    isError: true,
+                  );
+                  return;
+                }
+                Navigator.of(context)
+                    .push(
+                      MaterialPageRoute(
+                        builder: (context) => TrippingShutdownEntryScreen(
+                          substationId: widget.substationId,
+                          currentUser: widget.currentUser,
+                          isViewOnly: false,
+                        ),
+                      ),
+                    )
+                    .then((_) => _fetchTrippingShutdownEvents());
+              },
+              label: const Text('Add New Event'),
+              icon: const Icon(Icons.add),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            )
+          : null,
     );
   }
 }
