@@ -24,6 +24,7 @@ class TrippingTab extends StatefulWidget {
     required this.currentUser,
     required this.startDate,
     required this.endDate,
+    required String substationId,
   });
 
   @override

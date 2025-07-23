@@ -14,7 +14,6 @@ import '../subdivision_dashboard_tabs/subdivision_asset_management_screen.dart';
 import '../equipment_hierarchy_selection_screen.dart'; // For Energy SLD navigation
 import '../subdivision_dashboard_tabs/energy_sld_screen.dart'; // For Energy SLD navigation
 import '../../../controllers/sld_controller.dart'; // For Energy SLD navigation
-import '../saved_sld_list_screen.dart'; // For Saved SLD navigation
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -242,18 +241,18 @@ class _SubstationUserDashboardScreenState
               }
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'View Saved SLDs',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      SavedSldListScreen(currentUser: widget.currentUser),
-                ),
-              );
-            },
-          ),
+          // IconButton(
+          //   icon: const Icon(Icons.history),
+          //   tooltip: 'View Saved SLDs',
+          //   onPressed: () {
+          //     Navigator.of(context).push(
+          //       MaterialPageRoute(
+          //         builder: (context) =>
+          //             SavedSldListScreen(currentUser: widget.currentUser),
+          //       ),
+          //     );
+          //   },
+          // ),
         ],
       ),
       drawer: widget.drawer,

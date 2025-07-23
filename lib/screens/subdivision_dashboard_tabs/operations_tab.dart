@@ -21,6 +21,9 @@ class OperationsTab extends StatefulWidget {
     required this.currentUser,
     this.initialSelectedSubstationId,
     this.onRefreshParent,
+    required String substationId,
+    required DateTime startDate,
+    required DateTime endDate,
   });
 
   @override

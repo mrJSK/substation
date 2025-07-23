@@ -490,6 +490,7 @@ class ReportsTab extends StatelessWidget {
     required this.subdivisionId,
     required DateTime startDate,
     required DateTime endDate,
+    required String substationId,
   }) : super(key: key);
 
   @override

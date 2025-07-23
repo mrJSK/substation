@@ -14,6 +14,7 @@ class AssetManagementTab extends StatelessWidget {
     required this.currentUser,
     required this.subdivisionId,
     String? selectedSubstationId,
+    required String substationId,
   }) : super(key: key);
 
   @override

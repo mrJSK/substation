@@ -1,5 +1,4 @@
 // lib/screens/substation_detail_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +9,7 @@ import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_connection_model.dart';
 import '../../models/equipment_model.dart';
+import '../../models/user_readings_config_model.dart'; // This import is crucial and was added previously
 import '../../painters/single_line_diagram_painter.dart';
 import '../../utils/snackbar_utils.dart';
 import '../bay_equipment_management_screen.dart';
@@ -358,68 +358,131 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     .toList() ??
                 [];
 
-            return ListView(
-              children: [
-                if (bays.isEmpty && standaloneEquipment.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text('No bays or standalone equipment found.'),
-                  ),
-                // Bays grouped by voltage level
-                ...baysByVoltage.entries.map((entry) {
-                  final voltage = entry.key;
-                  final bays = entry.value;
-                  return ExpansionTile(
-                    title: Text('$voltage Bays'),
-                    children: bays.map((bay) {
-                      return ListTile(
-                        title: Text(bay.name),
-                        subtitle: Text('Type: ${bay.bayType}'),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => BayEquipmentListScreen(
-                                bayId: bay.id,
-                                bayName: bay.name,
-                                currentUser: widget.currentUser,
-                              ),
-                            ),
-                          );
-                        },
-                        trailing: IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () =>
-                              _setViewMode(BayDetailViewMode.edit, bay: bay),
-                        ),
-                      );
-                    }).toList(),
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('userReadingConfigs')
+                  .where('substationId', isEqualTo: widget.substationId)
+                  .snapshots(),
+              builder: (context, readingConfigSnapshot) {
+                if (readingConfigSnapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (readingConfigSnapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Error loading reading assignments: ${readingConfigSnapshot.error}',
+                    ),
                   );
-                }).toList(),
-                // Standalone Equipment Section
-                if (standaloneEquipment.isNotEmpty)
-                  ExpansionTile(
-                    title: const Text('Standalone Equipment'),
-                    children: standaloneEquipment.map((equipment) {
-                      return ListTile(
-                        title: Text(equipment.equipmentTypeName),
-                        subtitle: Text('Make: ${equipment.make}'),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  BayEquipmentManagementScreen(
-                                    bayId: '',
-                                    bayName: equipment.equipmentTypeName,
-                                    substationId: widget.substationId,
+                }
+
+                // Correctly map and collect bayIds from configuredReadings list within each UserReadingsConfig document
+                final assignedBays = <String>{};
+                for (var doc in readingConfigSnapshot.data!.docs) {
+                  final userReadingsConfig = UserReadingsConfig.fromFirestore(
+                    doc,
+                  );
+                  for (var configuredBayReading
+                      in userReadingsConfig.configuredReadings) {
+                    assignedBays.add(configuredBayReading.bayId);
+                  }
+                }
+
+                return ListView(
+                  children: [
+                    if (bays.isEmpty && standaloneEquipment.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text('No bays or standalone equipment found.'),
+                      ),
+                    // Bays grouped by voltage level
+                    ...baysByVoltage.entries.map((entry) {
+                      final voltage = entry.key;
+                      final bays = entry.value;
+                      return ExpansionTile(
+                        title: Text('$voltage Bays'),
+                        children: bays.map((bay) {
+                          final isAssigned = assignedBays.contains(bay.id);
+                          final iconColor = isAssigned
+                              ? Colors.green
+                              : Colors.red;
+
+                          return ListTile(
+                            title: Text(bay.name),
+                            subtitle: Text('Type: ${bay.bayType}'),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => BayEquipmentListScreen(
+                                    bayId: bay.id,
+                                    bayName: bay.name,
                                     currentUser: widget.currentUser,
                                   ),
+                                ),
+                              );
+                            },
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.menu_book, color: iconColor),
+                                  tooltip: isAssigned
+                                      ? 'Reading Assigned'
+                                      : 'Reading Unassigned',
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            BayReadingAssignmentScreen(
+                                              bayId: bay.id,
+                                              bayName: bay.name,
+                                              currentUser: widget.currentUser,
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+                                  tooltip: 'Edit Bay Details',
+                                  onPressed: () => _setViewMode(
+                                    BayDetailViewMode.edit,
+                                    bay: bay,
+                                  ),
+                                ),
+                              ],
                             ),
                           );
-                        },
+                        }).toList(),
                       );
                     }).toList(),
-                  ),
-              ],
+                    // Standalone Equipment Section
+                    if (standaloneEquipment.isNotEmpty)
+                      ExpansionTile(
+                        title: const Text('Standalone Equipment'),
+                        children: standaloneEquipment.map((equipment) {
+                          return ListTile(
+                            title: Text(equipment.equipmentTypeName),
+                            subtitle: Text('Make: ${equipment.make}'),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      BayEquipmentManagementScreen(
+                                        bayId: '',
+                                        bayName: equipment.equipmentTypeName,
+                                        substationId: widget.substationId,
+                                        currentUser: widget.currentUser,
+                                      ),
+                                ),
+                              );
+                            },
+                          );
+                        }).toList(),
+                      ),
+                  ],
+                );
+              },
             );
           },
         );

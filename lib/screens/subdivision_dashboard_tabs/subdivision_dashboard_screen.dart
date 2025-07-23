@@ -1,12 +1,11 @@
+// lib/screens/subdivision_dashboard_tabs/subdivision_dashboard_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart'; // NEW: For date formatting
+import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
-import '../../models/hierarchy_models.dart'; // For Substation model
-import '../../models/app_state_data.dart'; // For AppStateData
-
-// Import your new tab widgets
+import '../../models/hierarchy_models.dart';
+import '../../models/app_state_data.dart';
 import 'operations_tab.dart';
 import 'energy_tab.dart';
 import 'tripping_tab.dart';
@@ -15,13 +14,11 @@ import 'asset_management_tab.dart';
 
 class SubdivisionDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
-  final String? selectedSubstationId;
   final Widget? drawer;
 
   const SubdivisionDashboardScreen({
     Key? key,
     required this.currentUser,
-    this.selectedSubstationId,
     this.drawer,
   }) : super(key: key);
 
@@ -33,10 +30,7 @@ class SubdivisionDashboardScreen extends StatefulWidget {
 class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<Substation> _substations = []; // Keep track of substations for dropdown
-  String? _currentSelectedSubstationId; // State for dropdown
 
-  // NEW: Date range for dashboard tabs
   DateTime _dashboardStartDate = DateTime.now().subtract(
     const Duration(days: 7),
   );
@@ -54,8 +48,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
-    _currentSelectedSubstationId = widget.selectedSubstationId;
-    _fetchSubstationsForDropdown(); // Fetch substations needed for the dropdown
   }
 
   @override
@@ -64,61 +56,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     super.dispose();
   }
 
-  Future<void> _fetchSubstationsForDropdown() async {
-    final AppUser currentUser = widget.currentUser;
-    if (currentUser.assignedLevels?['subdivisionId'] == null) {
-      // Handle error or show a message
-      return;
-    }
-    final subdivisionId = currentUser.assignedLevels!['subdivisionId'];
-    try {
-      final substationsSnapshot = await FirebaseFirestore.instance
-          .collection('substations')
-          .where('subdivisionId', isEqualTo: subdivisionId)
-          .orderBy('name')
-          .get();
-
-      if (!mounted) return;
-      setState(() {
-        _substations = substationsSnapshot.docs
-            .map((doc) => Substation.fromFirestore(doc))
-            .toList();
-        if (_currentSelectedSubstationId == null && _substations.isNotEmpty) {
-          _currentSelectedSubstationId = _substations.first.id;
-        }
-        // Update AppStateData here if _currentSelectedSubstationId changes
-        if (_currentSelectedSubstationId != null) {
-          final selectedSubstation = _substations.firstWhere(
-            (s) => s.id == _currentSelectedSubstationId,
-          );
-          Provider.of<AppStateData>(
-            context,
-            listen: false,
-          ).setSelectedSubstation(selectedSubstation);
-        }
-      });
-    } catch (e) {
-      print('Error fetching substations for dropdown: $e');
-      // Show snackbar or handle error
-    }
-  }
-
-  void _onSubstationChangedInDropdown(String? newSubstationId) {
-    setState(() {
-      _currentSelectedSubstationId = newSubstationId;
-      if (newSubstationId != null) {
-        final selectedSubstation = _substations.firstWhere(
-          (s) => s.id == newSubstationId,
-        );
-        Provider.of<AppStateData>(
-          context,
-          listen: false,
-        ).setSelectedSubstation(selectedSubstation);
-      }
-    });
-  }
-
-  // NEW: Date picker method for dashboard
   Future<void> _selectDashboardDate(
     BuildContext context,
     bool isStartDate,
@@ -148,37 +85,71 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = widget.currentUser;
+    final AppStateData appState = Provider.of<AppStateData>(context);
+    final AppUser currentUser = widget.currentUser;
+    final List<Substation> accessibleSubstations =
+        appState.accessibleSubstations;
+
+    Substation? selectedSubstation = appState.selectedSubstation;
+
+    if (selectedSubstation == null && accessibleSubstations.isNotEmpty) {
+      selectedSubstation = accessibleSubstations.first;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        appState.setSelectedSubstation(selectedSubstation!);
+      });
+    }
+
+    if (currentUser == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    // Ensure selectedSubstation is not null before accessing its properties for required arguments
+    // If selectedSubstation is still null here, it means no substations are accessible or loaded yet.
+    if (selectedSubstation == null) {
+      return const Scaffold(
+        body: Center(
+          child: Text(
+            'Loading substations or no accessible substations found.',
+          ),
+        ),
+      );
+    }
 
     final List<Widget> _screensContent = [
       OperationsTab(
         currentUser: currentUser,
-        initialSelectedSubstationId: _currentSelectedSubstationId,
-        // OperationsTab handles its own date range internally
+        initialSelectedSubstationId: selectedSubstation.id,
+        substationId: selectedSubstation.id, // Pass required substationId
+        startDate: _dashboardStartDate, // Pass required startDate
+        endDate: _dashboardEndDate, // Pass required endDate
       ),
       EnergyTab(
         currentUser: currentUser,
-        initialSelectedSubstationId: _currentSelectedSubstationId,
-        startDate: _dashboardStartDate, // Pass dashboard-wide start date
-        endDate: _dashboardEndDate, // Pass dashboard-wide end date
+        initialSelectedSubstationId: selectedSubstation.id,
+        substationId: selectedSubstation.id, // Pass required substationId
+        startDate: _dashboardStartDate, // Pass required startDate
+        endDate: _dashboardEndDate, // Pass required endDate
       ),
       TrippingTab(
         currentUser: currentUser,
-        startDate: _dashboardStartDate, // Pass dashboard-wide start date
-        endDate: _dashboardEndDate, // Pass dashboard-wide end date
+        substationId: selectedSubstation.id, // Pass required substationId
+        startDate: _dashboardStartDate, // Pass required startDate
+        endDate: _dashboardEndDate, // Pass required endDate
       ),
       ReportsTab(
         currentUser: currentUser,
-        selectedSubstationId: _currentSelectedSubstationId,
+        selectedSubstationId: selectedSubstation.id,
         subdivisionId: currentUser.assignedLevels?['subdivisionId'] ?? '',
-        startDate: _dashboardStartDate, // Pass dashboard-wide start date
-        endDate: _dashboardEndDate, // Pass dashboard-wide end date
+        substationId: selectedSubstation.id, // Pass required substationId
+        startDate: _dashboardStartDate, // Pass required startDate
+        endDate: _dashboardEndDate, // Pass required endDate
       ),
       if (currentUser.role == UserRole.subdivisionManager)
         AssetManagementTab(
           currentUser: currentUser,
           subdivisionId: currentUser.assignedLevels?['subdivisionId'] ?? '',
-          selectedSubstationId: _currentSelectedSubstationId,
+          selectedSubstationId: selectedSubstation.id,
+          substationId: selectedSubstation.id, // Pass required substationId
         ),
     ];
 
@@ -204,51 +175,85 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
-          tabs: [..._tabs.map((tab) => Tab(text: tab)).toList()],
+          tabs: currentUser.role == UserRole.subdivisionManager
+              ? [..._tabs.map((tab) => Tab(text: tab)).toList()]
+              : _tabs
+                    .where((tab) => tab != 'Asset Management')
+                    .map((tab) => Tab(text: tab))
+                    .toList(),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.date_range),
-            tooltip: 'Select Date Range',
-            onPressed: () async {
-              final DateTime? pickedStartDate = await showDatePicker(
-                context: context,
-                initialDate: _dashboardStartDate,
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now(),
-              );
-              if (pickedStartDate != null) {
-                final DateTime? pickedEndDate = await showDatePicker(
-                  context: context,
-                  initialDate: _dashboardEndDate,
-                  firstDate:
-                      pickedStartDate, // End date cannot be before start date
-                  lastDate: DateTime.now(),
-                );
-                if (pickedEndDate != null) {
-                  setState(() {
-                    _dashboardStartDate = pickedStartDate;
-                    _dashboardEndDate = pickedEndDate;
-                  });
-                }
-              }
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: Center(
-              child: Text(
-                '${DateFormat('dd.MMM').format(_dashboardStartDate)} - ${DateFormat('dd.MMM').format(_dashboardEndDate)}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: Colors.white),
-              ),
+        // actions: [
+        //   IconButton(
+        //     icon: const Icon(Icons.date_range),
+        //     tooltip: 'Select Date Range',
+        //     onPressed: () async {
+        //       final DateTime? pickedStartDate = await showDatePicker(
+        //         context: context,
+        //         initialDate: _dashboardStartDate,
+        //         firstDate: DateTime(2000),
+        //         lastDate: DateTime.now(),
+        //       );
+        //       if (pickedStartDate != null) {
+        //         final DateTime? pickedEndDate = await showDatePicker(
+        //           context: context,
+        //           initialDate: _dashboardEndDate,
+        //           firstDate: pickedStartDate,
+        //           lastDate: DateTime.now(),
+        //         );
+        //         if (pickedEndDate != null) {
+        //           setState(() {
+        //             _dashboardStartDate = pickedStartDate;
+        //             _dashboardEndDate = pickedEndDate;
+        //           });
+        //         }
+        //       }
+        //     },
+        //   ),
+        //   Padding(
+        //     padding: const EdgeInsets.only(right: 8.0),
+        //     child: Center(
+        //       child: Text(
+        //         '${DateFormat('dd.MMM').format(_dashboardStartDate)} - ${DateFormat('dd.MMM').format(_dashboardEndDate)}',
+        //         style: Theme.of(
+        //           context,
+        //         ).textTheme.bodySmall?.copyWith(color: Colors.white),
+        //       ),
+        //     ),
+        //   ),
+        // ],
+      ),
+      drawer: widget.drawer,
+      body: Column(
+        children: [
+          // Padding(
+          //   padding: const EdgeInsets.all(8.0),
+          //   child: DropdownButtonFormField<Substation>(
+          //     value: selectedSubstation,
+          //     decoration: const InputDecoration(
+          //       labelText: 'Select Substation',
+          //       border: OutlineInputBorder(),
+          //     ),
+          //     items: accessibleSubstations.map((substation) {
+          //       return DropdownMenuItem<Substation>(
+          //         value: substation,
+          //         child: Text(substation.name),
+          //       );
+          //     }).toList(),
+          //     onChanged: (Substation? newValue) {
+          //       if (newValue != null) {
+          //         appState.setSelectedSubstation(newValue);
+          //       }
+          //     },
+          //   ),
+          // ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: _screensContent,
             ),
           ),
         ],
       ),
-      drawer: widget.drawer,
-      body: TabBarView(controller: _tabController, children: _screensContent),
     );
   }
 }

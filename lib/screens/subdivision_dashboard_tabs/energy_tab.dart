@@ -150,6 +150,7 @@ class EnergyTab extends StatefulWidget {
     this.initialSelectedSubstationId,
     required DateTime startDate,
     required DateTime endDate,
+    required String substationId,
   }) : super(key: key);
 
   @override

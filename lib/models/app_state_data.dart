@@ -91,6 +91,9 @@ class AppStateData extends ChangeNotifier {
   // NEW: Add selectedSubstation property
   Substation? _selectedSubstation;
 
+  // NEW: Add accessibleSubstations property
+  List<Substation> _accessibleSubstations = []; //
+
   // Public getters for state
   ThemeMode get themeMode => _themeMode;
   bool get isThemeLoaded => _isThemeLoaded;
@@ -101,6 +104,9 @@ class AppStateData extends ChangeNotifier {
   bool get isAuthStatusChecked => _isAuthStatusChecked;
   // NEW: Add getter for selectedSubstation
   Substation? get selectedSubstation => _selectedSubstation;
+  // NEW: Add getter for accessibleSubstations
+  List<Substation> get accessibleSubstations =>
+      List.unmodifiable(_accessibleSubstations); //
 
   // Combined readiness flag for initial app setup
   bool get isInitialized =>
@@ -1006,6 +1012,8 @@ class AppStateData extends ChangeNotifier {
       if (user == null) {
         _currentUser = null;
         _selectedSubstation = null; // NEW: Clear selected substation on logout
+        _accessibleSubstations =
+            []; // NEW: Clear accessible substations on logout
       } else {
         // Fetch or update AppUser from Firestore
         try {
@@ -1021,6 +1029,9 @@ class AppStateData extends ChangeNotifier {
             // NEW: If a subdivision manager, attempt to fetch and set a default substation
             if (_currentUser?.role == UserRole.subdivisionManager &&
                 _currentUser?.assignedLevels?['subdivisionId'] != null) {
+              await _fetchAccessibleSubstations(
+                _currentUser!.assignedLevels!['subdivisionId']!,
+              ); // NEW: Fetch all accessible substations
               await _fetchAndSetDefaultSubstation(
                 _currentUser!.assignedLevels!['subdivisionId']!,
               );
@@ -1036,6 +1047,8 @@ class AppStateData extends ChangeNotifier {
             _currentUser = null;
             _selectedSubstation =
                 null; // NEW: Clear selected substation on forced logout
+            _accessibleSubstations =
+                []; // NEW: Clear accessible substations on forced logout
           }
         } catch (e) {
           print(
@@ -1043,12 +1056,33 @@ class AppStateData extends ChangeNotifier {
           );
           _currentUser = null; // Clear user on error
           _selectedSubstation = null; // NEW: Clear selected substation on error
+          _accessibleSubstations =
+              []; // NEW: Clear accessible substations on error
         }
       }
       _isAuthStatusChecked =
           true; // Mark that initial auth status has been checked
       notifyListeners(); // Notify UI about user change
     });
+  }
+
+  // NEW: Method to fetch all accessible substations for a subdivisionId
+  Future<void> _fetchAccessibleSubstations(String subdivisionId) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('substations')
+          .where('subdivisionId', isEqualTo: subdivisionId)
+          .get();
+      _accessibleSubstations = querySnapshot.docs
+          .map((doc) => Substation.fromFirestore(doc))
+          .toList();
+      print(
+        'DEBUG: AppStateData: Fetched ${_accessibleSubstations.length} accessible substations for subdivision: $subdivisionId',
+      );
+    } catch (e) {
+      print('ERROR: AppStateData: Error fetching accessible substations: $e');
+      _accessibleSubstations = [];
+    }
   }
 
   // NEW: Method to fetch and set a default substation based on subdivisionId
@@ -1128,6 +1162,7 @@ class AppStateData extends ChangeNotifier {
     await FirebaseAuth.instance.signOut();
     _currentUser = null;
     _selectedSubstation = null; // Clear on sign out
+    _accessibleSubstations = []; // Clear on sign out
     notifyListeners();
   }
 }
