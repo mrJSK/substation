@@ -15,12 +15,17 @@ class TrippingShutdownEntry {
   reasonForNonFeeder; // NEW FIELD: Reason for non-feeder bay types
   final bool? hasAutoReclose; // Optional, only for 220kV+ bays
   final List<String>?
-  phaseFaults; // e.g., ['Rph', 'Yph', 'RYB'], only for Tripping
+  phaseFaults; // e.g., ['Rph', 'Yph', 'Bph'], only for Tripping
   final String? distance; // Optional, only for Line bay type (Tripping)
   final String createdBy;
   final Timestamp createdAt;
   final String? closedBy; // User who closed the event
   final Timestamp? closedAt; // Timestamp when the event was closed
+
+  // NEW FIELDS for Shutdown events
+  final String? shutdownType; // 'Transmission' or 'Distribution'
+  final String? shutdownPersonName;
+  final String? shutdownPersonDesignation;
 
   TrippingShutdownEntry({
     this.id,
@@ -32,7 +37,7 @@ class TrippingShutdownEntry {
     this.endTime,
     required this.status,
     required this.flagsCause,
-    this.reasonForNonFeeder, // NEW: Add to constructor
+    this.reasonForNonFeeder, // NEW: Add to copyWith
     this.hasAutoReclose,
     this.phaseFaults,
     this.distance,
@@ -40,31 +45,38 @@ class TrippingShutdownEntry {
     required this.createdAt,
     this.closedBy,
     this.closedAt,
+    // NEW: Initialize new fields
+    this.shutdownType,
+    this.shutdownPersonName,
+    this.shutdownPersonDesignation,
   });
 
   factory TrippingShutdownEntry.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    Map data = doc.data() as Map<String, dynamic>;
     return TrippingShutdownEntry(
       id: doc.id,
       substationId: data['substationId'] ?? '',
       bayId: data['bayId'] ?? '',
       bayName: data['bayName'] ?? '',
       eventType: data['eventType'] ?? '',
-      startTime: data['startTime'] ?? Timestamp.now(),
-      endTime: data['endTime'],
+      startTime: data['startTime'] as Timestamp,
+      endTime: data['endTime'] as Timestamp?,
       status: data['status'] ?? 'OPEN',
       flagsCause: data['flagsCause'] ?? '',
-      reasonForNonFeeder:
-          data['reasonForNonFeeder'], // NEW: Read from Firestore
+      reasonForNonFeeder: data['reasonForNonFeeder'],
       hasAutoReclose: data['hasAutoReclose'],
-      phaseFaults: (data['phaseFaults'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList(),
+      phaseFaults: data['phaseFaults'] != null
+          ? List<String>.from(data['phaseFaults'])
+          : null,
       distance: data['distance'],
       createdBy: data['createdBy'] ?? '',
-      createdAt: data['createdAt'] ?? Timestamp.now(),
+      createdAt: data['createdAt'] as Timestamp,
       closedBy: data['closedBy'],
-      closedAt: data['closedAt'],
+      closedAt: data['closedAt'] as Timestamp?,
+      // NEW: Retrieve new fields from Firestore
+      shutdownType: data['shutdownType'],
+      shutdownPersonName: data['shutdownPersonName'],
+      shutdownPersonDesignation: data['shutdownPersonDesignation'],
     );
   }
 
@@ -78,7 +90,7 @@ class TrippingShutdownEntry {
       'endTime': endTime,
       'status': status,
       'flagsCause': flagsCause,
-      'reasonForNonFeeder': reasonForNonFeeder, // NEW: Write to Firestore
+      'reasonForNonFeeder': reasonForNonFeeder,
       'hasAutoReclose': hasAutoReclose,
       'phaseFaults': phaseFaults,
       'distance': distance,
@@ -86,6 +98,10 @@ class TrippingShutdownEntry {
       'createdAt': createdAt,
       'closedBy': closedBy,
       'closedAt': closedAt,
+      // NEW: Add new fields to Firestore map
+      'shutdownType': shutdownType,
+      'shutdownPersonName': shutdownPersonName,
+      'shutdownPersonDesignation': shutdownPersonDesignation,
     };
   }
 
@@ -107,6 +123,10 @@ class TrippingShutdownEntry {
     Timestamp? createdAt,
     String? closedBy,
     Timestamp? closedAt,
+    // NEW: Add new fields to copyWith
+    String? shutdownType,
+    String? shutdownPersonName,
+    String? shutdownPersonDesignation,
   }) {
     return TrippingShutdownEntry(
       id: id ?? this.id,
@@ -127,6 +147,11 @@ class TrippingShutdownEntry {
       createdAt: createdAt ?? this.createdAt,
       closedBy: closedBy ?? this.closedBy,
       closedAt: closedAt ?? this.closedAt,
+      // NEW: Use new fields in copyWith
+      shutdownType: shutdownType ?? this.shutdownType,
+      shutdownPersonName: shutdownPersonName ?? this.shutdownPersonName,
+      shutdownPersonDesignation:
+          shutdownPersonDesignation ?? this.shutdownPersonDesignation,
     );
   }
 }

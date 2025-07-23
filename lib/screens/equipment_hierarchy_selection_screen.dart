@@ -9,7 +9,7 @@ import 'package:collection/collection.dart'; // For firstWhereOrNull
 import '../models/user_model.dart';
 import '../models/hierarchy_models.dart'; // Contains AppScreenState now
 import '../utils/snackbar_utils.dart';
-import 'substation_detail_screen.dart';
+import 'subdivision_dashboard_tabs/substation_detail_screen.dart';
 import '../controllers/sld_controller.dart'; // Import SldController
 
 class EquipmentHierarchySelectionScreen extends StatefulWidget {

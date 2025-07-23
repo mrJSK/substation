@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../models/app_state_data.dart'; // Ensure this path is correct
-import '../models/bay_model.dart'; // Ensure this path is correct
-import '../models/reading_models.dart'; // Ensure this path is correct
-import '../models/report_template_model.dart'; // Import ReportTemplate model
-import '../utils/snackbar_utils.dart'; // Ensure this path is correct for SnackbarUtils
+import '../../models/app_state_data.dart'; // Ensure this path is correct
+import '../../models/bay_model.dart'; // Ensure this path is correct
+import '../../models/reading_models.dart'; // Ensure this path is correct
+import '../../models/report_template_model.dart'; // Import ReportTemplate model
+import '../../utils/snackbar_utils.dart'; // Ensure this path is correct for SnackbarUtils
 
 class CreateReportTemplateScreen extends StatefulWidget {
   static const routeName = '/create-report-template';

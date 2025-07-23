@@ -5,7 +5,7 @@ import '../models/user_model.dart';
 import '../utils/snackbar_utils.dart';
 import '../models/bay_model.dart';
 import '../models/assessment_model.dart';
-import '../screens/energy_sld_screen.dart'; // To access BayEnergyData
+import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart'; // To access BayEnergyData
 
 class EnergyAssessmentDialog extends StatefulWidget {
   final Bay bay;

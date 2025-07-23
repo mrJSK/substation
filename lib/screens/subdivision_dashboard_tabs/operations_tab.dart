@@ -1,491 +1,731 @@
 // lib/screens/subdivision_dashboard_tabs/operations_tab.dart
-
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-
-import '../../models/tripping_shutdown_model.dart';
-import '../../models/user_model.dart';
-import '../../models/bay_model.dart';
 import '../../models/hierarchy_models.dart';
+import '../../models/bay_model.dart';
+import '../../models/user_model.dart';
 import '../../utils/snackbar_utils.dart';
-import '../../models/user_readings_config_model.dart';
-import '../tripping_shutdown_entry_screen.dart';
 import '../../models/app_state_data.dart';
-import '../create_report_template_screen.dart';
-
-// Tripping & Shutdown Event List Widget (no change to its internal logic, just moved location)
-class TrippingShutdownEventsList extends StatelessWidget {
-  final List<TrippingShutdownEntry> events;
-  final AppUser currentUser;
-  final Map<String, Bay> baysMap;
-  final Function() onRefresh;
-
-  const TrippingShutdownEventsList({
-    Key? key,
-    required this.events,
-    required this.currentUser,
-    required this.baysMap,
-    required this.onRefresh,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    if (events.isEmpty) {
-      return const Center(
-        child: Text(
-          'No Tripping/Shutdown events found for the selected period.',
-          style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
-        ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
-      itemCount: events.length,
-      itemBuilder: (context, index) {
-        final event = events[index];
-        final bay =
-            baysMap[event.bayId] ??
-            Bay(
-              id: event.bayId,
-              name: event.bayName,
-              substationId: event.substationId,
-              voltageLevel: 'Unknown',
-              bayType: 'Unknown',
-              createdBy: '',
-              createdAt: Timestamp.now(),
-            );
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8.0),
-          elevation: 3,
-          child: ListTile(
-            leading: Icon(
-              event.status == 'OPEN'
-                  ? Icons.hourglass_empty
-                  : Icons.check_circle,
-              color: event.status == 'OPEN' ? Colors.orange : Colors.green,
-            ),
-            title: Text('${event.eventType} - ${bay.name}'),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Start: ${DateFormat('dd.MMM.yyyy HH:mm').format(event.startTime.toDate())}',
-                ),
-                Text('Status: ${event.status}'),
-                if (event.reasonForNonFeeder != null &&
-                    event.reasonForNonFeeder!.isNotEmpty)
-                  Text('Reason: ${event.reasonForNonFeeder}'),
-                if (event.status == 'CLOSED' && event.endTime != null)
-                  Text(
-                    'End: ${DateFormat('dd.MMM.yyyy HH:mm').format(event.endTime!.toDate())}',
-                  ),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.visibility),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => TrippingShutdownEntryScreen(
-                          substationId: event.substationId,
-                          currentUser: currentUser,
-                          entryToEdit: event,
-                          isViewOnly: true,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                if (event.status == 'OPEN' &&
-                    currentUser.role == UserRole.subdivisionManager)
-                  IconButton(
-                    icon: const Icon(Icons.edit),
-                    onPressed: () {
-                      Navigator.of(context)
-                          .push(
-                            MaterialPageRoute(
-                              builder: (_) => TrippingShutdownEntryScreen(
-                                substationId: event.substationId,
-                                currentUser: currentUser,
-                                entryToEdit: event,
-                                isViewOnly: false,
-                              ),
-                            ),
-                          )
-                          .then((_) {
-                            onRefresh();
-                          });
-                    },
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
+import '../../models/logsheet_models.dart'; // Required for LogsheetEntry
+import '../substation_dashboard/logsheet_entry_screen.dart'; // To navigate to single entry view
 
 class OperationsTab extends StatefulWidget {
   final AppUser currentUser;
   final String? initialSelectedSubstationId;
-  final Function() onRefreshParent;
+  final VoidCallback? onRefreshParent;
 
   const OperationsTab({
-    Key? key,
+    super.key,
     required this.currentUser,
     this.initialSelectedSubstationId,
-    required this.onRefreshParent,
-  }) : super(key: key);
+    this.onRefreshParent,
+  });
 
   @override
-  _OperationsTabState createState() => _OperationsTabState();
+  State<OperationsTab> createState() => _OperationsTabState();
 }
 
 class _OperationsTabState extends State<OperationsTab> {
-  bool _isLoading = true;
-  List<TrippingShutdownEntry> _trippingShutdownEvents = [];
-  Map<String, Bay> _baysMap = {};
-  List<Substation> _substations = [];
-  String? _selectedSubstationId;
-  late DateTime
-  _startTime; // This is the old config-based start time, might not be needed directly for display
-  DateTime _startDate = DateTime.now().subtract(
-    const Duration(days: 7),
-  ); // New: Start date for filter
-  DateTime _endDate = DateTime.now(); // New: End date for filter
+  // State variables for selection UI
+  Substation? _selectedSubstation;
+  List<String> _selectedBayIds = [];
+  DateTime? _startDate;
+  DateTime? _endDate;
+  List<Bay> _bays = [];
+  bool _isBaysLoading = false;
+
+  // State variables for viewer UI (combined from MultiBayLogsheetViewerScreen)
+  bool _isViewerLoading =
+      false; // Initialized to false, will be true when fetching
+  String? _viewerErrorMessage;
+  List<LogsheetEntry> _rawLogsheetEntriesForViewer = [];
+  Map<String, Bay> _viewerBaysMap = {}; // Map bay IDs to Bay objects for names
+  Map<String, Map<DateTime, List<LogsheetEntry>>> _groupedEntriesForViewer = {};
+
+  // New state for individual reading selection dropdown
+  LogsheetEntry? _selectedIndividualReadingEntry;
+  List<LogsheetEntry> _individualEntriesForDropdown =
+      []; // Entries for the dropdown
 
   @override
   void initState() {
     super.initState();
-    _selectedSubstationId = widget.initialSelectedSubstationId;
-    _initializeData();
+    _startDate = DateTime.now();
+    _endDate = DateTime.now();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final newSelectedSubstationId = Provider.of<AppStateData>(
-      context,
-    ).selectedSubstation?.id;
-    if (newSelectedSubstationId != null &&
-        newSelectedSubstationId != _selectedSubstationId) {
-      setState(() {
-        _selectedSubstationId = newSelectedSubstationId;
-        _fetchOperationsData(); // Re-fetch data for the new substation
-      });
-    } else if (_selectedSubstationId == null &&
-        newSelectedSubstationId != null) {
-      setState(() {
-        _selectedSubstationId = newSelectedSubstationId;
-        _fetchOperationsData();
-      });
+  // --- Methods for Selection UI ---
+  Future<void> _fetchBaysForSelectedSubstation() async {
+    if (_selectedSubstation == null) {
+      if (mounted) {
+        setState(() {
+          _bays = []; // Clear bays if no substation selected
+          _selectedBayIds = [];
+          _individualEntriesForDropdown =
+              []; // Clear individual entry dropdown data
+          _selectedIndividualReadingEntry =
+              null; // Clear selected individual entry
+        });
+      }
+      return;
     }
-  }
 
-  Future<void> _initializeData() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
+    if (_isBaysLoading) return; // Prevent multiple concurrent fetches
+
+    if (mounted) setState(() => _isBaysLoading = true);
     try {
-      // The user config for _startTime is less relevant now as we have explicit date pickers
-      // However, keeping it for initial data load if no date is picked yet.
-      final userId = widget.currentUser.uid;
-      final configDoc = await FirebaseFirestore.instance
-          .collection('userReadingsConfigurations')
-          .doc(userId)
-          .get();
-
-      if (configDoc.exists) {
-        final config = UserReadingsConfig.fromFirestore(configDoc);
-        final now = DateTime.now();
-        _startTime = now.subtract(
-          Duration(
-            hours: config.durationUnit == 'hours'
-                ? config.durationValue
-                : config.durationUnit == 'days'
-                ? config.durationValue * 24
-                : config.durationUnit == 'weeks'
-                ? config.durationValue * 24 * 7
-                : config.durationUnit == 'months'
-                ? config.durationValue * 24 * 30
-                : config.durationValue * 24 * 30, // Fallback
-          ),
-        );
-      } else {
-        _startTime = DateTime.now().subtract(const Duration(hours: 48));
-      }
-
-      await _fetchSubstations();
-      if (_selectedSubstationId != null) {
-        await _fetchOperationsData();
-      } else {
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
-      }
-    } catch (e) {
-      print('Error initializing operations tab data: $e');
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Error initializing operations data: $e',
-          isError: true,
-        );
-      }
-      _startTime = DateTime.now().subtract(const Duration(hours: 48));
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _fetchSubstations() async {
-    if (!mounted) return;
-    try {
-      final AppUser currentUser = widget.currentUser;
-
-      if (currentUser.assignedLevels?['subdivisionId'] == null) {
-        if (!mounted) return;
-        SnackBarUtils.showSnackBar(
-          context,
-          'Subdivision ID not found in user profile. Please contact admin.',
-          isError: true,
-        );
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final subdivisionId = currentUser.assignedLevels!['subdivisionId'];
-
-      final substationsSnapshot = await FirebaseFirestore.instance
-          .collection('substations')
-          .where('subdivisionId', isEqualTo: subdivisionId)
-          .orderBy('name')
-          .get();
-
-      if (!mounted) return;
-      setState(() {
-        _substations = substationsSnapshot.docs
-            .map((doc) => Substation.fromFirestore(doc))
-            .toList();
-        if (_selectedSubstationId == null && _substations.isNotEmpty) {
-          _selectedSubstationId = _substations.first.id;
-        }
-        if (_selectedSubstationId != null) {
-          final selectedSubstation = _substations.firstWhere(
-            (s) => s.id == _selectedSubstationId,
-          );
-          Provider.of<AppStateData>(
-            context,
-            listen: false,
-          ).setSelectedSubstation(selectedSubstation);
-        }
-      });
-    } catch (e) {
-      print('Error fetching substations for operations tab: $e');
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Error fetching substations for operations tab: $e',
-          isError: true,
-        );
-      }
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _fetchOperationsData() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-    _trippingShutdownEvents.clear();
-    _baysMap.clear();
-
-    try {
-      if (_selectedSubstationId == null) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
-      List<Bay> fetchedBays = [];
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
-          .where('substationId', isEqualTo: _selectedSubstationId)
+          .where('substationId', isEqualTo: _selectedSubstation!.id)
+          .orderBy('name')
           .get();
-      fetchedBays.addAll(
-        baysSnapshot.docs.map((doc) => Bay.fromFirestore(doc)).toList(),
-      );
-      _baysMap = {for (var bay in fetchedBays) bay.id: bay};
-
-      // Filter tripping events by the selected date range
-      final trippingSnapshot = await FirebaseFirestore.instance
-          .collection('trippingShutdownEntries')
-          .where('substationId', isEqualTo: _selectedSubstationId)
-          .where(
-            'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(_startDate),
-          )
-          .where(
-            'startTime',
-            isLessThanOrEqualTo: Timestamp.fromDate(
-              _endDate
-                  .add(const Duration(days: 1))
-                  .subtract(const Duration(seconds: 1)),
-            ),
-          ) // End of day
-          .orderBy('startTime', descending: true)
-          .get();
-      _trippingShutdownEvents = trippingSnapshot.docs
-          .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
-          .toList();
-
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _bays = baysSnapshot.docs
+              .map((doc) => Bay.fromFirestore(doc))
+              .toList();
+          // Filter out any previously selected bays that are no longer available
+          _selectedBayIds = _selectedBayIds
+              .where((id) => _bays.any((bay) => bay.id == id))
+              .toList();
+          _isBaysLoading = false;
+        });
+      }
     } catch (e) {
-      print('Error loading operations data: $e');
+      print('Error fetching bays: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Error loading operations data: $e',
+          'Error loading bays: $e',
           isError: true,
         );
-      }
-      if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isBaysLoading = false);
       }
     }
   }
 
-  // New: Date picker method
-  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
+  Future<void> _selectDate(bool isStartDate) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: isStartDate ? _startDate : _endDate,
+      initialDate: isStartDate
+          ? _startDate ?? DateTime.now()
+          : _endDate ?? DateTime.now(),
       firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
+      lastDate:
+          DateTime.now(), // Restrict to current date for end date to avoid future entries
     );
     if (picked != null) {
-      if (!mounted) return;
       setState(() {
         if (isStartDate) {
           _startDate = picked;
-          if (_startDate.isAfter(_endDate)) {
-            _endDate = _startDate; // Ensure end date is not before start date
+          // Ensure end date is not before start date
+          if (_endDate != null && _endDate!.isBefore(_startDate!)) {
+            _endDate = _startDate;
           }
         } else {
           _endDate = picked;
-          if (_endDate.isBefore(_startDate)) {
-            _startDate = _endDate; // Ensure start date is not after end date
+          // Ensure start date is not after end date
+          if (_startDate != null && _startDate!.isAfter(_endDate!)) {
+            _startDate = _endDate;
           }
         }
+        // Reset viewer data and individual dropdown on date change
+        _rawLogsheetEntriesForViewer = [];
+        _groupedEntriesForViewer = {};
+        _individualEntriesForDropdown = [];
+        _selectedIndividualReadingEntry = null;
       });
-      _fetchOperationsData(); // Re-fetch data with new date range
     }
+  }
+
+  Future<void> _selectMultipleBays() async {
+    if (_bays.isEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'No bays available to select.',
+        isError: true,
+      );
+      return;
+    }
+
+    final List<String> tempSelectedBayIds = List.from(_selectedBayIds);
+
+    final List<String>? result = await showDialog<List<String>>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Select Bays'),
+          content: SingleChildScrollView(
+            child: Column(
+              children: _bays.map((bay) {
+                return StatefulBuilder(
+                  builder:
+                      (BuildContext context, StateSetter setStateInDialog) {
+                        return CheckboxListTile(
+                          title: Text('${bay.name} (${bay.bayType})'),
+                          value: tempSelectedBayIds.contains(bay.id),
+                          onChanged: (bool? selected) {
+                            setStateInDialog(() {
+                              if (selected == true) {
+                                tempSelectedBayIds.add(bay.id);
+                              } else {
+                                tempSelectedBayIds.remove(bay.id);
+                              }
+                            });
+                          },
+                        );
+                      },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(null); // Cancel
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(tempSelectedBayIds); // Confirm
+              },
+              child: const Text('Done'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() {
+        _selectedBayIds = result;
+        // Reset viewer data and individual dropdown on bay change
+        _rawLogsheetEntriesForViewer = [];
+        _groupedEntriesForViewer = {};
+        _individualEntriesForDropdown = [];
+        _selectedIndividualReadingEntry = null;
+      });
+    }
+  }
+
+  // --- Methods for Viewer UI ---
+  Future<void> _fetchLogsheetEntriesForViewer() async {
+    setState(() {
+      _isViewerLoading = true;
+      _viewerErrorMessage = null;
+      _rawLogsheetEntriesForViewer = [];
+      _groupedEntriesForViewer = {};
+      _individualEntriesForDropdown = [];
+      _selectedIndividualReadingEntry = null;
+    });
+
+    try {
+      // Fetch Bay details first to map IDs to names
+      _viewerBaysMap.clear(); // Clear existing map
+      final baysSnapshot = await FirebaseFirestore.instance
+          .collection('bays')
+          .where(FieldPath.documentId, whereIn: _selectedBayIds)
+          .get();
+      for (var doc in baysSnapshot.docs) {
+        _viewerBaysMap[doc.id] = Bay.fromFirestore(doc);
+      }
+
+      // Prepare dates for query (Firestore Timestamps are UTC based)
+      final DateTime queryStartDate = DateTime(
+        _startDate!.year,
+        _startDate!.month,
+        _startDate!.day,
+      ).toUtc();
+      final DateTime queryEndDate = DateTime(
+        _endDate!.year,
+        _endDate!.month,
+        _endDate!.day,
+        23,
+        59,
+        59,
+        999,
+      ).toUtc();
+
+      final logsheetSnapshot = await FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('substationId', isEqualTo: _selectedSubstation!.id)
+          .where('bayId', whereIn: _selectedBayIds)
+          .where(
+            'frequency',
+            isEqualTo: 'hourly',
+          ) // Assuming hourly for this tab
+          .where(
+            'readingTimestamp',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(queryStartDate),
+          )
+          .where(
+            'readingTimestamp',
+            isLessThanOrEqualTo: Timestamp.fromDate(queryEndDate),
+          )
+          .orderBy('bayId')
+          .orderBy('readingTimestamp')
+          .get();
+
+      _rawLogsheetEntriesForViewer = logsheetSnapshot.docs
+          .map((doc) => LogsheetEntry.fromFirestore(doc))
+          .toList();
+
+      _groupLogsheetEntriesForViewer();
+
+      // Populate individual entry dropdown if only one bay is selected
+      if (_selectedBayIds.length == 1) {
+        _individualEntriesForDropdown = _rawLogsheetEntriesForViewer;
+        _individualEntriesForDropdown.sort(
+          (a, b) => a.readingTimestamp.compareTo(b.readingTimestamp),
+        );
+      }
+    } catch (e) {
+      print('Error fetching logsheet entries for viewer: $e');
+      if (mounted) {
+        setState(() {
+          _viewerErrorMessage = 'Failed to load logsheet entries: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isViewerLoading = false;
+        });
+      }
+    }
+  }
+
+  void _groupLogsheetEntriesForViewer() {
+    _groupedEntriesForViewer.clear();
+    for (var entry in _rawLogsheetEntriesForViewer) {
+      final String bayId = entry.bayId;
+      // Normalize timestamp to just the date part (midnight) for grouping
+      final DateTime entryDate = DateTime(
+        entry.readingTimestamp.toDate().year,
+        entry.readingTimestamp.toDate().month,
+        entry.readingTimestamp.toDate().day,
+      );
+
+      _groupedEntriesForViewer.putIfAbsent(bayId, () => {});
+      _groupedEntriesForViewer[bayId]!.putIfAbsent(entryDate, () => []);
+      _groupedEntriesForViewer[bayId]![entryDate]!.add(entry);
+    }
+
+    // Sort entries within each date group by hour
+    _groupedEntriesForViewer.forEach((bayId, datesMap) {
+      datesMap.forEach((date, entriesList) {
+        entriesList.sort((a, b) {
+          final hourA = a.readingTimestamp.toDate().hour;
+          final hourB = b.readingTimestamp.toDate().hour;
+          return hourA.compareTo(hourB);
+        });
+      });
+    });
+  }
+
+  // --- Main UI Logic ---
+  void _viewLogsheetEntry() {
+    if (_selectedSubstation == null ||
+        _selectedBayIds.isEmpty ||
+        _startDate == null ||
+        _endDate == null) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please select a substation, at least one bay, and a date range.',
+        isError: true,
+      );
+      return;
+    }
+    // Directly fetch and display results on the same page
+    _fetchLogsheetEntriesForViewer();
+  }
+
+  // UI for viewer display (will be called directly in the main build method)
+  Widget _buildLogsheetViewerContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        Text(
+          'Logsheet Entries for ${_selectedSubstation?.name ?? ''}',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        Text(
+          '${DateFormat('MMM dd, yyyy').format(_startDate!)} - '
+          '${DateFormat('MMM dd, yyyy').format(_endDate!)}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 20),
+        // New dropdown for individual readings (if only one bay selected)
+        if (_selectedBayIds.length == 1 && !_isViewerLoading)
+          DropdownButtonFormField<LogsheetEntry>(
+            decoration: const InputDecoration(
+              labelText: 'Select Specific Reading',
+              border: OutlineInputBorder(),
+            ),
+            value: _selectedIndividualReadingEntry,
+            items: _individualEntriesForDropdown.map((entry) {
+              return DropdownMenuItem<LogsheetEntry>(
+                value: entry,
+                child: Text(
+                  '${DateFormat('yyyy-MM-dd HH:mm').format(entry.readingTimestamp.toDate().toLocal())}',
+                ),
+              );
+            }).toList(),
+            onChanged: (LogsheetEntry? newValue) {
+              setState(() {
+                _selectedIndividualReadingEntry = newValue;
+              });
+              if (newValue != null) {
+                // Navigate to LogsheetEntryScreen to view this specific entry
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => LogsheetEntryScreen(
+                      substationId: _selectedSubstation!.id,
+                      substationName: _selectedSubstation!.name,
+                      bayId: newValue.bayId,
+                      readingDate: newValue.readingTimestamp.toDate(),
+                      frequency: newValue.frequency,
+                      readingHour: newValue.readingHour,
+                      currentUser: widget.currentUser,
+                      forceReadOnly: true, // Always view in read-only mode here
+                    ),
+                  ),
+                );
+              }
+            },
+            isExpanded: true,
+            hint: const Text('Select an individual reading to view details'),
+          ),
+        const SizedBox(height: 20),
+        _isViewerLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _viewerErrorMessage != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    _viewerErrorMessage!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              )
+            : _groupedEntriesForViewer.isEmpty
+            ? const Center(
+                child: Text(
+                  'No logsheet entries found for the selected criteria.',
+                ),
+              )
+            : ListView.builder(
+                shrinkWrap: true, // Important for nested ListView in Column
+                physics: const NeverScrollableScrollPhysics(), // Important
+                itemCount: _groupedEntriesForViewer.keys.length,
+                itemBuilder: (context, bayIndex) {
+                  final String bayId = _groupedEntriesForViewer.keys.elementAt(
+                    bayIndex,
+                  );
+                  final Bay? bay = _viewerBaysMap[bayId];
+                  final Map<DateTime, List<LogsheetEntry>> bayEntries =
+                      _groupedEntriesForViewer[bayId]!;
+                  final List<DateTime> sortedDates = bayEntries.keys.toList()
+                    ..sort();
+
+                  return Card(
+                    margin: const EdgeInsets.all(8.0),
+                    child: ExpansionTile(
+                      title: Text(
+                        bay != null
+                            ? '${bay.name} (${bay.bayType})'
+                            : 'Bay ID: $bayId',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      children: sortedDates.map((date) {
+                        final List<LogsheetEntry> hourlyEntries =
+                            bayEntries[date]!;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 8.0,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                DateFormat('yyyy-MM-dd').format(date),
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 8),
+                              Table(
+                                columnWidths: const {
+                                  0: FlexColumnWidth(1),
+                                  1: FlexColumnWidth(2),
+                                },
+                                border: TableBorder.all(
+                                  color: Colors.grey.shade300,
+                                ),
+                                children: [
+                                  TableRow(
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade200,
+                                    ),
+                                    children: const [
+                                      Padding(
+                                        padding: EdgeInsets.all(8.0),
+                                        child: Text(
+                                          'Hour',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: EdgeInsets.all(8.0),
+                                        child: Text(
+                                          'Readings',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  ...hourlyEntries.map((entry) {
+                                    final String hour = DateFormat('HH:mm')
+                                        .format(
+                                          entry.readingTimestamp
+                                              .toDate()
+                                              .toLocal(),
+                                        );
+                                    final String readings = entry.values.entries
+                                        .map((e) {
+                                          if (e.value is Map &&
+                                              e.value.containsKey('value')) {
+                                            final bool boolValue =
+                                                e.value['value'] as bool;
+                                            final String? description =
+                                                e.value['description_remarks']
+                                                    as String?;
+                                            return '${e.key}: ${boolValue ? 'Yes' : 'No'}${description != null && description.isNotEmpty ? ' ($description)' : ''}';
+                                          } else if (e.value is Timestamp) {
+                                            return '${e.key}: ${DateFormat('yyyy-MM-dd HH:mm').format((e.value as Timestamp).toDate().toLocal())}';
+                                          }
+                                          return '${e.key}: ${e.value}';
+                                        })
+                                        .join('\n');
+                                    return TableRow(
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Text(hour),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Text(readings),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                },
+              ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // The main Column now includes both selection and viewer content
     final appState = Provider.of<AppStateData>(context);
 
-    return Scaffold(
-      body: Column(
+    final substationsStream = FirebaseFirestore.instance
+        .collection('substations')
+        .where(
+          'subdivisionId',
+          isEqualTo: appState.currentUser?.assignedLevels?['subdivisionId'],
+        )
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Substation.fromFirestore(doc))
+              .toList(),
+        );
+
+    return SingleChildScrollView(
+      // Wrap in SingleChildScrollView to allow scrolling if content overflows
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                DropdownButtonFormField<String>(
-                  decoration: InputDecoration(
-                    labelText: 'Select Substation',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  value: _selectedSubstationId,
-                  items: _substations
-                      .map(
-                        (substation) => DropdownMenuItem(
-                          value: substation.id,
-                          child: Text(substation.name),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedSubstationId = value;
-                      _fetchOperationsData();
-                      final selectedSubstation = _substations.firstWhere(
-                        (s) => s.id == value,
-                      );
-                      appState.setSelectedSubstation(selectedSubstation);
-                      widget.onRefreshParent();
-                    });
-                  },
-                  validator: (value) =>
-                      value == null ? 'Please select a substation' : null,
+          const SizedBox(height: 20),
+          StreamBuilder<List<Substation>>(
+            stream: substationsStream,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Text('Error loading substations: ${snapshot.error}');
+              }
+              final List<Substation> substations = snapshot.data ?? [];
+
+              Substation? newSelectedSubstation;
+
+              if (widget.initialSelectedSubstationId != null) {
+                newSelectedSubstation = substations.firstWhereOrNull(
+                  (sub) => sub.id == widget.initialSelectedSubstationId,
+                );
+              }
+
+              if (newSelectedSubstation == null &&
+                  _selectedSubstation != null) {
+                newSelectedSubstation = substations.firstWhereOrNull(
+                  (sub) => sub.id == _selectedSubstation!.id,
+                );
+              }
+
+              if (newSelectedSubstation == null && substations.isNotEmpty) {
+                newSelectedSubstation = substations.first;
+              }
+
+              // Update state for selected substation if it has changed
+              if (newSelectedSubstation != _selectedSubstation) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() {
+                    _selectedSubstation = newSelectedSubstation;
+                    _fetchBaysForSelectedSubstation();
+                    // Clear viewer data on substation change
+                    _rawLogsheetEntriesForViewer = [];
+                    _groupedEntriesForViewer = {};
+                    _individualEntriesForDropdown = [];
+                    _selectedIndividualReadingEntry = null;
+                  });
+                });
+              } else if (_selectedSubstation != null &&
+                  _bays.isEmpty &&
+                  !_isBaysLoading) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _fetchBaysForSelectedSubstation();
+                });
+              }
+
+              return DropdownButtonFormField<Substation>(
+                decoration: const InputDecoration(
+                  labelText: 'Select Substation',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ListTile(
-                        title: Text(
-                          'From: ${DateFormat('yyyy-MM-dd').format(_startDate)}',
-                        ),
-                        trailing: const Icon(Icons.calendar_today),
-                        onTap: () => _selectDate(context, true),
-                      ),
-                    ),
-                    Expanded(
-                      child: ListTile(
-                        title: Text(
-                          'To: ${DateFormat('yyyy-MM-dd').format(_endDate)}',
-                        ),
-                        trailing: const Icon(Icons.calendar_today),
-                        onTap: () => _selectDate(context, false),
-                      ),
-                    ),
-                  ],
+                value: _selectedSubstation,
+                items: substations.map((substation) {
+                  return DropdownMenuItem(
+                    value: substation,
+                    child: Text(substation.name),
+                  );
+                }).toList(),
+                onChanged: (Substation? newValue) {
+                  setState(() {
+                    _selectedSubstation = newValue;
+                    _selectedBayIds = [];
+                    _bays = [];
+                    if (newValue != null) {
+                      _fetchBaysForSelectedSubstation();
+                    }
+                    // Clear viewer data on substation change
+                    _rawLogsheetEntriesForViewer = [];
+                    _groupedEntriesForViewer = {};
+                    _individualEntriesForDropdown = [];
+                    _selectedIndividualReadingEntry = null;
+                  });
+                },
+                isExpanded: true,
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: _selectMultipleBays,
+            child: AbsorbPointer(
+              child: TextFormField(
+                decoration: InputDecoration(
+                  labelText: 'Selected Bays (${_selectedBayIds.length})',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _isBaysLoading
+                      ? const CircularProgressIndicator()
+                      : const Icon(Icons.arrow_drop_down),
+                  filled: true,
+                  fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                 ),
-              ],
+                controller: TextEditingController(
+                  text: _selectedBayIds.isEmpty
+                      ? 'No bays selected'
+                      : _selectedBayIds
+                            .map(
+                              (id) =>
+                                  _bays
+                                      .firstWhereOrNull((bay) => bay.id == id)
+                                      ?.name ??
+                                  'Unknown Bay',
+                            )
+                            .join(', '),
+                ),
+                readOnly: true,
+              ),
             ),
           ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _substations.isEmpty
-                ? const Center(child: Text('No substations available.'))
-                : TrippingShutdownEventsList(
-                    events: _trippingShutdownEvents,
-                    currentUser: widget.currentUser,
-                    baysMap: _baysMap,
-                    onRefresh: _fetchOperationsData,
-                  ),
+          const SizedBox(height: 10),
+          ListTile(
+            title: Text(
+              'Start Date: ${_startDate != null ? DateFormat('yyyy-MM-dd').format(_startDate!) : 'Select Start Date'}',
+            ),
+            trailing: const Icon(Icons.calendar_today),
+            onTap: () => _selectDate(true),
           ),
+          const SizedBox(height: 10),
+          ListTile(
+            title: Text(
+              'End Date: ${_endDate != null ? DateFormat('yyyy-MM-dd').format(_endDate!) : 'Select End Date'}',
+            ),
+            trailing: const Icon(Icons.calendar_today),
+            onTap: () => _selectDate(false),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _viewLogsheetEntry,
+            child: const Text('View Logsheet Entries'),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+            ),
+          ),
+          // Conditionally show the viewer content directly below the button
+          if (_rawLogsheetEntriesForViewer.isNotEmpty ||
+              _isViewerLoading ||
+              _viewerErrorMessage != null)
+            _buildLogsheetViewerContent(),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => CreateReportTemplateScreen(),
-            ),
-          );
-        },
-        label: const Text('Create Report Template'),
-        icon: const Icon(Icons.add),
-      ),
     );
+  }
+}
+
+// Extension to help with firstWhereOrNull, if not universally available
+extension IterableExtension<T> on Iterable<T> {
+  T? firstWhereOrNull(bool Function(T element) test) {
+    for (var element in this) {
+      if (test(element)) {
+        return element;
+      }
+    }
+    return null;
   }
 }

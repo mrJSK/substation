@@ -19,7 +19,7 @@ import '../models/bay_model.dart'; // For Bay model if needed for lookup (alread
 import '../models/bay_connection_model.dart'; // If needed for diagram reconstruction
 import '../models/busbar_energy_map.dart'; // If needed for diagram reconstruction
 import '../utils/snackbar_utils.dart';
-import 'energy_sld_screen.dart'; // Import EnergySldScreen
+import 'subdivision_dashboard_tabs/energy_sld_screen.dart'; // Import EnergySldScreen
 
 class SavedSldListScreen extends StatefulWidget {
   final AppUser currentUser;

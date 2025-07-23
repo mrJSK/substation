@@ -5,7 +5,7 @@ import 'dart:ui' as ui; // Import ui for TextDirection
 import '../models/bay_connection_model.dart';
 import '../models/bay_model.dart';
 import '../models/equipment_model.dart';
-import '../screens/energy_sld_screen.dart'; // Ensure this import is correct for BayEnergyData
+import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart'; // Ensure this import is correct for BayEnergyData
 
 // Equipment Icons - Make sure these files exist and contain the CustomPainter implementations
 import '../equipment_icons/transformer_icon.dart';

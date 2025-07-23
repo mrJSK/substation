@@ -10,7 +10,7 @@ import '../../models/reading_models.dart'; // For ReadingFieldDataType, ReadingF
 import '../../models/logsheet_models.dart'; // For LogsheetEntry
 import '../../utils/snackbar_utils.dart';
 import 'bay_readings_status_screen.dart';
-import 'logsheet_entry_screen.dart'; // Screen 2: The current screen
+import 'substation_dashboard/logsheet_entry_screen.dart'; // Screen 2: The current screen
 
 class BayReadingsStatusScreen extends StatefulWidget {
   final String substationId;

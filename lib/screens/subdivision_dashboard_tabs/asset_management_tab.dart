@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/user_model.dart';
-import '../subdivision_asset_management_screen.dart'; // Assuming this screen exists
+import 'subdivision_asset_management_screen.dart'; // Assuming this screen exists
 
 class AssetManagementTab extends StatelessWidget {
   final AppUser currentUser;
@@ -13,6 +13,7 @@ class AssetManagementTab extends StatelessWidget {
     Key? key,
     required this.currentUser,
     required this.subdivisionId,
+    String? selectedSubstationId,
   }) : super(key: key);
 
   @override

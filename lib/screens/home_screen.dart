@@ -11,12 +11,12 @@ import '../models/app_state_data.dart'; // Import the updated AppStateData
 import '../screens/auth_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/equipment_hierarchy_selection_screen.dart';
-import '../screens/energy_sld_screen.dart';
+import 'subdivision_dashboard_tabs/energy_sld_screen.dart';
 import '../screens/saved_sld_list_screen.dart';
-import '../screens/substation_user_dashboard_screen.dart';
+import 'substation_dashboard/substation_user_dashboard_screen.dart';
 import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
 import '../screens/admin/reading_template_management_screen.dart';
-import '../screens/chart_configuration_screen.dart';
+import 'subdivision_dashboard_tabs/chart_configuration_screen.dart';
 import '../controllers/sld_controller.dart';
 import '../utils/snackbar_utils.dart';
 

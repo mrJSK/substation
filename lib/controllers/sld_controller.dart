@@ -9,7 +9,7 @@ import '../models/bay_model.dart';
 import '../models/bay_connection_model.dart';
 import '../models/equipment_model.dart';
 import '../painters/single_line_diagram_painter.dart'; // For BayRenderData
-import '../screens/energy_sld_screen.dart'; // For BayEnergyData (temporary, will refactor later)
+import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart'; // For BayEnergyData (temporary, will refactor later)
 import '../enums/movement_mode.dart'; // This enum might need to be moved to a shared location
 
 class SldController extends ChangeNotifier {

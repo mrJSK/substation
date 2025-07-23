@@ -11,24 +11,24 @@ import 'package:intl/intl.dart';
 import 'package:widgets_to_image/widgets_to_image.dart';
 import 'package:provider/provider.dart';
 
-import '../models/bay_model.dart';
-import '../models/equipment_model.dart';
-import '../models/user_model.dart';
-import '../models/reading_models.dart';
-import '../models/logsheet_models.dart';
-import '../models/bay_connection_model.dart';
-import '../models/busbar_energy_map.dart';
-import '../models/hierarchy_models.dart';
-import '../models/assessment_model.dart';
-import '../models/saved_sld_model.dart';
-import '../utils/snackbar_utils.dart';
-import '../utils/pdf_generator.dart'; //
+import '../../models/bay_model.dart';
+import '../../models/equipment_model.dart';
+import '../../models/user_model.dart';
+import '../../models/reading_models.dart';
+import '../../models/logsheet_models.dart';
+import '../../models/bay_connection_model.dart';
+import '../../models/busbar_energy_map.dart';
+import '../../models/hierarchy_models.dart';
+import '../../models/assessment_model.dart';
+import '../../models/saved_sld_model.dart';
+import '../../utils/snackbar_utils.dart';
+import '../../utils/pdf_generator.dart'; //
 
-import '../painters/single_line_diagram_painter.dart';
-import '../widgets/energy_assessment_dialog.dart';
-import '../widgets/sld_view_widget.dart'; // Import the new SLD view widget
-import '../controllers/sld_controller.dart'; // Import the new controller
-import '../enums/movement_mode.dart';
+import '../../painters/single_line_diagram_painter.dart';
+import '../../widgets/energy_assessment_dialog.dart';
+import '../../widgets/sld_view_widget.dart'; // Import the new SLD view widget
+import '../../controllers/sld_controller.dart'; // Import the new controller
+import '../../enums/movement_mode.dart';
 
 /// Data model for energy data associated with a bay (remains the same)
 class BayEnergyData {

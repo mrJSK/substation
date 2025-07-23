@@ -6,19 +6,19 @@ import 'package:provider/provider.dart';
 import 'package:collection/collection.dart';
 import 'dart:math';
 
-import '../models/bay_model.dart';
-import '../models/user_model.dart';
-import '../models/bay_connection_model.dart';
-import '../models/equipment_model.dart';
-import '../painters/single_line_diagram_painter.dart';
-import '../utils/snackbar_utils.dart';
-import '../screens/bay_equipment_management_screen.dart';
-import '../screens/bay_reading_assignment_screen.dart';
+import '../../models/bay_model.dart';
+import '../../models/user_model.dart';
+import '../../models/bay_connection_model.dart';
+import '../../models/equipment_model.dart';
+import '../../painters/single_line_diagram_painter.dart';
+import '../../utils/snackbar_utils.dart';
+import '../bay_equipment_management_screen.dart';
+import '../bay_reading_assignment_screen.dart';
 import 'energy_sld_screen.dart';
-import '../widgets/bay_form_card.dart';
-import '../widgets/sld_view_widget.dart';
-import '../controllers/sld_controller.dart';
-import '../enums/movement_mode.dart';
+import '../../widgets/bay_form_card.dart';
+import '../../widgets/sld_view_widget.dart';
+import '../../controllers/sld_controller.dart';
+import '../../enums/movement_mode.dart';
 
 // New screen for listing equipment
 class BayEquipmentListScreen extends StatelessWidget {

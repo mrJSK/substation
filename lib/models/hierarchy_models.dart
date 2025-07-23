@@ -28,6 +28,17 @@ abstract class HierarchyItem {
   });
 
   Map<String, dynamic> toFirestore();
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is HierarchyItem &&
+        runtimeType == other.runtimeType &&
+        id == other.id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
 class AppScreenState extends HierarchyItem {

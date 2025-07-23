@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
-import '../screens/substation_user_dashboard_screen.dart';
+import 'substation_dashboard/substation_user_dashboard_screen.dart';
 import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
 
 class AuthScreen extends StatefulWidget {

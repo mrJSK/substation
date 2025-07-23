@@ -1,8 +1,7 @@
-// lib/screens/subdivision_dashboard_screen.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart'; // NEW: For date formatting
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart'; // For Substation model
 import '../../models/app_state_data.dart'; // For AppStateData
@@ -36,6 +35,12 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   late TabController _tabController;
   List<Substation> _substations = []; // Keep track of substations for dropdown
   String? _currentSelectedSubstationId; // State for dropdown
+
+  // NEW: Date range for dashboard tabs
+  DateTime _dashboardStartDate = DateTime.now().subtract(
+    const Duration(days: 7),
+  );
+  DateTime _dashboardEndDate = DateTime.now();
 
   final List<String> _tabs = [
     'Operations',
@@ -113,34 +118,67 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     });
   }
 
+  // NEW: Date picker method for dashboard
+  Future<void> _selectDashboardDate(
+    BuildContext context,
+    bool isStartDate,
+  ) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: isStartDate ? _dashboardStartDate : _dashboardEndDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStartDate) {
+          _dashboardStartDate = picked;
+          if (_dashboardStartDate.isAfter(_dashboardEndDate)) {
+            _dashboardEndDate = _dashboardStartDate;
+          }
+        } else {
+          _dashboardEndDate = picked;
+          if (_dashboardEndDate.isBefore(_dashboardStartDate)) {
+            _dashboardStartDate = _dashboardEndDate;
+          }
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = widget.currentUser;
-    // final appState = Provider.of<AppStateData>(context); // Not directly used in build now, but used in callbacks
 
     final List<Widget> _screensContent = [
       OperationsTab(
         currentUser: currentUser,
         initialSelectedSubstationId: _currentSelectedSubstationId,
-        onRefreshParent: _fetchSubstationsForDropdown,
+        // OperationsTab handles its own date range internally
       ),
       EnergyTab(
         currentUser: currentUser,
         initialSelectedSubstationId: _currentSelectedSubstationId,
+        startDate: _dashboardStartDate, // Pass dashboard-wide start date
+        endDate: _dashboardEndDate, // Pass dashboard-wide end date
       ),
       TrippingTab(
         currentUser: currentUser,
-        selectedSubstationId: _currentSelectedSubstationId,
+        startDate: _dashboardStartDate, // Pass dashboard-wide start date
+        endDate: _dashboardEndDate, // Pass dashboard-wide end date
       ),
       ReportsTab(
         currentUser: currentUser,
         selectedSubstationId: _currentSelectedSubstationId,
         subdivisionId: currentUser.assignedLevels?['subdivisionId'] ?? '',
+        startDate: _dashboardStartDate, // Pass dashboard-wide start date
+        endDate: _dashboardEndDate, // Pass dashboard-wide end date
       ),
       if (currentUser.role == UserRole.subdivisionManager)
         AssetManagementTab(
           currentUser: currentUser,
           subdivisionId: currentUser.assignedLevels?['subdivisionId'] ?? '',
+          selectedSubstationId: _currentSelectedSubstationId,
         ),
     ];
 
@@ -166,23 +204,51 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
-          tabs: _tabs.map((tab) => Tab(text: tab)).toList(),
+          tabs: [..._tabs.map((tab) => Tab(text: tab)).toList()],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.date_range),
+            tooltip: 'Select Date Range',
+            onPressed: () async {
+              final DateTime? pickedStartDate = await showDatePicker(
+                context: context,
+                initialDate: _dashboardStartDate,
+                firstDate: DateTime(2000),
+                lastDate: DateTime.now(),
+              );
+              if (pickedStartDate != null) {
+                final DateTime? pickedEndDate = await showDatePicker(
+                  context: context,
+                  initialDate: _dashboardEndDate,
+                  firstDate:
+                      pickedStartDate, // End date cannot be before start date
+                  lastDate: DateTime.now(),
+                );
+                if (pickedEndDate != null) {
+                  setState(() {
+                    _dashboardStartDate = pickedStartDate;
+                    _dashboardEndDate = pickedEndDate;
+                  });
+                }
+              }
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: Center(
+              child: Text(
+                '${DateFormat('dd.MMM').format(_dashboardStartDate)} - ${DateFormat('dd.MMM').format(_dashboardEndDate)}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.white),
+              ),
+            ),
+          ),
+        ],
       ),
       drawer: widget.drawer,
       body: TabBarView(controller: _tabController, children: _screensContent),
-      // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-      // REMOVE THE floatingActionButton HERE
-      // floatingActionButton: _tabController.index == _tabs.indexOf('Operations')
-      //     ? FloatingActionButton.extended(
-      //         onPressed: () {
-      //           Navigator.of(context).pushNamed(CreateReportTemplateScreen.routeName);
-      //         },
-      //         label: const Text('Create Report Template'),
-      //         icon: const Icon(Icons.add),
-      //       )
-      //     : null,
-      // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     );
   }
 }

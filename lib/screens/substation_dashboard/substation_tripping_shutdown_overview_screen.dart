@@ -3,18 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
-import '../../models/user_model.dart';
-import '../../models/tripping_shutdown_model.dart';
-import '../../models/bay_model.dart';
-import '../../utils/snackbar_utils.dart';
+import '../../../models/user_model.dart';
+import '../../../models/tripping_shutdown_model.dart';
+import '../../../models/bay_model.dart';
+import '../../../utils/snackbar_utils.dart';
 import 'tripping_shutdown_entry_screen.dart';
 
 class TrippingShutdownOverviewScreen extends StatefulWidget {
   final String substationId; // Now can be empty
   final String substationName; // Now can be "N/A"
   final AppUser currentUser;
-  final DateTime startDate; // NEW PARAMETER
-  final DateTime endDate; // NEW PARAMETER
+  final DateTime? startDate; // NEW PARAMETER - Now nullable
+  final DateTime? endDate; // NEW PARAMETER - Now nullable
   final bool canCreateTrippingEvents; // NEW PARAMETER
 
   const TrippingShutdownOverviewScreen({
@@ -22,9 +22,9 @@ class TrippingShutdownOverviewScreen extends StatefulWidget {
     required this.substationId,
     required this.substationName,
     required this.currentUser,
-    required this.startDate, // NEW
-    required this.endDate, // NEW
-    this.canCreateTrippingEvents = true, // Default to true
+    this.startDate, // No default value here, as it's nullable
+    this.endDate, // No default value here, as it's nullable
+    this.canCreateTrippingEvents = true,
   });
 
   @override
@@ -43,22 +43,20 @@ class _TrippingShutdownOverviewScreenState
   @override
   void initState() {
     super.initState();
-    // Only load data if substationId is provided
     if (widget.substationId.isNotEmpty) {
       _fetchTrippingShutdownEvents();
     } else {
-      _isLoading = false; // Set loading to false if no substation is selected
+      _isLoading = false;
     }
   }
 
-  // Reload data if substationId or date range changes
   @override
   void didUpdateWidget(covariant TrippingShutdownOverviewScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Check if substationId or date filters have changed
     if (widget.substationId != oldWidget.substationId ||
-        widget.startDate != oldWidget.startDate || // Check for date changes
+        widget.startDate != oldWidget.startDate ||
         widget.endDate != oldWidget.endDate) {
-      // Check for date changes
       if (widget.substationId.isNotEmpty) {
         _fetchTrippingShutdownEvents();
       } else {
@@ -80,7 +78,6 @@ class _TrippingShutdownOverviewScreenState
       _baysMap.clear();
     });
     try {
-      // 1. Fetch all bays for this substation to get their types
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
@@ -91,25 +88,42 @@ class _TrippingShutdownOverviewScreenState
         _baysMap[bay.id] = bay;
       }
 
-      // 2. Fetch all tripping/shutdown entries for this substation
       Query eventsQuery = FirebaseFirestore.instance
           .collection('trippingShutdownEntries')
           .where('substationId', isEqualTo: widget.substationId);
 
-      // Apply date range filters
-      eventsQuery = eventsQuery
-          .where(
-            'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
-          )
-          .where(
-            'startTime',
-            isLessThanOrEqualTo: Timestamp.fromDate(
-              widget.endDate
-                  .add(const Duration(days: 1))
-                  .subtract(const Duration(seconds: 1)),
-            ),
-          ); // End of day
+      // Apply start date filter
+      if (widget.startDate != null) {
+        eventsQuery = eventsQuery.where(
+          'startTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate!),
+        );
+      } else {
+        // If no start date is provided, query from a very old date
+        eventsQuery = eventsQuery.where(
+          'startTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime.utc(1900)),
+        );
+      }
+
+      // Apply end date filter
+      if (widget.endDate != null) {
+        // To include the entire end day, add one day and subtract one second
+        eventsQuery = eventsQuery.where(
+          'startTime',
+          isLessThanOrEqualTo: Timestamp.fromDate(
+            widget.endDate!
+                .add(const Duration(days: 1))
+                .subtract(const Duration(seconds: 1)),
+          ),
+        );
+      } else {
+        // If no end date is provided, query up to a very future date
+        eventsQuery = eventsQuery.where(
+          'startTime',
+          isLessThanOrEqualTo: Timestamp.fromDate(DateTime.utc(2200)),
+        );
+      }
 
       eventsQuery = eventsQuery.orderBy('startTime', descending: true);
 
@@ -131,19 +145,13 @@ class _TrippingShutdownOverviewScreenState
       final bool isSubstationUser =
           widget.currentUser.role == UserRole.substationUser;
 
-      // Apply filtering based on user role and event status/reason
       fetchedEntries = fetchedEntries.where((entry) {
         if (isDivisionOrHigher) {
-          // Corrected: `isDivisionOrHigher`
-          // Division Manager and higher only see CLOSED events
           return entry.status == 'CLOSED';
         } else if (isSubdivisionManager || isSubstationUser) {
-          // Subdivision Managers and Substation Users see all events for their assigned substation
-          // For non-feeder bays, they might see OPEN events even without a reason,
-          // as the reason becomes mandatory only upon closing.
-          return true; // No additional filtering for these roles (already filtered by substationId)
+          return true;
         }
-        return false; // Default: hide
+        return false;
       }).toList();
 
       for (var entry in fetchedEntries) {
@@ -217,7 +225,7 @@ class _TrippingShutdownOverviewScreenState
             '$eventType event deleted successfully!',
           );
         }
-        _fetchTrippingShutdownEvents();
+        _fetchTrippingShutdownEvents(); // Re-fetch events after deletion
       } catch (e) {
         print("Error deleting event: $e");
         if (mounted) {
@@ -233,7 +241,6 @@ class _TrippingShutdownOverviewScreenState
 
   @override
   Widget build(BuildContext context) {
-    // If no substation is selected, display a message
     if (widget.substationId.isEmpty) {
       return const Center(
         child: Padding(
@@ -247,6 +254,11 @@ class _TrippingShutdownOverviewScreenState
       );
     }
 
+    // Define default dates for display if they are null for the message
+    // These should ideally match the default filter dates used in _fetchTrippingShutdownEvents
+    final DateTime displayStartDate = widget.startDate ?? DateTime.utc(1900);
+    final DateTime displayEndDate = widget.endDate ?? DateTime.utc(2200);
+
     return Scaffold(
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -255,7 +267,7 @@ class _TrippingShutdownOverviewScreenState
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Text(
-                  'No tripping or shutdown events recorded for ${widget.substationName} in the period ${DateFormat('dd.MMM.yyyy').format(widget.startDate)} - ${DateFormat('dd.MMM.yyyy').format(widget.endDate)}.',
+                  'No tripping or shutdown events recorded for ${widget.substationName} in the period ${DateFormat('dd.MMM.yyyy').format(displayStartDate)} - ${DateFormat('dd.MMM.yyyy').format(displayEndDate)}.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontStyle: FontStyle.italic,
@@ -421,34 +433,34 @@ class _TrippingShutdownOverviewScreenState
                 );
               },
             ),
-      floatingActionButton: widget.canCreateTrippingEvents
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                if (widget.substationId.isEmpty) {
-                  SnackBarUtils.showSnackBar(
-                    context,
-                    'Please select a substation first.',
-                    isError: true,
-                  );
-                  return;
-                }
-                Navigator.of(context)
-                    .push(
-                      MaterialPageRoute(
-                        builder: (context) => TrippingShutdownEntryScreen(
-                          substationId: widget.substationId,
-                          currentUser: widget.currentUser,
-                          isViewOnly: false,
-                        ),
-                      ),
-                    )
-                    .then((_) => _fetchTrippingShutdownEvents());
-              },
-              label: const Text('Add New Event'),
-              icon: const Icon(Icons.add),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-            )
-          : null,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          if (widget.substationId.isEmpty) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Please select a substation first.',
+              isError: true,
+            );
+            return;
+          }
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (context) => TrippingShutdownEntryScreen(
+                    substationId: widget.substationId,
+                    currentUser: widget.currentUser,
+                    isViewOnly: false,
+                  ),
+                ),
+              )
+              .then(
+                (_) => _fetchTrippingShutdownEvents(),
+              ); // Re-fetch when returning
+        },
+        label: const Text('Add New Event'),
+        icon: const Icon(Icons.add),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+      ),
     );
   }
 }

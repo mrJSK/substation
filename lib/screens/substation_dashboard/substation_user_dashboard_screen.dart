@@ -5,16 +5,16 @@ import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart'; // Import for DateFormat
 
-import '../../models/user_model.dart';
-import '../../models/hierarchy_models.dart'; // For Substation model
-import '../../utils/snackbar_utils.dart';
-import 'bay_readings_overview_screen.dart'; // Correct import for BayReadingsOverviewScreen
-import 'tripping_shutdown_overview_screen.dart'; // Import TrippingShutdownOverviewScreen
-import 'subdivision_asset_management_screen.dart'; // Import the new asset management screen
-import 'equipment_hierarchy_selection_screen.dart'; // For Energy SLD navigation
-import 'energy_sld_screen.dart'; // For Energy SLD navigation
-import '../../controllers/sld_controller.dart'; // For Energy SLD navigation
-import 'saved_sld_list_screen.dart'; // For Saved SLD navigation
+import '../../../models/user_model.dart';
+import '../../../models/hierarchy_models.dart'; // For Substation model
+import '../../../utils/snackbar_utils.dart';
+import '../bay_readings_overview_screen.dart'; // Correct import for BayReadingsOverviewScreen
+import 'substation_tripping_shutdown_overview_screen.dart'; // Import TrippingShutdownOverviewScreen
+import '../subdivision_dashboard_tabs/subdivision_asset_management_screen.dart'; // Import the new asset management screen
+import '../equipment_hierarchy_selection_screen.dart'; // For Energy SLD navigation
+import '../subdivision_dashboard_tabs/energy_sld_screen.dart'; // For Energy SLD navigation
+import '../../../controllers/sld_controller.dart'; // For Energy SLD navigation
+import '../saved_sld_list_screen.dart'; // For Saved SLD navigation
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
