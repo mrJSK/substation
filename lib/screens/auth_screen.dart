@@ -57,6 +57,7 @@ class _AuthScreenState extends State<AuthScreen>
         setState(() {
           _isLoading = false;
         });
+        _showSnackBar('Sign-in cancelled by user.', isError: true);
         return;
       }
 
@@ -85,9 +86,22 @@ class _AuthScreenState extends State<AuthScreen>
             role: UserRole.pending,
             approved: false,
           );
-          await userDocRef.set(newUser.toFirestore());
-          print('New user document created for ${firebaseUser.email}');
-          _showSnackBar('Account created. Awaiting admin approval.');
+          // Perform write in a transaction for reliability
+          await FirebaseFirestore.instance.runTransaction((transaction) async {
+            transaction.set(userDocRef, newUser.toFirestore());
+          });
+          // Verify document creation
+          final createdDoc = await userDocRef.get();
+          if (createdDoc.exists) {
+            print('New user document created: ${createdDoc.data()}');
+            _showSnackBar('Account created. Awaiting admin approval.');
+          } else {
+            print('Failed to verify user document creation');
+            _showSnackBar(
+              'Failed to create account. Please try again.',
+              isError: true,
+            );
+          }
         } else {
           print('Existing user signed in: ${firebaseUser.email}');
           final appUser = AppUser.fromFirestore(userDoc);
@@ -126,8 +140,9 @@ class _AuthScreenState extends State<AuthScreen>
           }
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error during Google Sign-In: $e');
+      print('Stack trace: $stackTrace');
       if (context.mounted) {
         _showSnackBar(
           'Failed to sign in with Google: ${e.toString()}',
