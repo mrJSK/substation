@@ -212,12 +212,17 @@ class _EnergyTabState extends State<EnergyTab> {
   Future<void> _initializeData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
+    print('DEBUG: _initializeData called.'); // Debug log
     try {
       final appState = Provider.of<AppStateData>(context, listen: false);
       final subdivisionId =
           appState.currentUser?.assignedLevels?['subdivisionId'];
+      print('DEBUG: Current User Subdivision ID: $subdivisionId'); // Debug log
 
       if (subdivisionId == null) {
+        print(
+          'DEBUG: Subdivision ID is null, throwing exception.',
+        ); // Debug log
         throw Exception('Subdivision ID not found for current user.');
       }
 
@@ -230,6 +235,9 @@ class _EnergyTabState extends State<EnergyTab> {
       _allSubstations = substationsSnapshot.docs
           .map((doc) => Substation.fromFirestore(doc))
           .toList();
+      print(
+        'DEBUG: Fetched ${_allSubstations.length} substations.',
+      ); // Debug log
 
       if (widget.initialSelectedSubstationId != null &&
           _allSubstations.any(
@@ -238,8 +246,18 @@ class _EnergyTabState extends State<EnergyTab> {
         _selectedSubstation = _allSubstations.firstWhere(
           (s) => s.id == widget.initialSelectedSubstationId,
         );
+        print(
+          'DEBUG: Initial selected substation: ${_selectedSubstation?.name} (${_selectedSubstation?.id})',
+        ); // Debug log
       } else if (_allSubstations.isNotEmpty) {
         _selectedSubstation = _allSubstations.first;
+        print(
+          'DEBUG: No initial substation, selected first: ${_selectedSubstation?.name} (${_selectedSubstation?.id})',
+        ); // Debug log
+      } else {
+        print(
+          'DEBUG: No substations found for current subdivision.',
+        ); // Debug log
       }
 
       // Fetch all necessary hierarchy data for the abstract table
@@ -263,7 +281,11 @@ class _EnergyTabState extends State<EnergyTab> {
 
   // NEW: Method to check SLD existence and then fetch energy data
   Future<void> _checkSldExistenceAndFetchEnergyData() async {
+    print('DEBUG: _checkSldExistenceAndFetchEnergyData called.'); // Debug log
     if (_selectedSubstation == null) {
+      print(
+        'DEBUG: _selectedSubstation is null. Setting _isSldCreated to false.',
+      ); // Debug log
       setState(() {
         _isSldCreated = false; // No substation selected, so no SLD
         _isLoading = false; // Stop loading for initial state
@@ -271,28 +293,43 @@ class _EnergyTabState extends State<EnergyTab> {
       return;
     }
 
+    print(
+      'DEBUG: Checking SLD for substation ID: ${_selectedSubstation!.id}',
+    ); // Debug log
     final sldLayoutDoc = await FirebaseFirestore.instance
         .collection(
           'substationSldLayouts',
         ) // Assuming this collection stores SLD layouts
         .doc(_selectedSubstation!.id)
         .get();
+    print('DEBUG: sldLayoutDoc exists: ${sldLayoutDoc.exists}'); // Debug log
 
     final busbarEnergyMapsSnapshot = await FirebaseFirestore.instance
         .collection('busbarEnergyMaps')
         .where('substationId', isEqualTo: _selectedSubstation!.id)
         .limit(1) // Just check if any exist
         .get();
+    print(
+      'DEBUG: busbarEnergyMapsSnapshot is not empty: ${busbarEnergyMapsSnapshot.docs.isNotEmpty}',
+    ); // Debug log
+    print(
+      'DEBUG: Number of busbar energy map docs found (first 1 checked): ${busbarEnergyMapsSnapshot.docs.length}',
+    ); // Debug log
 
     setState(() {
       // SLD is considered "complete" if the layout document exists AND at least one busbar energy map exists
       _isSldCreated =
           sldLayoutDoc.exists && busbarEnergyMapsSnapshot.docs.isNotEmpty;
+      print('DEBUG: Final _isSldCreated status: $_isSldCreated'); // Debug log
     });
 
     if (_isSldCreated) {
+      print('DEBUG: SLD is created. Calling _fetchEnergyData.'); // Debug log
       await _fetchEnergyData(); // Only fetch detailed data if SLD is configured
     } else {
+      print(
+        'DEBUG: SLD is NOT created or busbar energy maps missing. Clearing energy data.',
+      ); // Debug log
       // If SLD is not configured/complete, clear all energy data and stop loading
       setState(() {
         _isLoading = false;
@@ -309,6 +346,7 @@ class _EnergyTabState extends State<EnergyTab> {
   }
 
   Future<void> _fetchTransmissionHierarchyData() async {
+    print('DEBUG: _fetchTransmissionHierarchyData called.'); // Debug log
     if (_zonesMap.isEmpty) {
       final zonesSnapshot = await FirebaseFirestore.instance
           .collection('zones')
@@ -316,6 +354,7 @@ class _EnergyTabState extends State<EnergyTab> {
       _zonesMap = {
         for (var doc in zonesSnapshot.docs) doc.id: Zone.fromFirestore(doc),
       };
+      print('DEBUG: Fetched ${zonesSnapshot.docs.length} zones.'); // Debug log
     }
     if (_circlesMap.isEmpty) {
       final circlesSnapshot = await FirebaseFirestore.instance
@@ -324,6 +363,9 @@ class _EnergyTabState extends State<EnergyTab> {
       _circlesMap = {
         for (var doc in circlesSnapshot.docs) doc.id: Circle.fromFirestore(doc),
       };
+      print(
+        'DEBUG: Fetched ${circlesSnapshot.docs.length} circles.',
+      ); // Debug log
     }
     if (_divisionsMap.isEmpty) {
       final divisionsSnapshot = await FirebaseFirestore.instance
@@ -333,6 +375,9 @@ class _EnergyTabState extends State<EnergyTab> {
         for (var doc in divisionsSnapshot.docs)
           doc.id: Division.fromFirestore(doc),
       };
+      print(
+        'DEBUG: Fetched ${divisionsSnapshot.docs.length} divisions.',
+      ); // Debug log
     }
     if (_subdivisionsMap.isEmpty) {
       final subdivisionsSnapshot = await FirebaseFirestore.instance
@@ -342,11 +387,18 @@ class _EnergyTabState extends State<EnergyTab> {
         for (var doc in subdivisionsSnapshot.docs)
           doc.id: Subdivision.fromFirestore(doc),
       };
+      print(
+        'DEBUG: Fetched ${subdivisionsSnapshot.docs.length} subdivisions.',
+      ); // Debug log
     }
     _substationsMap = {for (var s in _allSubstations) s.id: s};
+    print(
+      'DEBUG: Populated _substationsMap with ${_substationsMap.length} entries.',
+    ); // Debug log
   }
 
   Future<void> _fetchDistributionHierarchyData() async {
+    print('DEBUG: _fetchDistributionHierarchyData called.'); // Debug log
     if (_distributionZonesMap.isEmpty) {
       final zonesSnapshot = await FirebaseFirestore.instance
           .collection('distributionZones')
@@ -355,6 +407,9 @@ class _EnergyTabState extends State<EnergyTab> {
         for (var doc in zonesSnapshot.docs)
           doc.id: DistributionZone.fromFirestore(doc),
       };
+      print(
+        'DEBUG: Fetched ${zonesSnapshot.docs.length} distribution zones.',
+      ); // Debug log
     }
     if (_distributionCirclesMap.isEmpty) {
       final circlesSnapshot = await FirebaseFirestore.instance
@@ -364,6 +419,9 @@ class _EnergyTabState extends State<EnergyTab> {
         for (var doc in circlesSnapshot.docs)
           doc.id: DistributionCircle.fromFirestore(doc),
       };
+      print(
+        'DEBUG: Fetched ${circlesSnapshot.docs.length} distribution circles.',
+      ); // Debug log
     }
     if (_distributionDivisionsMap.isEmpty) {
       final divisionsSnapshot = await FirebaseFirestore.instance
@@ -373,6 +431,9 @@ class _EnergyTabState extends State<EnergyTab> {
         for (var doc in divisionsSnapshot.docs)
           doc.id: DistributionDivision.fromFirestore(doc),
       };
+      print(
+        'DEBUG: Fetched ${divisionsSnapshot.docs.length} distribution divisions.',
+      ); // Debug log
     }
     if (_distributionSubdivisionsMap.isEmpty) {
       final subdivisionsSnapshot = await FirebaseFirestore.instance
@@ -382,6 +443,9 @@ class _EnergyTabState extends State<EnergyTab> {
         for (var doc in subdivisionsSnapshot.docs)
           doc.id: DistributionSubdivision.fromFirestore(doc),
       };
+      print(
+        'DEBUG: Fetched ${subdivisionsSnapshot.docs.length} distribution subdivisions.',
+      ); // Debug log
     }
   }
 
@@ -399,6 +463,9 @@ class _EnergyTabState extends State<EnergyTab> {
       _busbarEnergyMaps.clear();
       _latestAssessmentsPerBay.clear();
     });
+    print(
+      'DEBUG: _fetchEnergyData called for substation ID: ${_selectedSubstation?.id}',
+    ); // Debug log
 
     try {
       // This check is already done by _checkSldExistenceAndFetchEnergyData.
@@ -413,6 +480,9 @@ class _EnergyTabState extends State<EnergyTab> {
       fetchedBays.addAll(
         baysSnapshot.docs.map((doc) => Bay.fromFirestore(doc)).toList(),
       );
+      print(
+        'DEBUG: Fetched ${fetchedBays.length} bays for substation.',
+      ); // Debug log
 
       // Separate busbars for summary calculations and sort non-busbars for main table
       final List<Bay> nonBusbarBays = fetchedBays
@@ -421,6 +491,9 @@ class _EnergyTabState extends State<EnergyTab> {
       final List<Bay> busbarBays = fetchedBays
           .where((bay) => bay.bayType == 'Busbar')
           .toList();
+      print(
+        'DEBUG: Found ${nonBusbarBays.length} non-busbar bays and ${busbarBays.length} busbar bays.',
+      ); // Debug log
 
       // Sort non-busbar bays by voltage level (highest to lowest) then by name
       nonBusbarBays.sort((a, b) {
@@ -445,6 +518,9 @@ class _EnergyTabState extends State<EnergyTab> {
       final List<String> allBayIds = fetchedBays
           .map((bay) => bay.id)
           .toList(); // Use all bays for logsheet fetching
+      print(
+        'DEBUG: Total bay IDs for logsheet fetching: ${allBayIds.length}',
+      ); // Debug log
 
       if (allBayIds.isNotEmpty) {
         final queryStartTime = Timestamp.fromDate(_startDate);
@@ -453,6 +529,9 @@ class _EnergyTabState extends State<EnergyTab> {
               .add(const Duration(days: 1))
               .subtract(const Duration(seconds: 1)),
         );
+        print(
+          'DEBUG: Fetching logsheet entries from $_startDate to $_endDate.',
+        ); // Debug log
 
         // Fetch Logsheet Entries
         List<LogsheetEntry> fetchedLogsheetEntries = [];
@@ -480,6 +559,9 @@ class _EnergyTabState extends State<EnergyTab> {
           );
         }
         _allLogsheetEntries = fetchedLogsheetEntries; // Store all raw entries
+        print(
+          'DEBUG: Fetched ${_allLogsheetEntries.length} logsheet entries.',
+        ); // Debug log
 
         // Fetch Busbar Energy Maps (for abstract table calculation)
         final fullBusbarEnergyMapsSnapshot = await FirebaseFirestore.instance
@@ -493,6 +575,9 @@ class _EnergyTabState extends State<EnergyTab> {
               doc,
             ),
         };
+        print(
+          'DEBUG: Fetched ${_busbarEnergyMaps.length} busbar energy maps.',
+        ); // Debug log
 
         // Fetch Assessments (for abstract table calculation)
         final assessmentsRawSnapshot = await FirebaseFirestore.instance
@@ -517,16 +602,37 @@ class _EnergyTabState extends State<EnergyTab> {
                 assessment; // Only keep the latest
           }
         }
+        print(
+          'DEBUG: Fetched ${_latestAssessmentsPerBay.length} latest assessments per bay.',
+        ); // Debug log
 
         // --- Compute Bay Energy Data for the main table ---
+        print(
+          'DEBUG: Computing Bay Energy Data for ${nonBusbarBays.length} non-busbar bays.',
+        ); // Debug log
         _computeBayEnergyData(nonBusbarBays); // Pass only non-busbar bays
+        print(
+          'DEBUG: Computed Bay Energy Data for ${_computedBayEnergyData.length} entries.',
+        ); // Debug log
 
         // --- Compute Abstract Data (Busbar Summary and Substation Abstract) ---
+        print(
+          'DEBUG: Computing Abstract Energy Data for ${busbarBays.length} busbar bays.',
+        ); // Debug log
         _computeAbstractEnergyData(busbarBays); // Pass busbar bays for summary
+        print('DEBUG: Bus Energy Summary: $_busEnergySummary'); // Debug log
+        print('DEBUG: Abstract Energy Data: $_abstractEnergyData'); // Debug log
+      } else {
+        print(
+          'DEBUG: No bays found for selected substation, skipping logsheet fetching and energy computation.',
+        ); // Debug log
       }
 
       if (!mounted) return;
       setState(() => _isLoading = false);
+      print(
+        'DEBUG: _fetchEnergyData completed. _isLoading set to false.',
+      ); // Debug log
     } catch (e) {
       print('Error loading energy data: $e');
       if (mounted) {
@@ -545,11 +651,17 @@ class _EnergyTabState extends State<EnergyTab> {
   // NEW: Method to compute energy data for each bay to be displayed in the main table
   void _computeBayEnergyData(List<Bay> baysToCompute) {
     _computedBayEnergyData.clear();
+    print(
+      'DEBUG: _computeBayEnergyData started. Bays to compute: ${baysToCompute.length}',
+    ); // Debug log
 
     for (var bay in baysToCompute) {
       final bayEntries = _allLogsheetEntries
           .where((entry) => entry.bayId == bay.id)
           .toList();
+      print(
+        'DEBUG: Bay: ${bay.name} (${bay.id}), found ${bayEntries.length} logsheet entries.',
+      ); // Debug log
 
       // Sort entries for this bay to easily find first and last readings
       bayEntries.sort(
@@ -568,6 +680,9 @@ class _EnergyTabState extends State<EnergyTab> {
             entry.values.containsKey('Energy_Import_Present') ||
             entry.values.containsKey('Energy_Export_Present'),
       );
+      print(
+        'DEBUG: Bay ${bay.name}: First entry timestamp: ${firstEntry?.readingTimestamp.toDate()}, Last entry timestamp: ${lastEntry?.readingTimestamp.toDate()}',
+      ); // Debug log
 
       double? currentImp = double.tryParse(
         lastEntry?.values['Energy_Import_Present']?.toString() ?? '',
@@ -583,6 +698,9 @@ class _EnergyTabState extends State<EnergyTab> {
       );
       double? mfEnergy =
           bay.multiplyingFactor; // Multiplying Factor from Bay model
+      print(
+        'DEBUG: Bay ${bay.name}: currImp=$currentImp, prevImp=$previousImp, currExp=$currentExp, prevExp=$previousExp, MF=$mfEnergy',
+      ); // Debug log
 
       double? computedImport;
       if (currentImp != null && previousImp != null && mfEnergy != null) {
@@ -593,10 +711,16 @@ class _EnergyTabState extends State<EnergyTab> {
       if (currentExp != null && previousExp != null && mfEnergy != null) {
         computedExport = max(0.0, (currentExp - previousExp) * mfEnergy);
       }
+      print(
+        'DEBUG: Bay ${bay.name}: Computed IMP=$computedImport, Computed EXP=$computedExport',
+      ); // Debug log
 
       // Check for assessment
       final latestAssessment = _latestAssessmentsPerBay[bay.id];
       bool hasAssessment = latestAssessment != null;
+      print(
+        'DEBUG: Bay ${bay.name}: Has assessment: $hasAssessment',
+      ); // Debug log
 
       BayEnergyData bayEnergy = BayEnergyData(
         bayName: bay.name,
@@ -614,24 +738,37 @@ class _EnergyTabState extends State<EnergyTab> {
 
       // Apply assessment if available
       if (latestAssessment != null) {
+        print(
+          'DEBUG: Bay ${bay.name}: Applying assessment: impAdj=${latestAssessment.importAdjustment}, expAdj=${latestAssessment.exportAdjustment}',
+        ); // Debug log
         bayEnergy = bayEnergy.applyAssessment(
           importAdjustment: latestAssessment.importAdjustment,
           exportAdjustment: latestAssessment.exportAdjustment,
         );
+        print(
+          'DEBUG: Bay ${bay.name}: Energy after assessment: impConsumed=${bayEnergy.impConsumed}, expConsumed=${bayEnergy.expConsumed}',
+        ); // Debug log
       }
 
       _computedBayEnergyData.add(bayEnergy);
     }
+    print('DEBUG: _computeBayEnergyData completed.'); // Debug log
   }
 
   // NEW: Method to compute the abstract energy data (Busbar Summary and Substation Abstract)
   void _computeAbstractEnergyData(List<Bay> busbarBays) {
     _busEnergySummary.clear();
     _abstractEnergyData.clear();
+    print(
+      'DEBUG: _computeAbstractEnergyData started. Busbar bays to process: ${busbarBays.length}',
+    ); // Debug log
 
     Map<String, Map<String, double>> temporaryBusFlows = {};
     for (var busbar in busbarBays) {
       temporaryBusFlows[busbar.id] = {'import': 0.0, 'export': 0.0};
+      print(
+        'DEBUG: Initializing temporaryBusFlows for busbar: ${busbar.name} (${busbar.id})',
+      ); // Debug log
     }
 
     // Iterate through busbar energy maps to consolidate flows
@@ -641,6 +778,13 @@ class _EnergyTabState extends State<EnergyTab> {
       final BayEnergyData? connectedBayEnergy = _computedBayEnergyData
           .firstWhereOrNull((data) => data.bay == entry.connectedBayId);
 
+      print(
+        'DEBUG: Processing BusbarEnergyMap entry: busbarId=${entry.busbarId}, connectedBayId=${entry.connectedBayId}',
+      ); // Debug log
+      print(
+        'DEBUG: connectedBay found: ${connectedBay != null}, connectedBayEnergy found: ${connectedBayEnergy != null}',
+      ); // Debug log
+
       if (connectedBay != null &&
           connectedBayEnergy != null &&
           temporaryBusFlows.containsKey(entry.busbarId)) {
@@ -648,25 +792,38 @@ class _EnergyTabState extends State<EnergyTab> {
           temporaryBusFlows[entry.busbarId]!['import'] =
               (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
               (connectedBayEnergy.impConsumed ?? 0.0);
+          print(
+            'DEBUG: Added ${connectedBayEnergy.impConsumed ?? 0.0} to ${entry.busbarId} import (via impConsumed)',
+          ); // Debug log
         } else if (entry.importContribution ==
             EnergyContributionType.busExport) {
           temporaryBusFlows[entry.busbarId]!['export'] =
               (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
               (connectedBayEnergy.impConsumed ?? 0.0);
+          print(
+            'DEBUG: Added ${connectedBayEnergy.impConsumed ?? 0.0} to ${entry.busbarId} export (via impConsumed)',
+          ); // Debug log
         }
 
         if (entry.exportContribution == EnergyContributionType.busImport) {
           temporaryBusFlows[entry.busbarId]!['import'] =
               (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
               (connectedBayEnergy.expConsumed ?? 0.0);
+          print(
+            'DEBUG: Added ${connectedBayEnergy.expConsumed ?? 0.0} to ${entry.busbarId} import (via expConsumed)',
+          ); // Debug log
         } else if (entry.exportContribution ==
             EnergyContributionType.busExport) {
           temporaryBusFlows[entry.busbarId]!['export'] =
               (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
               (connectedBayEnergy.expConsumed ?? 0.0);
+          print(
+            'DEBUG: Added ${connectedBayEnergy.expConsumed ?? 0.0} to ${entry.busbarId} export (via expConsumed)',
+          ); // Debug log
         }
       }
     }
+    print('DEBUG: Temporary bus flows: $temporaryBusFlows'); // Debug log
 
     Map<String, Map<String, double>> calculatedBusEnergySummary = {};
     for (var busbar in busbarBays) {
@@ -686,6 +843,9 @@ class _EnergyTabState extends State<EnergyTab> {
         'difference': busDifference,
         'lossPercentage': busLossPercentage,
       };
+      print(
+        'DEBUG: Busbar Summary for ${busbar.name} (${busbar.id}): $calculatedBusEnergySummary',
+      ); // Debug log
     }
     _busEnergySummary = calculatedBusEnergySummary;
 
@@ -701,12 +861,22 @@ class _EnergyTabState extends State<EnergyTab> {
         ).compareTo(_parseVoltageLevel(a.voltageLevel)),
       );
 
+    print(
+      'DEBUG: Sorted Busbars by Voltage: ${sortedBusbarsByVoltage.map((b) => b.name).toList()}',
+    ); // Debug log
+
     final Bay? highestVoltageBus = sortedBusbarsByVoltage.firstWhereOrNull(
       (b) => true,
     );
     final Bay? lowestVoltageBus = sortedBusbarsByVoltage.lastWhereOrNull(
       (b) => true,
     );
+    print(
+      'DEBUG: Highest Voltage Bus: ${highestVoltageBus?.name} (${highestVoltageBus?.id})',
+    ); // Debug log
+    print(
+      'DEBUG: Lowest Voltage Bus: ${lowestVoltageBus?.name} (${lowestVoltageBus?.id})',
+    ); // Debug log
 
     if (highestVoltageBus != null) {
       currentAbstractSubstationTotalImp =
@@ -717,6 +887,12 @@ class _EnergyTabState extends State<EnergyTab> {
       currentAbstractSubstationTotalExp =
           (calculatedBusEnergySummary[lowestVoltageBus.id]?['totalExp']) ?? 0.0;
     }
+    print(
+      'DEBUG: Substation Abstract: Total Import from Highest Voltage Bus: $currentAbstractSubstationTotalImp',
+    ); // Debug log
+    print(
+      'DEBUG: Substation Abstract: Total Export from Lowest Voltage Bus: $currentAbstractSubstationTotalExp',
+    ); // Debug log
 
     double overallDifference =
         currentAbstractSubstationTotalImp - currentAbstractSubstationTotalExp;
@@ -732,10 +908,15 @@ class _EnergyTabState extends State<EnergyTab> {
       'difference': overallDifference,
       'lossPercentage': overallLossPercentage,
     };
+    print(
+      'DEBUG: Final _abstractEnergyData: $_abstractEnergyData',
+    ); // Debug log
+    print('DEBUG: _computeAbstractEnergyData completed.'); // Debug log
   }
 
   // Date picker method
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
+    print('DEBUG: _selectDate called. isStartDate: $isStartDate'); // Debug log
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: isStartDate ? _startDate : _endDate,
@@ -750,24 +931,35 @@ class _EnergyTabState extends State<EnergyTab> {
           if (_startDate.isAfter(_endDate)) {
             _endDate = _startDate; // Ensure end date is not before start date
           }
+          print('DEBUG: Start date updated to: $_startDate'); // Debug log
         } else {
           _endDate = picked;
           if (_endDate.isBefore(_startDate)) {
             _startDate = _endDate; // Ensure start date is not after end date
           }
+          print('DEBUG: End date updated to: $_endDate'); // Debug log
         }
       });
       _fetchEnergyData(); // Re-fetch data with new date range
+      print(
+        'DEBUG: Re-fetching energy data after date selection.',
+      ); // Debug log
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    print(
+      'DEBUG: EnergyTab build method called. _isLoading: $_isLoading, _isSldCreated: $_isSldCreated',
+    ); // Debug log
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
     if (_selectedSubstation == null) {
+      print(
+        'DEBUG: _selectedSubstation is null in build. Displaying "Select Substation" message.',
+      ); // Debug log
       return const Center(
         child: Text('Please select a substation to view energy data.'),
       );
@@ -794,6 +986,9 @@ class _EnergyTabState extends State<EnergyTab> {
                   );
                 }).toList(),
                 onChanged: (Substation? newValue) {
+                  print(
+                    'DEBUG: Substation dropdown changed to: ${newValue?.name} (${newValue?.id})',
+                  ); // Debug log
                   setState(() {
                     _selectedSubstation = newValue;
                     _checkSldExistenceAndFetchEnergyData(); // NEW: Re-check SLD and fetch data for new substation
@@ -986,6 +1181,9 @@ class _EnergyTabState extends State<EnergyTab> {
 
   // _buildEnergyReadingsTable method (unchanged)
   Widget _buildEnergyReadingsTable() {
+    print(
+      'DEBUG: _buildEnergyReadingsTable called. Data entries: ${_computedBayEnergyData.length}',
+    ); // Debug log
     final List<DataColumn> columns = [
       const DataColumn(
         label: Text('Bay (kV)', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1078,6 +1276,7 @@ class _EnergyTabState extends State<EnergyTab> {
 
   // _buildEnergyAbstractTable method (unchanged)
   Widget _buildEnergyAbstractTable() {
+    print('DEBUG: _buildEnergyAbstractTable called.'); // Debug log
     List<String> abstractTableHeaders = [''];
     final List<String> uniqueBusVoltages =
         _baysMap
@@ -1090,12 +1289,14 @@ class _EnergyTabState extends State<EnergyTab> {
             (a, b) => // Sort by voltage level (highest to lowest)
                 _parseVoltageLevel(b).compareTo(_parseVoltageLevel(a)),
           );
+    print('DEBUG: Unique bus voltages: $uniqueBusVoltages'); // Debug log
 
     for (String voltage in uniqueBusVoltages) {
       abstractTableHeaders.add('$voltage BUS');
     }
     abstractTableHeaders.add('ABSTRACT OF S/S');
     abstractTableHeaders.add('TOTAL');
+    print('DEBUG: Abstract table headers: $abstractTableHeaders'); // Debug log
 
     List<DataRow> abstractTableDataRows = [];
 
@@ -1208,6 +1409,9 @@ class _EnergyTabState extends State<EnergyTab> {
 
       abstractTableDataRows.add(DataRow(cells: rowCells));
     }
+    print(
+      'DEBUG: _buildEnergyAbstractTable completed. Rows generated: ${abstractTableDataRows.length}',
+    ); // Debug log
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
