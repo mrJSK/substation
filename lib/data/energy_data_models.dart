@@ -1,51 +1,39 @@
-// lib/models/energy_readings_data.dart
+// lib/data/energy_data_models.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:substation_manager/models/bay_model.dart'; // NEW: Import Bay model
 
-// Defines how a connected bay's energy contributes to a busbar's abstract.
-// enum EnergyContributionType {
-//   busImport, // Bay's energy adds to busbar's total import
-//   busExport, // Bay's energy adds to busbar's total export
-//   none, // Bay's energy does not contribute to this busbar's abstract (default)
-// }
-
-/// Data model for energy data associated with a bay (computed values)
 class BayEnergyData {
-  final Bay bay; // Changed to directly store Bay object
-  final double? prevImp; // Previous Reading IMP (e.g., from start of period)
-  final double? currImp; // Present Reading IMP (e.g., from end of period)
-  final double? prevExp; // Previous Reading EXP
-  final double? currExp; // Present Reading EXP
-  final double?
-  mf; // Multiplying Factor (redundant if bay.multiplyingFactor is used, but kept for clarity in computation)
-  final double? impConsumed; // IMP (computed)
-  final double? expConsumed; // EXP (computed)
+  final String bayName;
+  final double? prevImp;
+  final double? currImp;
+  final double? prevExp;
+  final double? currExp;
+  final double? mf;
+  final double? impConsumed;
+  final double? expConsumed;
   final bool hasAssessment;
 
   BayEnergyData({
-    required this.bay, // Now takes a Bay object
+    required this.bayName,
     this.prevImp,
     this.currImp,
-    this.prevExp,
     this.currExp,
     this.mf,
     this.impConsumed,
     this.expConsumed,
     this.hasAssessment = false,
-    required String bayName,
-    required String bayId,
+    this.prevExp,
   });
 
-  // Method to apply assessment adjustments to computed energy
   BayEnergyData applyAssessment({
     double? importAdjustment,
     double? exportAdjustment,
   }) {
     double newImpConsumed = (impConsumed ?? 0.0) + (importAdjustment ?? 0.0);
     double newExpConsumed = (expConsumed ?? 0.0) + (exportAdjustment ?? 0.0);
+
     return BayEnergyData(
-      bay: bay, // Keep existing bay object
+      bayName: bayName,
       prevImp: prevImp,
       currImp: currImp,
       prevExp: prevExp,
@@ -54,21 +42,12 @@ class BayEnergyData {
       impConsumed: newImpConsumed,
       expConsumed: newExpConsumed,
       hasAssessment: true,
-      bayName: '',
-      bayId: '',
     );
   }
 
-  // Conversion to/from Map for persistence (if needed, adjust to store bay.id and bay.name)
-  // This is a simplified toMap/fromMap since Bay is a complex object.
-  // For actual persistence, you might store bay.id and re-fetch the Bay object or pass it.
   Map<String, dynamic> toMap() {
     return {
-      'bayId': bay.id,
-      'bayName': bay.name,
-      'bayVoltageLevel': bay.voltageLevel,
-      'bayType': bay.bayType,
-      'bayMultiplyingFactor': bay.multiplyingFactor,
+      'bayName': bayName,
       'prevImp': prevImp,
       'currImp': currImp,
       'prevExp': prevExp,
@@ -80,29 +59,9 @@ class BayEnergyData {
     };
   }
 
-  factory BayEnergyData.fromMap(
-    Map<String, dynamic> map, {
-    Bay? bayObject,
-    required Bay bay,
-    required String bayId,
-  }) {
-    // Reconstruct Bay object from map data if not provided
-    final Bay reconstructedBay =
-        bayObject ??
-        Bay(
-          id: map['bayId'],
-          name: map['bayName'],
-          voltageLevel: map['bayVoltageLevel'],
-          bayType: map['bayType'],
-          multiplyingFactor: (map['bayMultiplyingFactor'] as num?)?.toDouble(),
-          substationId:
-              '', // Placeholder, as full Bay may not be available from map
-          createdBy: '',
-          createdAt: Timestamp.now(), // Placeholder
-        );
-
+  factory BayEnergyData.fromMap(Map<String, dynamic> map) {
     return BayEnergyData(
-      bay: reconstructedBay,
+      bayName: map['bayName'],
       prevImp: (map['prevImp'] as num?)?.toDouble(),
       currImp: (map['currImp'] as num?)?.toDouble(),
       prevExp: (map['prevExp'] as num?)?.toDouble(),
@@ -111,13 +70,10 @@ class BayEnergyData {
       impConsumed: (map['impConsumed'] as num?)?.toDouble(),
       expConsumed: (map['expConsumed'] as num?)?.toDouble(),
       hasAssessment: map['hasAssessment'] ?? false,
-      bayName: '',
-      bayId: '',
     );
   }
 }
 
-/// Data model for Aggregated Feeder Energy Table (for substation abstract)
 class AggregatedFeederEnergyData {
   final String zoneName;
   final String circleName;
@@ -159,4 +115,69 @@ class AggregatedFeederEnergyData {
       exportedEnergy: (map['exportedEnergy'] as num?)?.toDouble() ?? 0.0,
     );
   }
+}
+
+class SldRenderData {
+  final List<dynamic> bayRenderDataList;
+  final Map<String, dynamic> finalBayRects;
+  final Map<String, dynamic> busbarRects;
+  final Map<String, List<dynamic>> busbarConnectionPoints;
+  final Map<String, BayEnergyData> bayEnergyData;
+  final Map<String, Map<String, double>> busEnergySummary;
+  final Map<String, double> abstractEnergyData;
+  final List<AggregatedFeederEnergyData> aggregatedFeederEnergyData;
+
+  SldRenderData({
+    required this.bayRenderDataList,
+    required this.finalBayRects,
+    required this.busbarRects,
+    required this.busbarConnectionPoints,
+    required this.bayEnergyData,
+    required this.busEnergySummary,
+    required this.abstractEnergyData,
+    required this.aggregatedFeederEnergyData,
+  });
+
+  factory SldRenderData.fromMap(
+    Map<String, dynamic> map,
+    Map<String, dynamic> baysMap,
+  ) {
+    // Implementation of deserialization logic
+    return SldRenderData(
+      bayRenderDataList: [],
+      finalBayRects: {},
+      busbarRects: {},
+      busbarConnectionPoints: {},
+      bayEnergyData: {},
+      busEnergySummary: {},
+      abstractEnergyData: {},
+      aggregatedFeederEnergyData: [],
+    );
+  }
+}
+
+class ReadingsData {
+  final Map<String, dynamic> startDayReadings;
+  final Map<String, dynamic> endDayReadings;
+  final Map<String, dynamic> previousDayReadings;
+
+  ReadingsData({
+    required this.startDayReadings,
+    required this.endDayReadings,
+    required this.previousDayReadings,
+  });
+}
+
+class CalculatedEnergyData {
+  final Map<String, BayEnergyData> bayEnergyData;
+  final Map<String, Map<String, double>> busEnergySummary;
+  final Map<String, double> abstractEnergyData;
+  final List<AggregatedFeederEnergyData> aggregatedFeederEnergyData;
+
+  CalculatedEnergyData({
+    required this.bayEnergyData,
+    required this.busEnergySummary,
+    required this.abstractEnergyData,
+    required this.aggregatedFeederEnergyData,
+  });
 }

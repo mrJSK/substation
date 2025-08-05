@@ -13,53 +13,71 @@ class CurrentTransformerIconPainter extends EquipmentPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
+    final colors =
+        EquipmentPainter.equipmentColorScheme['Current Transformer']!;
+    final strokePaint = createGradientPaint(size, colors, isFill: false);
+    final shadowPaint = createShadowPaint();
 
     final centerX = size.width / 2;
     final centerY = size.height / 2;
     final coilWidth = size.width * 0.4;
     final coilHeight = size.height * 0.4;
 
-    // "U" shape of the coil (simplified)
+    // Draw shadow for the coil
+    final shadowPath = Path()
+      ..moveTo(centerX - coilWidth / 2 + 2, centerY - coilHeight / 2 + 2)
+      ..lineTo(centerX - coilWidth / 2 + 2, centerY + coilHeight / 2 + 2)
+      ..lineTo(centerX + coilWidth / 2 + 2, centerY + coilHeight / 2 + 2)
+      ..lineTo(centerX + coilWidth / 2 + 2, centerY - coilHeight / 2 + 2);
+    canvas.drawPath(shadowPath, shadowPaint);
+
+    // "U" shape of the coil with rounded corners
     final path = Path()
       ..moveTo(centerX - coilWidth / 2, centerY - coilHeight / 2)
       ..lineTo(centerX - coilWidth / 2, centerY + coilHeight / 2)
-      ..lineTo(centerX + coilWidth / 2, centerY + coilHeight / 2)
+      ..quadraticBezierTo(
+        centerX,
+        centerY + coilHeight / 2 + coilWidth * 0.2,
+        centerX + coilWidth / 2,
+        centerY + coilHeight / 2,
+      )
       ..lineTo(centerX + coilWidth / 2, centerY - coilHeight / 2);
-    canvas.drawPath(path, paint);
 
-    // Primary lines (extend to the top/bottom of the CustomPaint widget)
+    canvas.drawPath(path, strokePaint);
+
+    // Primary lines with gradient
     canvas.drawLine(
       Offset(centerX, 0),
       Offset(centerX, centerY - coilHeight / 2),
-      paint,
+      strokePaint,
     );
     canvas.drawLine(
       Offset(centerX, size.height),
       Offset(centerX, centerY + coilHeight / 2),
-      paint,
+      strokePaint,
     );
 
-    // Draw "CT" text
-    final textSpan = TextSpan(
-      text: 'CT',
-      style: TextStyle(
-        color: color,
-        fontSize: size.width * 0.25,
-        fontWeight: FontWeight.bold,
+    // Add core representation
+    final corePaint = Paint()
+      ..color = colors[1].withOpacity(0.3)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(centerX - coilWidth * 0.1, centerY),
+        width: coilWidth * 0.2,
+        height: coilHeight * 0.8,
       ),
+      corePaint,
     );
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
+
+    // Draw "CT" text with professional styling
+    drawStyledText(
       canvas,
-      Offset(centerX + coilWidth / 2 + 5, centerY - textPainter.height / 2),
+      'CT',
+      Offset(centerX + coilWidth / 2 + 5, centerY - size.width * 0.125),
+      colors[0],
+      size.width * 0.25,
     );
   }
 

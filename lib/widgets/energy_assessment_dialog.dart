@@ -1,6 +1,7 @@
 // lib/widgets/energy_assessment_dialog.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/energy_readings_data.dart';
 import '../models/user_model.dart';
 import '../utils/snackbar_utils.dart';
 import '../models/bay_model.dart';

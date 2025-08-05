@@ -1,23 +1,24 @@
-// lib/screens/admin/master_equipment_management_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/equipment_model.dart';
 import '../../utils/snackbar_utils.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/widgets.dart'; // <-- Add this import for CustomPainter
 
-// Import all your equipment icon painters here
+// Import all the icon painters
 import '../../equipment_icons/transformer_icon.dart';
-import '../../equipment_icons/busbar_icon.dart';
 import '../../equipment_icons/circuit_breaker_icon.dart';
 import '../../equipment_icons/ct_icon.dart';
-import '../../equipment_icons/disconnector_icon.dart';
-import '../../equipment_icons/ground_icon.dart';
-import '../../equipment_icons/isolator_icon.dart';
 import '../../equipment_icons/pt_icon.dart';
-
-enum MasterEquipmentViewMode { list, form }
+import '../../equipment_icons/relay_icon.dart';
+import '../../equipment_icons/capacitor_bank_icon.dart';
+import '../../equipment_icons/reactor_icon.dart';
+import '../../equipment_icons/surge_arrester_icon.dart';
+import '../../equipment_icons/energy_meter_icon.dart';
+import '../../equipment_icons/ground_icon.dart';
+import '../../equipment_icons/busbar_icon.dart';
+import '../../equipment_icons/isolator_icon.dart';
+import '../../equipment_icons/other_icon.dart';
 
 class MasterEquipmentScreen extends StatefulWidget {
   const MasterEquipmentScreen({super.key});
@@ -27,22 +28,37 @@ class MasterEquipmentScreen extends StatefulWidget {
 }
 
 class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
-  MasterEquipmentViewMode _viewMode = MasterEquipmentViewMode.list;
+  bool _showForm = false;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _equipmentTypeController =
       TextEditingController();
   final TextEditingController _makeController = TextEditingController();
+
   DateTime? _dateOfManufacture;
   DateTime? _dateOfCommissioning;
-
   String? _selectedSymbolKey;
   MasterEquipmentTemplate? _templateToEdit;
   List<MasterEquipmentTemplate> _templates = [];
-  List<Map<String, dynamic>> _equipmentCustomFields = [];
+  List<Map<String, dynamic>> _customFields = [];
   bool _isLoading = true;
   bool _isSaving = false;
 
-  // UPDATED: Pre-defined list of data types for custom fields (does NOT include 'group')
+  final List<Map<String, dynamic>> _availableSymbols = [
+    {'key': 'Transformer', 'name': 'Transformer'},
+    {'key': 'Circuit Breaker', 'name': 'Circuit Breaker'},
+    {'key': 'Current Transformer', 'name': 'Current Transformer'},
+    {'key': 'Voltage Transformer', 'name': 'Voltage Transformer'},
+    {'key': 'Relay', 'name': 'Relay'},
+    {'key': 'Capacitor Bank', 'name': 'Capacitor Bank'},
+    {'key': 'Reactor', 'name': 'Reactor'},
+    {'key': 'Surge Arrester', 'name': 'Surge Arrester'},
+    {'key': 'Energy Meter', 'name': 'Energy Meter'},
+    {'key': 'Ground', 'name': 'Ground'},
+    {'key': 'Busbar', 'name': 'Busbar'},
+    {'key': 'Isolator', 'name': 'Isolator'},
+    {'key': 'Other', 'name': 'Other'},
+  ];
+
   final List<String> _dataTypes = [
     'text',
     'number',
@@ -51,231 +67,999 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     'dropdown',
   ];
 
-  // Pre-defined symbol keys
-  final List<String> _availableSymbolKeys = [
-    'Transformer',
-    'Circuit Breaker',
-    'Disconnector',
-    'Current Transformer',
-    'Voltage Transformer',
-    'Relay',
-    'Capacitor Bank',
-    'Reactor',
-    'Surge Arrester',
-    'Energy Meter',
-    'Ground',
-    'Busbar',
-    'Isolator',
-    'Other',
-  ];
-
   @override
   void initState() {
     super.initState();
     _fetchEquipmentTemplates();
   }
 
-  @override
-  void dispose() {
-    _equipmentTypeController.dispose();
-    _makeController.dispose();
-    super.dispose();
+  // Helper method to get the appropriate icon painter for a symbol key
+  Widget _getEquipmentIcon(String symbolKey, {double size = 24, Color? color}) {
+    final iconColor = color ?? Theme.of(context).colorScheme.primary;
+    final iconSize = Size(size, size);
+
+    EquipmentPainter painter;
+
+    switch (symbolKey) {
+      case 'Transformer':
+        painter = TransformerIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Circuit Breaker':
+        painter = CircuitBreakerIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Current Transformer':
+        painter = CurrentTransformerIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Voltage Transformer':
+        painter = PotentialTransformerIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Relay':
+        painter = RelayIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Capacitor Bank':
+        painter = CapacitorBankIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Reactor':
+        painter = ReactorIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Surge Arrester':
+        painter = SurgeArresterIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Energy Meter':
+        painter = EnergyMeterIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Ground':
+        painter = GroundIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Busbar':
+        painter = BusbarIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Isolator':
+        painter = IsolatorIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+      case 'Other':
+      default:
+        painter = OtherIconPainter(
+          color: iconColor,
+          equipmentSize: iconSize,
+          symbolSize: iconSize,
+        );
+        break;
+    }
+
+    return CustomPaint(painter: painter, size: iconSize);
   }
 
-  Future<void> _fetchEquipmentTemplates() async {
-    setState(() {
-      _isLoading = true;
-    });
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('masterEquipmentTemplates')
-          .orderBy('equipmentType')
-          .get();
-      setState(() {
-        _templates = snapshot.docs
-            .map((doc) => MasterEquipmentTemplate.fromFirestore(doc))
-            .toList();
-        _isLoading = false;
-      });
-    } catch (e) {
-      print("Error fetching equipment templates: $e");
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Failed to load templates: $e',
-          isError: true,
-        );
-      }
-      setState(() {
-        _isLoading = false;
-      });
-    }
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: _buildAppBar(theme),
+      floatingActionButton: _showForm ? null : _buildFAB(theme),
+      body: _showForm ? _buildFormView(theme) : _buildListView(theme),
+    );
   }
+
+  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      title: Text(
+        _showForm
+            ? (_templateToEdit == null
+                  ? 'New Equipment Type'
+                  : 'Edit Equipment Type')
+            : 'Equipment Templates',
+        style: TextStyle(
+          color: theme.colorScheme.onSurface,
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      leading: IconButton(
+        icon: Icon(
+          Icons.arrow_back,
+          color: theme.colorScheme.onSurface,
+          size: 20,
+        ),
+        onPressed: _showForm ? _showListView : () => Navigator.pop(context),
+      ),
+    );
+  }
+
+  Widget _buildFAB(ThemeData theme) {
+    return FloatingActionButton(
+      onPressed: _showFormForNew,
+      backgroundColor: theme.colorScheme.primary,
+      foregroundColor: Colors.white,
+      elevation: 2,
+      child: const Icon(Icons.add, size: 24),
+    );
+  }
+
+  Widget _buildListView(ThemeData theme) {
+    if (_isLoading) {
+      return Center(
+        child: CircularProgressIndicator(color: theme.colorScheme.primary),
+      );
+    }
+
+    if (_templates.isEmpty) {
+      return _buildEmptyState(theme);
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(24),
+      itemCount: _templates.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final template = _templates[index];
+        return _buildTemplateCard(template, theme);
+      },
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.construction_outlined,
+              size: 40,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No equipment templates',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tap the + button to create your first template',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface.withOpacity(0.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTemplateCard(MasterEquipmentTemplate template, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Center(
+                  child: _getEquipmentIcon(
+                    template.symbolKey,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      template.equipmentType,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      template.symbolKey,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    _showFormForEdit(template);
+                  } else if (value == 'delete') {
+                    _deleteTemplate(template.id);
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+                child: Icon(
+                  Icons.more_vert,
+                  size: 18,
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+            ],
+          ),
+          if (template.make != null) ...[
+            const SizedBox(height: 12),
+            _buildInfoChip(
+              'Make: ${template.make!}',
+              Icons.business_outlined,
+              theme,
+            ),
+          ],
+          if (template.dateOfCommissioning != null) ...[
+            const SizedBox(height: 8),
+            _buildInfoChip(
+              'Commissioned: ${DateFormat('yyyy-MM-dd').format(template.dateOfCommissioning!.toDate())}',
+              Icons.calendar_today_outlined,
+              theme,
+            ),
+          ],
+          const SizedBox(height: 8),
+          _buildInfoChip(
+            '${template.equipmentCustomFields.length} custom fields',
+            Icons.tune,
+            theme,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(String text, IconData icon, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: theme.colorScheme.onSurface.withOpacity(0.6),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormView(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBasicInfoSection(theme),
+            const SizedBox(height: 24),
+            _buildCustomFieldsSection(theme),
+            const SizedBox(height: 24),
+            _buildActionButtons(theme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBasicInfoSection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Basic Information',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildTextField(
+            controller: _equipmentTypeController,
+            label: 'Equipment Type Name *',
+            hint: 'e.g., Power Transformer, Relay',
+            theme: theme,
+            validator: (value) =>
+                value?.trim().isEmpty == true ? 'Required' : null,
+          ),
+          const SizedBox(height: 16),
+          _buildSymbolDropdown(theme),
+          const SizedBox(height: 16),
+          _buildTextField(
+            controller: _makeController,
+            label: 'Make (Optional)',
+            theme: theme,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDateField(
+                  'Date of Manufacture',
+                  _dateOfManufacture,
+                  (date) => setState(() => _dateOfManufacture = date),
+                  theme,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDateField(
+                  'Date of Commissioning',
+                  _dateOfCommissioning,
+                  (date) => setState(() => _dateOfCommissioning = date),
+                  theme,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Updated symbol dropdown with icons
+  Widget _buildSymbolDropdown(ThemeData theme) {
+    return DropdownButtonFormField<String>(
+      value: _selectedSymbolKey,
+      decoration: InputDecoration(
+        labelText: 'Equipment Symbol *',
+        labelStyle: TextStyle(
+          color: theme.colorScheme.onSurface.withOpacity(0.6),
+          fontSize: 14,
+        ),
+        border: UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        enabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
+        ),
+        errorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.error),
+        ),
+        focusedErrorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
+        ),
+      ),
+      items: _availableSymbols.map((symbol) {
+        return DropdownMenuItem<String>(
+          value: symbol['key'],
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: _getEquipmentIcon(
+                  symbol['key']!,
+                  size: 20,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  symbol['name']!,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      onChanged: (value) => setState(() => _selectedSymbolKey = value),
+      validator: (value) => value == null ? 'Required' : null,
+      style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
+      dropdownColor: Colors.white,
+      icon: Icon(
+        Icons.arrow_drop_down,
+        color: theme.colorScheme.onSurface.withOpacity(0.6),
+      ),
+      selectedItemBuilder: (BuildContext context) {
+        return _availableSymbols.map<Widget>((symbol) {
+          return Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: _getEquipmentIcon(
+                  symbol['key']!,
+                  size: 16,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                symbol['name']!,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          );
+        }).toList();
+      },
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required ThemeData theme,
+    String? hint,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: TextStyle(
+          color: theme.colorScheme.onSurface.withOpacity(0.6),
+          fontSize: 14,
+        ),
+        hintStyle: TextStyle(
+          color: theme.colorScheme.onSurface.withOpacity(0.4),
+          fontSize: 14,
+        ),
+        border: UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        enabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
+        ),
+        errorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.error),
+        ),
+        focusedErrorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
+        ),
+      ),
+      style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+      validator: validator,
+    );
+  }
+
+  Widget _buildDropdown({
+    required String? value,
+    required String label,
+    required List<String> items,
+    required ThemeData theme,
+    required ValueChanged<String?> onChanged,
+    String? Function(String?)? validator,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(
+          color: theme.colorScheme.onSurface.withOpacity(0.6),
+          fontSize: 14,
+        ),
+        border: UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        enabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.3),
+          ),
+        ),
+        focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
+        ),
+        errorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.error),
+        ),
+        focusedErrorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
+        ),
+      ),
+      items: items.map((item) {
+        return DropdownMenuItem(
+          value: item,
+          child: Text(
+            item,
+            style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+          ),
+        );
+      }).toList(),
+      onChanged: onChanged,
+      validator: validator,
+      style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
+      dropdownColor: Colors.white,
+      icon: Icon(
+        Icons.arrow_drop_down,
+        color: theme.colorScheme.onSurface.withOpacity(0.6),
+      ),
+    );
+  }
+
+  Widget _buildDateField(
+    String label,
+    DateTime? date,
+    Function(DateTime?) onChanged,
+    ThemeData theme,
+  ) {
+    return GestureDetector(
+      onTap: () => _selectDate(date, onChanged),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today_outlined,
+              size: 16,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                date == null ? label : DateFormat('yyyy-MM-dd').format(date),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: date == null
+                      ? theme.colorScheme.onSurface.withOpacity(0.6)
+                      : theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // [Keep all the remaining methods unchanged - _buildCustomFieldsSection, _buildCustomFieldInput, etc.]
+  // Due to length constraints, I'm showing only the key changes. The rest of your methods remain the same.
+
+  Widget _buildCustomFieldsSection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Custom Fields',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _addCustomField,
+                icon: Icon(
+                  Icons.add,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                label: Text(
+                  'Add Field',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _addGroupField,
+                icon: Icon(
+                  Icons.group_add,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                label: Text(
+                  'Add Group',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_customFields.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.list_alt,
+                    color: theme.colorScheme.onSurface.withOpacity(0.4),
+                    size: 40,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No custom fields or groups defined',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...List.generate(_customFields.length, (index) {
+              final field = _customFields[index];
+              if (field['isGroup'] == true) {
+                return _buildGroupFieldInput(field, index, theme);
+              } else {
+                return _buildCustomFieldInput(field, index, theme);
+              }
+            }),
+        ],
+      ),
+    );
+  }
+
+  // Include all other existing methods here...
+  // [All your existing methods like _buildCustomFieldInput, _buildGroupFieldInput, etc. remain exactly the same]
 
   void _showListView() {
     setState(() {
-      _viewMode = MasterEquipmentViewMode.list;
+      _showForm = false;
       _templateToEdit = null;
-      _equipmentTypeController.clear();
-      _makeController.clear();
-      _dateOfManufacture = null;
-      _dateOfCommissioning = null;
-      _selectedSymbolKey = null;
-      _equipmentCustomFields = [];
+      _clearForm();
     });
     _fetchEquipmentTemplates();
   }
 
   void _showFormForNew() {
     setState(() {
-      _viewMode = MasterEquipmentViewMode.form;
+      _showForm = true;
       _templateToEdit = null;
-      _equipmentTypeController.clear();
-      _makeController.clear();
-      _dateOfManufacture = null;
-      _dateOfCommissioning = null;
-      _selectedSymbolKey = _availableSymbolKeys.first;
-      _equipmentCustomFields = [];
+      _clearForm();
     });
   }
 
   void _showFormForEdit(MasterEquipmentTemplate template) {
     setState(() {
-      _viewMode = MasterEquipmentViewMode.form;
+      _showForm = true;
       _templateToEdit = template;
       _equipmentTypeController.text = template.equipmentType;
       _makeController.text = template.make ?? '';
       _dateOfManufacture = template.dateOfManufacture?.toDate();
       _dateOfCommissioning = template.dateOfCommissioning?.toDate();
-
       _selectedSymbolKey = template.symbolKey;
-      _equipmentCustomFields = template.equipmentCustomFields
+      _customFields = template.equipmentCustomFields
           .map((field) => field.toMap())
           .toList();
     });
   }
 
-  // Modified _addCustomField to default to 'text' for new fields
-  void _addCustomField(List<Map<String, dynamic>> targetList) {
+  void _clearForm() {
+    _equipmentTypeController.clear();
+    _makeController.clear();
+    _dateOfManufacture = null;
+    _dateOfCommissioning = null;
+    _selectedSymbolKey = null;
+    _customFields.clear();
+  }
+
+  void _addCustomField() {
     setState(() {
-      targetList.add({
+      _customFields.add({
         'name': '',
-        'dataType': CustomFieldDataType.text
-            .toString()
-            .split('.')
-            .last, // Default to text
+        'dataType': 'text',
         'isMandatory': false,
         'hasUnits': false,
         'units': '',
-        'options': [],
+        'options': <String>[],
         'hasRemarksField': false,
         'templateRemarkText': '',
-        'nestedFields': null, // Explicitly null for non-group types
+        'nestedFields': null,
+        'isGroup': false,
       });
     });
   }
 
-  // Add a new group (list) custom field
-  void _addListCustomField(List<Map<String, dynamic>> targetList) {
+  void _addGroupField() {
     setState(() {
-      targetList.add({
+      _customFields.add({
         'name': '',
-        'dataType': CustomFieldDataType.group
-            .toString()
-            .split('.')
-            .last, // Use 'group' as data type
+        'isGroup': true,
+        'nestedFields': <Map<String, dynamic>>[],
+        'dataType': 'group',
         'isMandatory': false,
         'hasUnits': false,
         'units': '',
-        'options': [],
-        'hasRemarksField': false,
-        'templateRemarkText': '',
-        'nestedFields':
-            <Map<String, dynamic>>[], // Start with empty nested fields
-      });
-    });
-  }
-
-  // This helper is for adding a nested field *within* a group field
-  void _addNestedField(Map<String, dynamic> groupField) {
-    setState(() {
-      (groupField['nestedFields'] as List<dynamic>).add({
-        'name': '',
-        'dataType': CustomFieldDataType.text
-            .toString()
-            .split('.')
-            .last, // Default nested field to text
-        'isMandatory': false,
-        'hasUnits': false,
-        'units': '',
-        'options': [],
+        'options': <String>[],
         'hasRemarksField': false,
         'templateRemarkText': '',
       });
     });
   }
 
-  void _removeCustomField(List<Map<String, dynamic>> targetList, int index) {
+  void _addSubFieldToGroup(int groupIndex) {
     setState(() {
-      targetList.removeAt(index);
+      final group = _customFields[groupIndex];
+      (group['nestedFields'] as List<Map<String, dynamic>>).add({
+        'name': '',
+        'dataType': 'text',
+        'isMandatory': false,
+        'hasUnits': false,
+        'units': '',
+        'options': <String>[],
+        'hasRemarksField': false,
+        'templateRemarkText': '',
+        'nestedFields': null,
+        'isGroup': false,
+      });
     });
   }
 
-  // Helper to remove a nested field from a group field
-  void _removeNestedField(Map<String, dynamic> groupField, int nestedIndex) {
+  void _removeCustomField(int index) {
+    setState(() => _customFields.removeAt(index));
+  }
+
+  void _removeSubField(int groupIndex, int subFieldIndex) {
     setState(() {
-      (groupField['nestedFields'] as List<dynamic>).removeAt(nestedIndex);
+      final group = _customFields[groupIndex];
+      (group['nestedFields'] as List<Map<String, dynamic>>).removeAt(
+        subFieldIndex,
+      );
     });
   }
 
   Future<void> _selectDate(
-    BuildContext context,
-    DateTime? initialDate,
-    Function(DateTime?) onSelect,
+    DateTime? currentDate,
+    Function(DateTime?) onChanged,
   ) async {
-    final DateTime? picked = await showDatePicker(
+    final date = await showDatePicker(
       context: context,
-      initialDate: initialDate ?? DateTime.now(),
+      initialDate: currentDate ?? DateTime.now(),
       firstDate: DateTime(1900),
       lastDate: DateTime.now().add(const Duration(days: 365 * 10)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: Theme.of(context).colorScheme.primary,
+              onPrimary: Theme.of(context).colorScheme.onPrimary,
+              surface: Colors.white,
+              onSurface: Theme.of(context).colorScheme.onSurface,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-    if (picked != null && picked != initialDate) {
-      setState(() {
-        onSelect(picked);
-      });
+    if (date != null) {
+      setState(() => onChanged(date));
+    }
+  }
+
+  Future<void> _fetchEquipmentTemplates() async {
+    setState(() => _isLoading = true);
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('masterEquipmentTemplates')
+          .orderBy('equipmentType')
+          .get();
+      _templates = snapshot.docs
+          .map((doc) => MasterEquipmentTemplate.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to load templates: $e',
+        isError: true,
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _saveTemplate() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Error: User not logged in.',
-          isError: true,
-        );
-      }
-      setState(() {
-        _isSaving = false;
-      });
+      SnackBarUtils.showSnackBar(
+        context,
+        'Error: User not logged in.',
+        isError: true,
+      );
+      setState(() => _isSaving = false);
       return;
     }
 
     try {
-      final List<CustomField> customFields = _equipmentCustomFields
-          .map((fieldMap) => CustomField.fromMap(fieldMap))
-          .toList();
+      final customFields = _customFields.map((fieldMap) {
+        if (fieldMap['isGroup'] == true) {
+          return CustomField.fromMap({
+            ...fieldMap,
+            'nestedFields':
+                (fieldMap['nestedFields'] as List<Map<String, dynamic>>)
+                    .map((subField) => CustomField.fromMap(subField).toMap())
+                    .toList(),
+          });
+        }
+        return CustomField.fromMap(fieldMap);
+      }).toList();
 
-      final MasterEquipmentTemplate newTemplate = MasterEquipmentTemplate(
+      final template = MasterEquipmentTemplate(
         equipmentType: _equipmentTypeController.text.trim(),
         symbolKey: _selectedSymbolKey!,
         equipmentCustomFields: customFields,
@@ -295,696 +1079,610 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       if (_templateToEdit == null) {
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
-            .add(newTemplate.toFirestore());
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Equipment template added successfully!',
-          );
-        }
+            .add(template.toFirestore());
+        SnackBarUtils.showSnackBar(context, 'Template created successfully!');
       } else {
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
             .doc(_templateToEdit!.id)
-            .update(newTemplate.toFirestore());
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Equipment template updated successfully!',
-          );
-        }
+            .update(template.toFirestore());
+        SnackBarUtils.showSnackBar(context, 'Template updated successfully!');
       }
+
       _showListView();
     } catch (e) {
-      print("Error saving template: $e");
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Failed to save template: $e',
-          isError: true,
-        );
-      }
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to save template: $e',
+        isError: true,
+      );
     } finally {
-      setState(() {
-        _isSaving = false;
-      });
+      setState(() => _isSaving = false);
     }
   }
 
   Future<void> _deleteTemplate(String? templateId) async {
     if (templateId == null) return;
 
-    final bool confirm =
-        await showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Confirm Deletion'),
-              content: const Text(
-                'Are you sure you want to delete this equipment template? This action cannot be undone.',
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          'Delete Template',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Are you sure you want to delete this template? This action cannot be undone.',
+          style: TextStyle(
+            fontSize: 14,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withOpacity(0.7),
+            ),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                  child: const Text('Delete'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
+            ),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
 
-    if (confirm) {
+    if (confirm == true) {
       try {
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
             .doc(templateId)
             .delete();
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Equipment template deleted successfully!',
-          );
-        }
+        SnackBarUtils.showSnackBar(context, 'Template deleted successfully!');
         _fetchEquipmentTemplates();
       } catch (e) {
-        print("Error deleting template: $e");
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Failed to delete template: $e',
-            isError: true,
-          );
-        }
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to delete template: $e',
+          isError: true,
+        );
       }
     }
   }
 
-  Size _getSymbolPreviewSize(String symbolKey) {
-    return const Size(32, 32);
-  }
-
-  CustomPainter _getSymbolPreviewPainter(String symbolKey, Color color) {
-    const Size equipmentDrawingSize = Size(100, 100);
-    switch (symbolKey.toLowerCase()) {
-      case 'transformer':
-        return TransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'busbar':
-        return BusbarIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'circuit breaker':
-        return CircuitBreakerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'current transformer':
-      case 'ct':
-        return CurrentTransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'disconnector':
-        return DisconnectorIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'ground':
-        return GroundIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'isolator':
-        return IsolatorIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: const Size(32, 32),
-        );
-      case 'voltage transformer':
-      case 'pt':
-        return PotentialTransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      default:
-        return _GenericIconPainter(color: color);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _viewMode == MasterEquipmentViewMode.list
-              ? 'Equipment Templates'
-              : (_templateToEdit == null
-                    ? 'Define New Equipment Type'
-                    : 'Edit Equipment Type'),
-        ),
-        leading: _viewMode == MasterEquipmentViewMode.form
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _showListView,
-              )
-            : null,
+  // Add all the missing methods here (keeping them exactly as they were)
+  Widget _buildCustomFieldInput(
+    Map<String, dynamic> field,
+    int index,
+    ThemeData theme, {
+    bool isSubField = false,
+    int? subFieldIndex,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
       ),
-      body: _viewMode == MasterEquipmentViewMode.list
-          ? _buildListView()
-          : _buildFormView(),
-      floatingActionButton: _viewMode == MasterEquipmentViewMode.list
-          ? FloatingActionButton.extended(
-              onPressed: _showFormForNew,
-              label: const Text('Add New Type'),
-              icon: const Icon(Icons.add),
-            )
-          : null,
-    );
-  }
-
-  Widget _buildListView() {
-    return _templates.isEmpty
-        ? const Center(
-            child: Text('No templates defined yet. Tap "+" to add one.'),
-          )
-        : ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _templates.length,
-            itemBuilder: (context, index) {
-              final template = _templates[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                elevation: 3,
-                child: ListTile(
-                  title: Text(template.equipmentType),
-                  subtitle: Text(
-                    'Symbol: ${template.symbolKey}\nMake: ${template.make ?? 'N/A'}\nCommissioned: ${template.dateOfCommissioning != null ? DateFormat('yyyy-MM-dd').format(template.dateOfCommissioning!.toDate()) : 'N/A'}\n${template.equipmentCustomFields.length} custom fields',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  initialValue: field['name'],
+                  decoration: InputDecoration(
+                    labelText: 'Field Name *',
+                    isDense: true,
+                    labelStyle: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 14,
+                    ),
+                    border: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    errorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: theme.colorScheme.error),
+                    ),
+                    focusedErrorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                    ),
                   ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (String result) {
-                      if (result == 'edit') {
-                        _showFormForEdit(template);
-                      } else if (result == 'delete') {
-                        _deleteTemplate(template.id);
-                      }
-                    },
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                          const PopupMenuItem<String>(
-                            value: 'edit',
-                            child: ListTile(
-                              leading: Icon(Icons.edit),
-                              title: Text('Edit'),
-                            ),
-                          ),
-                          PopupMenuItem<String>(
-                            value: 'delete',
-                            child: ListTile(
-                              leading: Icon(
-                                Icons.delete,
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                              title: Text(
-                                'Delete',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface,
                   ),
+                  onChanged: (value) => field['name'] = value,
+                  validator: (value) =>
+                      value?.trim().isEmpty == true ? 'Required' : null,
                 ),
-              );
-            },
-          );
-  }
-
-  Widget _buildFormView() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24.0),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextFormField(
-              controller: _equipmentTypeController,
-              decoration: InputDecoration(
-                labelText: 'Equipment Type Name',
-                hintText: 'e.g., Power Transformer, Relay, Energy Meter',
-                prefixIcon: Icon(Icons.category, color: colorScheme.primary),
-                border: const OutlineInputBorder(),
               ),
-              validator: (value) => value == null || value.trim().isEmpty
-                  ? 'Equipment Type cannot be empty'
-                  : null,
-            ),
-            const SizedBox(height: 20),
-            DropdownButtonFormField<String>(
-              value: _selectedSymbolKey,
-              decoration: InputDecoration(
-                labelText: 'Map to Symbol',
-                prefixIcon: Icon(Icons.star, color: colorScheme.primary),
-                border: const OutlineInputBorder(),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => isSubField
+                    ? _removeSubField(index, subFieldIndex!)
+                    : _removeCustomField(index),
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 18,
+                  color: theme.colorScheme.error,
+                ),
               ),
-              items: _availableSymbolKeys.map((String key) {
-                return DropdownMenuItem<String>(
-                  value: key,
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: _getSymbolPreviewSize(key).width,
-                        height: _getSymbolPreviewSize(key).height,
-                        child: CustomPaint(
-                          painter: _getSymbolPreviewPainter(
-                            key,
-                            colorScheme.onSurface,
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: field['dataType'],
+                  decoration: InputDecoration(
+                    labelText: 'Type *',
+                    isDense: true,
+                    labelStyle: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 14,
+                    ),
+                    border: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    errorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: theme.colorScheme.error),
+                    ),
+                    focusedErrorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  items: _dataTypes
+                      .map(
+                        (type) => DropdownMenuItem(
+                          value: type,
+                          child: Text(
+                            type,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: theme.colorScheme.onSurface,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(key),
-                    ],
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setState(() => field['dataType'] = value),
+                  validator: (value) => value == null ? 'Required' : null,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface,
+                    fontSize: 14,
                   ),
-                );
-              }).toList(),
-              onChanged: (String? newValue) =>
-                  setState(() => _selectedSymbolKey = newValue!),
-              validator: (value) =>
-                  value == null ? 'Please select a symbol' : null,
-            ),
-            const SizedBox(height: 20),
-
-            // Basic Details Section
-            Text(
-              'Basic Details',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(color: colorScheme.primary),
-            ),
-            const SizedBox(height: 10),
+                  dropdownColor: Colors.white,
+                  icon: Icon(
+                    Icons.arrow_drop_down,
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 120,
+                child: CheckboxListTile(
+                  title: const Text(
+                    'Required',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  value: field['isMandatory'] ?? false,
+                  onChanged: (value) =>
+                      setState(() => field['isMandatory'] = value),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          if (field['dataType'] == 'number') ...[
+            const SizedBox(height: 12),
             TextFormField(
-              controller: _makeController,
+              initialValue: field['units'],
               decoration: InputDecoration(
-                labelText: 'Make',
-                prefixIcon: Icon(Icons.business, color: colorScheme.primary),
-                border: const OutlineInputBorder(),
+                labelText: 'Unit (e.g., V, A, kW)',
+                isDense: true,
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                errorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: theme.colorScheme.error),
+                ),
+                focusedErrorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.error,
+                    width: 2,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              title: Text(
-                _dateOfManufacture == null
-                    ? 'Select Date of Manufacture'
-                    : 'Date of Manufacture: ${DateFormat('yyyy-MM-dd').format(_dateOfManufacture!)}',
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface,
               ),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: () => _selectDate(context, _dateOfManufacture, (date) {
-                _dateOfManufacture = date;
-              }),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              title: Text(
-                _dateOfCommissioning == null
-                    ? 'Select Date of Commissioning'
-                    : 'Date of Commissioning: ${DateFormat('yyyy-MM-dd').format(_dateOfCommissioning!)}',
-              ),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: () => _selectDate(context, _dateOfCommissioning, (date) {
-                _dateOfCommissioning = date;
-              }),
-            ),
-            const SizedBox(height: 20),
-
-            _buildCustomFieldsSection(
-              'Custom Fields',
-              _equipmentCustomFields,
-              colorScheme,
-              Icons.settings_input_component,
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveTemplate,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(_templateToEdit == null ? Icons.add : Icons.save),
-              label: Text(
-                _templateToEdit == null ? 'Add Template' : 'Update Template',
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-                minimumSize: const Size(double.infinity, 50),
-              ),
+              onChanged: (value) => field['units'] = value,
             ),
           ],
-        ),
+          if (field['dataType'] == 'dropdown') ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: (field['options'] as List<dynamic>?)?.join(', '),
+              decoration: InputDecoration(
+                labelText: 'Options (comma-separated)',
+                isDense: true,
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                errorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: theme.colorScheme.error),
+                ),
+                focusedErrorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.error,
+                    width: 2,
+                  ),
+                ),
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: (value) => field['options'] = value
+                  .split(',')
+                  .map((e) => e.trim())
+                  .toList(),
+            ),
+          ],
+          const SizedBox(height: 12),
+          CheckboxListTile(
+            title: const Text(
+              'Include Remarks Field',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+            value: field['hasRemarksField'] ?? false,
+            onChanged: (value) =>
+                setState(() => field['hasRemarksField'] = value),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            activeColor: theme.colorScheme.primary,
+          ),
+          if (field['hasRemarksField'] == true) ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: field['templateRemarkText'],
+              decoration: InputDecoration(
+                labelText: 'Remark Template',
+                isDense: true,
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                errorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: theme.colorScheme.error),
+                ),
+                focusedErrorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.error,
+                    width: 2,
+                  ),
+                ),
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: (value) => field['templateRemarkText'] = value,
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildCustomFieldsSection(
-    String title,
-    List<Map<String, dynamic>> fieldsList,
-    ColorScheme colorScheme,
-    IconData icon,
+  Widget _buildGroupFieldInput(
+    Map<String, dynamic> group,
+    int index,
+    ThemeData theme,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ExpansionTile(
+      title: Text(
+        group['name'].isEmpty ? 'Unnamed Group' : group['name'],
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
+      leading: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(Icons.group, size: 16, color: theme.colorScheme.primary),
+      ),
+      trailing: IconButton(
+        icon: Icon(
+          Icons.delete_outline,
+          size: 18,
+          color: theme.colorScheme.error,
+        ),
+        onPressed: () => _removeCustomField(index),
+      ),
+      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+      backgroundColor: Colors.grey.shade50,
+      collapsedBackgroundColor: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      collapsedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
       children: [
         Row(
           children: [
-            Icon(icon, color: colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-          ],
-        ),
-        const SizedBox(height: 10),
-        ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: fieldsList.length,
-          itemBuilder: (context, index) {
-            final field = fieldsList[index];
-            return _buildCustomFieldDefinitionInput(
-              field,
-              index,
-              fieldsList,
-              colorScheme,
-            );
-          },
-        ),
-        // Row for "Add Field" and "Add List Field" buttons
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () => _addCustomField(fieldsList),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Field'),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade100,
+                borderRadius: BorderRadius.circular(4),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () => _addListCustomField(
-                  fieldsList,
-                ), // NEW: Button for adding list type
-                icon: const Icon(Icons.playlist_add), // A list-like icon
-                label: const Text('Grouped Field'), // Renamed label
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.secondary,
-                  foregroundColor: colorScheme.onSecondary,
+              child: Text(
+                'GROUP',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.purple.shade700,
                 ),
               ),
             ),
           ],
         ),
+        TextFormField(
+          initialValue: group['name'],
+          decoration: InputDecoration(
+            labelText: 'Group Name *',
+            isDense: true,
+            labelStyle: TextStyle(
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+              fontSize: 14,
+            ),
+            border: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            errorBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: theme.colorScheme.error),
+            ),
+            focusedErrorBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
+            ),
+          ),
+          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+          onChanged: (value) => group['name'] = value,
+          validator: (value) =>
+              value?.trim().isEmpty == true ? 'Required' : null,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Subfields',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _addSubFieldToGroup(index),
+              icon: Icon(Icons.add, size: 16, color: theme.colorScheme.primary),
+              label: Text(
+                'Add Subfield',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...(group['nestedFields'] as List<Map<String, dynamic>>)
+            .asMap()
+            .entries
+            .map(
+              (entry) => _buildCustomFieldInput(
+                entry.value,
+                index,
+                theme,
+                isSubField: true,
+                subFieldIndex: entry.key,
+              ),
+            ),
       ],
     );
   }
 
-  // Helper to build a single custom field definition input (including 'group' type details)
-  Widget _buildCustomFieldDefinitionInput(
-    Map<String, dynamic> fieldDef,
-    int index,
-    List<Map<String, dynamic>> parentList,
-    ColorScheme colorScheme, {
-    bool isNested = false,
-  }) {
-    final fieldName = fieldDef['name'] as String;
-    final dataType =
-        fieldDef['dataType'] as String; // This is the string representation
-    final isMandatory = fieldDef['isMandatory'] as bool;
-    final hasUnits = fieldDef['hasUnits'] as bool;
-    final units = fieldDef['units'] as String;
-    final options = List<String>.from(fieldDef['options'] ?? []);
-    final bool hasRemarksField = fieldDef['hasRemarksField'] as bool;
-
-    // Determine if this field is a Group field
-    final bool isGroupField =
-        dataType == CustomFieldDataType.group.toString().split('.').last;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextFormField(
-              initialValue: fieldName,
-              decoration: InputDecoration(
-                labelText: isNested ? 'Item Name' : 'Field Name',
-                border: const OutlineInputBorder(),
-                hintText: isNested
-                    ? 'e.g., Phase A Current'
-                    : 'e.g., Manufacturer, Last Service Date',
-              ),
-              onChanged: (value) => fieldDef['name'] = value,
-              validator: (value) => value == null || value.trim().isEmpty
-                  ? (isNested ? 'Item name required' : 'Field name required')
-                  : null,
-            ),
-            const SizedBox(height: 10),
-
-            // Data Type dropdown (hidden if it's a Group field)
-            if (!isGroupField)
-              DropdownButtonFormField<String>(
-                value: dataType,
-                decoration: const InputDecoration(
-                  labelText: 'Data Type',
-                  border: OutlineInputBorder(),
+  Widget _buildActionButtons(ThemeData theme) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextButton(
+            onPressed: _showListView,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.onSurface.withOpacity(0.7),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
                 ),
-                items: _dataTypes
-                    .map(
-                      (type) =>
-                          DropdownMenuItem(value: type, child: Text(type)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  setState(() {
-                    fieldDef['dataType'] = value!;
-                    // Reset properties based on new data type
-                    fieldDef['options'] = [];
-                    fieldDef['hasUnits'] = false;
-                    fieldDef['units'] = '';
-                    fieldDef['hasRemarksField'] = false;
-                    fieldDef['templateRemarkText'] = '';
-                    fieldDef['nestedFields'] =
-                        null; // Ensure null if changing from group
-                  });
-                },
-              ),
-            // Display 'Group' label if it is a Group field
-            if (isGroupField)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Text(
-                  'Data Type: Group',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic),
-                ),
-              ),
-            const SizedBox(height: 10),
-
-            // Conditional UI based on data types (only if not a group field)
-            if (!isGroupField) ...[
-              if (dataType == 'dropdown')
-                TextFormField(
-                  initialValue: (fieldDef['options'] as List<dynamic>?)?.join(
-                    ',',
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Options (comma-separated)',
-                    border: OutlineInputBorder(),
-                    hintText: 'e.g., Option1, Option2, Option3',
-                  ),
-                  onChanged: (value) => fieldDef['options'] = value
-                      .split(',')
-                      .map((e) => e.trim())
-                      .where((e) => e.isNotEmpty)
-                      .toList(),
-                ),
-              if (dataType == 'number') ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Row(
-                    children: [
-                      Switch(
-                        value: hasUnits,
-                        onChanged: (value) =>
-                            setState(() => fieldDef['hasUnits'] = value),
-                        activeColor: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('Has Units'),
-                    ],
-                  ),
-                ),
-                if (hasUnits)
-                  TextFormField(
-                    initialValue: units,
-                    decoration: const InputDecoration(
-                      labelText: 'Units (e.g., V, A, kW, Hz)',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) => fieldDef['units'] = value,
-                    validator: (value) {
-                      if (hasUnits && (value == null || value.trim().isEmpty)) {
-                        return 'Units required if "Has Units" is checked';
-                      }
-                      return null;
-                    },
-                  ),
-              ],
-              if (dataType == 'boolean') ...[
-                const SizedBox(height: 10),
-                TextFormField(
-                  initialValue: fieldDef['description_remarks'] as String?,
-                  decoration: const InputDecoration(
-                    labelText: 'Description / Remarks (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => fieldDef['description_remarks'] = value,
-                  maxLines: 2,
-                ),
-              ],
-            ], // End of if (!isGroupField)
-            // UI for 'group' type custom field (nested fields management)
-            if (isGroupField) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Fields in this Group:',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 8),
-              if ((fieldDef['nestedFields'] as List<dynamic>).isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8.0),
-                  child: Text('No fields defined for this group.'),
-                ),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: (fieldDef['nestedFields'] as List<dynamic>).length,
-                itemBuilder: (context, nestedIndex) {
-                  final nestedField =
-                      (fieldDef['nestedFields'] as List<dynamic>)[nestedIndex];
-                  return _buildCustomFieldDefinitionInput(
-                    nestedField,
-                    nestedIndex,
-                    (fieldDef['nestedFields'] as List<dynamic>)
-                        .cast<Map<String, dynamic>>(),
-                    colorScheme,
-                    isNested: true,
-                  );
-                },
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _addNestedField(fieldDef),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Field to Group'), // Renamed button
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.secondary,
-                  foregroundColor: colorScheme.onSecondary,
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-
-            CheckboxListTile(
-              title: const Text('Mandatory'),
-              value: isMandatory,
-              onChanged: (value) =>
-                  setState(() => fieldDef['isMandatory'] = value!),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                icon: Icon(
-                  Icons.remove_circle_outline,
-                  color: colorScheme.error,
-                ),
-                onPressed: () => _removeCustomField(parentList, index),
               ),
             ),
-          ],
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ),
         ),
-      ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _isSaving ? null : _saveTemplate,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 2,
+            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    _templateToEdit == null
+                        ? 'Create Template'
+                        : 'Update Template',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+          ),
+        ),
+      ],
     );
   }
-}
-
-class _GenericIconPainter extends CustomPainter {
-  final Color color;
-
-  _GenericIconPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-
-    final double centerX = size.width / 2;
-    final double centerY = size.height / 2;
-    final double halfWidth = size.width / 3;
-    final double halfHeight = size.height / 3;
-
-    canvas.drawRect(
-      Rect.fromCenter(
-        center: Offset(centerX, centerY),
-        width: halfWidth * 2,
-        height: halfHeight * 2,
-      ),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(centerX - halfWidth, centerY - halfHeight),
-      Offset(centerX + halfWidth, centerY + halfHeight),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(centerX + halfWidth, centerY - halfHeight),
-      Offset(centerX - halfWidth, centerY + halfHeight),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

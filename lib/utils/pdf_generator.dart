@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/bay_model.dart';
 import '../models/assessment_model.dart';
+import '../models/energy_readings_data.dart';
 import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart';
 
 /// A data class to hold all necessary information for PDF generation. (Remains same)

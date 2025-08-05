@@ -1,7 +1,7 @@
 // lib/equipment_icons/isolator_icon.dart
 
 import 'package:flutter/material.dart';
-import 'package:substation_manager/equipment_icons/transformer_icon.dart'; // Import base EquipmentPainter
+import 'package:substation_manager/equipment_icons/transformer_icon.dart';
 
 class IsolatorIconPainter extends EquipmentPainter {
   IsolatorIconPainter({
@@ -13,63 +13,142 @@ class IsolatorIconPainter extends EquipmentPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final dotPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
+    final colors = EquipmentPainter.equipmentColorScheme['Isolator']!;
+    final strokePaint = createGradientPaint(size, colors, isFill: false);
+    final fillPaint = createGradientPaint(size, colors, isFill: true);
+    final shadowPaint = createShadowPaint();
 
     final double centerX = size.width / 2;
 
-    // Define points for the diagonal line representing the isolator
+    // Enhanced stroke paint
+    strokePaint.strokeCap = StrokeCap.round;
+
+    // Define points for the diagonal line
     final Offset startPoint = Offset(
       centerX - size.width * 0.4,
       size.height * 0.2,
-    ); // Start near top-left
+    );
     final Offset endPoint = Offset(
       centerX + size.width * 0.4,
       size.height * 0.8,
-    ); // End near bottom-right
+    );
 
-    // Draw the diagonal line
-    canvas.drawLine(startPoint, endPoint, paint);
+    // Connection lines with shadows
+    canvas.drawLine(
+      Offset(centerX + 1, 1),
+      Offset(centerX + 1, startPoint.dy + 1),
+      shadowPaint..strokeWidth = strokeWidth,
+    );
+    canvas.drawLine(
+      Offset(centerX + 1, size.height + 1),
+      Offset(centerX + 1, endPoint.dy + 1),
+      shadowPaint..strokeWidth = strokeWidth,
+    );
 
-    // Draw connection lines to the outside of the symbol area
+    // Connection lines
     canvas.drawLine(
       Offset(centerX, 0),
       Offset(centerX, startPoint.dy),
-      paint,
-    ); // Line from top of CustomPaint to symbol start
+      strokePaint,
+    );
     canvas.drawLine(
       Offset(centerX, size.height),
       Offset(centerX, endPoint.dy),
-      paint,
-    ); // Line from bottom of CustomPaint to symbol end
+      strokePaint,
+    );
 
-    // Optional: add a small square or dash at the top/bottom end of the line
-    // to represent the fixed contact point.
-    final double contactSize = 4;
-    canvas.drawRect(
-      Rect.fromLTWH(
-        startPoint.dx - contactSize / 2,
-        startPoint.dy - contactSize / 2,
-        contactSize,
-        contactSize,
+    // Diagonal line shadow
+    canvas.drawLine(
+      Offset(startPoint.dx + 1, startPoint.dy + 1),
+      Offset(endPoint.dx + 1, endPoint.dy + 1),
+      shadowPaint..strokeWidth = strokeWidth * 1.5,
+    );
+
+    // Diagonal line with gradient
+    final bladePaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: colors,
+      ).createShader(Rect.fromPoints(startPoint, endPoint))
+      ..strokeWidth = strokeWidth * 1.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(startPoint, endPoint, bladePaint);
+
+    // Contact points with enhanced styling
+    final double contactSize = 5;
+
+    // Top contact shadow
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(startPoint.dx + 1, startPoint.dy + 1),
+          width: contactSize,
+          height: contactSize,
+        ),
+        const Radius.circular(2),
       ),
-      dotPaint,
-    ); // Top contact
-    canvas.drawRect(
-      Rect.fromLTWH(
-        endPoint.dx - contactSize / 2,
-        endPoint.dy - contactSize / 2,
-        contactSize,
-        contactSize,
+      shadowPaint,
+    );
+
+    // Bottom contact shadow
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(endPoint.dx + 1, endPoint.dy + 1),
+          width: contactSize,
+          height: contactSize,
+        ),
+        const Radius.circular(2),
       ),
-      dotPaint,
-    ); // Bottom contact
+      shadowPaint,
+    );
+
+    // Top contact
+    final topContactRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: startPoint,
+        width: contactSize,
+        height: contactSize,
+      ),
+      const Radius.circular(2),
+    );
+    canvas.drawRRect(topContactRect, fillPaint);
+    canvas.drawRRect(topContactRect, strokePaint..style = PaintingStyle.stroke);
+
+    // Bottom contact
+    final bottomContactRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: endPoint,
+        width: contactSize,
+        height: contactSize,
+      ),
+      const Radius.circular(2),
+    );
+    canvas.drawRRect(bottomContactRect, fillPaint);
+    canvas.drawRRect(
+      bottomContactRect,
+      strokePaint..style = PaintingStyle.stroke,
+    );
+
+    // Add insulator body representation
+    final insulatorPaint = Paint()
+      ..color = colors[1].withOpacity(0.2)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(centerX, size.height * 0.5),
+          width: size.width * 0.1,
+          height: size.height * 0.3,
+        ),
+        const Radius.circular(3),
+      ),
+      insulatorPaint,
+    );
   }
 
   @override

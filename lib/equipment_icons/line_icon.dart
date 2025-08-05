@@ -1,9 +1,7 @@
-// lib/equipment_icons/line_icon.dart (Revised for "arrow base at end of line" and pointing upwards)
+// lib/equipment_icons/line_icon.dart
 
 import 'package:flutter/material.dart';
 import 'dart:math';
-
-// Assuming EquipmentPainter is defined in transformer_icon.dart
 import 'package:substation_manager/equipment_icons/transformer_icon.dart';
 
 class LineIconPainter extends EquipmentPainter {
@@ -16,56 +14,91 @@ class LineIconPainter extends EquipmentPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final lineBodyPaint =
-        Paint() // Paint for the main line body
-          ..color = color
-          ..strokeWidth = strokeWidth
-          ..style = PaintingStyle.stroke;
-
-    final arrowheadFillPaint =
-        Paint() // Paint specifically for filling the arrowhead
-          ..color = color
-          ..style = PaintingStyle.fill;
+    final colors = [Color(0xFF1565C0), Color(0xFF42A5F5)]; // Blue for line
+    final strokePaint = createGradientPaint(size, colors, isFill: false);
+    final fillPaint = createGradientPaint(size, colors, isFill: true);
+    final shadowPaint = createShadowPaint();
 
     final double centerX = size.width / 2;
+    const double arrowHeight = 12.0;
+    const double arrowBaseWidth = 12.0;
+    final double lineStartY = size.height * 0.1 + arrowHeight;
 
-    const double arrowHeight = 10.0; // Height of the arrowhead
-    const double arrowBaseWidth = 10.0; // Width of the arrowhead base
+    // Enhanced stroke paint
+    strokePaint.strokeCap = StrokeCap.round;
 
-    // The line should end just before the arrowhead starts
-    final double lineStartY =
-        size.height * 0.1 + arrowHeight; // Start of the line
-
-    // Draw the main vertical line representing the transmission line
+    // Line shadow
     canvas.drawLine(
-      Offset(centerX, lineStartY), // Start of the line
-      Offset(centerX, size.height), // Bottom of the symbol area
-      lineBodyPaint,
+      Offset(centerX + 1, lineStartY + 1),
+      Offset(centerX + 1, size.height + 1),
+      shadowPaint..strokeWidth = strokeWidth,
     );
 
-    // Draw the arrowhead at the top
-    // The base of the arrow should be at the start of the line (lineStartY).
-    // The tip of the arrow will be further up.
+    // Main vertical line with gradient
+    final linePaint = Paint()
+      ..shader =
+          LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: colors,
+          ).createShader(
+            Rect.fromLTWH(
+              centerX - strokeWidth / 2,
+              lineStartY,
+              strokeWidth,
+              size.height - lineStartY,
+            ),
+          )
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(
+      Offset(centerX, lineStartY),
+      Offset(centerX, size.height),
+      linePaint,
+    );
+
+    // Arrowhead with shadow
     final Offset arrowBaseCenter = Offset(centerX, lineStartY);
+    final arrowPath = Path()
+      ..moveTo(arrowBaseCenter.dx - arrowBaseWidth / 2, arrowBaseCenter.dy)
+      ..lineTo(arrowBaseCenter.dx + arrowBaseWidth / 2, arrowBaseCenter.dy)
+      ..lineTo(centerX, arrowBaseCenter.dy - arrowHeight)
+      ..close();
 
-    final Path arrowPath = Path();
-    // Start at the left base point
-    arrowPath.moveTo(
-      arrowBaseCenter.dx - arrowBaseWidth / 2,
-      arrowBaseCenter.dy,
-    );
-    // Draw to the right base point
-    arrowPath.lineTo(
-      arrowBaseCenter.dx + arrowBaseWidth / 2,
-      arrowBaseCenter.dy,
-    );
-    // Draw to the tip
-    arrowPath.lineTo(
-      centerX,
-      arrowBaseCenter.dy - arrowHeight,
-    ); // Tip is above the base
-    arrowPath.close(); // Closes the path to form a triangle
-    canvas.drawPath(arrowPath, arrowheadFillPaint);
+    // Arrow shadow
+    final arrowShadowPath = Path()
+      ..moveTo(
+        arrowBaseCenter.dx - arrowBaseWidth / 2 + 1,
+        arrowBaseCenter.dy + 1,
+      )
+      ..lineTo(
+        arrowBaseCenter.dx + arrowBaseWidth / 2 + 1,
+        arrowBaseCenter.dy + 1,
+      )
+      ..lineTo(centerX + 1, arrowBaseCenter.dy - arrowHeight + 1)
+      ..close();
+
+    canvas.drawPath(arrowShadowPath, shadowPaint);
+    canvas.drawPath(arrowPath, fillPaint);
+    canvas.drawPath(arrowPath, strokePaint..style = PaintingStyle.stroke);
+
+    // Add transmission line characteristics (parallel lines)
+    final conductorPaint = Paint()
+      ..color = colors[1].withOpacity(0.6)
+      ..strokeWidth = strokeWidth * 0.4
+      ..strokeCap = StrokeCap.round;
+
+    // Three parallel conductors
+    for (int i = -1; i <= 1; i++) {
+      final offset = i * size.width * 0.08;
+      canvas.drawLine(
+        Offset(centerX + offset, lineStartY + arrowHeight),
+        Offset(centerX + offset, size.height * 0.8),
+        conductorPaint,
+      );
+    }
   }
 
   @override

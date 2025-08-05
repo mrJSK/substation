@@ -6,7 +6,7 @@ import 'bay_model.dart';
 import 'reading_models.dart';
 import 'hierarchy_models.dart';
 
-enum ReportFrequency { hourly, daily, custom, onDemand }
+enum ReportFrequency { hourly, daily, custom, onDemand, monthly }
 
 enum MathOperation {
   none,

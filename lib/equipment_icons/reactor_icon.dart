@@ -1,0 +1,111 @@
+// lib/equipment_icons/reactor_icon.dart
+
+import 'package:flutter/material.dart';
+import 'package:substation_manager/equipment_icons/transformer_icon.dart';
+import 'dart:math';
+
+class ReactorIconPainter extends EquipmentPainter {
+  ReactorIconPainter({
+    required super.color,
+    super.strokeWidth,
+    required super.equipmentSize,
+    required Size symbolSize,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final colors = EquipmentPainter.equipmentColorScheme['Reactor']!;
+    final strokePaint = createGradientPaint(size, colors, isFill: false);
+    final shadowPaint = createShadowPaint();
+
+    final centerX = size.width / 2;
+    final centerY = size.height / 2;
+    final coilHeight = size.height * 0.5;
+    final coilWidth = size.width * 0.3;
+
+    // Draw inductor coil (series of arcs) with shadows
+    final numCoils = 4;
+    final coilSpacing = coilHeight / numCoils;
+
+    // Enhanced coil drawing with gradient and shadows
+    for (int i = 0; i < numCoils; i++) {
+      final y = centerY - coilHeight / 2 + i * coilSpacing;
+      final rect = Rect.fromCenter(
+        center: Offset(centerX, y + coilSpacing / 2),
+        width: coilWidth,
+        height: coilSpacing,
+      );
+
+      // Draw shadow
+      final shadowRect = Rect.fromCenter(
+        center: Offset(centerX + 1, y + coilSpacing / 2 + 1),
+        width: coilWidth,
+        height: coilSpacing,
+      );
+      canvas.drawArc(
+        shadowRect,
+        0,
+        pi,
+        false,
+        shadowPaint..strokeWidth = strokeWidth,
+      );
+
+      // Draw coil with gradient
+      final coilPaint = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: colors,
+        ).createShader(rect)
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+
+      canvas.drawArc(rect, 0, pi, false, coilPaint);
+    }
+
+    // Connection lines
+    canvas.drawLine(
+      Offset(centerX, 0),
+      Offset(centerX, centerY - coilHeight / 2),
+      strokePaint,
+    );
+    canvas.drawLine(
+      Offset(centerX, size.height),
+      Offset(centerX, centerY + coilHeight / 2),
+      strokePaint,
+    );
+
+    // Add core representation
+    final corePaint = Paint()
+      ..color = colors[1].withOpacity(0.2)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(centerX + coilWidth * 0.4, centerY),
+          width: coilWidth * 0.15,
+          height: coilHeight * 0.8,
+        ),
+        const Radius.circular(2),
+      ),
+      corePaint,
+    );
+
+    // Draw "L" text
+    drawStyledText(
+      canvas,
+      'L',
+      Offset(centerX + coilWidth / 2 + 8, centerY - size.width * 0.15),
+      colors[0],
+      size.width * 0.3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant ReactorIconPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.strokeWidth != strokeWidth ||
+      oldDelegate.equipmentSize != equipmentSize;
+}

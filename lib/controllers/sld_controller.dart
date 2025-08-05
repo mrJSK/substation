@@ -7,6 +7,7 @@ import '../models/assessment_model.dart';
 
 import '../models/bay_model.dart';
 import '../models/bay_connection_model.dart';
+import '../models/energy_readings_data.dart';
 import '../models/equipment_model.dart';
 import '../painters/single_line_diagram_painter.dart'; // For BayRenderData
 import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart'; // For BayEnergyData (temporary, will refactor later)

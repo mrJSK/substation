@@ -1,9 +1,7 @@
-// lib/equipment_icons/feeder_icon.dart (Revised for "arrow base at end of line" and pointing downwards)
+// lib/equipment_icons/feeder_icon.dart
 
 import 'package:flutter/material.dart';
 import 'dart:math';
-
-// Assuming EquipmentPainter is defined in transformer_icon.dart
 import 'package:substation_manager/equipment_icons/transformer_icon.dart';
 
 class FeederIconPainter extends EquipmentPainter {
@@ -16,55 +14,82 @@ class FeederIconPainter extends EquipmentPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final lineBodyPaint =
-        Paint() // Paint for the main line body
-          ..color = color
-          ..strokeWidth = strokeWidth
-          ..style = PaintingStyle.stroke;
-
-    final arrowheadFillPaint =
-        Paint() // Paint specifically for filling the arrowhead
-          ..color = color
-          ..style = PaintingStyle.fill;
+    final colors = [Color(0xFF2E7D32), Color(0xFF66BB6A)]; // Green for feeder
+    final strokePaint = createGradientPaint(size, colors, isFill: false);
+    final fillPaint = createGradientPaint(size, colors, isFill: true);
+    final shadowPaint = createShadowPaint();
 
     final double centerX = size.width / 2;
+    const double arrowHeight = 12.0;
+    const double arrowBaseWidth = 12.0;
+    final double lineEndY = size.height * 0.9 - arrowHeight;
 
-    const double arrowHeight = 10.0; // Height of the arrowhead
-    const double arrowBaseWidth = 10.0; // Width of the arrowhead base
+    // Enhanced stroke paint
+    strokePaint.strokeCap = StrokeCap.round;
 
-    // The line should end just before the arrowhead starts
-    final double lineEndY = size.height * 0.9 - arrowHeight; // End of the line
-
-    // Draw the main vertical line representing the feeder
+    // Line shadow
     canvas.drawLine(
-      Offset(centerX, 0), // Top of the symbol area
-      Offset(centerX, lineEndY), // End of the line
-      lineBodyPaint,
+      Offset(centerX + 1, 1),
+      Offset(centerX + 1, lineEndY + 1),
+      shadowPaint..strokeWidth = strokeWidth,
     );
 
-    // Draw the arrowhead at the bottom
-    // The base of the arrow should be at the end of the line (lineEndY).
-    // The tip of the arrow will be further down.
+    // Main vertical line with gradient
+    final linePaint = Paint()
+      ..shader =
+          LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: colors,
+          ).createShader(
+            Rect.fromLTWH(centerX - strokeWidth / 2, 0, strokeWidth, lineEndY),
+          )
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(Offset(centerX, 0), Offset(centerX, lineEndY), linePaint);
+
+    // Arrowhead with shadow
     final Offset arrowBaseCenter = Offset(centerX, lineEndY);
+    final arrowPath = Path()
+      ..moveTo(arrowBaseCenter.dx - arrowBaseWidth / 2, arrowBaseCenter.dy)
+      ..lineTo(arrowBaseCenter.dx + arrowBaseWidth / 2, arrowBaseCenter.dy)
+      ..lineTo(centerX, arrowBaseCenter.dy + arrowHeight)
+      ..close();
 
-    final Path arrowPath = Path();
-    // Start at the left base point
-    arrowPath.moveTo(
-      arrowBaseCenter.dx - arrowBaseWidth / 2,
-      arrowBaseCenter.dy,
-    );
-    // Draw to the right base point
-    arrowPath.lineTo(
-      arrowBaseCenter.dx + arrowBaseWidth / 2,
-      arrowBaseCenter.dy,
-    );
-    // Draw to the tip
-    arrowPath.lineTo(
-      centerX,
-      arrowBaseCenter.dy + arrowHeight,
-    ); // Tip is below the base
-    arrowPath.close(); // Closes the path to form a triangle
-    canvas.drawPath(arrowPath, arrowheadFillPaint);
+    // Arrow shadow
+    final arrowShadowPath = Path()
+      ..moveTo(
+        arrowBaseCenter.dx - arrowBaseWidth / 2 + 1,
+        arrowBaseCenter.dy + 1,
+      )
+      ..lineTo(
+        arrowBaseCenter.dx + arrowBaseWidth / 2 + 1,
+        arrowBaseCenter.dy + 1,
+      )
+      ..lineTo(centerX + 1, arrowBaseCenter.dy + arrowHeight + 1)
+      ..close();
+
+    canvas.drawPath(arrowShadowPath, shadowPaint);
+    canvas.drawPath(arrowPath, fillPaint);
+    canvas.drawPath(arrowPath, strokePaint..style = PaintingStyle.stroke);
+
+    // Add feeder identification marks
+    final markPaint = Paint()
+      ..color = colors[1]
+      ..strokeWidth = strokeWidth * 0.6
+      ..strokeCap = StrokeCap.round;
+
+    // Three small perpendicular lines
+    for (int i = 1; i <= 3; i++) {
+      final y = size.height * 0.15 * i;
+      canvas.drawLine(
+        Offset(centerX - size.width * 0.1, y),
+        Offset(centerX + size.width * 0.1, y),
+        markPaint,
+      );
+    }
   }
 
   @override

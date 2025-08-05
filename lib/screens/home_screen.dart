@@ -1,4 +1,3 @@
-// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,7 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/user_model.dart';
 import '../models/hierarchy_models.dart';
-import '../models/app_state_data.dart'; // Import the updated AppStateData
+import '../models/app_state_data.dart';
 import '../screens/auth_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/equipment_hierarchy_selection_screen.dart';
@@ -20,29 +19,28 @@ import 'subdivision_dashboard_tabs/chart_configuration_screen.dart';
 import '../controllers/sld_controller.dart';
 import '../utils/snackbar_utils.dart';
 
-// NEW: HomeRouter - This widget will handle routing based on authentication and user role
 class HomeRouter extends StatelessWidget {
   const HomeRouter({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Listen to AppStateData for current user and initialization status
     final appStateData = Provider.of<AppStateData>(context);
+    final theme = Theme.of(context);
 
-    // Show a loading indicator if AppStateData is not yet fully initialized
     if (!appStateData.isInitialized) {
-      // This state should ideally be handled by the FutureBuilder in main.dart
-      // but as a fallback, if we somehow reach here before full init, show a simple loading.
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: const Color(0xFFFAFAFA),
+        body: Center(
+          child: CircularProgressIndicator(color: theme.colorScheme.primary),
+        ),
+      );
     }
 
     final AppUser? currentUser = appStateData.currentUser;
 
     if (currentUser == null) {
-      // No user is authenticated, navigate to AuthScreen
       return const AuthScreen();
     } else {
-      // User is authenticated, check approval status and role
       if (currentUser.approved) {
         switch (currentUser.role) {
           case UserRole.admin:
@@ -52,40 +50,49 @@ class HomeRouter extends StatelessWidget {
           case UserRole.subdivisionManager:
             return SubdivisionManagerHomeScreen(appUser: currentUser);
           default:
-            // Handle unrecognized roles or default to AuthScreen with a message
             WidgetsBinding.instance.addPostFrameCallback((_) {
               SnackBarUtils.showSnackBar(
                 context,
                 'Your user role is not recognized. Please log in again or contact support.',
                 isError: true,
               );
-              // Force sign out if role is unrecognized
               FirebaseAuth.instance.signOut();
               GoogleSignIn().signOut();
             });
             return const AuthScreen();
         }
       } else {
-        // User is not approved, show pending approval screen
-        return const Scaffold(
+        return Scaffold(
+          backgroundColor: const Color(0xFFFAFAFA),
           body: Center(
             child: Padding(
-              padding: EdgeInsets.all(24.0),
+              padding: const EdgeInsets.all(24.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.hourglass_empty, size: 80, color: Colors.blue),
-                  SizedBox(height: 20),
+                  Icon(
+                    Icons.hourglass_empty,
+                    size: 64,
+                    color: theme.colorScheme.primary.withOpacity(0.6),
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     'Your account is pending approval by an admin.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    ),
                   ),
-                  SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Text(
                     'Please wait while an administrator reviews your registration.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                    ),
                   ),
                 ],
               ),
@@ -97,42 +104,25 @@ class HomeRouter extends StatelessWidget {
   }
 }
 
-// Base Home Screen class for shared functionality
 abstract class BaseHomeScreen extends StatefulWidget {
   final AppUser appUser;
-  final Widget? drawer; // NEW: Add a drawer property
+  final Widget? drawer;
 
-  const BaseHomeScreen({
-    super.key,
-    required this.appUser,
-    this.drawer,
-  }); // NEW: Add drawer to constructor
+  const BaseHomeScreen({super.key, required this.appUser, this.drawer});
 
   @override
   BaseHomeScreenState createState();
 }
 
 abstract class BaseHomeScreenState<T extends BaseHomeScreen> extends State<T> {
-  // buildDrawer is REMOVED from here. Each dashboard will provide its drawer to BaseHomeScreen.
-
   @override
   Widget build(BuildContext context) {
-    // AppStateData is now handled by MyApp and HomeRouter for theme
-    // We still need it here for the theme toggle in the drawer
-    final appStateData = Provider.of<AppStateData>(
-      context,
-    ); // Keep for theme toggle in common drawer widgets
-
-    // The Scaffold is now built WITHIN the AdminDashboardScreen, SubstationUserDashboardScreen, etc.
-    // BaseHomeScreenState's build method will simply return the dashboard screen.
-    return buildBody(context); // buildBody will now return a Scaffold
+    return buildBody(context);
   }
 
-  // This method will now return a Scaffold (which contains its own AppBar and body)
   Widget buildBody(BuildContext context);
 }
 
-// Admin Home Screen (remains largely the same)
 class AdminHomeScreen extends BaseHomeScreen {
   static const String routeName = '/admin_home';
 
@@ -145,24 +135,26 @@ class AdminHomeScreen extends BaseHomeScreen {
 class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
   @override
   Widget buildBody(BuildContext context) {
-    // AdminDashboardScreen will now contain its own Scaffold and AppBar
     return AdminDashboardScreen(
       adminUser: widget.appUser,
-      // Pass the common drawer to the dashboard screen
       drawer: _buildAdminDrawer(context),
     );
   }
 
-  // Admin specific drawer
   Widget _buildAdminDrawer(BuildContext context) {
+    final theme = Theme.of(context);
     return Drawer(
+      backgroundColor: const Color(0xFFFAFAFA),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(16)),
+      ),
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           _buildDrawerHeader(context, 'Admin'),
-          ListTile(
-            leading: const Icon(Icons.rule),
-            title: const Text('Reading Templates'),
+          _buildDrawerItem(
+            icon: Icons.rule,
+            title: 'Reading Templates',
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(
@@ -171,10 +163,11 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
                 ),
               );
             },
+            theme: theme,
           ),
-          ListTile(
-            leading: const Icon(Icons.flash_on),
-            title: const Text('Energy SLD'),
+          _buildDrawerItem(
+            icon: Icons.flash_on,
+            title: 'Energy SLD',
             onTap: () async {
               Navigator.of(context).pop();
               final selectedSubstation =
@@ -188,7 +181,7 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
                       )
                       as Substation?;
               if (selectedSubstation != null) {
-                if (!mounted) return; // Add mounted check
+                if (!mounted) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => ChangeNotifierProvider<SldController>(
@@ -205,7 +198,7 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
                   ),
                 );
               } else {
-                if (!mounted) return; // Add mounted check
+                if (!mounted) return;
                 SnackBarUtils.showSnackBar(
                   context,
                   'No substation selected for Energy SLD.',
@@ -213,10 +206,11 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
                 );
               }
             },
+            theme: theme,
           ),
-          ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('View Saved SLDs'),
+          _buildDrawerItem(
+            icon: Icons.history,
+            title: 'View Saved SLDs',
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(
@@ -226,10 +220,11 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
                 ),
               );
             },
+            theme: theme,
           ),
-          const Divider(),
+          const Divider(height: 1, thickness: 1, color: Colors.grey),
           _buildThemeToggle(context),
-          const Divider(),
+          const Divider(height: 1, thickness: 1, color: Colors.grey),
           _buildLogoutTile(context),
         ],
       ),
@@ -237,28 +232,39 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
   }
 
   Widget _buildDrawerHeader(BuildContext context, String role) {
+    final theme = Theme.of(context);
     return DrawerHeader(
-      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Substation Manager Pro',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onPrimary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             widget.appUser.email,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onPrimary,
             ),
           ),
+          const SizedBox(height: 4),
           Text(
             'Role: $role',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onPrimary.withOpacity(0.7),
             ),
           ),
         ],
@@ -267,7 +273,6 @@ class _AdminHomeScreenState extends BaseHomeScreenState<AdminHomeScreen> {
   }
 }
 
-// Substation User Home Screen
 class SubstationUserHomeScreen extends BaseHomeScreen {
   static const String routeName = '/substation_user_home';
 
@@ -281,23 +286,26 @@ class _SubstationUserHomeScreenState
     extends BaseHomeScreenState<SubstationUserHomeScreen> {
   @override
   Widget buildBody(BuildContext context) {
-    // SubstationUserDashboardScreen will now contain its own Scaffold and AppBar
     return SubstationUserDashboardScreen(
       currentUser: widget.appUser,
-      // Pass the common drawer to the dashboard screen
       drawer: _buildSubstationUserDrawer(context),
     );
   }
 
   Widget _buildSubstationUserDrawer(BuildContext context) {
+    final theme = Theme.of(context);
     return Drawer(
+      backgroundColor: const Color(0xFFFAFAFA),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(16)),
+      ),
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           _buildDrawerHeader(context, 'Substation User'),
-          const Divider(),
+          const Divider(height: 1, thickness: 1, color: Colors.grey),
           _buildThemeToggle(context),
-          const Divider(),
+          const Divider(height: 1, thickness: 1, color: Colors.grey),
           _buildLogoutTile(context),
         ],
       ),
@@ -305,28 +313,39 @@ class _SubstationUserHomeScreenState
   }
 
   Widget _buildDrawerHeader(BuildContext context, String role) {
+    final theme = Theme.of(context);
     return DrawerHeader(
-      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Substation Manager Pro',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onPrimary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             widget.appUser.email,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onPrimary,
             ),
           ),
+          const SizedBox(height: 4),
           Text(
             'Role: $role',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onPrimary.withOpacity(0.7),
             ),
           ),
         ],
@@ -335,7 +354,6 @@ class _SubstationUserHomeScreenState
   }
 }
 
-// Subdivision Manager Home Screen
 class SubdivisionManagerHomeScreen extends BaseHomeScreen {
   static const String routeName = '/subdivision_manager_home';
 
@@ -349,35 +367,39 @@ class _SubdivisionManagerHomeScreenState
     extends BaseHomeScreenState<SubdivisionManagerHomeScreen> {
   @override
   Widget buildBody(BuildContext context) {
-    // SubdivisionDashboardScreen will now contain its own Scaffold and AppBar
     return SubdivisionDashboardScreen(
       currentUser: widget.appUser,
-      // Pass the common drawer to the dashboard screen
       drawer: _buildSubdivisionManagerDrawer(context),
     );
   }
 
   Widget _buildSubdivisionManagerDrawer(BuildContext context) {
+    final theme = Theme.of(context);
     return Drawer(
+      backgroundColor: const Color(0xFFFAFAFA),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(16)),
+      ),
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           _buildDrawerHeader(context, 'Subdivision Manager'),
-          ListTile(
-            leading: const Icon(Icons.dashboard),
-            title: const Text('Subdivision Dashboard'),
+          _buildDrawerItem(
+            icon: Icons.dashboard,
+            title: 'Subdivision Dashboard',
             onTap: () {
               Navigator.of(context).pop();
             },
+            theme: theme,
           ),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('Configure Charts'),
+          _buildDrawerItem(
+            icon: Icons.settings,
+            title: 'Configure Charts',
             onTap: () {
               Navigator.of(context).pop();
               if (widget.appUser.assignedLevels != null &&
                   widget.appUser.assignedLevels!.containsKey('subdivisionId')) {
-                if (!mounted) return; // Add mounted check
+                if (!mounted) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => ReadingConfigurationScreen(
@@ -388,7 +410,7 @@ class _SubdivisionManagerHomeScreenState
                   ),
                 );
               } else {
-                if (!mounted) return; // Add mounted check
+                if (!mounted) return;
                 SnackBarUtils.showSnackBar(
                   context,
                   'No subdivision assigned to this user.',
@@ -396,10 +418,11 @@ class _SubdivisionManagerHomeScreenState
                 );
               }
             },
+            theme: theme,
           ),
-          ListTile(
-            leading: const Icon(Icons.flash_on),
-            title: const Text('Energy SLD'),
+          _buildDrawerItem(
+            icon: Icons.flash_on,
+            title: 'Energy SLD',
             onTap: () async {
               Navigator.of(context).pop();
               final selectedSubstation =
@@ -413,7 +436,7 @@ class _SubdivisionManagerHomeScreenState
                       )
                       as Substation?;
               if (selectedSubstation != null) {
-                if (!mounted) return; // Add mounted check
+                if (!mounted) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => ChangeNotifierProvider<SldController>(
@@ -430,7 +453,7 @@ class _SubdivisionManagerHomeScreenState
                   ),
                 );
               } else {
-                if (!mounted) return; // Add mounted check
+                if (!mounted) return;
                 SnackBarUtils.showSnackBar(
                   context,
                   'No substation selected for Energy SLD.',
@@ -438,10 +461,11 @@ class _SubdivisionManagerHomeScreenState
                 );
               }
             },
+            theme: theme,
           ),
-          ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('View Saved SLDs'),
+          _buildDrawerItem(
+            icon: Icons.history,
+            title: 'View Saved SLDs',
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(
@@ -451,10 +475,11 @@ class _SubdivisionManagerHomeScreenState
                 ),
               );
             },
+            theme: theme,
           ),
-          const Divider(),
+          const Divider(height: 1, thickness: 1, color: Colors.grey),
           _buildThemeToggle(context),
-          const Divider(),
+          const Divider(height: 1, thickness: 1, color: Colors.grey),
           _buildLogoutTile(context),
         ],
       ),
@@ -462,28 +487,39 @@ class _SubdivisionManagerHomeScreenState
   }
 
   Widget _buildDrawerHeader(BuildContext context, String role) {
+    final theme = Theme.of(context);
     return DrawerHeader(
-      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Substation Manager Pro',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onPrimary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             widget.appUser.email,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onPrimary,
             ),
           ),
+          const SizedBox(height: 4),
           Text(
             'Role: $role',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onPrimary.withOpacity(0.7),
             ),
           ),
         ],
@@ -492,35 +528,101 @@ class _SubdivisionManagerHomeScreenState
   }
 }
 
-// Common widgets for drawer
+Widget _buildDrawerItem({
+  required IconData icon,
+  required String title,
+  required VoidCallback onTap,
+  required ThemeData theme,
+}) {
+  return ListTile(
+    leading: Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Icon(icon, size: 16, color: theme.colorScheme.primary),
+    ),
+    title: Text(
+      title,
+      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+    ),
+    onTap: onTap,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    tileColor: Colors.white,
+    selectedTileColor: theme.colorScheme.primary.withOpacity(0.05),
+  );
+}
+
 Widget _buildThemeToggle(BuildContext context) {
+  final theme = Theme.of(context);
   final appStateData = Provider.of<AppStateData>(context, listen: false);
   return ListTile(
-    leading: Icon(
-      appStateData.themeMode == ThemeMode.light
-          ? Icons.dark_mode
-          : Icons.light_mode,
+    leading: Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Icon(
+        appStateData.themeMode == ThemeMode.light
+            ? Icons.dark_mode
+            : Icons.light_mode,
+        size: 16,
+        color: theme.colorScheme.primary,
+      ),
     ),
-    title: const Text('Dark Mode'),
+    title: const Text(
+      'Dark Mode',
+      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+    ),
     trailing: Switch(
       value: appStateData.themeMode == ThemeMode.dark,
       onChanged: (value) {
         appStateData.toggleTheme();
       },
-      activeColor: Theme.of(context).colorScheme.primary,
+      activeColor: theme.colorScheme.primary,
+      inactiveThumbColor: Colors.grey.shade400,
+      inactiveTrackColor: Colors.grey.shade200,
     ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    tileColor: Colors.white,
+    selectedTileColor: theme.colorScheme.primary.withOpacity(0.05),
   );
 }
 
 Widget _buildLogoutTile(BuildContext context) {
+  final theme = Theme.of(context);
   return ListTile(
-    leading: const Icon(Icons.logout),
-    title: const Text('Logout'),
+    leading: Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.error.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Icon(Icons.logout, size: 16, color: theme.colorScheme.error),
+    ),
+    title: const Text(
+      'Logout',
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: Colors.red,
+      ),
+    ),
     onTap: () async {
-      Navigator.of(context).pop(); // Close drawer
+      Navigator.of(context).pop();
       await FirebaseAuth.instance.signOut();
       await GoogleSignIn().signOut();
-      // No need to navigate here, HomeRouter will react to auth state change
     },
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    tileColor: Colors.white,
+    selectedTileColor: theme.colorScheme.error.withOpacity(0.05),
   );
 }

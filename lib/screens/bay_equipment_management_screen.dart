@@ -15,7 +15,6 @@ import '../../equipment_icons/transformer_icon.dart';
 import '../../equipment_icons/busbar_icon.dart';
 import '../../equipment_icons/circuit_breaker_icon.dart';
 import '../../equipment_icons/ct_icon.dart';
-import '../../equipment_icons/disconnector_icon.dart';
 import '../../equipment_icons/ground_icon.dart';
 import '../../equipment_icons/isolator_icon.dart';
 import '../../equipment_icons/pt_icon.dart';
@@ -73,12 +72,6 @@ class BayEquipmentDiagramPainter extends CustomPainter {
       case 'current transformer':
       case 'ct':
         return CurrentTransformerIconPainter(
-          color: color,
-          equipmentSize: size,
-          symbolSize: size,
-        );
-      case 'disconnector':
-        return DisconnectorIconPainter(
           color: color,
           equipmentSize: size,
           symbolSize: size,

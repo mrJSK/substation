@@ -14,56 +14,84 @@ class PotentialTransformerIconPainter extends EquipmentPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
+    final colors =
+        EquipmentPainter.equipmentColorScheme['Voltage Transformer']!;
+    final strokePaint = createGradientPaint(size, colors, isFill: false);
+    final fillPaint = createGradientPaint(size, colors, isFill: true);
+    final shadowPaint = createShadowPaint();
 
     final centerX = size.width / 2;
     final centerY = size.height / 2;
     final coilRadius = min(size.width, size.height) * 0.2;
 
-    // Simple coil shape (two overlapping circles)
+    // Draw shadows
+    canvas.drawCircle(
+      Offset(centerX + 1, centerY - coilRadius / 2 + 1),
+      coilRadius,
+      shadowPaint,
+    );
+    canvas.drawCircle(
+      Offset(centerX + 1, centerY + coilRadius / 2 + 1),
+      coilRadius,
+      shadowPaint,
+    );
+
+    // Draw coil shapes with gradient fill
     canvas.drawCircle(
       Offset(centerX, centerY - coilRadius / 2),
       coilRadius,
-      paint,
+      fillPaint..color = colors[1].withOpacity(0.2),
     );
     canvas.drawCircle(
       Offset(centerX, centerY + coilRadius / 2),
       coilRadius,
-      paint,
+      fillPaint..color = colors[1].withOpacity(0.2),
     );
 
-    // Primary lines (extend to the top/bottom of the CustomPaint widget)
+    // Draw outlines
+    canvas.drawCircle(
+      Offset(centerX, centerY - coilRadius / 2),
+      coilRadius,
+      strokePaint,
+    );
+    canvas.drawCircle(
+      Offset(centerX, centerY + coilRadius / 2),
+      coilRadius,
+      strokePaint,
+    );
+
+    // Primary lines with enhanced styling
     canvas.drawLine(
       Offset(centerX, 0),
       Offset(centerX, centerY - coilRadius),
-      paint,
+      strokePaint,
     );
     canvas.drawLine(
       Offset(centerX, size.height),
       Offset(centerX, centerY + coilRadius),
-      paint,
+      strokePaint,
+    );
+
+    // Add connection dots
+    final dotPaint = createGradientPaint(size, colors, isFill: true);
+    canvas.drawCircle(
+      Offset(centerX, centerY - coilRadius),
+      strokeWidth * 0.8,
+      dotPaint,
+    );
+    canvas.drawCircle(
+      Offset(centerX, centerY + coilRadius),
+      strokeWidth * 0.8,
+      dotPaint,
     );
 
     // Draw "PT" text
-    final textSpan = TextSpan(
-      text: 'PT',
-      style: TextStyle(
-        color: color,
-        fontSize: size.width * 0.25,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
+    drawStyledText(
       canvas,
-      Offset(centerX + coilRadius + 5, centerY - textPainter.height / 2),
+      'PT',
+      Offset(centerX + coilRadius + 5, centerY - size.width * 0.125),
+      colors[0],
+      size.width * 0.25,
     );
   }
 

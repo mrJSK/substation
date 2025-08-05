@@ -1,6 +1,9 @@
 // lib/models/hierarchy_models.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// ---------------------------------------------------------------------------
+///                               Core abstract
+/// ---------------------------------------------------------------------------
 abstract class HierarchyItem {
   final String id;
   final String name;
@@ -30,17 +33,19 @@ abstract class HierarchyItem {
   Map<String, dynamic> toFirestore();
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is HierarchyItem &&
-        runtimeType == other.runtimeType &&
-        id == other.id;
-  }
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HierarchyItem &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
 
   @override
   int get hashCode => id.hashCode;
 }
 
+/// ---------------------------------------------------------------------------
+///                               Application State
+/// ---------------------------------------------------------------------------
 class AppScreenState extends HierarchyItem {
   AppScreenState({
     required super.id,
@@ -56,7 +61,7 @@ class AppScreenState extends HierarchyItem {
   });
 
   factory AppScreenState.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return AppScreenState(
       id: doc.id,
       name: data['name'] ?? '',
@@ -72,19 +77,17 @@ class AppScreenState extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'address': address,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   AppScreenState copyWith({
     String? id,
@@ -97,23 +100,23 @@ class AppScreenState extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return AppScreenState(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      address: address ?? this.address,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => AppScreenState(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    address: address ?? this.address,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
-// NEW: Company Model
+/// ---------------------------------------------------------------------------
+///                               Transmission side
+/// ---------------------------------------------------------------------------
 class Company extends HierarchyItem {
   final String stateId;
 
@@ -132,7 +135,7 @@ class Company extends HierarchyItem {
   });
 
   factory Company.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return Company(
       id: doc.id,
       name: data['name'] ?? '',
@@ -149,20 +152,18 @@ class Company extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'stateId': stateId,
-      'address': address,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'stateId': stateId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   Company copyWith({
     String? id,
@@ -176,25 +177,23 @@ class Company extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return Company(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      stateId: stateId ?? this.stateId,
-      address: address ?? this.address,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => Company(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    stateId: stateId ?? this.stateId,
+    address: address ?? this.address,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class Zone extends HierarchyItem {
-  final String companyId; // Changed from stateName to companyId
+  final String companyId;
 
   Zone({
     required super.id,
@@ -211,7 +210,7 @@ class Zone extends HierarchyItem {
   });
 
   factory Zone.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return Zone(
       id: doc.id,
       name: data['name'] ?? '',
@@ -228,20 +227,18 @@ class Zone extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'companyId': companyId,
-      'address': address,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'companyId': companyId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   Zone copyWith({
     String? id,
@@ -255,21 +252,19 @@ class Zone extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return Zone(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      companyId: companyId ?? this.companyId,
-      address: address ?? this.address,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => Zone(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    companyId: companyId ?? this.companyId,
+    address: address ?? this.address,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class Circle extends HierarchyItem {
@@ -290,7 +285,7 @@ class Circle extends HierarchyItem {
   });
 
   factory Circle.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return Circle(
       id: doc.id,
       name: data['name'] ?? '',
@@ -307,20 +302,18 @@ class Circle extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'zoneId': zoneId,
-      'address': address,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'zoneId': zoneId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   Circle copyWith({
     String? id,
@@ -334,21 +327,19 @@ class Circle extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return Circle(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      address: address ?? this.address,
-      zoneId: zoneId ?? this.zoneId,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => Circle(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    zoneId: zoneId ?? this.zoneId,
+    address: address ?? this.address,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class Division extends HierarchyItem {
@@ -369,7 +360,7 @@ class Division extends HierarchyItem {
   });
 
   factory Division.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return Division(
       id: doc.id,
       name: data['name'] ?? '',
@@ -386,20 +377,18 @@ class Division extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'circleId': circleId,
-      'address': address,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'circleId': circleId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   Division copyWith({
     String? id,
@@ -413,21 +402,19 @@ class Division extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return Division(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      circleId: circleId ?? this.circleId,
-      address: address ?? this.address,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => Division(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    circleId: circleId ?? this.circleId,
+    address: address ?? this.address,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class Subdivision extends HierarchyItem {
@@ -448,7 +435,7 @@ class Subdivision extends HierarchyItem {
   });
 
   factory Subdivision.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return Subdivision(
       id: doc.id,
       name: data['name'] ?? '',
@@ -465,20 +452,18 @@ class Subdivision extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'divisionId': divisionId,
-      'address': address,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'divisionId': divisionId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   Subdivision copyWith({
     String? id,
@@ -492,26 +477,23 @@ class Subdivision extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return Subdivision(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      divisionId: divisionId ?? this.divisionId,
-      address: address ?? this.address,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => Subdivision(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    divisionId: divisionId ?? this.divisionId,
+    address: address ?? this.address,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class Substation extends HierarchyItem {
   final String subdivisionId;
-  final String? address;
   final String? cityId;
 
   final String? voltageLevel;
@@ -544,8 +526,11 @@ class Substation extends HierarchyItem {
     this.statusDescription,
   });
 
+  @override
+  final String? address;
+
   factory Substation.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return Substation(
       id: doc.id,
       name: data['name'] ?? '',
@@ -570,28 +555,26 @@ class Substation extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'subdivisionId': subdivisionId,
-      'address': address,
-      'cityId': cityId,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-      'voltageLevel': voltageLevel,
-      'type': type,
-      'operation': operation,
-      'sasMake': sasMake,
-      'commissioningDate': commissioningDate,
-      'status': status,
-      'statusDescription': statusDescription,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'subdivisionId': subdivisionId,
+    'address': address,
+    'cityId': cityId,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+    'voltageLevel': voltageLevel,
+    'type': type,
+    'operation': operation,
+    'sasMake': sasMake,
+    'commissioningDate': commissioningDate,
+    'status': status,
+    'statusDescription': statusDescription,
+  };
 
   Substation copyWith({
     String? id,
@@ -613,31 +596,32 @@ class Substation extends HierarchyItem {
     Timestamp? commissioningDate,
     String? status,
     String? statusDescription,
-  }) {
-    return Substation(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      subdivisionId: subdivisionId ?? this.subdivisionId,
-      address: address ?? this.address,
-      cityId: cityId ?? this.cityId,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-      voltageLevel: voltageLevel ?? this.voltageLevel,
-      type: type ?? this.type,
-      operation: operation ?? this.operation,
-      sasMake: sasMake ?? this.sasMake,
-      commissioningDate: commissioningDate ?? this.commissioningDate,
-      status: status ?? this.status,
-      statusDescription: statusDescription ?? this.statusDescription,
-    );
-  }
+  }) => Substation(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    subdivisionId: subdivisionId ?? this.subdivisionId,
+    address: address ?? this.address,
+    cityId: cityId ?? this.cityId,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+    voltageLevel: voltageLevel ?? this.voltageLevel,
+    type: type ?? this.type,
+    operation: operation ?? this.operation,
+    sasMake: sasMake ?? this.sasMake,
+    commissioningDate: commissioningDate ?? this.commissioningDate,
+    status: status ?? this.status,
+    statusDescription: statusDescription ?? this.statusDescription,
+  );
 }
 
+/// ---------------------------------------------------------------------------
+///                               Distribution side
+/// ---------------------------------------------------------------------------
 class DistributionZone extends HierarchyItem {
   final String stateName;
 
@@ -655,7 +639,7 @@ class DistributionZone extends HierarchyItem {
   });
 
   factory DistributionZone.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return DistributionZone(
       id: doc.id,
       name: data['name'] ?? '',
@@ -671,19 +655,17 @@ class DistributionZone extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'stateName': stateName,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'stateName': stateName,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   DistributionZone copyWith({
     String? id,
@@ -696,20 +678,18 @@ class DistributionZone extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return DistributionZone(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      stateName: stateName ?? this.stateName,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => DistributionZone(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    stateName: stateName ?? this.stateName,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class DistributionCircle extends HierarchyItem {
@@ -729,7 +709,7 @@ class DistributionCircle extends HierarchyItem {
   });
 
   factory DistributionCircle.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return DistributionCircle(
       id: doc.id,
       name: data['name'] ?? '',
@@ -745,19 +725,17 @@ class DistributionCircle extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'distributionZoneId': distributionZoneId,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'distributionZoneId': distributionZoneId,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   DistributionCircle copyWith({
     String? id,
@@ -770,20 +748,18 @@ class DistributionCircle extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return DistributionCircle(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      distributionZoneId: distributionZoneId ?? this.distributionZoneId,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => DistributionCircle(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    distributionZoneId: distributionZoneId ?? this.distributionZoneId,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class DistributionDivision extends HierarchyItem {
@@ -803,7 +779,7 @@ class DistributionDivision extends HierarchyItem {
   });
 
   factory DistributionDivision.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return DistributionDivision(
       id: doc.id,
       name: data['name'] ?? '',
@@ -819,19 +795,17 @@ class DistributionDivision extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'distributionCircleId': distributionCircleId,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'distributionCircleId': distributionCircleId,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   DistributionDivision copyWith({
     String? id,
@@ -844,24 +818,23 @@ class DistributionDivision extends HierarchyItem {
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return DistributionDivision(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      distributionCircleId: distributionCircleId ?? this.distributionCircleId,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => DistributionDivision(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    distributionCircleId: distributionCircleId ?? this.distributionCircleId,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }
 
 class DistributionSubdivision extends HierarchyItem {
   final String distributionDivisionId;
+  final List<String> substationIds; // <-- NEW
 
   DistributionSubdivision({
     required super.id,
@@ -870,6 +843,7 @@ class DistributionSubdivision extends HierarchyItem {
     super.createdBy,
     super.createdAt,
     required this.distributionDivisionId,
+    this.substationIds = const [],
     super.landmark,
     super.contactNumber,
     super.contactPerson,
@@ -877,7 +851,7 @@ class DistributionSubdivision extends HierarchyItem {
   });
 
   factory DistributionSubdivision.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>;
     return DistributionSubdivision(
       id: doc.id,
       name: data['name'] ?? '',
@@ -885,6 +859,7 @@ class DistributionSubdivision extends HierarchyItem {
       createdBy: data['createdBy'],
       createdAt: data['createdAt'],
       distributionDivisionId: data['distributionDivisionId'] ?? '',
+      substationIds: List<String>.from(data['substationIds'] ?? []),
       landmark: data['landmark'],
       contactNumber: data['contactNumber'],
       contactPerson: data['contactPerson'],
@@ -893,19 +868,18 @@ class DistributionSubdivision extends HierarchyItem {
   }
 
   @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'description': description,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'distributionDivisionId': distributionDivisionId,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'distributionDivisionId': distributionDivisionId,
+    'substationIds': substationIds,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   DistributionSubdivision copyWith({
     String? id,
@@ -914,23 +888,23 @@ class DistributionSubdivision extends HierarchyItem {
     String? createdBy,
     Timestamp? createdAt,
     String? distributionDivisionId,
+    List<String>? substationIds,
     String? landmark,
     String? contactNumber,
     String? contactPerson,
     String? contactDesignation,
-  }) {
-    return DistributionSubdivision(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      distributionDivisionId:
-          distributionDivisionId ?? this.distributionDivisionId,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-    );
-  }
+  }) => DistributionSubdivision(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    distributionDivisionId:
+        distributionDivisionId ?? this.distributionDivisionId,
+    substationIds: substationIds ?? this.substationIds,
+    landmark: landmark ?? this.landmark,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+  );
 }

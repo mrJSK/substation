@@ -1,27 +1,31 @@
 // lib/screens/subdivision_dashboard_tabs/asset_management_tab.dart
 
 import 'package:flutter/material.dart';
-
 import '../../models/user_model.dart';
-import 'subdivision_asset_management_screen.dart'; // Assuming this screen exists
+import 'subdivision_asset_management_screen.dart';
 
 class AssetManagementTab extends StatelessWidget {
   final AppUser currentUser;
   final String subdivisionId;
+  final String? selectedSubstationId;
+  final String substationId;
 
   const AssetManagementTab({
     Key? key,
     required this.currentUser,
     required this.subdivisionId,
-    String? selectedSubstationId,
-    required String substationId,
+    this.selectedSubstationId,
+    required this.substationId,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return SubdivisionAssetManagementScreen(
-      subdivisionId: subdivisionId,
-      currentUser: currentUser,
+    return Container(
+      color: const Color(0xFFFAFAFA),
+      child: SubdivisionAssetManagementScreen(
+        subdivisionId: subdivisionId,
+        currentUser: currentUser,
+      ),
     );
   }
 }

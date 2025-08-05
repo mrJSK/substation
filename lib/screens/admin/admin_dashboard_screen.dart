@@ -11,325 +11,230 @@ import 'bay_relationship_management_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final AppUser adminUser;
-  final Widget? drawer; // NEW: Add drawer property
+  final Widget? drawer;
 
-  const AdminDashboardScreen({
-    super.key,
-    required this.adminUser,
-    this.drawer,
-  }); // NEW: Add drawer to constructor
+  const AdminDashboardScreen({super.key, required this.adminUser, this.drawer});
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    );
-    _animationController.forward();
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
+class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> dashboardItems = [
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: _buildAppBar(theme),
+      drawer: widget.drawer,
+      body: _buildBody(theme),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      title: Text(
+        'Admin Dashboard',
+        style: TextStyle(
+          color: theme.colorScheme.onSurface,
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      leading: Builder(
+        builder: (context) => IconButton(
+          icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(theme),
+          const SizedBox(height: 32),
+          _buildFunctionGrid(theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme) {
+    final username = widget.adminUser.email.split('@').first;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Icon(
+              Icons.person,
+              color: theme.colorScheme.primary,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome, $username',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Manage all aspects of Substation Manager Pro',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFunctionGrid(ThemeData theme) {
+    final functions = _getDashboardFunctions();
+
+    return Column(
+      children: [
+        for (int i = 0; i < functions.length; i += 2)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Row(
+              children: [
+                Expanded(child: _buildFunctionCard(functions[i], theme)),
+                if (i + 1 < functions.length) ...[
+                  const SizedBox(width: 16),
+                  Expanded(child: _buildFunctionCard(functions[i + 1], theme)),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFunctionCard(Map<String, dynamic> function, ThemeData theme) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => function['screen']),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(function['icon'], color: function['color'], size: 24),
+            const SizedBox(height: 16),
+            Text(
+              function['title'],
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              function['subtitle'],
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _getDashboardFunctions() {
+    return [
       {
-        'title': 'Manage Hierarchy',
-        'subtitle': 'Zones, Circles, Divisions, Substations',
-        'icon': Icons.account_tree,
+        'title': 'Hierarchy',
+        'subtitle': 'Manage zones, circles, divisions, substations',
+        'icon': Icons.account_tree_outlined,
         'screen': const AdminHierarchyScreen(),
-        'color': Theme.of(context).colorScheme.primary,
+        'color': Colors.blue,
       },
       {
-        'title': 'User Management',
+        'title': 'Users',
         'subtitle': 'Approve users and assign roles',
-        'icon': Icons.people,
+        'icon': Icons.people_outline,
         'screen': const UserManagementScreen(),
-        'color': Theme.of(context).colorScheme.secondary,
+        'color': Colors.green,
       },
       {
-        'title': 'Master Equipment',
+        'title': 'Equipment',
         'subtitle': 'Define equipment templates',
-        'icon': Icons.construction,
+        'icon': Icons.construction_outlined,
         'screen': const MasterEquipmentScreen(),
-        'color': Theme.of(context).colorScheme.tertiary,
+        'color': Colors.orange,
       },
       {
-        'title': 'Reading Templates',
+        'title': 'Templates',
         'subtitle': 'Define reading parameters for bays',
-        'icon': Icons.rule,
+        'icon': Icons.rule_outlined,
         'screen': const ReadingTemplateManagementScreen(),
-        'color': Colors.cyan,
+        'color': Colors.purple,
       },
       {
-        'title': 'Manage Substations & Equipment',
-        'subtitle': 'Browse substations and manage bays/equipment',
-        'icon': Icons.electrical_services,
+        'title': 'Substations',
+        'subtitle': 'Browse substations and manage equipment',
+        'icon': Icons.electrical_services_outlined,
         'screen': EquipmentHierarchySelectionScreen(
           currentUser: widget.adminUser,
         ),
         'color': Colors.indigo,
       },
       {
-        'title': 'Bay Relationship Management',
-        'subtitle':
-            'Define relationships between bays (e.g., Transformer to Bus)',
+        'title': 'Relationships',
+        'subtitle': 'Define relationships between bays',
         'icon': Icons.link,
         'screen': BayRelationshipManagementScreen(
           currentUser: widget.adminUser,
         ),
-        'color': Colors.purple,
+        'color': Colors.teal,
       },
       {
-        'title': 'Export Data',
+        'title': 'Export',
         'subtitle': 'Generate reports and data exports',
-        'icon': Icons.download,
+        'icon': Icons.download_outlined,
         'screen': const Center(
           child: Text('Export Data Screen (Coming Soon!)'),
         ),
-        'color': Colors.redAccent.shade700,
+        'color': Colors.red,
       },
     ];
-
-    return Scaffold(
-      appBar: AppBar(
-        // ADDED AppBar
-        title: const Text('Admin Dashboard'),
-        centerTitle: true,
-        leading: Builder(
-          // ADDED Builder for leading icon
-          builder: (BuildContext context) {
-            return IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () {
-                Scaffold.of(
-                  context,
-                ).openDrawer(); // Access the parent Scaffold's drawer
-              },
-              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
-            );
-          },
-        ),
-      ),
-      drawer: widget.drawer, // NEW: Use the passed drawer
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.1),
-                  ),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: LinearGradient(
-                      colors: [
-                        Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                        Theme.of(context).colorScheme.background,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Hello, ${widget.adminUser.email.split('@').first.toUpperCase()}!',
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Welcome to your Admin Control Panel. Manage all aspects of the Substation Manager Pro.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withOpacity(0.7),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Admin Functions',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 16),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: MediaQuery.of(context).size.width > 600
-                      ? 3
-                      : 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: MediaQuery.of(context).size.width > 600
-                      ? 1.2
-                      : 1.0,
-                ),
-                itemCount: dashboardItems.length,
-                itemBuilder: (context, index) {
-                  final item = dashboardItems[index];
-                  return DashboardCard(
-                    title: item['title'],
-                    subtitle: item['subtitle'],
-                    icon: item['icon'],
-                    cardColor: item['color'],
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => item['screen']),
-                      );
-                    },
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class DashboardCard extends StatefulWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color cardColor;
-  final VoidCallback onTap;
-
-  const DashboardCard({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.cardColor,
-    required this.onTap,
-  });
-
-  @override
-  State<DashboardCard> createState() => _DashboardCardState();
-}
-
-class _DashboardCardState extends State<DashboardCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _animationController.forward(),
-      onTapUp: (_) {
-        _animationController.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _animationController.reverse(),
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(widget.icon, size: 36, color: widget.cardColor),
-                const SizedBox(height: 12),
-                Text(
-                  widget.title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Flexible(
-                  child: Text(
-                    widget.subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }

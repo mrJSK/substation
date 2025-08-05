@@ -1,8 +1,7 @@
-// lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/app_state_data.dart'; // Import the updated AppStateData
+import '../models/app_state_data.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -23,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
 
     _controller = AnimationController(
-      duration: const Duration(seconds: 4), // Animation duration
+      duration: const Duration(seconds: 4),
       vsync: this,
     );
 
@@ -49,7 +48,7 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    _controller.forward(); // Start the animation
+    _controller.forward();
   }
 
   @override
@@ -60,66 +59,93 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
-    // The logic for navigating to the next screen is now handled by HomeRouter,
-    // which observes AppStateData. This screen simply displays the animation.
     return Scaffold(
-      backgroundColor: colorScheme.primary,
+      backgroundColor: const Color(0xFFFAFAFA),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SlideTransition(
-              position: _slideAnimation,
-              child: FadeTransition(
-                opacity: _fadeInAnimation,
-                child: Icon(
-                  Icons.factory,
-                  size: 120,
-                  color: colorScheme.tertiary,
-                ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-            ),
-            const SizedBox(height: 30),
-            FadeTransition(
-              opacity: _fadeInAnimation,
-              child: Text(
-                'Substation Manager Pro',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: colorScheme.onPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: 150,
-              child: AnimatedBuilder(
-                animation: _progressAnimation,
-                builder: (context, child) {
-                  return LinearProgressIndicator(
-                    value: _progressAnimation.value,
-                    backgroundColor: colorScheme.onPrimary.withOpacity(0.3),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      colorScheme.onPrimary,
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SlideTransition(
+                position: _slideAnimation,
+                child: FadeTransition(
+                  opacity: _fadeInAnimation,
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 10),
-            FadeTransition(
-              opacity: _fadeInAnimation,
-              child: Text(
-                'Powering tomorrow...',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: colorScheme.onPrimary.withOpacity(0.8),
-                  fontStyle: FontStyle.italic,
+                    child: Icon(
+                      Icons.factory,
+                      size: 40,
+                      color: colorScheme.primary,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              FadeTransition(
+                opacity: _fadeInAnimation,
+                child: Text(
+                  'Substation Manager Pro',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 200,
+                child: AnimatedBuilder(
+                  animation: _progressAnimation,
+                  builder: (context, child) {
+                    return LinearProgressIndicator(
+                      value: _progressAnimation.value,
+                      backgroundColor: colorScheme.primary.withOpacity(0.2),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        colorScheme.primary,
+                      ),
+                      minHeight: 4,
+                      borderRadius: BorderRadius.circular(4),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              FadeTransition(
+                opacity: _fadeInAnimation,
+                child: Text(
+                  'Powering tomorrow...',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface.withOpacity(0.6),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

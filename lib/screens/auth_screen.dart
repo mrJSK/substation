@@ -1,4 +1,3 @@
-// lib/screens/auth_screen.dart
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -43,26 +42,20 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _signInWithGoogle() async {
-    if (_isLoading) return; // Prevent multiple sign-in attempts
-
-    setState(() {
-      _isLoading = true;
-    });
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
 
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn();
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
         return;
       }
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
-
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
@@ -73,10 +66,28 @@ class _AuthScreenState extends State<AuthScreen>
       final User? firebaseUser = userCredential.user;
 
       if (firebaseUser != null) {
-        final userDocRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(firebaseUser.uid);
-        final userDoc = await userDocRef.get();
+        await _handleUserDocument(firebaseUser);
+      }
+    } catch (e) {
+      print('Error during Google Sign-In: $e');
+      if (context.mounted) {
+        _showSnackBar('Failed to sign in: ${e.toString()}', isError: true);
+      }
+    } finally {
+      if (context.mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleUserDocument(User firebaseUser) async {
+    final userDocRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(firebaseUser.uid);
+
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final userDoc = await transaction.get(userDocRef);
 
         if (!userDoc.exists) {
           final newUser = AppUser(
@@ -85,61 +96,57 @@ class _AuthScreenState extends State<AuthScreen>
             role: UserRole.pending,
             approved: false,
           );
-          await userDocRef.set(newUser.toFirestore());
-          print('New user document created for ${firebaseUser.email}');
-          _showSnackBar('Account created. Awaiting admin approval.');
-        } else {
-          print('Existing user signed in: ${firebaseUser.email}');
-          final appUser = AppUser.fromFirestore(userDoc);
-          if (appUser.approved) {
-            if (context.mounted) {
-              if (appUser.role == UserRole.admin) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        AdminDashboardScreen(adminUser: appUser),
-                  ),
-                );
-              } else if (appUser.role == UserRole.substationUser) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SubstationUserDashboardScreen(currentUser: appUser),
-                  ),
-                );
-              } else if (appUser.role == UserRole.subdivisionManager) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SubdivisionDashboardScreen(currentUser: appUser),
-                  ),
-                );
-              } else {
-                _showSnackBar('Unsupported user role.', isError: true);
-              }
-            }
-          } else {
-            _showSnackBar(
-              'Your account is pending admin approval.',
-              isError: true,
-            );
+
+          transaction.set(userDocRef, newUser.toFirestore());
+          print('Created new user document for ${firebaseUser.email}');
+
+          if (context.mounted) {
+            _showSnackBar('Account created. Awaiting admin approval.');
           }
+        } else {
+          final appUser = AppUser.fromFirestore(userDoc);
+          await _navigateBasedOnRole(appUser);
         }
-      }
+      });
     } catch (e) {
-      print('Error during Google Sign-In: $e');
+      print('Error handling user document: $e');
       if (context.mounted) {
         _showSnackBar(
-          'Failed to sign in with Google: ${e.toString()}',
+          'Error creating user profile: ${e.toString()}',
           isError: true,
         );
       }
-    } finally {
-      if (context.mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+    }
+  }
+
+  Future<void> _navigateBasedOnRole(AppUser appUser) async {
+    if (!context.mounted) return;
+
+    if (appUser.approved) {
+      Widget destinationScreen;
+
+      switch (appUser.role) {
+        case UserRole.admin:
+          destinationScreen = AdminDashboardScreen(adminUser: appUser);
+          break;
+        case UserRole.substationUser:
+          destinationScreen = SubstationUserDashboardScreen(
+            currentUser: appUser,
+          );
+          break;
+        case UserRole.subdivisionManager:
+          destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
+          break;
+        default:
+          _showSnackBar('Unsupported user role.', isError: true);
+          return;
       }
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => destinationScreen),
+      );
+    } else {
+      _showSnackBar('Your account is pending admin approval.', isError: true);
     }
   }
 
@@ -148,148 +155,144 @@ class _AuthScreenState extends State<AuthScreen>
       SnackBar(
         content: Text(
           message,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface,
+          style: TextStyle(
+            fontSize: 14,
             fontWeight: FontWeight.w500,
+            color: isError
+                ? Colors.white
+                : Theme.of(context).colorScheme.onSurface,
           ),
         ),
         backgroundColor: isError
-            ? Theme.of(context).colorScheme.errorContainer
-            : Theme.of(context).colorScheme.primaryContainer,
+            ? Theme.of(context).colorScheme.error
+            : Theme.of(context).colorScheme.primary.withOpacity(0.9),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         margin: const EdgeInsets.all(16),
-        elevation: 4,
-        duration: const Duration(seconds: 4),
+        elevation: 2,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.1),
-              Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24.0,
-                vertical: 16.0,
-              ),
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Card(
-                  elevation: 8,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(32.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // App Logo
-                        Image.asset(
-                          'assets/logo.png', // Replace with your app logo
-                          height: 80,
-                          width: 80,
-                          semanticLabel: 'App Logo',
-                        ),
-                        const SizedBox(height: 24),
-                        // Title
-                        Text(
-                          'Substation Manager Pro',
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        // Subtitle
-                        Text(
-                          'Sign in to manage your substations efficiently',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w400,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 40),
-                        // Sign-In Button
-                        AnimatedScale(
-                          scale: _isLoading ? 0.95 : 1.0,
-                          duration: const Duration(milliseconds: 200),
-                          child: ElevatedButton.icon(
-                            onPressed: _isLoading ? null : _signInWithGoogle,
-                            icon: Image.asset(
-                              'assets/google_logo.webp',
-                              height: 24,
-                              width: 24,
-                              semanticLabel: 'Google Logo',
-                            ),
-                            label: const Text(
-                              'Sign in with Google',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black87,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                              minimumSize: const Size(280, 56),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              side: BorderSide(color: Colors.grey.shade300),
-                              elevation: 4,
-                              shadowColor: Colors.black.withOpacity(0.2),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        // Info Text
-                        Text(
-                          'Your account requires admin approval to access the dashboard.',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant.withOpacity(0.7),
-                                fontSize: 14,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        if (_isLoading) ...[
-                          const SizedBox(height: 24),
-                          CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ],
-                      ],
+      backgroundColor: const Color(0xFFFAFAFA),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 16.0,
+            ),
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
-                  ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.factory,
+                        size: 40,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Substation Manager Pro',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Sign in to manage your substations efficiently',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    AnimatedScale(
+                      scale: _isLoading ? 0.95 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: ElevatedButton.icon(
+                        onPressed: _isLoading ? null : _signInWithGoogle,
+                        icon: Image.asset(
+                          'assets/google_logo.webp',
+                          height: 24,
+                          width: 24,
+                          semanticLabel: 'Google Logo',
+                        ),
+                        label: const Text(
+                          'Sign in with Google',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          minimumSize: const Size(280, 48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Your account requires admin approval to access the dashboard.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (_isLoading) ...[
+                      const SizedBox(height: 16),
+                      CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          colorScheme.primary,
+                        ),
+                        strokeWidth: 3,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

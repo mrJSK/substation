@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'dart:io'; // For File operations
 import 'dart:typed_data'; // For Uint8List
 
+import '../models/energy_readings_data.dart';
 import '../models/user_model.dart';
 import '../models/saved_sld_model.dart'; // Import the SavedSld model
 import '../models/assessment_model.dart'; // Import Assessment model for fromMap

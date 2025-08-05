@@ -1,13 +1,9 @@
-// lib/screens/admin/reading_template_management_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:async'; // For debouncing
 import '../../models/reading_models.dart';
-import '../../models/bay_model.dart';
 import '../../utils/snackbar_utils.dart';
-
-enum ReadingTemplateViewMode { list, form }
+import 'package:intl/intl.dart';
 
 class ReadingTemplateManagementScreen extends StatefulWidget {
   const ReadingTemplateManagementScreen({super.key});
@@ -19,22 +15,14 @@ class ReadingTemplateManagementScreen extends StatefulWidget {
 
 class _ReadingTemplateManagementScreenState
     extends State<ReadingTemplateManagementScreen> {
-  ReadingTemplateViewMode _viewMode = ReadingTemplateViewMode.list;
+  bool _showForm = false;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   ReadingTemplate? _templateToEdit;
   List<ReadingTemplate> _templates = [];
   bool _isLoading = true;
   bool _isSaving = false;
-
   String? _selectedBayType;
-  List<Map<String, dynamic>> _templateReadingFields = [];
-
-  final List<String> _dataTypes = ReadingFieldDataType.values
-      .map((e) => e.toString().split('.').last)
-      .toList();
-  final List<String> _frequencies = ReadingFrequency.values
-      .map((e) => e.toString().split('.').last)
-      .toList();
+  List<Map<String, dynamic>> _readingFields = [];
 
   final List<String> _bayTypes = [
     'Transformer',
@@ -47,298 +35,15 @@ class _ReadingTemplateManagementScreenState
     'Busbar',
   ];
 
-  final List<ReadingField> _defaultEnergyFields = [
-    ReadingField(
-      name: 'Previous Day Reading (Import)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.daily,
-    ),
-    ReadingField(
-      name: 'Current Day Reading (Import)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.daily,
-    ),
-    ReadingField(
-      name: 'Previous Day Reading (Export)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.daily,
-    ),
-    ReadingField(
-      name: 'Current Day Reading (Export)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.daily,
-    ),
-    ReadingField(
-      name: 'Previous Month Reading (Import)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
-    ),
-    ReadingField(
-      name: 'Current Month Reading (Import)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
-    ),
-    ReadingField(
-      name: 'Previous Month Reading (Export)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
-    ),
-    ReadingField(
-      name: 'Current Month Reading (Export)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
-    ),
+  final List<String> _dataTypes = [
+    'text',
+    'number',
+    'boolean',
+    'date',
+    'dropdown',
+    'group',
   ];
-
-  final Map<String, List<ReadingField>> _defaultHourlyFields = {
-    'Feeder': [
-      ReadingField(
-        name: 'Current',
-        unit: 'A',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-    ],
-    'Transformer': [
-      ReadingField(
-        name: 'Current',
-        unit: 'A',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Power Factor',
-        unit: '',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Real Power (MW)',
-        unit: 'MW',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Voltage',
-        unit: 'kV',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Apparent Power (MVAR)',
-        unit: 'MVAR',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Gas Pressure (SF6)',
-        unit: 'kg/cm2',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: false,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Winding Temperature',
-        unit: 'Celsius',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Oil Temperature',
-        unit: 'Celsius',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Tap Position',
-        unit: 'No.',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Frequency',
-        unit: 'Hz',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-    ],
-    'Line': [
-      ReadingField(
-        name: 'Current',
-        unit: 'A',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Power Factor',
-        unit: '',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Real Power (MW)',
-        unit: 'MW',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Voltage',
-        unit: 'kV',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Apparent Power (MVAR)',
-        unit: 'MVAR',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Gas Pressure (SF6)',
-        unit: 'kg/cm2',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: false,
-        frequency: ReadingFrequency.hourly,
-      ),
-    ],
-    'Capacitor Bank': [
-      ReadingField(
-        name: 'Current',
-        unit: 'A',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Power Factor',
-        unit: '',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-    ],
-    'Battery': [
-      ReadingField(
-        name: 'Voltage',
-        unit: 'V',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-      ReadingField(
-        name: 'Current',
-        unit: 'A',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-    ],
-    'Busbar': [
-      ReadingField(
-        name: 'Voltage',
-        unit: 'kV',
-        dataType: ReadingFieldDataType.number,
-        isMandatory: true,
-        frequency: ReadingFrequency.hourly,
-      ),
-    ],
-  };
-
-  final Map<String, List<ReadingField>> _defaultDailyFields = {
-    'Battery': List.generate(
-      8,
-      (i) => ReadingField(
-        name: 'Cell ${i + 1}',
-        dataType: ReadingFieldDataType.group,
-        isMandatory: true,
-        frequency: ReadingFrequency.daily,
-        nestedFields: [
-          ReadingField(
-            name: 'Cell Number',
-            dataType: ReadingFieldDataType.number,
-            isMandatory: true,
-          ),
-          ReadingField(
-            name: 'Voltage',
-            unit: 'V',
-            dataType: ReadingFieldDataType.number,
-            isMandatory: true,
-          ),
-          ReadingField(
-            name: 'Specific Gravity',
-            unit: '',
-            dataType: ReadingFieldDataType.number,
-            isMandatory: true,
-          ),
-        ],
-      ),
-    ),
-  };
-
-  final Map<String, List<ReadingField>> _defaultMonthlyFields = {
-    'Battery': List.generate(
-      55,
-      (i) => ReadingField(
-        name: 'Cell ${i + 1}',
-        dataType: ReadingFieldDataType.group,
-        isMandatory: true,
-        frequency: ReadingFrequency.monthly,
-        nestedFields: [
-          ReadingField(
-            name: 'Cell Number',
-            dataType: ReadingFieldDataType.number,
-            isMandatory: true,
-          ),
-          ReadingField(
-            name: 'Voltage',
-            unit: 'V',
-            dataType: ReadingFieldDataType.number,
-            isMandatory: true,
-          ),
-          ReadingField(
-            name: 'Specific Gravity',
-            unit: '',
-            dataType: ReadingFieldDataType.number,
-            isMandatory: true,
-          ),
-        ],
-      ),
-    ),
-  };
-
-  // Debounce timer for input fields
-  Timer? _debounce;
+  final List<String> _frequencies = ['hourly', 'daily', 'monthly'];
 
   @override
   void initState() {
@@ -347,9 +52,1280 @@ class _ReadingTemplateManagementScreenState
   }
 
   @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: _buildAppBar(theme),
+      floatingActionButton: _showForm ? null : _buildFAB(theme),
+      body: _showForm ? _buildFormView(theme) : _buildListView(theme),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      title: Text(
+        _showForm
+            ? (_templateToEdit == null
+                  ? 'New Reading Template'
+                  : 'Edit Reading Template')
+            : 'Reading Templates',
+        style: TextStyle(
+          color: theme.colorScheme.onSurface,
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      leading: IconButton(
+        icon: Icon(
+          Icons.arrow_back,
+          color: theme.colorScheme.onSurface,
+          size: 20,
+        ),
+        onPressed: _showForm ? _showListView : () => Navigator.pop(context),
+      ),
+    );
+  }
+
+  Widget _buildFAB(ThemeData theme) {
+    return FloatingActionButton(
+      onPressed: _showFormForNew,
+      backgroundColor: theme.colorScheme.primary,
+      foregroundColor: Colors.white,
+      elevation: 2,
+      child: const Icon(Icons.add, size: 24),
+    );
+  }
+
+  Widget _buildListView(ThemeData theme) {
+    if (_isLoading) {
+      return Center(
+        child: CircularProgressIndicator(color: theme.colorScheme.primary),
+      );
+    }
+
+    if (_templates.isEmpty) {
+      return _buildEmptyState(theme);
+    }
+
+    // Group templates by bay type
+    final Map<String, List<ReadingTemplate>> groupedTemplates = {};
+    for (final template in _templates) {
+      groupedTemplates.putIfAbsent(template.bayType, () => []).add(template);
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(24),
+      itemCount: groupedTemplates.keys.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final bayType = groupedTemplates.keys.elementAt(index);
+        final templates = groupedTemplates[bayType]!;
+        return _buildBayTypeGroup(bayType, templates, theme);
+      },
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.rule_outlined,
+              size: 40,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No reading templates',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Create templates to define reading parameters for different bay types',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface.withOpacity(0.5),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBayTypeGroup(
+    String bayType,
+    List<ReadingTemplate> templates,
+    ThemeData theme,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.05),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: _getBayTypeColor(bayType),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    _getBayTypeIcon(bayType),
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        bayType,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${templates.length} template${templates.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...templates
+              .map((template) => _buildTemplateItem(template, theme))
+              .toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTemplateItem(ReadingTemplate template, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outline.withOpacity(0.2)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reading Fields Configuration',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${template.readingFields.length} fields defined',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: _frequencies.map((freq) {
+                    final count = template.readingFields
+                        .where(
+                          (field) =>
+                              field.frequency.toString().split('.').last ==
+                              freq,
+                        )
+                        .length;
+                    if (count == 0) return const SizedBox.shrink();
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getFrequencyColor(freq).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: _getFrequencyColor(freq).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Text(
+                        '$freq: $count',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _getFrequencyColor(freq),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                onPressed: () => _showFormForEdit(template),
+                icon: Icon(
+                  Icons.edit_outlined,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+                tooltip: 'Edit template',
+              ),
+              IconButton(
+                onPressed: () => _deleteTemplate(template.id),
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: theme.colorScheme.error,
+                  size: 18,
+                ),
+                tooltip: 'Delete template',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormView(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBayTypeSelection(theme),
+            const SizedBox(height: 24),
+            _buildReadingFieldsSection(theme),
+            const SizedBox(height: 24),
+            _buildActionButtons(theme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBayTypeSelection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bay Type Configuration',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _selectedBayType,
+            decoration: InputDecoration(
+              labelText: 'Select Bay Type *',
+              labelStyle: TextStyle(
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                fontSize: 14,
+              ),
+              border: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              errorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: theme.colorScheme.error),
+              ),
+              focusedErrorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.error,
+                  width: 2,
+                ),
+              ),
+            ),
+            items: _bayTypes.map((type) {
+              return DropdownMenuItem(
+                value: type,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: _getBayTypeColor(type),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Icon(
+                        _getBayTypeIcon(type),
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      type,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            onChanged: _onBayTypeSelected,
+            validator: (value) =>
+                value == null ? 'Please select a bay type' : null,
+            style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
+            dropdownColor: Colors.white,
+            icon: Icon(
+              Icons.arrow_drop_down,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadingFieldsSection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Reading Fields',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _addReadingField,
+                icon: Icon(
+                  Icons.add,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                label: Text(
+                  'Add Field',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _addGroupReadingField,
+                icon: Icon(
+                  Icons.group_add,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                label: Text(
+                  'Add Group',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_readingFields.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.list_alt,
+                    color: theme.colorScheme.onSurface.withOpacity(0.4),
+                    size: 40,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No reading fields defined',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Select a bay type to see default fields or add custom ones',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          else
+            ...List.generate(_readingFields.length, (index) {
+              final field = _readingFields[index];
+              if (field['dataType'] == 'group') {
+                return _buildGroupFieldInput(field, index, theme);
+              } else {
+                return _buildReadingFieldCard(field, index, theme);
+              }
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadingFieldCard(
+    Map<String, dynamic> field,
+    int index,
+    ThemeData theme, {
+    bool isSubField = false,
+    int? subFieldIndex,
+    int? groupIndex,
+  }) {
+    final isDefault = field['isDefault'] ?? false;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDefault ? Colors.blue.shade50 : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDefault
+              ? Colors.blue.shade200
+              : theme.colorScheme.outline.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (isDefault)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'DEFAULT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ),
+              const Spacer(),
+              if (!isDefault)
+                IconButton(
+                  onPressed: () => isSubField
+                      ? _removeSubField(groupIndex!, subFieldIndex!)
+                      : _removeReadingField(index),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.error,
+                    size: 18,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            initialValue: field['name'],
+            decoration: InputDecoration(
+              labelText: 'Field Name',
+              isDense: true,
+              labelStyle: TextStyle(
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                fontSize: 14,
+              ),
+              border: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              errorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: theme.colorScheme.error),
+              ),
+              focusedErrorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.error,
+                  width: 2,
+                ),
+              ),
+            ),
+            style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+            onChanged: isDefault ? null : (value) => field['name'] = value,
+            readOnly: isDefault,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: field['dataType'],
+                  decoration: InputDecoration(
+                    labelText: 'Data Type',
+                    isDense: true,
+                    labelStyle: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 14,
+                    ),
+                    border: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    errorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: theme.colorScheme.error),
+                    ),
+                    focusedErrorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  items: _dataTypes.map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Text(
+                        type,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: isDefault
+                      ? null
+                      : (value) => setState(() => field['dataType'] = value),
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface,
+                    fontSize: 14,
+                  ),
+                  dropdownColor: Colors.white,
+                  icon: Icon(
+                    Icons.arrow_drop_down,
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: field['frequency'],
+                  decoration: InputDecoration(
+                    labelText: 'Frequency',
+                    isDense: true,
+                    labelStyle: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 14,
+                    ),
+                    border: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    errorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: theme.colorScheme.error),
+                    ),
+                    focusedErrorBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  items: _frequencies.map((freq) {
+                    return DropdownMenuItem(
+                      value: freq,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _getFrequencyColor(freq),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            freq,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: isDefault
+                      ? null
+                      : (value) => setState(() => field['frequency'] = value),
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface,
+                    fontSize: 14,
+                  ),
+                  dropdownColor: Colors.white,
+                  icon: Icon(
+                    Icons.arrow_drop_down,
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (field['dataType'] == 'number') ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: field['unit'],
+              decoration: InputDecoration(
+                labelText: 'Unit (e.g., V, A, kW)',
+                isDense: true,
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                errorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: theme.colorScheme.error),
+                ),
+                focusedErrorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.error,
+                    width: 2,
+                  ),
+                ),
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: isDefault ? null : (value) => field['unit'] = value,
+              readOnly: isDefault,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Checkbox(
+                value: field['isMandatory'] ?? false,
+                onChanged: isDefault
+                    ? null
+                    : (value) => setState(() => field['isMandatory'] = value),
+                activeColor: theme.colorScheme.primary,
+              ),
+              const Text(
+                'Required field',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupFieldInput(
+    Map<String, dynamic> group,
+    int index,
+    ThemeData theme,
+  ) {
+    final isDefault = group['isDefault'] ?? false;
+
+    return ExpansionTile(
+      title: Text(
+        group['name'].isEmpty ? 'Unnamed Group' : group['name'],
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
+      leading: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(Icons.group, size: 16, color: theme.colorScheme.primary),
+      ),
+      trailing: isDefault
+          ? null
+          : IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: theme.colorScheme.error,
+              ),
+              onPressed: () => _removeReadingField(index),
+            ),
+      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+      backgroundColor: isDefault ? Colors.blue.shade50 : Colors.grey.shade50,
+      collapsedBackgroundColor: isDefault
+          ? Colors.blue.shade50
+          : Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      collapsedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      children: [
+        Row(
+          children: [
+            if (isDefault)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'DEFAULT',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+              ),
+            if (isDefault) const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade100,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'GROUP',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.purple.shade700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        TextFormField(
+          initialValue: group['name'],
+          decoration: InputDecoration(
+            labelText: 'Group Name',
+            isDense: true,
+            labelStyle: TextStyle(
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+              fontSize: 14,
+            ),
+            border: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+          ),
+          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+          onChanged: isDefault ? null : (value) => group['name'] = value,
+          readOnly: isDefault,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Subfields',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+            ),
+            if (!isDefault)
+              TextButton.icon(
+                onPressed: () => _addSubFieldToGroup(index),
+                icon: Icon(
+                  Icons.add,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                label: Text(
+                  'Add Subfield',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...(group['nestedFields'] as List<Map<String, dynamic>>)
+            .asMap()
+            .entries
+            .map(
+              (entry) => _buildReadingFieldCard(
+                entry.value,
+                index,
+                theme,
+                isSubField: true,
+                subFieldIndex: entry.key,
+                groupIndex: index,
+              ),
+            ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons(ThemeData theme) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextButton(
+            onPressed: _showListView,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.onSurface.withOpacity(0.7),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+            ),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _isSaving ? null : _saveTemplate,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 2,
+            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    _templateToEdit == null
+                        ? 'Create Template'
+                        : 'Update Template',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _getBayTypeColor(String bayType) {
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        return Colors.orange;
+      case 'line':
+        return Colors.blue;
+      case 'feeder':
+        return Colors.green;
+      case 'capacitor bank':
+        return Colors.purple;
+      case 'reactor':
+        return Colors.red;
+      case 'bus coupler':
+        return Colors.teal;
+      case 'battery':
+        return Colors.amber;
+      case 'busbar':
+        return Colors.indigo;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getBayTypeIcon(String bayType) {
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        return Icons.transform;
+      case 'line':
+        return Icons.linear_scale;
+      case 'feeder':
+        return Icons.power;
+      case 'capacitor bank':
+        return Icons.battery_charging_full;
+      case 'reactor':
+        return Icons.wb_incandescent;
+      case 'bus coupler':
+        return Icons.link;
+      case 'battery':
+        return Icons.battery_full;
+      case 'busbar':
+        return Icons.view_headline;
+      default:
+        return Icons.electrical_services;
+    }
+  }
+
+  Color _getFrequencyColor(String frequency) {
+    switch (frequency.toLowerCase()) {
+      case 'hourly':
+        return Colors.red;
+      case 'daily':
+        return Colors.blue;
+      case 'monthly':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  void _showListView() {
+    setState(() {
+      _showForm = false;
+      _templateToEdit = null;
+      _selectedBayType = null;
+      _readingFields.clear();
+    });
+    _fetchReadingTemplates();
+  }
+
+  void _showFormForNew() {
+    setState(() {
+      _showForm = true;
+      _templateToEdit = null;
+      _selectedBayType = null;
+      _readingFields.clear();
+    });
+  }
+
+  void _showFormForEdit(ReadingTemplate template) {
+    setState(() {
+      _showForm = true;
+      _templateToEdit = template;
+      _selectedBayType = template.bayType;
+      _readingFields = template.readingFields
+          .map(
+            (field) =>
+                field.toMap()..['isDefault'] = _isDefaultField(field.name),
+          )
+          .toList();
+    });
+  }
+
+  void _onBayTypeSelected(String? newBayType) {
+    setState(() {
+      _selectedBayType = newBayType;
+      _readingFields.clear();
+      if (newBayType != null) {
+        _addDefaultFieldsForBayType(newBayType);
+      }
+    });
+  }
+
+  void _addDefaultFieldsForBayType(String bayType) {
+    final defaultFields = _getDefaultFieldsForBayType(bayType);
+    for (final field in defaultFields) {
+      _readingFields.add(field.toMap()..['isDefault'] = true);
+    }
+  }
+
+  List<ReadingField> _getDefaultFieldsForBayType(String bayType) {
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        return [
+          ReadingField(
+            name: 'Current',
+            dataType: ReadingFieldDataType.number,
+            unit: 'A',
+            isMandatory: true,
+            frequency: ReadingFrequency.hourly,
+            nestedFields: null,
+          ),
+          ReadingField(
+            name: 'Voltage',
+            dataType: ReadingFieldDataType.number,
+            unit: 'kV',
+            isMandatory: true,
+            frequency: ReadingFrequency.hourly,
+            nestedFields: null,
+          ),
+        ];
+      default:
+        return [];
+    }
+  }
+
+  bool _isDefaultField(String fieldName) {
+    return false; // Simplified, implement logic if needed
+  }
+
+  void _addReadingField() {
+    setState(() {
+      _readingFields.add({
+        'name': '',
+        'dataType': 'text',
+        'frequency': 'daily',
+        'unit': '',
+        'isMandatory': false,
+        'isDefault': false,
+        'nestedFields': null,
+      });
+    });
+  }
+
+  void _addGroupReadingField() {
+    setState(() {
+      _readingFields.add({
+        'name': '',
+        'dataType': 'group',
+        'frequency': 'daily',
+        'unit': '',
+        'isMandatory': false,
+        'isDefault': false,
+        'nestedFields': <Map<String, dynamic>>[],
+      });
+    });
+  }
+
+  void _addSubFieldToGroup(int groupIndex) {
+    setState(() {
+      final group = _readingFields[groupIndex];
+      (group['nestedFields'] as List<Map<String, dynamic>>).add({
+        'name': '',
+        'dataType': 'text',
+        'frequency': 'daily',
+        'unit': '',
+        'isMandatory': false,
+        'isDefault': false,
+        'nestedFields': null,
+      });
+    });
+  }
+
+  void _removeReadingField(int index) {
+    setState(() => _readingFields.removeAt(index));
+  }
+
+  void _removeSubField(int groupIndex, int subFieldIndex) {
+    setState(() {
+      final group = _readingFields[groupIndex];
+      (group['nestedFields'] as List<Map<String, dynamic>>).removeAt(
+        subFieldIndex,
+      );
+    });
   }
 
   Future<void> _fetchReadingTemplates() async {
@@ -363,165 +1339,14 @@ class _ReadingTemplateManagementScreenState
           .map((doc) => ReadingTemplate.fromFirestore(doc))
           .toList();
     } catch (e) {
-      if (mounted)
-        SnackBarUtils.showSnackBar(
-          context,
-          'Failed to load reading templates: $e',
-          isError: true,
-        );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _showListView() {
-    setState(() {
-      _viewMode = ReadingTemplateViewMode.list;
-      _templateToEdit = null;
-      _selectedBayType = null;
-      _templateReadingFields = [];
-    });
-    _fetchReadingTemplates();
-  }
-
-  void _showFormForNew() {
-    setState(() {
-      _viewMode = ReadingTemplateViewMode.form;
-      _templateToEdit = null;
-      _selectedBayType = null;
-      _templateReadingFields = [];
-    });
-  }
-
-  void _showFormForEdit(ReadingTemplate template) {
-    setState(() {
-      _viewMode = ReadingTemplateViewMode.form;
-      _templateToEdit = template;
-      _selectedBayType = template.bayType;
-      _templateReadingFields = template.readingFields
-          .map(
-            (field) =>
-                field.toMap()..['isDefault'] = _isDefaultField(field.name),
-          )
-          .toList();
-    });
-  }
-
-  bool _isDefaultField(String fieldName) {
-    if (_selectedBayType != 'Battery' &&
-        _selectedBayType != 'Busbar' &&
-        _defaultEnergyFields.any((field) => field.name == fieldName))
-      return true;
-    if (_selectedBayType != null) {
-      if (_defaultHourlyFields[_selectedBayType]?.any(
-            (field) => field.name == fieldName,
-          ) ??
-          false)
-        return true;
-      if (_defaultDailyFields[_selectedBayType]?.any(
-            (field) => field.name == fieldName,
-          ) ??
-          false)
-        return true;
-      if (_defaultMonthlyFields[_selectedBayType]?.any(
-            (field) => field.name == fieldName,
-          ) ??
-          false)
-        return true;
-    }
-    return false;
-  }
-
-  void _onBayTypeSelected(String? newBayType) {
-    setState(() {
-      _selectedBayType = newBayType;
-      _templateReadingFields.removeWhere(
-        (field) => !(field['isDefault'] ?? false),
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to load templates: $e',
+        isError: true,
       );
-
-      if (newBayType != null) {
-        List<ReadingField> defaultFields = [];
-        if (newBayType != 'Battery' && newBayType != 'Busbar') {
-          defaultFields.addAll(_defaultEnergyFields);
-        }
-        defaultFields.addAll(_defaultHourlyFields[newBayType] ?? []);
-        defaultFields.addAll(_defaultDailyFields[newBayType] ?? []);
-        defaultFields.addAll(_defaultMonthlyFields[newBayType] ?? []);
-
-        final defaultFieldsAsMaps = defaultFields
-            .map((field) => field.toMap()..['isDefault'] = true)
-            .toList();
-
-        for (var defaultField in defaultFieldsAsMaps) {
-          if (!_templateReadingFields.any(
-            (existing) => existing['name'] == defaultField['name'],
-          )) {
-            _templateReadingFields.insert(0, defaultField);
-          }
-        }
-      }
-    });
-  }
-
-  void _addReadingField() {
-    setState(() {
-      _templateReadingFields.add({
-        'name': '',
-        'dataType': ReadingFieldDataType.text.toString().split('.').last,
-        'unit': '',
-        'options': [],
-        'isMandatory': false,
-        'frequency': ReadingFrequency.daily.toString().split('.').last,
-        'description_remarks': '',
-        'isDefault': false,
-        'nestedFields': null,
-      });
-    });
-  }
-
-  void _addGroupReadingField() {
-    setState(() {
-      _templateReadingFields.add({
-        'name': '',
-        'dataType': ReadingFieldDataType.group.toString().split('.').last,
-        'unit': '',
-        'options': [],
-        'isMandatory': false,
-        'frequency': ReadingFrequency.daily.toString().split('.').last,
-        'description_remarks': '',
-        'isDefault': false,
-        'nestedFields': <Map<String, dynamic>>[],
-      });
-    });
-  }
-
-  void _addNestedReadingField(Map<String, dynamic> groupField) {
-    setState(() {
-      (groupField['nestedFields'] as List<dynamic>).add({
-        'name': '',
-        'dataType': ReadingFieldDataType.text.toString().split('.').last,
-        'unit': '',
-        'options': [],
-        'isMandatory': false,
-        // No frequency for nested fields
-        'description_remarks': '',
-      });
-    });
-  }
-
-  void _removeReadingField(int index) {
-    setState(() {
-      _templateReadingFields.removeAt(index);
-    });
-  }
-
-  void _removeNestedReadingField(
-    Map<String, dynamic> groupField,
-    int nestedIndex,
-  ) {
-    setState(() {
-      (groupField['nestedFields'] as List<dynamic>).removeAt(nestedIndex);
-    });
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _saveTemplate() async {
@@ -529,31 +1354,40 @@ class _ReadingTemplateManagementScreenState
     if (_selectedBayType == null) {
       SnackBarUtils.showSnackBar(
         context,
-        'Please select a Bay Type.',
+        'Please select a bay type.',
         isError: true,
       );
       return;
     }
 
     setState(() => _isSaving = true);
+
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      if (mounted)
-        SnackBarUtils.showSnackBar(
-          context,
-          'Error: User not logged in.',
-          isError: true,
-        );
+      SnackBarUtils.showSnackBar(
+        context,
+        'Error: User not logged in.',
+        isError: true,
+      );
       setState(() => _isSaving = false);
       return;
     }
 
     try {
-      final List<ReadingField> readingFields = _templateReadingFields
-          .map((fieldMap) => ReadingField.fromMap(fieldMap))
-          .toList();
+      final readingFields = _readingFields.map((fieldMap) {
+        if (fieldMap['dataType'] == 'group') {
+          return ReadingField.fromMap({
+            ...fieldMap,
+            'nestedFields':
+                (fieldMap['nestedFields'] as List<Map<String, dynamic>>)
+                    .map((subField) => ReadingField.fromMap(subField).toMap())
+                    .toList(),
+          });
+        }
+        return ReadingField.fromMap(fieldMap);
+      }).toList();
 
-      final newTemplate = ReadingTemplate(
+      final template = ReadingTemplate(
         bayType: _selectedBayType!,
         readingFields: readingFields,
         createdBy: currentUser.uid,
@@ -563,514 +1397,91 @@ class _ReadingTemplateManagementScreenState
       if (_templateToEdit == null) {
         await FirebaseFirestore.instance
             .collection('readingTemplates')
-            .add(newTemplate.toFirestore());
-        if (mounted)
-          SnackBarUtils.showSnackBar(
-            context,
-            'Reading template added successfully!',
-          );
+            .add(template.toFirestore());
+        SnackBarUtils.showSnackBar(context, 'Template created successfully!');
       } else {
         await FirebaseFirestore.instance
             .collection('readingTemplates')
             .doc(_templateToEdit!.id)
-            .update(newTemplate.toFirestore());
-        if (mounted)
-          SnackBarUtils.showSnackBar(
-            context,
-            'Reading template updated successfully!',
-          );
+            .update(template.toFirestore());
+        SnackBarUtils.showSnackBar(context, 'Template updated successfully!');
       }
+
       _showListView();
     } catch (e) {
-      if (mounted)
-        SnackBarUtils.showSnackBar(
-          context,
-          'Failed to save template: $e',
-          isError: true,
-        );
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to save template: $e',
+        isError: true,
+      );
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      setState(() => _isSaving = false);
     }
   }
 
   Future<void> _deleteTemplate(String? templateId) async {
     if (templateId == null) return;
-    final bool confirm =
-        await showDialog(
-          context: context,
-          builder: (BuildContext context) => AlertDialog(
-            title: const Text('Confirm Deletion'),
-            content: const Text(
-              'Are you sure you want to delete this reading template? This action cannot be undone.',
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Delete'),
-              ),
-            ],
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          'Delete Template',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Are you sure you want to delete this reading template? This action cannot be undone.',
+          style: TextStyle(
+            fontSize: 14,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
           ),
-        ) ??
-        false;
-
-    if (confirm) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('readingTemplates')
-            .doc(templateId)
-            .delete();
-        if (mounted)
-          SnackBarUtils.showSnackBar(
-            context,
-            'Reading template deleted successfully!',
-          );
-        _fetchReadingTemplates();
-      } catch (e) {
-        if (mounted)
-          SnackBarUtils.showSnackBar(
-            context,
-            'Failed to delete template: $e',
-            isError: true,
-          );
-      }
-    }
-  }
-
-  // Debounced update method
-  void _debouncedUpdate(VoidCallback callback) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) setState(callback);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _viewMode == ReadingTemplateViewMode.list
-              ? 'Reading Templates'
-              : (_templateToEdit == null
-                    ? 'Define New Reading Template'
-                    : 'Edit Reading Template'),
         ),
-        leading: _viewMode == ReadingTemplateViewMode.form
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _showListView,
-              )
-            : null,
-      ),
-      body: _viewMode == ReadingTemplateViewMode.list
-          ? _buildListView()
-          : _buildFormView(),
-      floatingActionButton: _viewMode == ReadingTemplateViewMode.list
-          ? FloatingActionButton.extended(
-              onPressed: _showFormForNew,
-              label: const Text('Add New Template'),
-              icon: const Icon(Icons.add),
-            )
-          : null,
-    );
-  }
-
-  Widget _buildListView() {
-    return _templates.isEmpty
-        ? const Center(
-            child: Text(
-              'No reading templates defined yet. Tap "+" to add one.',
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withOpacity(0.7),
             ),
-          )
-        : ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _templates.length,
-            itemBuilder: (context, index) {
-              final template = _templates[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                elevation: 3,
-                child: ListTile(
-                  title: Text(template.bayType),
-                  subtitle: Text(
-                    '${template.readingFields.length} reading fields defined',
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (String result) {
-                      if (result == 'edit')
-                        _showFormForEdit(template);
-                      else if (result == 'delete')
-                        _deleteTemplate(template.id);
-                    },
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                          const PopupMenuItem<String>(
-                            value: 'edit',
-                            child: ListTile(
-                              leading: Icon(Icons.edit),
-                              title: Text('Edit'),
-                            ),
-                          ),
-                          PopupMenuItem<String>(
-                            value: 'delete',
-                            child: ListTile(
-                              leading: Icon(
-                                Icons.delete,
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                              title: Text(
-                                'Delete',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                  ),
-                ),
-              );
-            },
-          );
-  }
-
-  Widget _buildFormView() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24.0),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DropdownButtonFormField<String>(
-              value: _selectedBayType,
-              decoration: InputDecoration(
-                labelText: 'Applies to Bay Type',
-                prefixIcon: Icon(Icons.category, color: colorScheme.primary),
-                border: const OutlineInputBorder(),
-              ),
-              items: _bayTypes
-                  .map(
-                    (String type) => DropdownMenuItem<String>(
-                      value: type,
-                      child: Text(type),
-                    ),
-                  )
-                  .toList(),
-              onChanged: _onBayTypeSelected,
-              validator: (value) =>
-                  value == null ? 'Please select a bay type' : null,
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
-            const SizedBox(height: 20),
-            _buildReadingFieldsSection(
-              'Reading Fields',
-              _templateReadingFields,
-              colorScheme,
-              Icons.list_alt,
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveTemplate,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(_templateToEdit == null ? Icons.add : Icons.save),
-              label: Text(
-                _templateToEdit == null ? 'Add Template' : 'Update Template',
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-                minimumSize: const Size(double.infinity, 50),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReadingFieldsSection(
-    String title,
-    List<Map<String, dynamic>> fieldsList,
-    ColorScheme colorScheme,
-    IconData icon,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-          ],
-        ),
-        const SizedBox(height: 10),
-        ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: fieldsList.length,
-          itemBuilder: (context, index) {
-            final field = fieldsList[index];
-            final bool isDefault = field['isDefault'] ?? false;
-            return AbsorbPointer(
-              absorbing: isDefault,
-              child: Card(
-                margin: const EdgeInsets.symmetric(vertical: 8.0),
-                elevation: 2,
-                color: isDefault ? Colors.grey.shade200 : null,
-                child: _buildReadingFieldDefinitionInput(
-                  field,
-                  index,
-                  fieldsList,
-                  colorScheme,
-                  isDefault: isDefault,
-                ),
-              ),
-            );
-          },
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _addReadingField,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Field'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _addGroupReadingField,
-                icon: const Icon(Icons.playlist_add),
-                label: const Text('Grouped Field'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.secondary,
-                  foregroundColor: colorScheme.onSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReadingFieldDefinitionInput(
-    Map<String, dynamic> fieldDef,
-    int index,
-    List<Map<String, dynamic>> parentList,
-    ColorScheme colorScheme, {
-    required bool isDefault,
-    bool isNested = false,
-  }) {
-    final fieldName = fieldDef['name'] as String;
-    final dataType = fieldDef['dataType'] as String;
-    final isMandatory = fieldDef['isMandatory'] as bool;
-    final isGroupField =
-        dataType == ReadingFieldDataType.group.toString().split('.').last;
-
-    return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextFormField(
-            initialValue: fieldName,
-            decoration: InputDecoration(
-              labelText: isNested ? 'Item Name' : 'Reading Field Name',
-              border: const OutlineInputBorder(),
-              hintText: isNested
-                  ? 'e.g., Phase A Current'
-                  : 'e.g., Voltage, Temperature',
-            ),
-            onChanged: isDefault
-                ? null
-                : (value) => _debouncedUpdate(() => fieldDef['name'] = value),
-            validator: (value) => value == null || value.trim().isEmpty
-                ? (isNested ? 'Item name required' : 'Field name required')
-                : null,
           ),
-          const SizedBox(height: 10),
-          if (!isGroupField)
-            DropdownButtonFormField<String>(
-              value: fieldDef['dataType'] as String,
-              decoration: const InputDecoration(
-                labelText: 'Data Type',
-                border: OutlineInputBorder(),
-              ),
-              items: _dataTypes
-                  .where((type) => type != 'group' || isNested)
-                  .map(
-                    (type) => DropdownMenuItem(value: type, child: Text(type)),
-                  )
-                  .toList(),
-              onChanged: isDefault
-                  ? null
-                  : (value) => _debouncedUpdate(() {
-                      fieldDef['dataType'] = value!;
-                      if (value != 'dropdown') fieldDef['options'] = [];
-                      if (value != 'number') fieldDef['unit'] = '';
-                      if (value != 'boolean')
-                        fieldDef['description_remarks'] = '';
-                      fieldDef['nestedFields'] = null;
-                    }),
-            ),
-          if (isGroupField)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Text(
-                'Data Type: Group',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(fontStyle: FontStyle.italic),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
             ),
-          const SizedBox(height: 10),
-          if (!isNested)
-            DropdownButtonFormField<String>(
-              value: fieldDef['frequency'] as String,
-              decoration: const InputDecoration(
-                labelText: 'Reading Frequency',
-                border: OutlineInputBorder(),
-              ),
-              items: _frequencies
-                  .map(
-                    (freq) => DropdownMenuItem(value: freq, child: Text(freq)),
-                  )
-                  .toList(),
-              onChanged: isDefault
-                  ? null
-                  : (value) =>
-                        _debouncedUpdate(() => fieldDef['frequency'] = value!),
-            ),
-          if (!isNested) const SizedBox(height: 10),
-          if (!isGroupField) ...[
-            if (fieldDef['dataType'] == 'dropdown')
-              TextFormField(
-                initialValue: (fieldDef['options'] as List<dynamic>?)?.join(
-                  ',',
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'Options (comma-separated)',
-                  hintText: 'e.g., Option1, Option2',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: isDefault
-                    ? null
-                    : (value) => _debouncedUpdate(
-                        () => fieldDef['options'] = value
-                            .split(',')
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList(),
-                      ),
-              ),
-            if (fieldDef['dataType'] == 'number')
-              TextFormField(
-                initialValue: fieldDef['unit'] as String?,
-                decoration: const InputDecoration(
-                  labelText: 'Unit (e.g., V, A, kW)',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: isDefault
-                    ? null
-                    : (value) =>
-                          _debouncedUpdate(() => fieldDef['unit'] = value),
-              ),
-            if (fieldDef['dataType'] == 'boolean')
-              TextFormField(
-                initialValue: fieldDef['description_remarks'] as String?,
-                decoration: const InputDecoration(
-                  labelText: 'Description / Remarks (Optional)',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: isDefault
-                    ? null
-                    : (value) => _debouncedUpdate(
-                        () => fieldDef['description_remarks'] = value,
-                      ),
-                maxLines: 2,
-              ),
-          ],
-          if (isGroupField) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Fields in this Group:',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const SizedBox(height: 8),
-            if ((fieldDef['nestedFields'] as List<dynamic>).isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8.0),
-                child: Text('No fields defined for this group.'),
-              ),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: (fieldDef['nestedFields'] as List<dynamic>).length,
-              itemBuilder: (context, nestedIndex) {
-                final nestedField =
-                    (fieldDef['nestedFields'] as List<dynamic>)[nestedIndex];
-                return _buildReadingFieldDefinitionInput(
-                  nestedField,
-                  nestedIndex,
-                  (fieldDef['nestedFields'] as List<dynamic>)
-                      .cast<Map<String, dynamic>>(),
-                  colorScheme,
-                  isDefault: false,
-                  isNested: true,
-                );
-              },
-            ),
-            ElevatedButton.icon(
-              onPressed: () => _addNestedReadingField(fieldDef),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Field to Group'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colorScheme.secondary,
-                foregroundColor: colorScheme.onSecondary,
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          CheckboxListTile(
-            title: const Text('Mandatory'),
-            value: fieldDef['isMandatory'] as bool,
-            onChanged: isDefault
-                ? null
-                : (value) =>
-                      _debouncedUpdate(() => fieldDef['isMandatory'] = value!),
-            controlAffinity: ListTileControlAffinity.leading,
-            contentPadding: EdgeInsets.zero,
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: IconButton(
-              icon: Icon(
-                Icons.remove_circle_outline,
-                color: isDefault ? Colors.grey : colorScheme.error,
-              ),
-              onPressed: isDefault ? null : () => _removeReadingField(index),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
         ],
       ),
     );
+
+    if (confirm == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('readingTemplates')
+            .doc(templateId)
+            .delete();
+        SnackBarUtils.showSnackBar(context, 'Template deleted successfully!');
+        _fetchReadingTemplates();
+      } catch (e) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to delete template: $e',
+          isError: true,
+        );
+      }
+    }
   }
 }
