@@ -3,13 +3,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:substation_manager/models/bay_model.dart'; // NEW: Import Bay model
 
-// Defines how a connected bay's energy contributes to a busbar's abstract.
-// enum EnergyContributionType {
-//   busImport, // Bay's energy adds to busbar's total import
-//   busExport, // Bay's energy adds to busbar's total export
-//   none, // Bay's energy does not contribute to this busbar's abstract (default)
-// }
-
 /// Data model for energy data associated with a bay (computed values)
 class BayEnergyData {
   final Bay bay; // Changed to directly store Bay object
@@ -17,11 +10,16 @@ class BayEnergyData {
   final double? currImp; // Present Reading IMP (e.g., from end of period)
   final double? prevExp; // Previous Reading EXP
   final double? currExp; // Present Reading EXP
-  final double?
-  mf; // Multiplying Factor (redundant if bay.multiplyingFactor is used, but kept for clarity in computation)
+  final double? mf; // Multiplying Factor
   final double? impConsumed; // IMP (computed)
   final double? expConsumed; // EXP (computed)
   final bool hasAssessment;
+
+  // Assessment-specific fields
+  final double? adjustedImpConsumed;
+  final double? adjustedExpConsumed;
+  final double? importAdjustment;
+  final double? exportAdjustment;
 
   BayEnergyData({
     required this.bay, // Now takes a Bay object
@@ -33,9 +31,22 @@ class BayEnergyData {
     this.impConsumed,
     this.expConsumed,
     this.hasAssessment = false,
-    required String bayName,
-    required String bayId,
+    this.adjustedImpConsumed,
+    this.adjustedExpConsumed,
+    this.importAdjustment,
+    this.exportAdjustment,
+    // Remove these unused parameters from constructor
+    String? bayName, // Made optional and nullable
+    String? bayId, // Made optional and nullable
   });
+
+  // ✅ ADD THESE GETTERS - This is what was missing!
+  String get bayId => bay.id;
+  String get bayName => bay.name;
+
+  // Getter to get the final consumption values (with or without adjustment)
+  double? get finalImpConsumed => adjustedImpConsumed ?? impConsumed;
+  double? get finalExpConsumed => adjustedExpConsumed ?? expConsumed;
 
   // Method to apply assessment adjustments to computed energy
   BayEnergyData applyAssessment({
@@ -44,6 +55,7 @@ class BayEnergyData {
   }) {
     double newImpConsumed = (impConsumed ?? 0.0) + (importAdjustment ?? 0.0);
     double newExpConsumed = (expConsumed ?? 0.0) + (exportAdjustment ?? 0.0);
+
     return BayEnergyData(
       bay: bay, // Keep existing bay object
       prevImp: prevImp,
@@ -51,17 +63,17 @@ class BayEnergyData {
       prevExp: prevExp,
       currExp: currExp,
       mf: mf,
-      impConsumed: newImpConsumed,
-      expConsumed: newExpConsumed,
+      impConsumed: impConsumed, // Keep original values
+      expConsumed: expConsumed,
       hasAssessment: true,
-      bayName: '',
-      bayId: '',
+      adjustedImpConsumed: newImpConsumed, // Store adjusted values
+      adjustedExpConsumed: newExpConsumed,
+      importAdjustment: importAdjustment,
+      exportAdjustment: exportAdjustment,
     );
   }
 
-  // Conversion to/from Map for persistence (if needed, adjust to store bay.id and bay.name)
-  // This is a simplified toMap/fromMap since Bay is a complex object.
-  // For actual persistence, you might store bay.id and re-fetch the Bay object or pass it.
+  // Conversion to/from Map for persistence
   Map<String, dynamic> toMap() {
     return {
       'bayId': bay.id,
@@ -77,23 +89,22 @@ class BayEnergyData {
       'impConsumed': impConsumed,
       'expConsumed': expConsumed,
       'hasAssessment': hasAssessment,
+      'adjustedImpConsumed': adjustedImpConsumed,
+      'adjustedExpConsumed': adjustedExpConsumed,
+      'importAdjustment': importAdjustment,
+      'exportAdjustment': exportAdjustment,
     };
   }
 
-  factory BayEnergyData.fromMap(
-    Map<String, dynamic> map, {
-    Bay? bayObject,
-    required Bay bay,
-    required String bayId,
-  }) {
+  factory BayEnergyData.fromMap(Map<String, dynamic> map, {Bay? bayObject}) {
     // Reconstruct Bay object from map data if not provided
     final Bay reconstructedBay =
         bayObject ??
         Bay(
-          id: map['bayId'],
-          name: map['bayName'],
-          voltageLevel: map['bayVoltageLevel'],
-          bayType: map['bayType'],
+          id: map['bayId'] ?? '',
+          name: map['bayName'] ?? '',
+          voltageLevel: map['bayVoltageLevel'] ?? '',
+          bayType: map['bayType'] ?? '',
           multiplyingFactor: (map['bayMultiplyingFactor'] as num?)?.toDouble(),
           substationId:
               '', // Placeholder, as full Bay may not be available from map
@@ -111,9 +122,16 @@ class BayEnergyData {
       impConsumed: (map['impConsumed'] as num?)?.toDouble(),
       expConsumed: (map['expConsumed'] as num?)?.toDouble(),
       hasAssessment: map['hasAssessment'] ?? false,
-      bayName: '',
-      bayId: '',
+      adjustedImpConsumed: (map['adjustedImpConsumed'] as num?)?.toDouble(),
+      adjustedExpConsumed: (map['adjustedExpConsumed'] as num?)?.toDouble(),
+      importAdjustment: (map['importAdjustment'] as num?)?.toDouble(),
+      exportAdjustment: (map['exportAdjustment'] as num?)?.toDouble(),
     );
+  }
+
+  @override
+  String toString() {
+    return 'BayEnergyData(bayId: $bayId, bayName: $bayName, impConsumed: $impConsumed, expConsumed: $expConsumed)';
   }
 }
 
@@ -151,10 +169,10 @@ class AggregatedFeederEnergyData {
 
   factory AggregatedFeederEnergyData.fromMap(Map<String, dynamic> map) {
     return AggregatedFeederEnergyData(
-      zoneName: map['zoneName'],
-      circleName: map['circleName'],
-      divisionName: map['divisionName'],
-      distributionSubdivisionName: map['distributionSubdivisionName'],
+      zoneName: map['zoneName'] ?? '',
+      circleName: map['circleName'] ?? '',
+      divisionName: map['divisionName'] ?? '',
+      distributionSubdivisionName: map['distributionSubdivisionName'] ?? '',
       importedEnergy: (map['importedEnergy'] as num?)?.toDouble() ?? 0.0,
       exportedEnergy: (map['exportedEnergy'] as num?)?.toDouble() ?? 0.0,
     );

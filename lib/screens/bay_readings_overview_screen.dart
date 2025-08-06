@@ -1,28 +1,65 @@
 // lib/screens/bay_readings_overview_screen.dart
-import 'dart:math'; // Keep this import if 'min' and 'max' are used by fl_chart internally
 
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:collection/collection.dart'; // Import for firstWhereOrNull
-import 'package:fl_chart/fl_chart.dart'; // Required for charts, ensure in pubspec.yaml
+import 'package:collection/collection.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
-import '../../models/reading_models.dart'; // For ReadingFieldDataType, ReadingFrequency
-import '../../models/logsheet_models.dart'; // For LogsheetEntry
+import '../../models/reading_models.dart';
+import '../../models/logsheet_models.dart';
 import '../../utils/snackbar_utils.dart';
-import 'bay_readings_status_screen.dart'; // Screen 2: List of bays for a slot
+import 'bay_readings_status_screen.dart';
 
-// Enum for display modes
 enum DisplayMode { charts, readings }
 
-// Helper widget for rendering line charts (similar to TransformerReadingsChart)
+// Enhanced Equipment Icon Widget
+class _EquipmentIcon extends StatelessWidget {
+  final String type;
+  final Color color;
+  final double size;
+
+  const _EquipmentIcon({
+    required this.type,
+    required this.color,
+    this.size = 24.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    IconData iconData;
+
+    switch (type.toLowerCase()) {
+      case 'charts':
+        iconData = Icons.show_chart;
+        break;
+      case 'readings':
+        iconData = Icons.list_alt;
+        break;
+      case 'hourly':
+        iconData = Icons.access_time;
+        break;
+      case 'daily':
+        iconData = Icons.calendar_today;
+        break;
+      default:
+        iconData = Icons.electrical_services;
+        break;
+    }
+
+    return Icon(iconData, size: size, color: color);
+  }
+}
+
+// Enhanced Generic Readings Line Chart
 class GenericReadingsLineChart extends StatelessWidget {
-  final List<LogsheetEntry> readings;
+  final List readings;
   final String fieldName;
-  final String? unit; // Unit is now optional
-  final String frequencyType; // 'hourly' or 'daily'
+  final String? unit;
+  final String frequencyType;
 
   const GenericReadingsLineChart({
     Key? key,
@@ -34,6 +71,7 @@ class GenericReadingsLineChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     List<FlSpot> spots = [];
     Map<double, DateTime> timeMap = {};
 
@@ -48,35 +86,82 @@ class GenericReadingsLineChart extends StatelessWidget {
     }
 
     if (spots.isEmpty) {
-      return Center(
-        child: Text('No $fieldName data available for the selected period.'),
+      return Container(
+        height: 250,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.info_outline, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'No $fieldName data available',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                'for the selected period',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     spots.sort((a, b) => a.x.compareTo(b.x));
-
     double minX = spots.first.x;
     double maxX = spots.last.x;
     double minY = spots.map((spot) => spot.y).reduce(min);
     double maxY = spots.map((spot) => spot.y).reduce(max);
-
-    minY = minY * 0.9; // Add some padding to y-axis
+    minY = minY * 0.9;
     maxY = maxY * 1.1;
 
     return Container(
-      height: 250,
-      padding: const EdgeInsets.all(16.0),
+      height: 280,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: LineChart(
         LineChartData(
           lineBarsData: [
             LineChartBarData(
               spots: spots,
               isCurved: true,
-              color: Theme.of(context).colorScheme.primary,
-              dotData: FlDotData(show: true),
+              color: theme.colorScheme.primary,
+              barWidth: 3,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) {
+                  return FlDotCirclePainter(
+                    radius: 4,
+                    color: theme.colorScheme.primary,
+                    strokeWidth: 2,
+                    strokeColor: Colors.white,
+                  );
+                },
+              ),
               belowBarData: BarAreaData(
                 show: true,
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                color: theme.colorScheme.primary.withOpacity(0.1),
               ),
             ),
           ],
@@ -94,7 +179,10 @@ class GenericReadingsLineChart extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text(
                       DateFormat(formatString).format(date),
-                      style: const TextStyle(fontSize: 10),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      ),
                     ),
                   );
                 },
@@ -105,11 +193,15 @@ class GenericReadingsLineChart extends StatelessWidget {
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 40,
+                reservedSize: 50,
                 getTitlesWidget: (value, meta) {
                   return Text(
-                    '${value.toStringAsFixed(0)} ${unit ?? ''}',
-                    style: const TextStyle(fontSize: 10),
+                    '${value.toStringAsFixed(0)}\n${unit ?? ''}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                    textAlign: TextAlign.center,
                   );
                 },
               ),
@@ -123,20 +215,40 @@ class GenericReadingsLineChart extends StatelessWidget {
           maxY: maxY,
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (touchedSpot) =>
+                  theme.colorScheme.surface, // Changed from tooltipBgColor
+              tooltipBorder: BorderSide(color: theme.colorScheme.outline),
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   final date = timeMap[spot.x];
                   return LineTooltipItem(
                     '${fieldName}: ${spot.y.toStringAsFixed(2)} ${unit ?? ''}\n${date != null ? DateFormat('yyyy-MM-dd HH:mm').format(date) : ''}',
-                    const TextStyle(color: Colors.white),
+                    TextStyle(color: theme.colorScheme.onSurface),
                   );
                 }).toList();
               },
             ),
             handleBuiltInTouches: true,
           ),
-          gridData: FlGridData(show: true),
-          borderData: FlBorderData(show: true),
+
+          gridData: FlGridData(
+            show: true,
+            drawHorizontalLine: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: theme.colorScheme.outline.withOpacity(0.2),
+                strokeWidth: 1,
+              );
+            },
+          ),
+          borderData: FlBorderData(
+            show: true,
+            border: Border.all(
+              color: theme.colorScheme.outline.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
         ),
       ),
     );
@@ -147,9 +259,9 @@ class BayReadingsOverviewScreen extends StatefulWidget {
   final String substationId;
   final String substationName;
   final AppUser currentUser;
-  final String frequencyType; // 'hourly' or 'daily'
-  final DateTime startDate; // Date(s) for which data is to be displayed
-  final DateTime endDate; // Date(s) for which data is to be displayed
+  final String frequencyType;
+  final DateTime startDate;
+  final DateTime endDate;
 
   const BayReadingsOverviewScreen({
     super.key,
@@ -157,32 +269,27 @@ class BayReadingsOverviewScreen extends StatefulWidget {
     required this.substationName,
     required this.currentUser,
     required this.frequencyType,
-    required this.startDate, // Passed from parent
-    required this.endDate, // Passed from parent
+    required this.startDate,
+    required this.endDate,
   });
 
   @override
   State<BayReadingsOverviewScreen> createState() =>
-      _BayReadingsOverviewScreenState(); // Corrected State class name
+      _BayReadingsOverviewScreenState();
 }
 
 class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
   bool _isLoading = true;
   DateTime _earliestAssignmentDate = DateTime(2000, 1, 1);
-
   final Map<String, bool> _overallSlotCompletionStatus = {};
-
   List<Bay> _allBaysInSubstation = [];
   Map<String, List<ReadingField>> _bayMandatoryFields = {};
   Map<String, Map<String, LogsheetEntry>> _logsheetEntriesForDate = {};
 
-  // --- NEW: Chart/Display Mode States ---
-  DisplayMode _displayMode = DisplayMode.charts; // Default to charts
-  List<ReadingField> _selectedChartFields = []; // Fields chosen for charts
-  List<ReadingTemplate> _allReadingTemplates =
-      []; // To get available fields for config
-  List<ReadingField> _availableReadingFieldsForCharts =
-      []; // Filtered fields for config
+  DisplayMode _displayMode = DisplayMode.readings;
+  List<ReadingField> _selectedChartFields = [];
+  List<ReadingTemplate> _allReadingTemplates = [];
+  List<ReadingField> _availableReadingFieldsForCharts = [];
 
   @override
   void initState() {
@@ -210,23 +317,23 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
           _allBaysInSubstation = [];
           _bayMandatoryFields.clear();
           _logsheetEntriesForDate.clear();
-          _selectedChartFields
-              .clear(); // Clear chart fields on substation change
-          _availableReadingFieldsForCharts.clear(); // Clear available fields
+          _selectedChartFields.clear();
+          _availableReadingFieldsForCharts.clear();
         });
       }
     }
   }
 
   Future<void> _loadAllDataAndCalculateStatuses() async {
-    if (!mounted) return; // Always check mounted before setState in async
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _overallSlotCompletionStatus.clear();
       _allBaysInSubstation = [];
       _bayMandatoryFields.clear();
       _logsheetEntriesForDate.clear();
-      _availableReadingFieldsForCharts.clear(); // Clear for fresh load
+      _availableReadingFieldsForCharts.clear();
     });
 
     if (widget.substationId.isEmpty) {
@@ -241,18 +348,21 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
           .where('substationId', isEqualTo: widget.substationId)
           .orderBy('name')
           .get();
+
       _allBaysInSubstation = baysSnapshot.docs
           .map((doc) => Bay.fromFirestore(doc))
           .toList();
 
-      // 2. Fetch all reading assignments for these bays to get mandatory fields
+      // 2. Fetch all reading assignments for these bays
       final List<String> bayIds = _allBaysInSubstation
           .map((bay) => bay.id)
           .toList();
+
       if (bayIds.isEmpty) {
         if (mounted) setState(() => _isLoading = false);
         return;
       }
+
       final assignmentsSnapshot = await FirebaseFirestore.instance
           .collection('bayReadingAssignments')
           .where('bayId', whereIn: bayIds)
@@ -260,10 +370,10 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
       _bayMandatoryFields.clear();
       DateTime? tempEarliestDate;
+
       for (var doc in assignmentsSnapshot.docs) {
         final assignedFieldsData =
-            (doc.data() as Map<String, dynamic>)['assignedFields']
-                as List<dynamic>;
+            (doc.data() as Map)['assignedFields'] as List;
         final List<ReadingField> allFields = assignedFieldsData
             .map(
               (fieldMap) =>
@@ -294,7 +404,7 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
       _earliestAssignmentDate = tempEarliestDate ?? DateTime(2000, 1, 1);
 
-      // --- NEW: Fetch all Reading Templates for chart config ---
+      // Fetch reading templates for chart configuration
       final readingTemplateDocs = await FirebaseFirestore.instance
           .collection('readingTemplates')
           .get();
@@ -302,18 +412,15 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
           .map((doc) => ReadingTemplate.fromFirestore(doc))
           .toList();
 
-      // Filter available fields for charts based on substation's bay types
       _filterAvailableChartFields();
 
-      // 3. Fetch ALL logsheet entries for the selected date range and frequencyType
+      // 3. Fetch logsheet entries
       _logsheetEntriesForDate.clear();
-
       final startOfQueryPeriod = DateTime(
         widget.startDate.year,
         widget.startDate.month,
         widget.startDate.day,
       );
-      // For endDate, set to end of the day to include full day's data
       final endOfQueryPeriod = DateTime(
         widget.endDate.year,
         widget.endDate.month,
@@ -361,7 +468,6 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
     }
   }
 
-  // NEW: Filter available fields for chart configuration based on bay types in this substation
   void _filterAvailableChartFields() {
     Set<String> substationBayTypes = {};
     for (var bay in _allBaysInSubstation) {
@@ -372,7 +478,6 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
     for (var template in _allReadingTemplates) {
       if (substationBayTypes.contains(template.bayType)) {
         for (var field in template.readingFields) {
-          // Only add number type fields for charting
           if (field.name.isNotEmpty &&
               field.dataType == ReadingFieldDataType.number) {
             uniqueFields.add(field);
@@ -380,16 +485,16 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
         }
       }
     }
+
     _availableReadingFieldsForCharts = uniqueFields.toList()
       ..sort((a, b) => a.name.compareTo(b.name));
-    // Remove any previously selected chart fields that are no longer available
+
     _selectedChartFields.removeWhere(
       (field) =>
           !_availableReadingFieldsForCharts.any((f) => f.name == field.name),
     );
   }
 
-  // Helper to get the time key string from a logsheet entry based on frequency
   String _getTimeKeyFromLogsheetEntry(LogsheetEntry entry) {
     if (entry.frequency == ReadingFrequency.hourly.toString().split('.').last &&
         entry.readingHour != null) {
@@ -398,28 +503,21 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
         ReadingFrequency.daily.toString().split('.').last) {
       return DateFormat('yyyy-MM-dd').format(entry.readingTimestamp.toDate());
     }
-    return ''; // Should not happen for hourly/daily
+    return '';
   }
 
-  // Function to determine if a specific bay's logsheet is complete for a given slot
-  bool _isBayLogsheetCompleteForSlot(
-    String bayId,
-    String
-    slotTimeKey, // e.g., '2025-07-01-00' for hourly, '2025-07-01' for daily
-  ) {
+  bool _isBayLogsheetCompleteForSlot(String bayId, String slotTimeKey) {
     final List<ReadingField> mandatoryFields = _bayMandatoryFields[bayId] ?? [];
     if (mandatoryFields.isEmpty) {
-      return true; // No mandatory fields assigned for this bay/frequency, so considered complete
+      return true;
     }
 
     final LogsheetEntry? relevantLogsheet =
         _logsheetEntriesForDate[bayId]?[slotTimeKey];
-
     if (relevantLogsheet == null) {
-      return false; // No logsheet found for this bay and slot
+      return false;
     }
 
-    // Check if all mandatory fields in this logsheet entry have non-empty values
     return mandatoryFields.every((field) {
       final value = relevantLogsheet.values[field.name];
       if (field.dataType ==
@@ -487,105 +585,183 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
     return keys;
   }
 
-  // --- NEW: Chart Configuration Dialog ---
   void _showChartConfigurationDialog() {
     showDialog(
       context: context,
       builder: (ctx) {
         List<ReadingField> tempSelectedFields = List.from(_selectedChartFields);
-        return AlertDialog(
-          title: const Text('Configure Charts'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Select fields to display as charts:',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8.0,
-                  runSpacing: 4.0,
-                  children: _availableReadingFieldsForCharts.map((field) {
-                    bool isSelected = tempSelectedFields.any(
-                      (f) => f.name == field.name,
-                    );
-                    return FilterChip(
-                      label: Text(
-                        '${field.name} ${field.unit != null && field.unit!.isNotEmpty ? '(${field.unit})' : ''}',
+        final theme = Theme.of(context);
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Icon(Icons.settings, color: theme.colorScheme.primary),
+                  const SizedBox(width: 12),
+                  const Text('Configure Charts'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Select fields to display as charts:',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.8),
                       ),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        setState(() {
-                          // setState on the dialog's state
-                          if (selected) {
-                            tempSelectedFields.add(field);
-                          } else {
-                            tempSelectedFields.removeWhere(
-                              (f) => f.name == field.name,
-                            );
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_availableReadingFieldsForCharts.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.orange.shade700,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'No number-type reading fields available for charting in this substation.',
+                                style: TextStyle(color: Colors.orange.shade700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8.0,
+                        runSpacing: 8.0,
+                        children: _availableReadingFieldsForCharts.map((field) {
+                          bool isSelected = tempSelectedFields.any(
+                            (f) => f.name == field.name,
+                          );
+                          return FilterChip(
+                            label: Text(
+                              '${field.name} ${field.unit != null && field.unit!.isNotEmpty ? '(${field.unit})' : ''}',
+                            ),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setDialogState(() {
+                                if (selected) {
+                                  tempSelectedFields.add(field);
+                                } else {
+                                  tempSelectedFields.removeWhere(
+                                    (f) => f.name == field.name,
+                                  );
+                                }
+                              });
+                            },
+                            selectedColor: theme.colorScheme.primaryContainer,
+                            checkmarkColor: theme.colorScheme.primary,
+                          );
+                        }).toList(),
+                      ),
+                  ],
                 ),
-                if (_availableReadingFieldsForCharts.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      'No number-type reading fields available for charting in this substation.',
-                      style: TextStyle(fontStyle: FontStyle.italic),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                   ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedChartFields = tempSelectedFields;
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Apply'),
+                ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  // setState on parent widget's state
-                  _selectedChartFields = tempSelectedFields;
-                });
-                Navigator.pop(ctx);
-              },
-              child: const Text('Apply'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
   }
 
-  // --- NEW: Chart View Widget ---
   Widget _buildChartsView() {
+    final theme = Theme.of(context);
+
     if (_selectedChartFields.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(32.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.show_chart, size: 60, color: Colors.grey),
-              const SizedBox(height: 10),
-              const Text(
-                'No fields selected for charting.',
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(40),
+                ),
+                child: Icon(
+                  Icons.show_chart,
+                  size: 40,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'No fields selected for charting',
                 style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Configure chart fields to view data visualizations',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: _showChartConfigurationDialog,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
                 icon: const Icon(Icons.settings),
                 label: const Text('Configure Charts'),
               ),
@@ -595,7 +771,6 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
       );
     }
 
-    // Group readings by bay for chart display
     Map<String, List<LogsheetEntry>> readingsByBay = {};
     for (var entryMap in _logsheetEntriesForDate.values) {
       for (var entry in entryMap.values) {
@@ -614,29 +789,77 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
             (b) => b.id == bayId,
           );
 
-          if (bay == null)
-            return const SizedBox.shrink(); // Skip if bay not found
+          if (bay == null) return const SizedBox.shrink();
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Bay: ${bay.name}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.electrical_services,
+                        color: theme.colorScheme.primary,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            bay.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          Text(
+                            '${bay.voltageLevel} ${bay.bayType}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface.withOpacity(
+                                0.6,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
               ..._selectedChartFields.map((field) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${field.name} ${field.unit != null ? '(${field.unit})' : ''}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text(
+                        '${field.name} ${field.unit != null ? '(${field.unit})' : ''}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     GenericReadingsLineChart(
@@ -645,11 +868,11 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
                       unit: field.unit,
                       frequencyType: widget.frequencyType,
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                   ],
                 );
               }).toList(),
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
             ],
           );
         }).toList(),
@@ -657,26 +880,39 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
     );
   }
 
-  // --- NEW: Readings List View Widget ---
   Widget _buildReadingsListView() {
+    final theme = Theme.of(context);
     List<LogsheetEntry> allEntries = [];
     _logsheetEntriesForDate.values.forEach((bayMap) {
       allEntries.addAll(bayMap.values);
     });
-    // Sort to display chronologically
+
     allEntries.sort((a, b) => a.readingTimestamp.compareTo(b.readingTimestamp));
 
     if (allEntries.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'No ${widget.frequencyType} readings available for ${widget.substationName} in the period ${DateFormat('dd.MMM.yyyy').format(widget.startDate)} - ${DateFormat('dd.MMM.yyyy').format(widget.endDate)}.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: Colors.grey.shade600,
-            ),
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.info_outline, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              Text(
+                'No ${widget.frequencyType} readings available',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'for ${widget.substationName} in the period\n${DateFormat('dd.MMM.yyyy').format(widget.startDate)} - ${DateFormat('dd.MMM.yyyy').format(widget.endDate)}',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+            ],
           ),
         ),
       );
@@ -684,7 +920,6 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
     return Column(
       children: [
-        // This is the list of daily/hourly slots for completion status
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -698,10 +933,11 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
               DateTime slotDateTime;
 
               if (widget.frequencyType == 'hourly') {
-                // slotKey format: 'yyyy-MM-dd-HH'
                 List<String> parts = slotKey.split('-');
-                DateTime datePart = DateFormat('yyyy-MM-dd').parse(parts[0]);
-                int hourPart = int.parse(parts[1]);
+                DateTime datePart = DateFormat(
+                  'yyyy-MM-dd',
+                ).parse('${parts[0]}-${parts[1]}-${parts[2]}');
+                int hourPart = int.parse(parts[3]);
                 slotDateTime = DateTime(
                   datePart.year,
                   datePart.month,
@@ -710,16 +946,12 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
                 );
 
                 if (widget.startDate == widget.endDate) {
-                  // Single day (SU mode)
                   slotTitle = '${hourPart.toString().padLeft(2, '0')}:00 Hr';
                 } else {
-                  // Date range (SM mode)
                   slotTitle =
                       '${hourPart.toString().padLeft(2, '0')}:00 Hr (${DateFormat('dd.MMM').format(datePart)})';
                 }
               } else {
-                // daily
-                // slotKey format: 'yyyy-MM-dd'
                 slotDateTime = DateFormat('yyyy-MM-dd').parse(slotKey);
                 slotTitle =
                     'Daily Reading (${DateFormat('dd.MMM.yyyy').format(slotDateTime)})';
@@ -728,32 +960,73 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
               final bool isFutureSlot = slotDateTime.isAfter(DateTime.now());
               final bool isDisabled = isFutureSlot;
 
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 8.0),
-                elevation: 2,
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
                 child: ListTile(
-                  leading: Icon(
-                    isSlotComplete ? Icons.check_circle : Icons.cancel,
-                    color: isDisabled
-                        ? Colors.grey
-                        : (isSlotComplete ? Colors.green : Colors.red),
+                  contentPadding: const EdgeInsets.all(16),
+                  leading: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: isDisabled
+                          ? Colors.grey.withOpacity(0.1)
+                          : (isSlotComplete ? Colors.green : Colors.red)
+                                .withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      isSlotComplete ? Icons.check_circle : Icons.cancel,
+                      color: isDisabled
+                          ? Colors.grey
+                          : (isSlotComplete ? Colors.green : Colors.red),
+                      size: 24,
+                    ),
                   ),
                   title: Text(
                     slotTitle,
                     style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                       color: isDisabled
                           ? Colors.grey
-                          : Theme.of(context).textTheme.titleMedium?.color,
+                          : theme.colorScheme.onSurface,
                     ),
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios),
+                  subtitle: Text(
+                    isSlotComplete
+                        ? 'All readings completed'
+                        : 'Readings pending',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDisabled
+                          ? Colors.grey
+                          : (isSlotComplete ? Colors.green : Colors.red),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  trailing: Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: isDisabled ? Colors.grey : null,
+                  ),
                   onTap: isDisabled
                       ? null
                       : () {
                           int? selectedHour;
                           if (widget.frequencyType == 'hourly') {
                             List<String> parts = slotKey.split('-');
-                            selectedHour = int.parse(parts[1]);
+                            selectedHour = int.parse(parts[3]);
                           }
 
                           Navigator.of(context)
@@ -782,34 +1055,87 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     bool isDailyReading = widget.frequencyType == 'daily';
     bool isCurrentDayAndBefore8AM =
         isDailyReading &&
         DateUtils.isSameDay(widget.startDate, DateTime.now()) &&
         DateTime.now().hour < 8 &&
-        widget.startDate == widget.endDate; // Only for single-day selection
+        widget.startDate == widget.endDate;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Show daily reading message only if applicable
-                if (showDailyReadingMessageForToday(
-                  isDailyReading,
-                  isCurrentDayAndBefore8AM,
-                ))
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      'Daily readings for today will be available for entry after 08:00 AM IST.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontStyle: FontStyle.italic,
-                        color: Colors.grey.shade700,
-                      ),
+                // Header with frequency type info
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withOpacity(0.3),
                     ),
                   ),
+                  child: Column(
+                    children: [
+                      _EquipmentIcon(
+                        type: widget.frequencyType,
+                        color: theme.colorScheme.primary,
+                        size: 32,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${widget.frequencyType.capitalize()} Readings Overview',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.substationName,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Show daily reading message only if applicable
+                if (isCurrentDayAndBefore8AM)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.access_time, color: Colors.orange.shade700),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Daily readings for today will be available for entry after 08:00 AM IST.',
+                            style: TextStyle(
+                              color: Colors.orange.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 // Controls for Charts/Readings mode and Chart Configuration
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -820,19 +1146,35 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       SegmentedButton<DisplayMode>(
-                        segments: const <ButtonSegment<DisplayMode>>[
-                          ButtonSegment<DisplayMode>(
-                            value: DisplayMode.charts,
-                            label: Text('Charts'),
-                            icon: Icon(Icons.show_chart),
-                          ),
-                          ButtonSegment<DisplayMode>(
+                        segments: [
+                          ButtonSegment(
                             value: DisplayMode.readings,
-                            label: Text('Readings'),
-                            icon: Icon(Icons.list),
+                            label: const Text('Readings'),
+                            icon: _EquipmentIcon(
+                              type: 'readings',
+                              color: _displayMode == DisplayMode.readings
+                                  ? theme.colorScheme.onSecondaryContainer
+                                  : theme.colorScheme.onSurface.withOpacity(
+                                      0.6,
+                                    ),
+                              size: 18,
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: DisplayMode.charts,
+                            label: const Text('Charts'),
+                            icon: _EquipmentIcon(
+                              type: 'charts',
+                              color: _displayMode == DisplayMode.charts
+                                  ? theme.colorScheme.onSecondaryContainer
+                                  : theme.colorScheme.onSurface.withOpacity(
+                                      0.6,
+                                    ),
+                              size: 18,
+                            ),
                           ),
                         ],
-                        selected: <DisplayMode>{_displayMode},
+                        selected: {_displayMode},
                         onSelectionChanged: (Set<DisplayMode> newSelection) {
                           setState(() {
                             _displayMode = newSelection.first;
@@ -845,35 +1187,63 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
                         onPressed: _availableReadingFieldsForCharts.isEmpty
                             ? null
                             : _showChartConfigurationDialog,
+                        style: IconButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary
+                              .withOpacity(0.1),
+                          foregroundColor: theme.colorScheme.primary,
+                        ),
                       ),
                     ],
                   ),
                 ),
+
                 // Conditional content based on display mode
                 Expanded(
                   child:
                       (_logsheetEntriesForDate.isEmpty &&
                           !isCurrentDayAndBefore8AM)
                       ? Center(
-                          child: Text(
-                            'No ${widget.frequencyType} readings found for ${widget.substationName} in the period ${DateFormat('dd.MMM.yyyy').format(widget.startDate)} - ${DateFormat('dd.MMM.yyyy').format(widget.endDate)}.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.grey.shade600,
+                          child: Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 64,
+                                  color: Colors.grey.shade400,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No ${widget.frequencyType} readings found',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'for ${widget.substationName} in the period\n${DateFormat('dd.MMM.yyyy').format(widget.startDate)} - ${DateFormat('dd.MMM.yyyy').format(widget.endDate)}',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         )
                       : (_displayMode == DisplayMode.charts)
                       ? _buildChartsView()
-                      : _buildReadingsListView(), // Show readings list when in readings mode
+                      : _buildReadingsListView(),
                 ),
               ],
             ),
     );
   }
 
-  // Helper to determine if daily reading message should be shown (refactored for clarity)
   bool showDailyReadingMessageForToday(
     bool isDailyReading,
     bool isCurrentDayAndBefore8AM,
@@ -881,5 +1251,15 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
     return isDailyReading &&
         isCurrentDayAndBefore8AM &&
         widget.startDate == widget.endDate;
+  }
+}
+
+// Extension to capitalize first letter
+extension StringExtension on String {
+  String capitalize() {
+    if (isEmpty) {
+      return this;
+    }
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

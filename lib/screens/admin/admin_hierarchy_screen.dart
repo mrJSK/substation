@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-
 import '../../constants/app_constants.dart';
 import '../../models/app_state_data.dart';
 import '../../models/hierarchy_models.dart';
@@ -20,7 +19,6 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       appBar: _buildAppBar(theme),
@@ -72,9 +70,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
         if (snap.hasError) {
           return _buildError(theme, snap.error.toString());
         }
+
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+
         if (snap.data!.docs.isEmpty) return _buildEmptyState(theme);
 
         final states =
@@ -373,9 +373,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
         if (!snap.hasData || snap.data!.docs.isEmpty) {
           return _emptyInnerBox(theme, 'No divisions added yet', small: true);
         }
+
         final divisions = snap.data!.docs
             .map((d) => Division.fromFirestore(d))
             .toList();
+
         return Column(
           children: divisions.map((d) => _buildDivisionCard(d, theme)).toList(),
         );
@@ -438,9 +440,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
         if (!snap.hasData || snap.data!.docs.isEmpty) {
           return _emptyInnerBox(theme, 'No sub-divisions yet', small: true);
         }
+
         final subs = snap.data!.docs
             .map((d) => Subdivision.fromFirestore(d))
             .toList();
+
         return Column(
           children: subs.map((s) => _buildSubdivisionCard(s, theme)).toList(),
         );
@@ -503,9 +507,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
         if (!snap.hasData || snap.data!.docs.isEmpty) {
           return _emptyInnerBox(theme, 'No sub-stations yet', small: true);
         }
+
         final sss = snap.data!.docs
             .map((d) => Substation.fromFirestore(d))
             .toList();
+
         return Column(
           children: sss.map((s) => _buildSubstationCard(s, theme)).toList(),
         );
@@ -818,6 +824,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
           } else {
             await _fs.collection(coll).doc(itemToEdit.id).update(payload);
           }
+
           Navigator.pop(context);
         },
       ),
@@ -856,6 +863,7 @@ class _ActionButton {
   final IconData icon;
   final Color color;
   final VoidCallback onPressed;
+
   _ActionButton({
     required this.label,
     required this.icon,
@@ -868,6 +876,7 @@ class _MiniActionButton {
   final String label;
   final IconData icon;
   final VoidCallback onPressed;
+
   _MiniActionButton({
     required this.label,
     required this.icon,
@@ -911,12 +920,15 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
   final _selectedSasMake = ValueNotifier<String?>(null);
   final _selectedGeneralStatus = ValueNotifier<String?>(null);
   final _commissioningDate = ValueNotifier<DateTime?>(null);
+  final _selectedCityId = ValueNotifier<double?>(null);
+
+  String? _substationStateId; // To track which state this substation belongs to
+  bool _isLoadingStateContext = false;
 
   @override
   void initState() {
     super.initState();
     final existing = widget.existingItem;
-
     _nameCtl.text = existing?.name ?? '';
     _descCtl.text = existing?.description ?? '';
     _addressCtl.text = existing?.address ?? '';
@@ -929,6 +941,10 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
       _selectedVoltageLevel.value = existing.voltageLevel;
       _selectedType.value = existing.type;
       _commissioningDate.value = existing.commissioningDate?.toDate();
+      _selectedCityId.value = existing.cityId != null
+          ? double.tryParse(existing.cityId!)
+          : null;
+
       if (existing.type == 'SAS') {
         _selectedSasStatus.value = existing.operation;
         _selectedSasMake.value = existing.sasMake;
@@ -937,6 +953,11 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
       }
     } else {
       _selectedType.value = widget.itemType == 'Substation' ? 'Manual' : null;
+    }
+
+    // For substations, we need to determine the state context
+    if (widget.itemType == 'Substation' && widget.parentId != null) {
+      _determineStateContext();
     }
   }
 
@@ -956,7 +977,99 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
     _selectedSasMake.dispose();
     _selectedGeneralStatus.dispose();
     _commissioningDate.dispose();
+    _selectedCityId.dispose();
     super.dispose();
+  }
+
+  // Method to determine which state this substation belongs to
+  Future<void> _determineStateContext() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoadingStateContext = true;
+    });
+
+    try {
+      // Get the subdivision
+      final subdivisionDoc = await FirebaseFirestore.instance
+          .collection('subdivisions')
+          .doc(widget.parentId)
+          .get();
+
+      if (!subdivisionDoc.exists || !mounted) return;
+
+      final subdivision = Subdivision.fromFirestore(subdivisionDoc);
+
+      // Get the division
+      final divisionDoc = await FirebaseFirestore.instance
+          .collection('divisions')
+          .doc(subdivision.divisionId)
+          .get();
+
+      if (!divisionDoc.exists || !mounted) return;
+
+      final division = Division.fromFirestore(divisionDoc);
+
+      // Get the circle
+      final circleDoc = await FirebaseFirestore.instance
+          .collection('circles')
+          .doc(division.circleId)
+          .get();
+
+      if (!circleDoc.exists || !mounted) return;
+
+      final circle = Circle.fromFirestore(circleDoc);
+
+      // Get the zone
+      final zoneDoc = await FirebaseFirestore.instance
+          .collection('zones')
+          .doc(circle.zoneId)
+          .get();
+
+      if (!zoneDoc.exists || !mounted) return;
+
+      final zone = Zone.fromFirestore(zoneDoc);
+
+      // Get the company
+      final companyDoc = await FirebaseFirestore.instance
+          .collection('companys')
+          .doc(zone.companyId)
+          .get();
+
+      if (!companyDoc.exists || !mounted) return;
+
+      final company = Company.fromFirestore(companyDoc);
+
+      // Get the state
+      final stateDoc = await FirebaseFirestore.instance
+          .collection('appscreenstates')
+          .doc(company.stateId)
+          .get();
+
+      if (!stateDoc.exists || !mounted) return;
+
+      final appState = AppScreenState.fromFirestore(stateDoc);
+
+      // Find the corresponding state in AppStateData
+      final appStateData = Provider.of<AppStateData>(context, listen: false);
+      final matchingState = appStateData.allStateModels
+          .where((state) => state.name == appState.name)
+          .firstOrNull;
+
+      if (matchingState != null && mounted) {
+        setState(() {
+          _substationStateId = matchingState.id.toString();
+        });
+      }
+    } catch (e) {
+      print('Error determining state context: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingStateContext = false;
+        });
+      }
+    }
   }
 
   @override
@@ -1130,6 +1243,42 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
                       label: 'Landmark',
                       theme: theme,
                     ),
+
+                    // Add City Selection for Substations
+                    if (isSubstation) ...[
+                      const SizedBox(height: 16),
+                      _isLoadingStateContext
+                          ? Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Loading cities...',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _buildCityDropdown(theme),
+                    ],
+
                     const SizedBox(height: 24),
                     _SectionTitle(title: 'Contact Information', theme: theme),
                     const SizedBox(height: 16),
@@ -1189,6 +1338,247 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
         ),
       ),
     );
+  }
+
+  // Method to build city dropdown
+  Widget _buildCityDropdown(ThemeData theme) {
+    if (_substationStateId == null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info, color: Colors.grey.shade600, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              'State context not available',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final appStateData = Provider.of<AppStateData>(context, listen: false);
+    final cities = appStateData.allCityModels
+        .where((city) => city.stateId.toString() == _substationStateId)
+        .toList();
+
+    if (cities.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info, color: Colors.orange.shade700, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              'No cities found for this state',
+              style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ValueListenableBuilder<double?>(
+      valueListenable: _selectedCityId,
+      builder: (context, selectedCityId, _) {
+        return DropdownButtonFormField<double>(
+          value: selectedCityId,
+          decoration: InputDecoration(
+            labelText: 'City',
+            labelStyle: TextStyle(
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+              fontSize: 14,
+            ),
+            border: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            errorBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: theme.colorScheme.error),
+            ),
+            focusedErrorBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
+            ),
+          ),
+          items: cities.map((city) {
+            return DropdownMenuItem<double>(
+              value: city.id,
+              child: Text(
+                city.name,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            _selectedCityId.value = value;
+          },
+          style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
+          dropdownColor: theme.colorScheme.surface,
+          icon: Icon(
+            Icons.arrow_drop_down,
+            color: theme.colorScheme.onSurface.withOpacity(0.6),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _selectCommissioningDate() async {
+    final theme = Theme.of(context);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _commissioningDate.value ?? DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: theme.colorScheme.copyWith(
+              primary: theme.colorScheme.primary,
+              onPrimary: theme.colorScheme.onPrimary,
+              surface: theme.colorScheme.surface,
+              onSurface: theme.colorScheme.onSurface,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _commissioningDate.value) {
+      _commissioningDate.value = picked;
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final now = Timestamp.now();
+    final data = <String, dynamic>{
+      'name': _nameCtl.text.trim(),
+      'description': _descCtl.text.trim().isNotEmpty
+          ? _descCtl.text.trim()
+          : null,
+      'address': _addressCtl.text.trim().isNotEmpty
+          ? _addressCtl.text.trim()
+          : null,
+      'landmark': _landmarkCtl.text.trim().isNotEmpty
+          ? _landmarkCtl.text.trim()
+          : null,
+      'contactNumber': _contactNumberCtl.text.trim().isNotEmpty
+          ? _contactNumberCtl.text.trim()
+          : null,
+      'contactPerson': _contactPersonCtl.text.trim().isNotEmpty
+          ? _contactPersonCtl.text.trim()
+          : null,
+      'contactDesignation': _contactDesignationCtl.text.trim().isNotEmpty
+          ? _contactDesignationCtl.text.trim()
+          : null,
+      'createdAt': widget.existingItem?.createdAt ?? now,
+      'createdBy': widget.existingItem?.createdBy ?? '',
+    };
+
+    if (widget.itemType == 'Substation') {
+      data.addAll({
+        'voltageLevel': _selectedVoltageLevel.value,
+        'type': _selectedType.value,
+        'commissioningDate': _commissioningDate.value != null
+            ? Timestamp.fromDate(_commissioningDate.value!)
+            : null,
+        'cityId': _selectedCityId.value?.toString(), // Add cityId here
+      });
+
+      if (_selectedType.value == 'SAS') {
+        data.addAll({
+          'operation': _selectedSasStatus.value,
+          'sasMake': _selectedSasMake.value,
+          'status': _selectedGeneralStatus.value,
+          'statusDescription': _statusDescriptionCtl.text.trim().isNotEmpty
+              ? _statusDescriptionCtl.text.trim()
+              : null,
+        });
+      } else {
+        data.addAll({
+          'operation': null,
+          'sasMake': null,
+          'status': null,
+          'statusDescription': null,
+        });
+      }
+    }
+
+    switch (widget.itemType) {
+      case 'AppScreenState':
+        break;
+      case 'Company':
+        data['stateId'] =
+            widget.parentId ?? (widget.existingItem as Company).stateId;
+        break;
+      case 'Zone':
+        data['companyId'] =
+            widget.parentId ?? (widget.existingItem as Zone).companyId;
+        break;
+      case 'Circle':
+        data['zoneId'] =
+            widget.parentId ?? (widget.existingItem as Circle).zoneId;
+        break;
+      case 'Division':
+        data['circleId'] =
+            widget.parentId ?? (widget.existingItem as Division).circleId;
+        break;
+      case 'Subdivision':
+        data['divisionId'] =
+            widget.parentId ?? (widget.existingItem as Subdivision).divisionId;
+        break;
+      case 'Substation':
+        data['subdivisionId'] =
+            widget.parentId ??
+            (widget.existingItem as Substation).subdivisionId;
+        break;
+    }
+
+    try {
+      await widget.onSave(data);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -1360,7 +1750,7 @@ class _Dropdown extends StatelessWidget {
             ),
           ),
           items: items.map((item) {
-            return DropdownMenuItem(
+            return DropdownMenuItem<String>(
               value: item,
               child: Text(
                 item,
@@ -1371,7 +1761,7 @@ class _Dropdown extends StatelessWidget {
               ),
             );
           }).toList(),
-          onChanged: onChanged,
+          onChanged: onChanged ?? (value) => valueNotifier.value = value,
           validator: validator,
           style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
           dropdownColor: theme.colorScheme.surface,
@@ -1561,140 +1951,5 @@ class _SaveButton extends StatelessWidget {
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
       ),
     );
-  }
-}
-
-extension on _AddEditHierarchySheetState {
-  Future<void> _selectCommissioningDate() async {
-    final theme = Theme.of(context);
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _commissioningDate.value ?? DateTime.now(),
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: theme.colorScheme.copyWith(
-              primary: theme.colorScheme.primary,
-              onPrimary: theme.colorScheme.onPrimary,
-              surface: theme.colorScheme.surface,
-              onSurface: theme.colorScheme.onSurface,
-            ),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null && picked != _commissioningDate.value) {
-      _commissioningDate.value = picked;
-    }
-  }
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    final now = Timestamp.now();
-    final data = <String, dynamic>{
-      'name': _nameCtl.text.trim(),
-      'description': _descCtl.text.trim().isNotEmpty
-          ? _descCtl.text.trim()
-          : null,
-      'address': _addressCtl.text.trim().isNotEmpty
-          ? _addressCtl.text.trim()
-          : null,
-      'landmark': _landmarkCtl.text.trim().isNotEmpty
-          ? _landmarkCtl.text.trim()
-          : null,
-      'contactNumber': _contactNumberCtl.text.trim().isNotEmpty
-          ? _contactNumberCtl.text.trim()
-          : null,
-      'contactPerson': _contactPersonCtl.text.trim().isNotEmpty
-          ? _contactPersonCtl.text.trim()
-          : null,
-      'contactDesignation': _contactDesignationCtl.text.trim().isNotEmpty
-          ? _contactDesignationCtl.text.trim()
-          : null,
-      'createdAt': widget.existingItem?.createdAt ?? now,
-      'createdBy': widget.existingItem?.createdBy ?? '',
-    };
-
-    if (widget.itemType == 'Substation') {
-      data.addAll({
-        'voltageLevel': _selectedVoltageLevel.value,
-        'type': _selectedType.value,
-        'commissioningDate': _commissioningDate.value != null
-            ? Timestamp.fromDate(_commissioningDate.value!)
-            : null,
-        'cityId': null,
-      });
-
-      if (_selectedType.value == 'SAS') {
-        data.addAll({
-          'operation': _selectedSasStatus.value,
-          'sasMake': _selectedSasMake.value,
-          'status': _selectedGeneralStatus.value,
-          'statusDescription': _statusDescriptionCtl.text.trim().isNotEmpty
-              ? _statusDescriptionCtl.text.trim()
-              : null,
-        });
-      } else {
-        data.addAll({
-          'operation': null,
-          'sasMake': null,
-          'status': null,
-          'statusDescription': null,
-        });
-      }
-    }
-
-    switch (widget.itemType) {
-      case 'AppScreenState':
-        break;
-      case 'Company':
-        data['stateId'] =
-            widget.parentId ?? (widget.existingItem as Company).stateId;
-        break;
-      case 'Zone':
-        data['companyId'] =
-            widget.parentId ?? (widget.existingItem as Zone).companyId;
-        break;
-      case 'Circle':
-        data['zoneId'] =
-            widget.parentId ?? (widget.existingItem as Circle).zoneId;
-        break;
-      case 'Division':
-        data['circleId'] =
-            widget.parentId ?? (widget.existingItem as Division).circleId;
-        break;
-      case 'Subdivision':
-        data['divisionId'] =
-            widget.parentId ?? (widget.existingItem as Subdivision).divisionId;
-        break;
-      case 'Substation':
-        data['subdivisionId'] =
-            widget.parentId ??
-            (widget.existingItem as Substation).subdivisionId;
-        break;
-    }
-
-    try {
-      await widget.onSave(data);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
   }
 }

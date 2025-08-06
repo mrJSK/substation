@@ -1,4 +1,3 @@
-// lib/screens/tripping_shutdown_entry_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,15 +13,14 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
   final String substationId;
   final AppUser currentUser;
   final TrippingShutdownEntry? entryToEdit;
-  final bool isViewOnly; // This parameter determines view-only mode
+  final bool isViewOnly;
 
   const TrippingShutdownEntryScreen({
     super.key,
     required this.substationId,
     required this.currentUser,
     this.entryToEdit,
-    this.isViewOnly =
-        false, // Default to false, allowing editing unless explicitly set true
+    this.isViewOnly = false,
   });
 
   @override
@@ -35,49 +33,36 @@ class _TrippingShutdownEntryScreenState
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool _isLoading = true;
   bool _isSaving = false;
-  bool _isClosingEvent = false; // Flag to indicate if we are in closing mode
+  bool _isClosingEvent = false;
 
-  // Form controllers and variables
   List<Bay> _allBays = [];
-  Bay? _selectedBay; // For single bay selection (when editing or viewing)
-  List<Bay> _selectedMultiBays =
-      []; // For multi-bay selection (new event creation)
-
-  // NEW: Map to hold flags/cause controllers for multiple bays
+  Bay? _selectedBay;
+  List<Bay> _selectedMultiBays = [];
   Map<String, TextEditingController> _bayFlagsControllers = {};
-
-  String? _selectedEventType; // 'Tripping' or 'Shutdown'
+  String? _selectedEventType;
   final List<String> _eventTypes = ['Tripping', 'Shutdown'];
-
   DateTime? _startDate;
   TimeOfDay? _startTime;
   DateTime? _endDate;
   TimeOfDay? _endTime;
-
-  // _flagsCauseController is now only used for single-bay selection/editing
   final TextEditingController _flagsCauseController = TextEditingController();
   final TextEditingController _reasonForNonFeederController =
       TextEditingController();
   final TextEditingController _distanceController = TextEditingController();
-
-  // Conditional field visibility
   bool _showReasonForNonFeeder = false;
   bool _showHasAutoReclose = false;
   bool _showPhaseFaults = false;
   bool _showDistance = false;
-
+  bool _hasAutoReclose = false;
   List<String> _selectedPhaseFaults = [];
   final List<String> _phaseFaultOptions = ['Rph', 'Yph', 'Bph'];
-
-  // NEW: Shutdown specific fields
-  String? _selectedShutdownType; // 'Transmission' or 'Distribution'
+  String? _selectedShutdownType;
   final List<String> _shutdownTypes = ['Transmission', 'Distribution'];
   final TextEditingController _shutdownPersonNameController =
       TextEditingController();
   final TextEditingController _shutdownPersonDesignationController =
       TextEditingController();
 
-  // Helper to parse voltage level values from string (e.g., "220kV" -> 220)
   int _parseVoltageLevel(String? voltageLevel) {
     if (voltageLevel == null || voltageLevel.isEmpty) return 0;
     final regex = RegExp(r'(\d+)kV');
@@ -101,8 +86,6 @@ class _TrippingShutdownEntryScreenState
     _distanceController.dispose();
     _shutdownPersonNameController.dispose();
     _shutdownPersonDesignationController.dispose();
-
-    // Dispose all controllers in the map
     _bayFlagsControllers.forEach((key, controller) => controller.dispose());
     super.dispose();
   }
@@ -119,25 +102,32 @@ class _TrippingShutdownEntryScreenState
           .map((doc) => Bay.fromFirestore(doc))
           .toList();
 
+      if (_allBays.isEmpty) {
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'No bays found for this substation.',
+            isError: true,
+          );
+          Navigator.of(context).pop();
+        }
+        return;
+      }
+
       if (widget.entryToEdit != null) {
-        // Editing or viewing an existing event (single bay)
         final entry = widget.entryToEdit!;
         _selectedBay = _allBays.firstWhereOrNull(
           (bay) => bay.id == entry.bayId,
         );
-        _selectedMultiBays = [
-          _selectedBay!,
-        ]; // Ensure selectedMultiBays is consistent for display
+        _selectedMultiBays = _selectedBay != null ? [_selectedBay!] : [];
         _selectedEventType = entry.eventType;
         _startDate = entry.startTime.toDate();
         _startTime = TimeOfDay.fromDateTime(_startDate!);
-        _flagsCauseController.text =
-            entry.flagsCause; // Use single controller for existing
+        _flagsCauseController.text = entry.flagsCause;
         _reasonForNonFeederController.text = entry.reasonForNonFeeder ?? '';
         _distanceController.text = entry.distance ?? '';
         _selectedPhaseFaults = entry.phaseFaults ?? [];
-
-        // Populate new shutdown fields
+        _hasAutoReclose = entry.hasAutoReclose ?? false;
         _selectedShutdownType = entry.shutdownType;
         _shutdownPersonNameController.text = entry.shutdownPersonName ?? '';
         _shutdownPersonDesignationController.text =
@@ -147,18 +137,15 @@ class _TrippingShutdownEntryScreenState
           _endDate = entry.endTime!.toDate();
           _endTime = TimeOfDay.fromDateTime(_endDate!);
         } else {
-          // If event is OPEN, pre-fill end time for closing action
           _isClosingEvent = true;
           _endDate = DateTime.now();
           _endTime = TimeOfDay.fromDateTime(_endDate!);
         }
       } else {
-        // Creating a new event
         _startDate = DateTime.now();
         _startTime = TimeOfDay.fromDateTime(_startDate!);
-        _selectedEventType = _eventTypes.first; // Default to Tripping
-        // For new events, _selectedMultiBays will be populated by the dropdown.
-        // No initial flags cause for new events.
+        _selectedEventType = _eventTypes.first;
+        _hasAutoReclose = false;
       }
     } catch (e) {
       print("Error initializing form: $e");
@@ -174,7 +161,7 @@ class _TrippingShutdownEntryScreenState
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _updateConditionalFields(); // Update fields visibility after data is loaded
+          _updateConditionalFields();
         });
       }
     }
@@ -182,28 +169,43 @@ class _TrippingShutdownEntryScreenState
 
   void _updateConditionalFields() {
     setState(() {
-      // Logic for _showReasonForNonFeeder, _showHasAutoReclose, _showPhaseFaults, _showDistance
-      // These will primarily depend on _selectedBay (even if it's the first of selectedMultiBays)
-      _showReasonForNonFeeder =
-          _selectedBay != null && _selectedBay!.bayType != 'Feeder';
-
-      _showHasAutoReclose =
-          _selectedBay != null &&
-          _selectedBay!.bayType == 'Line' &&
-          _parseVoltageLevel(_selectedBay!.voltageLevel) >= 220;
-
-      _showPhaseFaults = _selectedEventType == 'Tripping';
-      _showDistance =
-          _selectedEventType == 'Tripping' &&
-          _selectedBay != null &&
-          _selectedBay!.bayType == 'Line';
-
+      if (_selectedBay == null && _selectedMultiBays.isEmpty) {
+        _showReasonForNonFeeder = false;
+        _showHasAutoReclose = false;
+        _showPhaseFaults = false;
+        _showDistance = false;
+      } else {
+        _showReasonForNonFeeder =
+            _selectedBay != null && _selectedBay!.bayType != 'Feeder';
+        _showHasAutoReclose =
+            _selectedBay != null &&
+            _selectedBay!.bayType == 'Line' &&
+            _parseVoltageLevel(_selectedBay!.voltageLevel) >= 220;
+        _showPhaseFaults = _selectedEventType == 'Tripping';
+        _showDistance =
+            _selectedEventType == 'Tripping' &&
+            _selectedBay != null &&
+            _selectedBay!.bayType == 'Line';
+      }
+      if (!_showReasonForNonFeeder) _reasonForNonFeederController.clear();
+      if (!_showPhaseFaults) _selectedPhaseFaults.clear();
+      if (!_showDistance) _distanceController.clear();
       bool isShutdown = _selectedEventType == 'Shutdown';
       if (!isShutdown) {
         _selectedShutdownType = null;
         _shutdownPersonNameController.clear();
         _shutdownPersonDesignationController.clear();
       }
+    });
+  }
+
+  void _updateClosingEventStatus() {
+    setState(() {
+      _isClosingEvent =
+          widget.entryToEdit != null &&
+          widget.entryToEdit!.status == 'OPEN' &&
+          _endDate != null &&
+          _endTime != null;
     });
   }
 
@@ -253,18 +255,32 @@ class _TrippingShutdownEntryScreenState
               _startTime = _endTime;
             }
           }
+          _updateClosingEventStatus();
         });
       }
     }
   }
 
   Future<void> _saveEvent() async {
-    // Validate form fields first
-    if (!_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate()) return;
+
+    final now = DateTime.now();
+    if (_startDate != null && _startDate!.isAfter(now)) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Start Date cannot be in the future.',
+        isError: true,
+      );
       return;
     }
-
-    // Additional validation for 'Close Event'
+    if (_endDate != null && _endDate!.isAfter(now)) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'End Date cannot be in the future.',
+        isError: true,
+      );
+      return;
+    }
     if (_isClosingEvent && (_endDate == null || _endTime == null)) {
       SnackBarUtils.showSnackBar(
         context,
@@ -273,8 +289,6 @@ class _TrippingShutdownEntryScreenState
       );
       return;
     }
-
-    // Shutdown specific mandatory fields validation (already present)
     if (_selectedEventType == 'Shutdown') {
       if (_selectedShutdownType == null) {
         SnackBarUtils.showSnackBar(
@@ -301,15 +315,44 @@ class _TrippingShutdownEntryScreenState
         return;
       }
     }
+    bool isFlagsCauseMandatoryGlobal =
+        _selectedEventType == 'Shutdown' || _isClosingEvent;
+    if (widget.entryToEdit == null && isFlagsCauseMandatoryGlobal) {
+      for (var bay in _selectedMultiBays) {
+        final controller = _bayFlagsControllers[bay.id];
+        if (controller == null || controller.text.trim().isEmpty) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Flags/Cause for ${bay.name} is mandatory.',
+            isError: true,
+          );
+          return;
+        }
+      }
+    }
+    if (_showPhaseFaults && _selectedPhaseFaults.isEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please select at least one phase fault for Tripping events.',
+        isError: true,
+      );
+      return;
+    }
+    if (_showDistance && _distanceController.text.trim().isEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Fault Distance is required for Line bay Tripping events.',
+        isError: true,
+      );
+      return;
+    }
 
     setState(() => _isSaving = true);
     try {
       final String currentUserId = widget.currentUser.uid;
       final Timestamp now = Timestamp.now();
-
-      // Determine status and end time
-      String status = _isClosingEvent ? 'CLOSED' : 'OPEN';
-      Timestamp? eventEndTime = _isClosingEvent
+      String status = _endDate != null && _endTime != null ? 'CLOSED' : 'OPEN';
+      Timestamp? eventEndTime = _endDate != null && _endTime != null
           ? Timestamp.fromDate(
               DateTime(
                 _endDate!.year,
@@ -320,11 +363,12 @@ class _TrippingShutdownEntryScreenState
               ),
             )
           : null;
-      String? closedBy = _isClosingEvent ? currentUserId : null;
-      Timestamp? closedAt = _isClosingEvent ? now : null;
+      String? closedBy = _endDate != null && _endTime != null
+          ? currentUserId
+          : null;
+      Timestamp? closedAt = _endDate != null && _endTime != null ? now : null;
 
       if (widget.entryToEdit == null) {
-        // Creating new event(s)
         if (_selectedMultiBays.isEmpty) {
           SnackBarUtils.showSnackBar(
             context,
@@ -336,10 +380,8 @@ class _TrippingShutdownEntryScreenState
         }
 
         for (Bay bay in _selectedMultiBays) {
-          // Get bay-specific flags/cause
           final String baySpecificFlagsCause =
               _bayFlagsControllers[bay.id]?.text.trim() ?? '';
-
           final newEntry = TrippingShutdownEntry(
             substationId: widget.substationId,
             bayId: bay.id,
@@ -356,15 +398,12 @@ class _TrippingShutdownEntryScreenState
             ),
             endTime: eventEndTime,
             status: status,
-            flagsCause:
-                baySpecificFlagsCause, // Use the bay-specific flagsCause
+            flagsCause: baySpecificFlagsCause,
             reasonForNonFeeder:
                 _reasonForNonFeederController.text.trim().isNotEmpty
                 ? _reasonForNonFeederController.text.trim()
                 : null,
-            hasAutoReclose: _showHasAutoReclose
-                ? (widget.entryToEdit?.hasAutoReclose ?? false)
-                : null,
+            hasAutoReclose: _showHasAutoReclose ? _hasAutoReclose : null,
             phaseFaults:
                 _selectedEventType == 'Tripping' &&
                     _showPhaseFaults &&
@@ -398,7 +437,6 @@ class _TrippingShutdownEntryScreenState
         if (mounted)
           SnackBarUtils.showSnackBar(context, 'Event(s) created successfully!');
       } else {
-        // Updating existing event (single bay logic remains largely same, uses _flagsCauseController)
         if (widget.currentUser.role == UserRole.substationUser &&
             !_isClosingEvent) {
           SnackBarUtils.showSnackBar(
@@ -437,15 +475,12 @@ class _TrippingShutdownEntryScreenState
           ),
           endTime: eventEndTime,
           status: status,
-          flagsCause: _flagsCauseController.text
-              .trim(), // Uses single controller for existing
+          flagsCause: _flagsCauseController.text.trim(),
           reasonForNonFeeder:
               _reasonForNonFeederController.text.trim().isNotEmpty
               ? _reasonForNonFeederController.text.trim()
               : null,
-          hasAutoReclose: _showHasAutoReclose
-              ? (widget.entryToEdit?.hasAutoReclose ?? false)
-              : null,
+          hasAutoReclose: _showHasAutoReclose ? _hasAutoReclose : null,
           phaseFaults:
               _selectedEventType == 'Tripping' &&
                   _showPhaseFaults &&
@@ -497,14 +532,12 @@ class _TrippingShutdownEntryScreenState
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       print("Error saving event: $e");
-      if (mounted) {
+      if (mounted)
         SnackBarUtils.showSnackBar(
           context,
           'Failed to save event: $e',
           isError: true,
         );
-      }
-      if (mounted) setState(() => _isSaving = false);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -549,12 +582,8 @@ class _TrippingShutdownEntryScreenState
     bool isClosedEvent =
         isEditingExisting && widget.entryToEdit!.status == 'CLOSED';
     bool isReadOnly = widget.isViewOnly || isClosedEvent;
-
     bool isFormEnabled = !isReadOnly && !_isSaving;
-    bool isMultiBaySelectionMode =
-        !isEditingExisting; // Only for new event creation
-
-    // Determine if 'Flags/Cause of Event' is mandatory
+    bool isMultiBaySelectionMode = !isEditingExisting;
     bool isFlagsCauseMandatoryGlobal =
         (_selectedEventType == 'Shutdown') || (_isClosingEvent);
 
@@ -580,7 +609,19 @@ class _TrippingShutdownEntryScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Bay Selection (Multi-select for new, single display for existing)
+                    if (isMultiBaySelectionMode &&
+                        _allBays.isNotEmpty &&
+                        _selectedMultiBays.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          'Please select at least one bay to proceed.',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
                     if (isMultiBaySelectionMode)
                       DropdownSearch<Bay>.multiSelection(
                         items: _allBays,
@@ -598,12 +639,9 @@ class _TrippingShutdownEntryScreenState
                         onChanged: (List<Bay> newValue) {
                           setState(() {
                             _selectedMultiBays = newValue;
-                            // Update _selectedBay to the first one for conditional fields if needed
                             _selectedBay = newValue.firstWhereOrNull(
                               (bay) => true,
                             );
-
-                            // Manage controllers for dynamically generated flags/cause fields
                             final Map<String, TextEditingController>
                             newBayFlagsControllers = {};
                             for (var bay in newValue) {
@@ -611,7 +649,6 @@ class _TrippingShutdownEntryScreenState
                                   _bayFlagsControllers[bay.id] ??
                                   TextEditingController();
                             }
-                            // Dispose controllers that are no longer needed
                             _bayFlagsControllers.forEach((id, controller) {
                               if (!newBayFlagsControllers.containsKey(id)) {
                                 controller.dispose();
@@ -628,7 +665,7 @@ class _TrippingShutdownEntryScreenState
                           return null;
                         },
                       )
-                    else // Single Bay Display for existing entries
+                    else
                       DropdownSearch<Bay>(
                         items: _allBays,
                         selectedItem: _selectedBay,
@@ -640,13 +677,11 @@ class _TrippingShutdownEntryScreenState
                             border: OutlineInputBorder(),
                           ),
                         ),
-                        enabled: false, // Always disabled for existing entries
-                        onChanged: (Bay? newValue) {}, // No-op as disabled
+                        enabled: false,
+                        onChanged: (Bay? newValue) {},
                         popupProps: const PopupProps.menu(showSearchBox: true),
                       ),
                     const SizedBox(height: 16),
-
-                    // Event Type
                     DropdownButtonFormField<String>(
                       decoration: const InputDecoration(
                         labelText: 'Event Type',
@@ -668,8 +703,6 @@ class _TrippingShutdownEntryScreenState
                           value == null ? 'Please select event type' : null,
                     ),
                     const SizedBox(height: 16),
-
-                    // Start Date & Time
                     ListTile(
                       title: Text(
                         'Start Date: ${_startDate != null ? DateFormat('yyyy-MM-dd').format(_startDate!) : 'Select Date'}',
@@ -689,8 +722,6 @@ class _TrippingShutdownEntryScreenState
                           : null,
                     ),
                     const SizedBox(height: 16),
-
-                    // Flags/Cause of Event (Dynamic for multi-select, single for others)
                     if (isMultiBaySelectionMode &&
                         _selectedMultiBays.isNotEmpty)
                       Column(
@@ -702,7 +733,6 @@ class _TrippingShutdownEntryScreenState
                           ),
                           const SizedBox(height: 8),
                           ..._selectedMultiBays.map((bay) {
-                            // Ensure a controller exists for this bay
                             if (!_bayFlagsControllers.containsKey(bay.id)) {
                               _bayFlagsControllers[bay.id] =
                                   TextEditingController(text: '');
@@ -712,16 +742,13 @@ class _TrippingShutdownEntryScreenState
                               child: TextFormField(
                                 controller: _bayFlagsControllers[bay.id],
                                 decoration: InputDecoration(
-                                  labelText:
-                                      'Flags/Cause for ${bay.name}', // Dynamic label
+                                  labelText: 'Flags/Cause for ${bay.name}',
                                   border: const OutlineInputBorder(),
                                   alignLabelWithHint: true,
                                 ),
                                 maxLines: 3,
                                 enabled: isFormEnabled,
                                 validator: (value) {
-                                  // Apply validation logic for each bay's flags field
-                                  // isFlagsCauseMandatoryGlobal applies to all bays if multi-selected
                                   if (isFlagsCauseMandatoryGlobal) {
                                     if (value == null || value.trim().isEmpty) {
                                       if (_selectedEventType == 'Shutdown') {
@@ -739,7 +766,7 @@ class _TrippingShutdownEntryScreenState
                           }).toList(),
                         ],
                       )
-                    else // Single Flags/Cause of Event for existing events or if no bays selected yet
+                    else
                       TextFormField(
                         controller: _flagsCauseController,
                         decoration: const InputDecoration(
@@ -750,7 +777,6 @@ class _TrippingShutdownEntryScreenState
                         maxLines: 3,
                         enabled: isFormEnabled,
                         validator: (value) {
-                          // This validation applies for single-bay (existing event) scenarios
                           if (isFlagsCauseMandatoryGlobal) {
                             if (value == null || value.trim().isEmpty) {
                               if (_selectedEventType == 'Shutdown') {
@@ -765,8 +791,6 @@ class _TrippingShutdownEntryScreenState
                         },
                       ),
                     const SizedBox(height: 16),
-
-                    // Conditional fields for Tripping/Shutdown
                     Visibility(
                       visible: _showReasonForNonFeeder,
                       child: Padding(
@@ -789,14 +813,10 @@ class _TrippingShutdownEntryScreenState
                         padding: const EdgeInsets.only(bottom: 16.0),
                         child: SwitchListTile(
                           title: const Text('Auto-reclose (A/R) occurred'),
-                          value: widget.entryToEdit?.hasAutoReclose ?? false,
+                          value: _hasAutoReclose,
                           onChanged: isFormEnabled
-                              ? (bool value) {
-                                  setState(() {
-                                    // This won't directly update entryToEdit, but its value is passed to copyWith on save
-                                    // For new events, this state needs to be managed separately if it applies per bay
-                                  });
-                                }
+                              ? (bool value) =>
+                                    setState(() => _hasAutoReclose = value)
                               : null,
                           secondary: const Icon(Icons.power_settings_new),
                         ),
@@ -854,7 +874,6 @@ class _TrippingShutdownEntryScreenState
                         ),
                       ),
                     ),
-                    // Shutdown specific fields
                     Visibility(
                       visible: _selectedEventType == 'Shutdown',
                       child: Column(
@@ -873,11 +892,9 @@ class _TrippingShutdownEntryScreenState
                               );
                             }).toList(),
                             onChanged: isFormEnabled
-                                ? (String? newValue) {
-                                    setState(() {
-                                      _selectedShutdownType = newValue;
-                                    });
-                                  }
+                                ? (String? newValue) => setState(
+                                    () => _selectedShutdownType = newValue,
+                                  )
                                 : null,
                             validator: _selectedEventType == 'Shutdown'
                                 ? (value) => value == null
@@ -920,8 +937,6 @@ class _TrippingShutdownEntryScreenState
                         ],
                       ),
                     ),
-
-                    // End Date & Time (for closing an event)
                     if (isEditingExisting && !isClosedEvent)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -953,8 +968,6 @@ class _TrippingShutdownEntryScreenState
                           const SizedBox(height: 16),
                         ],
                       ),
-
-                    // Save / Close Button
                     if (!isReadOnly)
                       Center(
                         child: _isSaving
@@ -976,7 +989,6 @@ class _TrippingShutdownEntryScreenState
                                 ),
                               ),
                       ),
-                    // Message for view-only or already closed events
                     if (widget.isViewOnly || isClosedEvent)
                       Center(
                         child: Padding(
@@ -1003,7 +1015,6 @@ class _TrippingShutdownEntryScreenState
   }
 }
 
-// Extension to help find firstWhereOrNull for List (already exists in OperationsTab, ensure consistency)
 extension ListExtension<T> on List<T> {
   T? firstWhereOrNull(bool Function(T element) test) {
     for (var element in this) {

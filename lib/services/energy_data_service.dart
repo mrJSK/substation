@@ -59,10 +59,11 @@ class EnergyDataService {
           final bayId = entry.key;
           final bay = sldController.baysMap[bayId];
           if (bay != null) {
+            // ✅ FIXED: Use bayObject instead of bay and bayId
             savedBayEnergyData[entry.key] = BayEnergyData.fromMap(
               entry.value as Map<String, dynamic>,
-              bay: bay,
-              bayId: bayId,
+              bayObject: bay, // Changed from 'bay:' to 'bayObject:'
+              // Removed bayId parameter as it's not needed
             );
           }
         }

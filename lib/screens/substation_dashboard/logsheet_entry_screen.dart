@@ -1,13 +1,85 @@
-// lib/screens/logsheet_entry_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../../equipment_icons/capacitor_bank_icon.dart';
 import '../../models/bay_model.dart';
 import '../../models/reading_models.dart';
 import '../../models/logsheet_models.dart';
 import '../../models/user_model.dart';
 import '../../utils/snackbar_utils.dart';
+import '../../equipment_icons/energy_meter_icon.dart';
+import '../../equipment_icons/feeder_icon.dart';
+import '../../equipment_icons/circuit_breaker_icon.dart';
+
+// Widget to render equipment icons based on field or bay type
+class _EquipmentIcon extends StatelessWidget {
+  final String type;
+  final double size;
+  final Color color;
+
+  const _EquipmentIcon({
+    required this.type,
+    this.size = 24.0,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget child;
+    final Size iconSize = Size(size, size);
+
+    switch (type.toLowerCase()) {
+      case 'operations':
+        child = CustomPaint(
+          painter: FeederIconPainter(
+            color: color,
+            equipmentSize: iconSize,
+            symbolSize: iconSize,
+          ),
+          size: iconSize,
+        );
+        break;
+      case 'energy':
+        child = CustomPaint(
+          painter: EnergyMeterIconPainter(
+            color: color,
+            equipmentSize: iconSize,
+            symbolSize: iconSize,
+          ),
+          size: iconSize,
+        );
+        break;
+      case 'tripping':
+        child = CustomPaint(
+          painter: CircuitBreakerIconPainter(
+            color: color,
+            equipmentSize: iconSize,
+            symbolSize: iconSize,
+          ),
+          size: iconSize,
+        );
+        break;
+      case 'assets':
+        child = CustomPaint(
+          painter: CapacitorBankIconPainter(
+            color: color,
+            equipmentSize: iconSize,
+            symbolSize: iconSize,
+          ),
+          size: iconSize,
+        );
+        break;
+      case 'sld':
+        child = Icon(Icons.electrical_services, size: size, color: color);
+        break;
+      default:
+        child = Icon(Icons.device_unknown, size: size, color: color);
+    }
+
+    return SizedBox(width: size, height: size, child: child);
+  }
+}
 
 class LogsheetEntryScreen extends StatefulWidget {
   final String substationId;
@@ -17,7 +89,7 @@ class LogsheetEntryScreen extends StatefulWidget {
   final String frequency;
   final int? readingHour;
   final AppUser currentUser;
-  final bool forceReadOnly; // New parameter for forcing read-only mode
+  final bool forceReadOnly;
 
   const LogsheetEntryScreen({
     super.key,
@@ -29,17 +101,19 @@ class LogsheetEntryScreen extends StatefulWidget {
     this.readingHour,
     required this.currentUser,
     this.forceReadOnly = false,
-    int? selectedHour, // Default to false
+    int? selectedHour,
   });
 
   @override
   State<LogsheetEntryScreen> createState() => _LogsheetEntryScreenState();
 }
 
-class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
+class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
+    with SingleTickerProviderStateMixin {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool _isLoading = true;
   bool _isSaving = false;
+  late AnimationController _animationController;
 
   Bay? _currentBay;
   DocumentSnapshot? _bayReadingAssignmentDoc;
@@ -47,7 +121,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   LogsheetEntry? _previousLogsheetEntry;
 
   List<ReadingField> _filteredReadingFields = [];
-
   final Map<String, TextEditingController> _readingTextFieldControllers = {};
   final Map<String, bool> _readingBooleanFieldValues = {};
   final Map<String, DateTime?> _readingDateFieldValues = {};
@@ -60,7 +133,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
     _initializeScreenData();
+    _animationController.forward();
   }
 
   @override
@@ -71,14 +149,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
     _readingBooleanDescriptionControllers.forEach(
       (key, controller) => controller.dispose(),
     );
+    _animationController.dispose();
     super.dispose();
   }
 
   Future<void> _initializeScreenData() async {
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
       final bayDoc = await FirebaseFirestore.instance
           .collection('bays')
@@ -110,14 +186,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             (_bayReadingAssignmentDoc!.data()
                     as Map<String, dynamic>)['assignedFields']
                 as List<dynamic>;
-
         final List<ReadingField> allAssignedReadingFields = assignedFieldsData
             .map(
               (fieldMap) =>
                   ReadingField.fromMap(fieldMap as Map<String, dynamic>),
             )
             .toList();
-
         _filteredReadingFields = allAssignedReadingFields
             .where(
               (field) =>
@@ -125,7 +199,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                   widget.frequency,
             )
             .toList();
-
         await _fetchAndInitializeLogsheetEntries();
       } else {
         _filteredReadingFields = [];
@@ -142,17 +215,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         Navigator.of(context).pop();
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _fetchAndInitializeLogsheetEntries() async {
     _existingLogsheetEntry = await _getLogsheetForDate(widget.readingDate);
-
     DateTime queryPreviousDate;
     if (widget.frequency == 'daily') {
       queryPreviousDate = widget.readingDate.subtract(const Duration(days: 1));
@@ -163,7 +231,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         widget.readingDate.day,
       );
     } else {
-      // For hourly
       if (widget.readingHour != null && widget.readingHour! > 0) {
         queryPreviousDate = DateTime(
           widget.readingDate.year,
@@ -184,12 +251,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         );
       }
     }
-
     _previousLogsheetEntry = await _getLogsheetForDate(queryPreviousDate);
-
     _isFirstDataEntryForThisBayFrequency =
         _existingLogsheetEntry == null && _previousLogsheetEntry == null;
-
     _initializeReadingFieldControllers();
   }
 
@@ -198,7 +262,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         .collection('logsheetEntries')
         .where('bayId', isEqualTo: widget.bayId)
         .where('frequency', isEqualTo: widget.frequency);
-
     DateTime start, end;
     if (widget.frequency == 'hourly' && widget.readingHour != null) {
       start = DateTime(date.year, date.month, date.day, widget.readingHour!);
@@ -209,7 +272,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
       start = DateTime(date.year, date.month, date.day);
       end = DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
     }
-
     logsheetQuery = logsheetQuery
         .where(
           'readingTimestamp',
@@ -219,7 +281,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           'readingTimestamp',
           isLessThanOrEqualTo: Timestamp.fromDate(end),
         );
-
     final snapshot = await logsheetQuery.limit(1).get();
     if (snapshot.docs.isNotEmpty) {
       return LogsheetEntry.fromFirestore(snapshot.docs.first);
@@ -298,9 +359,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   }
 
   Future<void> _saveLogsheetEntry() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
     if (_currentBay == null ||
         (_bayReadingAssignmentDoc == null &&
             _filteredReadingFields.any(
@@ -322,10 +381,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
-
+    setState(() => _isSaving = true);
     final String modificationReason =
         await _showModificationReasonDialog() ?? "";
     if (widget.currentUser.role == UserRole.subdivisionManager &&
@@ -345,7 +401,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
       for (var field in _filteredReadingFields) {
         final String fieldName = field.name;
         final String dataType = field.dataType.toString().split('.').last;
-
         if (dataType == 'text' || dataType == 'number') {
           recordedValues[fieldName] = _readingTextFieldControllers[fieldName]
               ?.text
@@ -420,46 +475,81 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
       }
     } catch (e) {
       print("Error saving logsheet entry: $e");
-      if (mounted) {
+      if (mounted)
         SnackBarUtils.showSnackBar(
           context,
           'Failed to save logsheet: $e',
           isError: true,
         );
-      }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<String?> _showModificationReasonDialog() async {
     if (widget.currentUser.role != UserRole.subdivisionManager ||
-        _existingLogsheetEntry == null) {
+        _existingLogsheetEntry == null)
       return "Initial Entry";
-    }
 
+    final theme = Theme.of(context);
     TextEditingController reasonController = TextEditingController();
     return await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reason for Modification'),
-        content: TextField(
-          controller: reasonController,
-          decoration: const InputDecoration(hintText: "Enter reason..."),
-          autofocus: true,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: theme.colorScheme.surface,
+        title: Text(
+          'Reason for Modification',
+          style: TextStyle(
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: reasonController,
+              decoration: InputDecoration(
+                hintText: 'Enter reason for modification...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: theme.colorScheme.primary.withOpacity(0.05),
+                errorStyle: TextStyle(
+                  color: theme.colorScheme.error,
+                  fontFamily: 'Roboto',
+                ),
+              ),
+              maxLength: 200,
+              maxLines: 3,
+              autofocus: true,
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(reasonController.text),
-            child: const Text('Submit'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Submit', style: TextStyle(fontFamily: 'Roboto')),
           ),
         ],
       ),
@@ -467,18 +557,15 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
   }
 
   Widget _buildReadingFieldInput(ReadingField field) {
+    final theme = Theme.of(context);
     final String fieldName = field.name;
     final String dataType = field.dataType.toString().split('.').last;
     bool isMandatory = field.isMandatory;
-
     final bool isPreviousReadingField =
         fieldName.startsWith('Previous Day Reading') ||
         fieldName.startsWith('Previous Month Reading');
-
-    if (isPreviousReadingField && _isFirstDataEntryForThisBayFrequency) {
+    if (isPreviousReadingField && _isFirstDataEntryForThisBayFrequency)
       isMandatory = false;
-    }
-
     final bool isReadOnly =
         widget.forceReadOnly ||
         (widget.currentUser.role == UserRole.substationUser &&
@@ -486,29 +573,32 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         (isPreviousReadingField &&
             _existingLogsheetEntry == null &&
             _previousLogsheetEntry != null);
-
     final String? unit = field.unit;
     final List<String>? options = field.options;
-    final String? initialDescriptionRemarks = field.descriptionRemarks;
 
     final inputDecoration = InputDecoration(
       labelText: fieldName + (isMandatory ? ' *' : ''),
-      border: const OutlineInputBorder(),
-      suffixText: unit,
-      filled: isReadOnly,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      filled: true,
       fillColor: isReadOnly
           ? Colors.grey.shade100
-          : Theme.of(context).inputDecorationTheme.fillColor,
+          : theme.colorScheme.primary.withOpacity(0.05),
+      suffixText: unit,
+      prefixIcon: _EquipmentIcon(
+        type: _currentBay?.bayType ?? dataType,
+        color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
+      ),
+      errorStyle: TextStyle(
+        color: theme.colorScheme.error,
+        fontFamily: 'Roboto',
+      ),
     );
 
     String? Function(String?)? validator;
     if (isMandatory && !isReadOnly) {
-      validator = (value) {
-        if (value == null || value.trim().isEmpty) {
-          return '$fieldName is mandatory';
-        }
-        return null;
-      };
+      validator = (value) => (value == null || value.trim().isEmpty)
+          ? '$fieldName is mandatory'
+          : null;
     }
 
     Widget fieldWidget;
@@ -538,12 +628,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           ),
           keyboardType: TextInputType.number,
           validator: (value) {
-            if (validator != null && validator(value) != null) {
+            if (validator != null && validator(value) != null)
               return validator(value);
-            }
-            if (value!.isNotEmpty && double.tryParse(value) == null) {
+            if (value!.isNotEmpty && double.tryParse(value) == null)
               return 'Enter a valid number for $fieldName';
-            }
             return null;
           },
         );
@@ -553,42 +641,41 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SwitchListTile(
-              title: Text(fieldName + (isMandatory ? ' *' : '')),
+              title: Text(
+                fieldName + (isMandatory ? ' *' : ''),
+                style: const TextStyle(fontFamily: 'Roboto'),
+              ),
               value: _readingBooleanFieldValues.putIfAbsent(
                 fieldName,
                 () => false,
               ),
               onChanged: isReadOnly
                   ? null
-                  : (value) {
-                      setState(() {
-                        _readingBooleanFieldValues[fieldName] = value;
-                      });
-                    },
-              secondary: const Icon(Icons.check_box),
+                  : (value) => setState(
+                      () => _readingBooleanFieldValues[fieldName] = value,
+                    ),
+              secondary: _EquipmentIcon(
+                type: 'boolean',
+                color: isReadOnly ? Colors.grey : Colors.purple[700]!,
+              ),
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
             ),
             if (_readingBooleanFieldValues[fieldName]!)
               Padding(
-                padding: const EdgeInsets.only(
-                  left: 16.0,
-                  right: 16.0,
-                  bottom: 8.0,
-                ),
+                padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
                 child: TextFormField(
                   controller: _readingBooleanDescriptionControllers.putIfAbsent(
                     fieldName,
-                    () =>
-                        TextEditingController(text: initialDescriptionRemarks),
+                    () => TextEditingController(),
                   ),
                   readOnly: isReadOnly,
                   decoration: inputDecoration.copyWith(
                     labelText: 'Description / Remarks (Optional)',
-                    filled: isReadOnly,
-                    fillColor: isReadOnly
-                        ? Colors.grey.shade100
-                        : Theme.of(context).inputDecorationTheme.fillColor,
+                    prefixIcon: Icon(
+                      Icons.description,
+                      color: isReadOnly ? Colors.grey : Colors.purple[700],
+                    ),
                   ),
                   maxLines: 2,
                 ),
@@ -598,12 +685,13 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                 !_readingBooleanFieldValues[fieldName]! &&
                 _formKey.currentState?.validate() == false)
               Padding(
-                padding: const EdgeInsets.only(left: 48.0, top: 4.0),
+                padding: const EdgeInsets.only(left: 48, top: 4),
                 child: Text(
                   '$fieldName is mandatory',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
+                    color: theme.colorScheme.error,
                     fontSize: 12,
+                    fontFamily: 'Roboto',
                   ),
                 ),
               ),
@@ -613,18 +701,15 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
       case 'date':
         final DateTime? currentDate = _readingDateFieldValues.putIfAbsent(
           fieldName,
-          () {
-            if (_readingDateFieldValues.containsKey(fieldName)) {
-              return _readingDateFieldValues[fieldName];
-            }
-            if (field.isMandatory && _existingLogsheetEntry == null) {
-              return widget.readingDate;
-            }
-            return null;
-          },
+          () => field.isMandatory && _existingLogsheetEntry == null
+              ? widget.readingDate
+              : null,
         );
-
         fieldWidget = ListTile(
+          leading: Icon(
+            Icons.calendar_today,
+            color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
+          ),
           title: Text(
             fieldName +
                 (isMandatory ? ' *' : '') +
@@ -632,22 +717,44 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
                 (currentDate == null
                     ? 'Select Date'
                     : DateFormat('yyyy-MM-dd').format(currentDate)),
+            style: const TextStyle(fontFamily: 'Roboto'),
           ),
-          trailing: const Icon(Icons.calendar_today),
+          trailing: IconButton(
+            icon: Icon(
+              Icons.clear,
+              color: isReadOnly
+                  ? Colors.grey
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            onPressed: isReadOnly
+                ? null
+                : () =>
+                      setState(() => _readingDateFieldValues[fieldName] = null),
+          ),
           onTap: isReadOnly
               ? null
               : () async {
+                  final theme = Theme.of(context);
                   final DateTime? picked = await showDatePicker(
                     context: context,
                     initialDate: currentDate ?? DateTime.now(),
                     firstDate: DateTime(2000),
                     lastDate: DateTime(2101),
+                    builder: (context, child) => Theme(
+                      data: theme.copyWith(
+                        colorScheme: theme.colorScheme.copyWith(
+                          primary: theme.colorScheme.primary,
+                          onPrimary: theme.colorScheme.onPrimary,
+                          surface: theme.colorScheme.surface,
+                          onSurface: theme.colorScheme.onSurface,
+                        ),
+                        dialogBackgroundColor: theme.colorScheme.surface,
+                      ),
+                      child: child!,
+                    ),
                   );
-                  if (picked != null) {
-                    setState(() {
-                      _readingDateFieldValues[fieldName] = picked;
-                    });
-                  }
+                  if (picked != null)
+                    setState(() => _readingDateFieldValues[fieldName] = picked);
                 },
         );
         break;
@@ -655,30 +762,40 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
         fieldWidget = DropdownButtonFormField<String>(
           value: _readingDropdownFieldValues[fieldName],
           decoration: inputDecoration,
-          items: options!.map((option) {
-            return DropdownMenuItem(value: option, child: Text(option));
-          }).toList(),
+          items: options!
+              .map(
+                (option) => DropdownMenuItem(
+                  value: option,
+                  child: Text(
+                    option,
+                    style: const TextStyle(fontFamily: 'Roboto'),
+                  ),
+                ),
+              )
+              .toList(),
           onChanged: isReadOnly
               ? null
-              : (value) {
-                  setState(() {
-                    _readingDropdownFieldValues[fieldName] = value;
-                  });
-                },
+              : (value) => setState(
+                  () => _readingDropdownFieldValues[fieldName] = value,
+                ),
           validator: validator,
         );
         break;
       default:
-        fieldWidget = Text('Unsupported data type: $dataType for $fieldName');
+        fieldWidget = Text(
+          'Unsupported data type: $dataType for $fieldName',
+          style: const TextStyle(fontFamily: 'Roboto'),
+        );
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: AbsorbPointer(absorbing: isReadOnly, child: fieldWidget),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     String titleText = widget.forceReadOnly
         ? "View Readings"
         : "Enter Readings";
@@ -698,105 +815,236 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen> {
             _existingLogsheetEntry != null);
 
     return Scaffold(
-      appBar: AppBar(title: Text(titleText)),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Substation: ${widget.substationName}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    ListTile(
-                      title: Text(
-                        'Reading Date: ${DateFormat('yyyy-MM-dd').format(widget.readingDate)}',
-                      ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: null, // Date is fixed, no interaction needed
-                    ),
-                    const SizedBox(height: 16),
-                    if (_currentBay?.multiplyingFactor != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 24.0),
-                        child: Center(
-                          child: Chip(
-                            label: Text(
-                              'Multiplying Factor (MF): ${_currentBay!.multiplyingFactor}',
-                            ),
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.secondaryContainer,
-                          ),
+      appBar: AppBar(
+        title: Text(
+          titleText,
+          style: const TextStyle(
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        centerTitle: true,
+        backgroundColor: theme.colorScheme.surface,
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? Center(
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          color: theme.colorScheme.primary,
                         ),
-                      ),
-                    if (_filteredReadingFields.isEmpty)
-                      Center(
-                        child: Text(
-                          'No ${widget.frequency.toLowerCase()} reading fields defined for this slot.',
+                        const SizedBox(height: 12),
+                        Text(
+                          'Loading readings...',
                           style: TextStyle(
-                            fontStyle: FontStyle.italic,
-                            color: Colors.grey.shade600,
+                            fontFamily: 'Roboto',
+                            color: theme.colorScheme.onSurface,
                           ),
                         ),
-                      )
-                    else
-                      ..._filteredReadingFields.map((field) {
-                        return _buildReadingFieldInput(field);
-                      }).toList(),
-                    const SizedBox(height: 32),
-                    if (!isReadOnlyView)
-                      Center(
-                        child: _isSaving
-                            ? const CircularProgressIndicator()
-                            : ElevatedButton.icon(
-                                onPressed: _saveLogsheetEntry,
-                                icon: const Icon(Icons.save),
-                                label: Text(
-                                  _existingLogsheetEntry == null
-                                      ? 'Save Logsheet Entry'
-                                      : 'Update Logsheet Entry',
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size(double.infinity, 50),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                margin: const EdgeInsets.all(16),
+                child: AnimatedCrossFade(
+                  firstChild: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _EquipmentIcon(
+                            type: _currentBay?.bayType ?? 'default',
+                            color: theme.colorScheme.primary,
+                            size: 80,
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'No ${widget.frequency.toLowerCase()} reading fields defined for this slot.',
+                            style: TextStyle(
+                              fontFamily: 'Roboto',
+                              fontStyle: FontStyle.italic,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: theme.colorScheme.onPrimary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text(
+                              'Back',
+                              style: TextStyle(fontFamily: 'Roboto'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  secondChild: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              _EquipmentIcon(
+                                type: _currentBay?.bayType ?? 'default',
+                                color: theme.colorScheme.primary,
+                                size: 32,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Substation: ${widget.substationName}',
+                                style: TextStyle(
+                                  fontFamily: 'Roboto',
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.onSurface,
                                 ),
                               ),
-                      ),
-                    if (isReadOnlyView)
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Text(
-                            widget.forceReadOnly
-                                ? 'Viewing saved readings.'
-                                : 'Readings are saved and cannot be modified by Substation Users.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey.shade700,
-                                ),
+                            ],
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          ListTile(
+                            leading: Icon(
+                              Icons.calendar_today,
+                              color: theme.colorScheme.primary,
+                            ),
+                            title: Text(
+                              'Reading Date: ${DateFormat('yyyy-MM-dd').format(widget.readingDate)}',
+                              style: const TextStyle(fontFamily: 'Roboto'),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (_currentBay?.multiplyingFactor != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 24),
+                              child: Center(
+                                child: Chip(
+                                  label: Text(
+                                    'Multiplying Factor: ${_currentBay!.multiplyingFactor}',
+                                    style: const TextStyle(
+                                      fontFamily: 'Roboto',
+                                    ),
+                                  ),
+                                  backgroundColor:
+                                      theme.colorScheme.secondaryContainer,
+                                  side: BorderSide(
+                                    color: theme.colorScheme.secondary,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ..._filteredReadingFields
+                              .map((field) => _buildReadingFieldInput(field))
+                              .toList(),
+                          if (isReadOnlyView)
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Text(
+                                  widget.forceReadOnly
+                                      ? 'Viewing saved readings.'
+                                      : 'Readings are saved and cannot be modified by Substation Users.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontFamily: 'Roboto',
+                                    fontStyle: FontStyle.italic,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
+                  crossFadeState: _filteredReadingFields.isEmpty
+                      ? CrossFadeState.showFirst
+                      : CrossFadeState.showSecond,
+                  duration: const Duration(milliseconds: 300),
                 ),
               ),
-            ),
+      ),
+      bottomNavigationBar: !isReadOnlyView
+          ? Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(12),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: _isSaving
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        color: theme.colorScheme.primary,
+                      ),
+                    )
+                  : ElevatedButton.icon(
+                      onPressed: _saveLogsheetEntry,
+                      icon: Icon(
+                        Icons.save,
+                        color: theme.colorScheme.onPrimary,
+                      ),
+                      label: Text(
+                        _existingLogsheetEntry == null
+                            ? 'Save Logsheet Entry'
+                            : 'Update Logsheet Entry',
+                        style: const TextStyle(fontFamily: 'Roboto'),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        minimumSize: const Size(double.infinity, 50),
+                      ),
+                    ),
+            )
+          : null,
     );
   }
 }
 
 extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) {
-      return this;
-    }
-    return "${this[0].toUpperCase()}${substring(1)}";
-  }
+  String capitalize() =>
+      isEmpty ? this : "${this[0].toUpperCase()}${substring(1)}";
 }

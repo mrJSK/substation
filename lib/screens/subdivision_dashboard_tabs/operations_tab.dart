@@ -11,7 +11,41 @@ import '../../models/user_model.dart';
 import '../../utils/snackbar_utils.dart';
 import '../../models/app_state_data.dart';
 import '../../models/logsheet_models.dart';
-import '../substation_dashboard/logsheet_entry_screen.dart';
+
+// Enhanced Equipment Icon Widget
+class _EquipmentIcon extends StatelessWidget {
+  final String type;
+  final Color color;
+  final double size;
+
+  const _EquipmentIcon({
+    required this.type,
+    required this.color,
+    this.size = 24.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    IconData iconData;
+
+    switch (type.toLowerCase()) {
+      case 'operations':
+        iconData = Icons.settings;
+        break;
+      case 'search':
+        iconData = Icons.search;
+        break;
+      case 'results':
+        iconData = Icons.list_alt;
+        break;
+      default:
+        iconData = Icons.settings;
+        break;
+    }
+
+    return Icon(iconData, size: size, color: color);
+  }
+}
 
 class OperationsTab extends StatefulWidget {
   final AppUser currentUser;
@@ -55,28 +89,102 @@ class _OperationsTabState extends State<OperationsTab> {
   @override
   void initState() {
     super.initState();
-    _startDate = DateTime.now();
-    _endDate = DateTime.now();
+    _startDate = widget.startDate;
+    _endDate = widget.endDate;
+  }
+
+  @override
+  void didUpdateWidget(OperationsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.startDate != widget.startDate ||
+        oldWidget.endDate != widget.endDate) {
+      setState(() {
+        _startDate = widget.startDate;
+        _endDate = widget.endDate;
+        _clearViewerData();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      color: const Color(0xFFFAFAFA),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSelectionSection(theme),
-            const SizedBox(height: 24),
-            _buildActionButton(theme),
-            const SizedBox(height: 24),
-            if (_shouldShowResults()) _buildResultsSection(theme),
-          ],
-        ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      body: Column(
+        children: [
+          // Enhanced Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: _EquipmentIcon(
+                    type: 'operations',
+                    color: theme.colorScheme.primary,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Operations Data Viewer',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      Text(
+                        '${DateFormat('MMM dd').format(_startDate!)} - ${DateFormat('MMM dd, yyyy').format(_endDate!)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSelectionSection(theme),
+                  const SizedBox(height: 16),
+                  _buildActionButton(theme),
+                  const SizedBox(height: 16),
+                  if (_shouldShowResults()) _buildResultsSection(theme),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -86,8 +194,14 @@ class _OperationsTabState extends State<OperationsTab> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -101,15 +215,15 @@ class _OperationsTabState extends State<OperationsTab> {
                   color: theme.colorScheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Icon(
-                  Icons.settings,
+                child: _EquipmentIcon(
+                  type: 'search',
                   color: theme.colorScheme.primary,
                   size: 18,
                 ),
               ),
               const SizedBox(width: 12),
               Text(
-                'Operation Parameters',
+                'Search Parameters',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -123,7 +237,7 @@ class _OperationsTabState extends State<OperationsTab> {
           const SizedBox(height: 16),
           _buildBayMultiSelect(theme),
           const SizedBox(height: 16),
-          _buildDateRangeSelector(theme),
+          _buildDateRangeDisplay(theme),
         ],
       ),
     );
@@ -148,16 +262,30 @@ class _OperationsTabState extends State<OperationsTab> {
       stream: substationsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: const Center(child: CircularProgressIndicator()),
+          );
         }
 
         if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}');
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Text('Error: ${snapshot.error}'),
+          );
         }
 
         final substations = snapshot.data ?? [];
-
-        // Auto-select first substation if none selected
         if (_selectedSubstation == null && substations.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             setState(() {
@@ -171,8 +299,10 @@ class _OperationsTabState extends State<OperationsTab> {
           value: _selectedSubstation,
           decoration: InputDecoration(
             labelText: 'Select Substation',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             prefixIcon: const Icon(Icons.location_on),
+            filled: true,
+            fillColor: theme.colorScheme.primary.withOpacity(0.05),
           ),
           items: substations
               .map(
@@ -205,7 +335,7 @@ class _OperationsTabState extends State<OperationsTab> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey.shade200),
         ),
         child: Row(
@@ -239,15 +369,20 @@ class _OperationsTabState extends State<OperationsTab> {
                 ),
               ),
             ),
-            TextButton.icon(
+            ElevatedButton.icon(
               onPressed: _showBaySelectionDialog,
               icon: const Icon(Icons.list, size: 16),
               label: const Text('Select Bays'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                foregroundColor: theme.colorScheme.primary,
+                elevation: 0,
+              ),
             ),
           ],
         ),
         if (_selectedBayIds.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -265,6 +400,10 @@ class _OperationsTabState extends State<OperationsTab> {
                   });
                 },
                 deleteIconColor: Colors.red,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                side: BorderSide(
+                  color: theme.colorScheme.primary.withOpacity(0.3),
+                ),
               );
             }).toList(),
           ),
@@ -273,126 +412,31 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildDateRangeSelector(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildDateField(
-                label: 'Start Date',
-                date: _startDate!,
-                onTap: () => _selectDate(true),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildDateField(
-                label: 'End Date',
-                date: _endDate!,
-                onTap: () => _selectDate(false),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _buildQuickDateRanges(theme),
-      ],
-    );
-  }
-
-  Widget _buildDateField({
-    required String label,
-    required DateTime date,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.calendar_today, size: 16, color: Colors.blue),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  DateFormat('MMM dd, yyyy').format(date),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+  Widget _buildDateRangeDisplay(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.secondary.withOpacity(0.2)),
       ),
-    );
-  }
-
-  Widget _buildQuickDateRanges(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Quick Select',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey.shade600,
+      child: Row(
+        children: [
+          Icon(
+            Icons.calendar_today,
+            color: theme.colorScheme.secondary,
+            size: 20,
           ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            _buildQuickDateChip('Today', 0),
-            _buildQuickDateChip('Last 7 days', 7),
-            _buildQuickDateChip('Last 15 days', 15),
-            _buildQuickDateChip('Last 30 days', 30),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildQuickDateChip(String label, int days) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _endDate = DateTime.now();
-          _startDate = days == 0
-              ? DateTime.now()
-              : _endDate!.subtract(Duration(days: days));
-          _clearViewerData();
-        });
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.blue.shade50,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blue.shade200),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
-        ),
+          const SizedBox(width: 8),
+          Text(
+            'Period: ${DateFormat('MMM dd, yyyy').format(_startDate!)} - ${DateFormat('MMM dd, yyyy').format(_endDate!)}',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.secondary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -406,12 +450,16 @@ class _OperationsTabState extends State<OperationsTab> {
 
     return SizedBox(
       width: double.infinity,
-      height: 48,
+      height: 52,
       child: ElevatedButton.icon(
         onPressed: canViewEntries ? _viewLogsheetEntry : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: theme.colorScheme.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          foregroundColor: theme.colorScheme.onPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 0,
         ),
         icon: _isViewerLoading
             ? const SizedBox(
@@ -422,10 +470,10 @@ class _OperationsTabState extends State<OperationsTab> {
                   color: Colors.white,
                 ),
               )
-            : const Icon(Icons.search),
+            : _EquipmentIcon(type: 'search', color: Colors.white, size: 20),
         label: Text(
-          _isViewerLoading ? 'Loading...' : 'View Logsheet Entries',
-          style: const TextStyle(fontWeight: FontWeight.w500),
+          _isViewerLoading ? 'Searching...' : 'Search Logsheet Entries',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
         ),
       ),
     );
@@ -436,8 +484,14 @@ class _OperationsTabState extends State<OperationsTab> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -451,8 +505,8 @@ class _OperationsTabState extends State<OperationsTab> {
                   color: Colors.green.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Icon(
-                  Icons.list_alt,
+                child: _EquipmentIcon(
+                  type: 'results',
                   color: Colors.green,
                   size: 18,
                 ),
@@ -463,15 +517,15 @@ class _OperationsTabState extends State<OperationsTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Logsheet Entries for ${_selectedSubstation?.name ?? ''}',
+                      'Search Results for ${_selectedSubstation?.name ?? ''}',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.primary,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                     Text(
-                      '${DateFormat('MMM dd, yyyy').format(_startDate!)} - ${DateFormat('MMM dd, yyyy').format(_endDate!)}',
+                      '${_rawLogsheetEntriesForViewer.length} entries found',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade600,
@@ -483,11 +537,14 @@ class _OperationsTabState extends State<OperationsTab> {
             ],
           ),
           const SizedBox(height: 20),
+
           if (_selectedBayIds.length == 1 &&
               !_isViewerLoading &&
               _individualEntriesForDropdown.isNotEmpty)
             _buildIndividualEntryDropdown(theme),
+
           const SizedBox(height: 16),
+
           if (_isViewerLoading)
             const Center(child: CircularProgressIndicator())
           else if (_viewerErrorMessage != null)
@@ -502,46 +559,62 @@ class _OperationsTabState extends State<OperationsTab> {
   }
 
   Widget _buildIndividualEntryDropdown(ThemeData theme) {
-    return DropdownButtonFormField<LogsheetEntry>(
-      value: _selectedIndividualReadingEntry,
-      decoration: InputDecoration(
-        labelText: 'Select Specific Reading',
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        prefixIcon: const Icon(Icons.timeline),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.shade200),
       ),
-      items: _individualEntriesForDropdown
-          .map(
-            (entry) => DropdownMenuItem(
-              value: entry,
-              child: Text(
-                DateFormat(
-                  'yyyy-MM-dd HH:mm',
-                ).format(entry.readingTimestamp.toDate().toLocal()),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.timeline, color: Colors.blue.shade700, size: 16),
+              const SizedBox(width: 8),
+              Text(
+                'View Individual Entry Details',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.blue.shade700,
+                ),
               ),
-            ),
-          )
-          .toList(),
-      onChanged: (newValue) {
-        setState(() => _selectedIndividualReadingEntry = newValue);
-        if (newValue != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => LogsheetEntryScreen(
-                substationId: _selectedSubstation!.id,
-                substationName: _selectedSubstation!.name,
-                bayId: newValue.bayId,
-                readingDate: newValue.readingTimestamp.toDate(),
-                frequency: newValue.frequency,
-                readingHour: newValue.readingHour,
-                currentUser: widget.currentUser,
-                forceReadOnly: true,
+            ],
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<LogsheetEntry>(
+            value: _selectedIndividualReadingEntry,
+            decoration: InputDecoration(
+              labelText: 'Select Specific Reading',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
+              filled: true,
+              fillColor: Colors.white,
+              isDense: true,
             ),
-          );
-        }
-      },
-      isExpanded: true,
+            items: _individualEntriesForDropdown
+                .map(
+                  (entry) => DropdownMenuItem(
+                    value: entry,
+                    child: Text(
+                      DateFormat(
+                        'yyyy-MM-dd HH:mm',
+                      ).format(entry.readingTimestamp.toDate().toLocal()),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (newValue) {
+              setState(() => _selectedIndividualReadingEntry = newValue);
+            },
+            isExpanded: true,
+          ),
+        ],
+      ),
     );
   }
 
@@ -550,7 +623,7 @@ class _OperationsTabState extends State<OperationsTab> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.red.shade50,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.red.shade200),
       ),
       child: Row(
@@ -567,20 +640,25 @@ class _OperationsTabState extends State<OperationsTab> {
 
   Widget _buildNoDataMessage() {
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(48),
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+            Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
               'No logsheet entries found',
-              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Try adjusting your search criteria',
+              'No data available for the selected parameters and date range.',
               style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -589,19 +667,44 @@ class _OperationsTabState extends State<OperationsTab> {
   }
 
   Widget _buildEntriesTable(ThemeData theme) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowColor: MaterialStateColor.resolveWith(
-          (states) => theme.colorScheme.primary.withOpacity(0.1),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: MaterialStateColor.resolveWith(
+            (states) => theme.colorScheme.primary.withOpacity(0.1),
+          ),
+          dataRowMinHeight: 48,
+          dataRowMaxHeight: 64,
+          columns: const [
+            DataColumn(
+              label: Text('Bay', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            DataColumn(
+              label: Text(
+                'Date',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            DataColumn(
+              label: Text(
+                'Time',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            DataColumn(
+              label: Text(
+                'Readings Summary',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+          rows: _buildDataRows(),
         ),
-        columns: const [
-          DataColumn(label: Text('Bay')),
-          DataColumn(label: Text('Date')),
-          DataColumn(label: Text('Hour')),
-          DataColumn(label: Text('Readings')),
-        ],
-        rows: _buildDataRows(),
       ),
     );
   }
@@ -611,7 +714,6 @@ class _OperationsTabState extends State<OperationsTab> {
 
     _groupedEntriesForViewer.forEach((bayId, datesMap) {
       final bay = _viewerBaysMap[bayId];
-
       datesMap.forEach((date, entries) {
         for (var entry in entries) {
           final readings = entry.values.entries
@@ -622,13 +724,31 @@ class _OperationsTabState extends State<OperationsTab> {
                 }
                 return '${e.key}: ${e.value}';
               })
-              .join(', ');
+              .take(3)
+              .join(', '); // Limit to 3 readings for display
+
+          final hasMoreReadings = entry.values.length > 3;
 
           rows.add(
             DataRow(
               cells: [
-                DataCell(Text(bay?.name ?? 'Unknown')),
-                DataCell(Text(DateFormat('MMM dd').format(date))),
+                DataCell(
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      bay?.name ?? 'Unknown',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ),
+                DataCell(Text(DateFormat('MMM dd, yyyy').format(date))),
                 DataCell(
                   Text(
                     DateFormat(
@@ -638,11 +758,27 @@ class _OperationsTabState extends State<OperationsTab> {
                 ),
                 DataCell(
                   Container(
-                    constraints: const BoxConstraints(maxWidth: 200),
-                    child: Text(
-                      readings,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 2,
+                    constraints: const BoxConstraints(maxWidth: 250),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          readings,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        if (hasMoreReadings)
+                          Text(
+                            '... and ${entry.values.length - 3} more fields',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -670,42 +806,6 @@ class _OperationsTabState extends State<OperationsTab> {
     _viewerErrorMessage = null;
   }
 
-  Future<void> _selectDate(bool isStartDate) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: isStartDate ? _startDate! : _endDate!,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null) {
-      setState(() {
-        if (isStartDate) {
-          _startDate = picked;
-          if (_endDate!.isBefore(_startDate!)) {
-            _endDate = _startDate;
-          }
-        } else {
-          _endDate = picked;
-          if (_startDate!.isAfter(_endDate!)) {
-            _startDate = _endDate;
-          }
-        }
-        _clearViewerData();
-      });
-    }
-  }
-
   Future<void> _showBaySelectionDialog() async {
     if (_bays.isEmpty) {
       SnackBarUtils.showSnackBar(
@@ -717,13 +817,15 @@ class _OperationsTabState extends State<OperationsTab> {
     }
 
     final List<String> tempSelected = List.from(_selectedBayIds);
-
     final result = await showDialog<List<String>>(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               title: const Text('Select Bays'),
               content: SizedBox(
                 width: double.maxFinite,
@@ -733,7 +835,6 @@ class _OperationsTabState extends State<OperationsTab> {
                   itemBuilder: (context, index) {
                     final bay = _bays[index];
                     final isSelected = tempSelected.contains(bay.id);
-
                     return CheckboxListTile(
                       title: Text('${bay.name} (${bay.bayType})'),
                       subtitle: Text('Voltage: ${bay.voltageLevel}'),
@@ -841,7 +942,6 @@ class _OperationsTabState extends State<OperationsTab> {
       );
       return;
     }
-
     _fetchLogsheetEntriesForViewer();
   }
 
@@ -856,7 +956,6 @@ class _OperationsTabState extends State<OperationsTab> {
     });
 
     try {
-      // Fetch Bay details first to map IDs to names
       _viewerBaysMap.clear();
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
@@ -867,7 +966,6 @@ class _OperationsTabState extends State<OperationsTab> {
         _viewerBaysMap[doc.id] = Bay.fromFirestore(doc);
       }
 
-      // Prepare dates for query
       final DateTime queryStartDate = DateTime(
         _startDate!.year,
         _startDate!.month,
@@ -906,7 +1004,6 @@ class _OperationsTabState extends State<OperationsTab> {
 
       _groupLogsheetEntriesForViewer();
 
-      // Populate individual entry dropdown if only one bay is selected
       if (_selectedBayIds.length == 1) {
         _individualEntriesForDropdown = _rawLogsheetEntriesForViewer;
         _individualEntriesForDropdown.sort(
@@ -944,7 +1041,6 @@ class _OperationsTabState extends State<OperationsTab> {
       _groupedEntriesForViewer[bayId]![entryDate]!.add(entry);
     }
 
-    // Sort entries within each date group by hour
     _groupedEntriesForViewer.forEach((bayId, datesMap) {
       datesMap.forEach((date, entriesList) {
         entriesList.sort((a, b) {

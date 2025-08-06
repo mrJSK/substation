@@ -1,19 +1,16 @@
-// lib/screens/substation_user_dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart'; // Import for DateFormat
+import 'package:intl/intl.dart';
 
-import '../../../models/user_model.dart';
-import '../../../models/hierarchy_models.dart'; // For Substation model
-import '../../../utils/snackbar_utils.dart';
-import '../bay_readings_overview_screen.dart'; // Correct import for BayReadingsOverviewScreen
-import 'substation_tripping_shutdown_overview_screen.dart'; // Import TrippingShutdownOverviewScreen
-import '../subdivision_dashboard_tabs/subdivision_asset_management_screen.dart'; // Import the new asset management screen
-import '../equipment_hierarchy_selection_screen.dart'; // For Energy SLD navigation
-import '../subdivision_dashboard_tabs/energy_sld_screen.dart'; // For Energy SLD navigation
-import '../../../controllers/sld_controller.dart'; // For Energy SLD navigation
+import '../../models/app_state_data.dart';
+import '../../models/hierarchy_models.dart';
+import '../../models/user_model.dart';
+import '../../utils/snackbar_utils.dart';
+import 'substation_user_operations_tab.dart';
+import 'substation_user_energy_tab.dart';
+import 'substation_user_tripping_tab.dart';
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -32,94 +29,81 @@ class SubstationUserDashboardScreen extends StatefulWidget {
 
 class _SubstationUserDashboardScreenState
     extends State<SubstationUserDashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   Substation? _selectedSubstationForLogsheet;
   List<Substation> _accessibleSubstations = [];
   bool _isLoadingSubstations = true;
-
+  late AnimationController _animationController;
   late TabController _tabController;
-  int _currentTabIndex = 0; // Track current tab index
-
-  // Date state for all relevant tabs
-  DateTime _singleDate = DateTime.now(); // For Substation User
-  DateTime _startDate = DateTime.now().subtract(
-    const Duration(days: 7),
-  ); // For Subdivision Manager
-  DateTime _endDate = DateTime.now(); // For Subdivision Manager
+  int _currentTabIndex = 0;
+  DateTime _singleDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _loadAccessibleSubstations();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
 
-    final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
-        ? 4 // Operations, Energy, Tripping & Shutdown, Assets
-        : 3; // Operations, Energy, Tripping & Shutdown
-    _tabController = TabController(length: tabCount, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_handleTabSelection);
+    _loadAccessibleSubstations();
+    _animationController.forward();
   }
 
   @override
   void dispose() {
-    _tabController.removeListener(_handleTabSelection);
+    _animationController.dispose();
     _tabController.dispose();
     super.dispose();
   }
 
   void _handleTabSelection() {
-    if (_tabController.indexIsChanging) {
-      setState(() {
-        _currentTabIndex = _tabController.index;
-      });
-    }
+    setState(() {
+      _currentTabIndex = _tabController.index;
+    });
   }
 
   Future<void> _loadAccessibleSubstations() async {
-    if (!mounted) return;
-    setState(() {
-      _isLoadingSubstations = true;
-    });
+    setState(() => _isLoadingSubstations = true);
 
     try {
-      Query query = FirebaseFirestore.instance.collection('substations');
+      final appStateData = Provider.of<AppStateData>(context, listen: false);
+      final user = appStateData.currentUser;
 
-      if (widget.currentUser.role == UserRole.subdivisionManager &&
-          widget.currentUser.assignedLevels != null &&
-          widget.currentUser.assignedLevels!.containsKey('subdivisionId')) {
-        query = query.where(
-          'subdivisionId',
-          isEqualTo: widget.currentUser.assignedLevels!['subdivisionId'],
+      if (user == null) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'User data not found',
+          isError: true,
         );
-      } else if (widget.currentUser.role == UserRole.substationUser &&
-          widget.currentUser.assignedLevels != null &&
-          widget.currentUser.assignedLevels!.containsKey('substationId')) {
-        query = query.where(
-          FieldPath.documentId,
-          isEqualTo: widget.currentUser.assignedLevels!['substationId'],
-        );
-      } else {
-        _accessibleSubstations = [];
-        if (mounted) {
-          setState(() {
-            _isLoadingSubstations = false;
-          });
-        }
         return;
       }
 
-      final snapshot = await query.orderBy('name').get();
-      if (mounted) {
-        setState(() {
-          _accessibleSubstations = snapshot.docs
-              .map((doc) => Substation.fromFirestore(doc))
-              .toList();
-          if (_accessibleSubstations.length >= 1) {
-            _selectedSubstationForLogsheet = _accessibleSubstations.first;
+      List<Substation> substations = [];
+
+      if (user.role == UserRole.substationUser) {
+        final substationId = user.assignedLevels?['substationId'];
+        if (substationId != null) {
+          final substationDoc = await FirebaseFirestore.instance
+              .collection('substations')
+              .doc(substationId)
+              .get();
+
+          if (substationDoc.exists) {
+            substations.add(Substation.fromFirestore(substationDoc));
           }
-        });
+        }
       }
+
+      setState(() {
+        _accessibleSubstations = substations;
+        if (substations.isNotEmpty && _selectedSubstationForLogsheet == null) {
+          _selectedSubstationForLogsheet = substations.first;
+        }
+      });
     } catch (e) {
-      print("Error loading accessible substations: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -128,356 +112,262 @@ class _SubstationUserDashboardScreenState
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingSubstations = false;
-        });
-      }
+      setState(() => _isLoadingSubstations = false);
     }
   }
 
-  // Date picker method for Subdivision Manager (range selection)
-  Future<void> _selectDateRange(BuildContext context) async {
-    final DateTimeRange? picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
-    );
-    if (picked != null) {
-      if (!mounted) return;
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-      });
-    }
-  }
-
-  // Date picker method for Substation User (single date selection)
-  Future<void> _selectSingleDate(BuildContext context) async {
+  Future<void> _selectSingleDate() async {
+    // Remove BuildContext parameter
+    final theme = Theme.of(context); // Use context from build method
     final DateTime? picked = await showDatePicker(
-      context: context,
+      context: context, // Use context from build method
       initialDate: _singleDate,
-      firstDate: DateTime(2000),
+      firstDate: DateTime(2020),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: theme.copyWith(
+            colorScheme: theme.colorScheme.copyWith(
+              primary: theme.colorScheme.primary,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-    if (picked != null) {
-      if (!mounted) return;
+
+    if (picked != null && picked != _singleDate) {
       setState(() {
         _singleDate = picked;
       });
     }
   }
 
+  Widget _buildEmptyState(ThemeData theme) {
+    return Center(
+      child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.electrical_services,
+                size: 80,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Welcome, ${widget.currentUser.email}!',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Role: Substation User',
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'No substation assigned to your account.',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _loadAccessibleSubstations,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final int tabCount = widget.currentUser.role == UserRole.subdivisionManager
-        ? 4
-        : 3;
-
-    final bool isSubdivisionManager =
-        widget.currentUser.role == UserRole.subdivisionManager;
-    final bool showDatePickers =
-        (_currentTabIndex == 0 ||
-        _currentTabIndex == 1 ||
-        _currentTabIndex == 2);
+    final theme = Theme.of(context);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        title: const Text('Substation Dashboard'),
-        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          'Substation Operations',
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         leading: Builder(
           builder: (BuildContext context) {
             return IconButton(
-              icon: const Icon(Icons.menu),
+              icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
               onPressed: () {
                 Scaffold.of(context).openDrawer();
               },
-              tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
             );
           },
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.flash_on),
-            tooltip: 'Energy SLD',
-            onPressed: () async {
-              Substation? substationToView;
-              if (widget.currentUser.assignedLevels != null &&
-                  widget.currentUser.assignedLevels!.containsKey(
-                    'substationId',
-                  )) {
-                final substationDoc = await FirebaseFirestore.instance
-                    .collection('substations')
-                    .doc(widget.currentUser.assignedLevels!['substationId'])
-                    .get();
-                if (substationDoc.exists) {
-                  substationToView = Substation.fromFirestore(substationDoc);
-                }
-              }
-
-              if (substationToView != null && mounted) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ChangeNotifierProvider<SldController>(
-                      create: (context) => SldController(
-                        substationId: substationToView!.id,
-                        transformationController: TransformationController(),
-                      ),
-                      child: EnergySldScreen(
-                        substationId: substationToView!.id,
-                        substationName: substationToView.name,
-                        currentUser: widget.currentUser,
-                      ),
-                    ),
-                  ),
-                );
-              } else if (mounted) {
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'No substation assigned for Energy SLD.',
-                  isError: true,
-                );
-              }
-            },
+            onPressed: _selectSingleDate,
+            icon: Icon(
+              Icons.calendar_today,
+              color: theme.colorScheme.onSurface,
+            ),
+            tooltip: 'Select Date',
           ),
-          // IconButton(
-          //   icon: const Icon(Icons.history),
-          //   tooltip: 'View Saved SLDs',
-          //   onPressed: () {
-          //     Navigator.of(context).push(
-          //       MaterialPageRoute(
-          //         builder: (context) =>
-          //             SavedSldListScreen(currentUser: widget.currentUser),
-          //       ),
-          //     );
-          //   },
-          // ),
         ],
+        bottom: _accessibleSubstations.isNotEmpty
+            ? TabBar(
+                controller: _tabController,
+                tabs: [
+                  Tab(
+                    icon: Icon(
+                      Icons.access_time,
+                      color: _currentTabIndex == 0
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    text: 'Operations',
+                  ),
+                  Tab(
+                    icon: Icon(
+                      Icons.electrical_services,
+                      color: _currentTabIndex == 1
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    text: 'Energy',
+                  ),
+                  Tab(
+                    icon: Icon(
+                      Icons.warning,
+                      color: _currentTabIndex == 2
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    text: 'Events',
+                  ),
+                ],
+                labelColor: theme.colorScheme.primary,
+                unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                indicatorColor: theme.colorScheme.primary,
+              )
+            : null,
       ),
       drawer: widget.drawer,
-      body: _isLoadingSubstations
-          ? const Center(child: CircularProgressIndicator())
-          : _accessibleSubstations.isEmpty && !_isLoadingSubstations
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      size: 80,
-                      color: Theme.of(context).colorScheme.primary,
+      body: SafeArea(
+        child: _isLoadingSubstations
+            ? Center(
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Loading substation data...',
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Welcome, ${widget.currentUser.email}!',
-                      style: Theme.of(context).textTheme.titleLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Role: ${widget.currentUser.role.toString().split('.').last}',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'No substations assigned or found for your role. Please contact your administrator.',
+                  ),
+                ),
+              )
+            : _accessibleSubstations.isEmpty
+            ? _buildEmptyState(theme)
+            : Column(
+                children: [
+                  // Date Display
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    color: Colors.white,
+                    child: Text(
+                      DateFormat('EEEE, dd MMMM yyyy').format(_singleDate),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 16,
-                        fontStyle: FontStyle.italic,
-                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.primary,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+
+                  // Tab Content
+                  Expanded(
+                    child: FadeTransition(
+                      opacity: _animationController,
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          SubstationUserOperationsTab(
+                            substationId:
+                                _selectedSubstationForLogsheet?.id ?? '',
+                            substationName:
+                                _selectedSubstationForLogsheet?.name ??
+                                'Unknown',
+                            currentUser: widget.currentUser,
+                            selectedDate: _singleDate,
+                          ),
+                          SubstationUserEnergyTab(
+                            substationId:
+                                _selectedSubstationForLogsheet?.id ?? '',
+                            substationName:
+                                _selectedSubstationForLogsheet?.name ??
+                                'Unknown',
+                            currentUser: widget.currentUser,
+                            selectedDate: _singleDate,
+                          ),
+                          SubstationUserTrippingTab(
+                            substationId:
+                                _selectedSubstationForLogsheet?.id ?? '',
+                            substationName:
+                                _selectedSubstationForLogsheet?.name ??
+                                'Unknown',
+                            currentUser: widget.currentUser,
+                            selectedDate: _singleDate,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            )
-          : Column(
-              children: [
-                // Substation Dropdown (always at the top)
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: DropdownSearch<Substation>(
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      menuProps: MenuProps(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      searchFieldProps: TextFieldProps(
-                        decoration: InputDecoration(
-                          labelText: 'Search Substation',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration(
-                        labelText: 'Select Substation',
-                        hintText: 'Choose a substation to view details',
-                        prefixIcon: const Icon(Icons.electrical_services),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    itemAsString: (Substation s) => s.name,
-                    selectedItem: _selectedSubstationForLogsheet,
-                    items: _accessibleSubstations,
-                    onChanged: (Substation? newValue) {
-                      setState(() {
-                        _selectedSubstationForLogsheet = newValue;
-                      });
-                    },
-                    validator: (value) =>
-                        value == null ? 'Please select a Substation' : null,
-                  ),
-                ),
-                // Conditional Date Pickers
-                if (showDatePickers)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0,
-                      vertical: 8.0,
-                    ),
-                    child: isSubdivisionManager
-                        ? Row(
-                            // Date Range for Subdivision Manager
-                            children: [
-                              Expanded(
-                                child: ListTile(
-                                  title: Text(
-                                    'From: ${DateFormat('yyyy-MM-dd').format(_startDate)}',
-                                  ),
-                                  trailing: const Icon(Icons.calendar_today),
-                                  onTap: () => _selectDateRange(context),
-                                ),
-                              ),
-                              Expanded(
-                                child: ListTile(
-                                  title: Text(
-                                    'To: ${DateFormat('yyyy-MM-dd').format(_endDate)}',
-                                  ),
-                                  trailing: const Icon(Icons.calendar_today),
-                                  onTap: () => _selectDateRange(context),
-                                ),
-                              ),
-                            ],
-                          )
-                        : ListTile(
-                            // Single Date for Substation User
-                            title: Text(
-                              'Date: ${DateFormat('yyyy-MM-dd').format(_singleDate)}',
-                            ),
-                            trailing: const Icon(Icons.calendar_today),
-                            onTap: () => _selectSingleDate(context),
-                          ),
-                  ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      // Operations (Hourly) Tab
-                      BayReadingsOverviewScreen(
-                        substationId: _selectedSubstationForLogsheet?.id ?? '',
-                        substationName:
-                            _selectedSubstationForLogsheet?.name ?? 'N/A',
-                        currentUser: widget.currentUser,
-                        frequencyType: 'hourly',
-                        // Pass appropriate date(s) based on role
-                        startDate: isSubdivisionManager
-                            ? _startDate
-                            : _singleDate,
-                        endDate: isSubdivisionManager
-                            ? _endDate
-                            : _singleDate, // For SU, endDate is same as startDate
-                      ),
-                      // Energy (Daily) Tab
-                      BayReadingsOverviewScreen(
-                        substationId: _selectedSubstationForLogsheet?.id ?? '',
-                        substationName:
-                            _selectedSubstationForLogsheet?.name ?? 'N/A',
-                        currentUser: widget.currentUser,
-                        frequencyType: 'daily',
-                        // Pass appropriate date(s) based on role
-                        startDate: isSubdivisionManager
-                            ? _startDate
-                            : _singleDate,
-                        endDate: isSubdivisionManager
-                            ? _endDate
-                            : _singleDate, // For SU, endDate is same as startDate
-                      ),
-                      // Tripping & Shutdown Tab
-                      TrippingShutdownOverviewScreen(
-                        substationId: _selectedSubstationForLogsheet?.id ?? '',
-                        substationName:
-                            _selectedSubstationForLogsheet?.name ?? 'N/A',
-                        currentUser: widget.currentUser,
-                        // Pass appropriate date(s) based on role
-                        startDate: isSubdivisionManager
-                            ? _startDate
-                            : _singleDate,
-                        endDate: isSubdivisionManager
-                            ? _endDate
-                            : _singleDate, // For SU, endDate is same as startDate
-                        // Substation user can only close, not create.
-                        // Admin/SM can create.
-                        canCreateTrippingEvents:
-                            widget.currentUser.role ==
-                                UserRole.subdivisionManager ||
-                            widget.currentUser.role == UserRole.admin,
-                      ),
-                      // Subdivision Manager's Asset Management Tab
-                      if (widget.currentUser.role ==
-                          UserRole.subdivisionManager)
-                        SubdivisionAssetManagementScreen(
-                          subdivisionId: widget
-                              .currentUser
-                              .assignedLevels!['subdivisionId']!,
-                          currentUser: widget.currentUser,
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentTabIndex,
-        onTap: (index) {
-          setState(() {
-            _currentTabIndex = index;
-            _tabController.animateTo(index);
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.grey,
-        items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.access_time_filled),
-            label: 'Operations',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.electric_meter),
-            label: 'Energy',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.warning),
-            label: 'Tripping & Shutdown',
-          ),
-          if (widget.currentUser.role == UserRole.subdivisionManager)
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.construction),
-              label: 'Assets',
-            ),
-        ],
       ),
     );
   }

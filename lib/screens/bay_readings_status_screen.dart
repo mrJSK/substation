@@ -1,24 +1,68 @@
 // lib/screens/bay_readings_status_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:collection/collection.dart'; // Import for firstWhereOrNull
+import 'package:collection/collection.dart';
 
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
-import '../../models/reading_models.dart'; // For ReadingFieldDataType, ReadingFrequency
-import '../../models/logsheet_models.dart'; // For LogsheetEntry
+import '../../models/reading_models.dart';
+import '../../models/logsheet_models.dart';
 import '../../utils/snackbar_utils.dart';
-import 'bay_readings_status_screen.dart';
-import 'substation_dashboard/logsheet_entry_screen.dart'; // Screen 2: The current screen
+import 'substation_dashboard/logsheet_entry_screen.dart';
+
+// Enhanced Equipment Icon Widget
+class _EquipmentIcon extends StatelessWidget {
+  final String bayType;
+  final Color color;
+  final double size;
+
+  const _EquipmentIcon({
+    required this.bayType,
+    required this.color,
+    this.size = 24.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    IconData iconData;
+
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        iconData = Icons.electrical_services;
+        break;
+      case 'feeder':
+        iconData = Icons.power;
+        break;
+      case 'line':
+        iconData = Icons.power_input;
+        break;
+      case 'busbar':
+        iconData = Icons.horizontal_rule;
+        break;
+      case 'capacitor bank':
+        iconData = Icons.battery_charging_full;
+        break;
+      case 'reactor':
+        iconData = Icons.device_hub;
+        break;
+      default:
+        iconData = Icons.electrical_services;
+        break;
+    }
+
+    return Icon(iconData, size: size, color: color);
+  }
+}
 
 class BayReadingsStatusScreen extends StatefulWidget {
   final String substationId;
   final String substationName;
   final AppUser currentUser;
-  final String frequencyType; // 'hourly' or 'daily'
+  final String frequencyType;
   final DateTime selectedDate;
-  final int? selectedHour; // Only for hourly readings
+  final int? selectedHour;
 
   const BayReadingsStatusScreen({
     super.key,
@@ -37,15 +81,10 @@ class BayReadingsStatusScreen extends StatefulWidget {
 
 class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
   bool _isLoading = true;
-  List<Bay> _baysInSubstation = []; // This will now hold *only* assigned bays
-
-  // Map to store completion status for each bay: {bayId: isComplete}
+  List<Bay> _baysInSubstation = [];
   final Map<String, bool> _bayCompletionStatus = {};
-
-  // Data cached for efficient status checking
   Map<String, List<ReadingField>> _bayMandatoryFields = {};
-  Map<String, List<LogsheetEntry>> _logsheetEntriesForSlot =
-      {}; // Logsheets for the specific selected slot
+  Map<String, List<LogsheetEntry>> _logsheetEntriesForSlot = {};
 
   @override
   void initState() {
@@ -57,18 +96,19 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
     setState(() {
       _isLoading = true;
       _bayCompletionStatus.clear();
-      _baysInSubstation.clear(); // Clear existing list
+      _baysInSubstation.clear();
       _bayMandatoryFields.clear();
       _logsheetEntriesForSlot.clear();
     });
 
     try {
-      // 1. Fetch all bays for the current substation into a temporary map for lookup
+      // 1. Fetch all bays for the current substation
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
           .orderBy('name')
           .get();
+
       final Map<String, Bay> allBaysTempMap = {
         for (var doc in baysSnapshot.docs) doc.id: Bay.fromFirestore(doc),
       };
@@ -76,7 +116,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
       final List<String> allBayIdsInSubstation = allBaysTempMap.keys.toList();
 
       if (allBayIdsInSubstation.isEmpty) {
-        // No bays in this substation at all
         if (mounted) setState(() => _isLoading = false);
         return;
       }
@@ -87,14 +126,12 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
           .where('bayId', whereIn: allBayIdsInSubstation)
           .get();
 
-      final List<String> assignedBayIds =
-          []; // Collect IDs of bays with relevant assignments
+      final List<String> assignedBayIds = [];
 
       for (var doc in assignmentsSnapshot.docs) {
         final String bayId = doc['bayId'] as String;
         final assignedFieldsData =
-            (doc.data() as Map<String, dynamic>)['assignedFields']
-                as List<dynamic>;
+            (doc.data() as Map)['assignedFields'] as List;
         final List<ReadingField> allFields = assignedFieldsData
             .map(
               (fieldMap) =>
@@ -102,9 +139,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
             )
             .toList();
 
-        // Store only the mandatory fields relevant to this frequencyType
-        // We ensure that _bayMandatoryFields only contains entries for bays
-        // that have *relevant* mandatory fields for the current frequency.
         final List<ReadingField> relevantMandatoryFields = allFields
             .where(
               (field) =>
@@ -116,34 +150,22 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
 
         _bayMandatoryFields[bayId] = relevantMandatoryFields;
 
-        // NEW: Only add bay to the list if it has mandatory fields relevant to this frequency
         if (relevantMandatoryFields.isNotEmpty) {
           assignedBayIds.add(bayId);
         }
       }
 
-      // NEW: Filter _baysInSubstation to only include bays that actually have assignments for this frequency type.
       _baysInSubstation =
-          assignedBayIds
-              .map(
-                (id) => allBaysTempMap[id]!,
-              ) // Get the Bay object from the temp map
-              .toList()
-            ..sort(
-              (a, b) => a.name.compareTo(b.name),
-            ); // Sort by name for consistent display
+          assignedBayIds.map((id) => allBaysTempMap[id]!).toList()
+            ..sort((a, b) => a.name.compareTo(b.name));
 
       if (_baysInSubstation.isEmpty) {
-        // If no bays found with assignments for the current frequency after filtering
         if (mounted) setState(() => _isLoading = false);
         return;
       }
 
-      // 3. Fetch ALL logsheet entries for the SPECIFIC SLOT (date + hour/day)
-      // This part remains largely the same, but will now only check against _baysInSubstation
-      // which is already filtered.
+      // 3. Fetch logsheet entries for the specific slot
       _logsheetEntriesForSlot.clear();
-
       DateTime queryStartTimestamp;
       DateTime queryEndTimestamp;
 
@@ -199,10 +221,9 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
         _logsheetEntriesForSlot.putIfAbsent(entry.bayId, () => []).add(entry);
       }
 
-      // 4. Calculate completion status for each bay for this specific slot
+      // 4. Calculate completion status for each bay
       _bayCompletionStatus.clear();
       for (var bay in _baysInSubstation) {
-        // Now iterates only over assigned bays
         final bool isBayCompleteForSlot = _isBayLogsheetCompleteForSlot(bay.id);
         _bayCompletionStatus[bay.id] = isBayCompleteForSlot;
       }
@@ -224,50 +245,39 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
     }
   }
 
-  // Helper function to check if a specific bay's logsheet is complete for THIS slot
   bool _isBayLogsheetCompleteForSlot(String bayId) {
     final List<ReadingField> mandatoryFields = _bayMandatoryFields[bayId] ?? [];
-    // If a bay has no mandatory fields for this frequency (after filtering), it's considered complete for this slot.
-    // This case should ideally not be hit frequently now, as _baysInSubstation is already filtered.
     if (mandatoryFields.isEmpty) {
       return true;
     }
 
-    // Find the logsheet entry for this bay and this specific slot from cached data
     final relevantLogsheet = (_logsheetEntriesForSlot[bayId] ?? [])
-        .firstWhereOrNull(
-          // Using firstWhereOrNull from 'package:collection/collection.dart'
-          (entry) {
-            final entryTimestamp = entry.readingTimestamp.toDate();
-            if (widget.frequencyType == 'hourly' &&
-                widget.selectedHour != null) {
-              return entryTimestamp.year == widget.selectedDate.year &&
-                  entryTimestamp.month == widget.selectedDate.month &&
-                  entryTimestamp.day == widget.selectedDate.day &&
-                  entryTimestamp.hour == widget.selectedHour;
-            } else if (widget.frequencyType == 'daily') {
-              return entryTimestamp.year == widget.selectedDate.year &&
-                  entryTimestamp.month == widget.selectedDate.month &&
-                  entryTimestamp.day == widget.selectedDate.day;
-            }
-            return false;
-          },
-        );
+        .firstWhereOrNull((entry) {
+          final entryTimestamp = entry.readingTimestamp.toDate();
+          if (widget.frequencyType == 'hourly' && widget.selectedHour != null) {
+            return entryTimestamp.year == widget.selectedDate.year &&
+                entryTimestamp.month == widget.selectedDate.month &&
+                entryTimestamp.day == widget.selectedDate.day &&
+                entryTimestamp.hour == widget.selectedHour;
+          } else if (widget.frequencyType == 'daily') {
+            return entryTimestamp.year == widget.selectedDate.year &&
+                entryTimestamp.month == widget.selectedDate.month &&
+                entryTimestamp.day == widget.selectedDate.day;
+          }
+          return false;
+        });
 
     if (relevantLogsheet == null) {
-      // Check for null directly
-      return false; // No logsheet found for this bay and slot
+      return false;
     }
 
-    // Check if all mandatory fields in this logsheet entry have non-empty values
     return mandatoryFields.every((field) {
       final value = relevantLogsheet.values[field.name];
       if (field.dataType ==
               ReadingFieldDataType.boolean.toString().split('.').last &&
           value is Map &&
           value.containsKey('value')) {
-        return value['value'] !=
-            null; // Boolean value itself matters for completion
+        return value['value'] != null;
       }
       return value != null && (value is! String || value.isNotEmpty);
     });
@@ -275,6 +285,8 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     String slotTitle = DateFormat('dd.MMM.yyyy').format(widget.selectedDate);
     if (widget.frequencyType == 'hourly' && widget.selectedHour != null) {
       slotTitle +=
@@ -283,80 +295,358 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen> {
       slotTitle += ' - Daily Reading';
     }
 
+    // Calculate completion stats
+    int completedBays = _bayCompletionStatus.values
+        .where((status) => status)
+        .length;
+    int totalBays = _baysInSubstation.length;
+    double completionPercentage = totalBays > 0
+        ? (completedBays / totalBays) * 100
+        : 0;
+
     return Scaffold(
-      appBar: AppBar(title: Text('Bays for $slotTitle')),
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          'Bay Status',
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _baysInSubstation
-                .isEmpty // Check if the filtered list is empty
-          ? Center(
-              child: Text(
-                'No bays with assigned readings found for ${widget.substationName} for this frequency and date. Please assign reading templates to bays in Asset Management.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16.0),
-              itemCount: _baysInSubstation.length,
-              itemBuilder: (context, index) {
-                final bay = _baysInSubstation[index];
-                final bool isBayCompleteForSlot =
-                    _bayCompletionStatus[bay.id] ?? false;
+          : Column(
+              children: [
+                // Header with slot info and completion stats
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              widget.frequencyType == 'hourly'
+                                  ? Icons.access_time
+                                  : Icons.calendar_today,
+                              color: theme.colorScheme.primary,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  slotTitle,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  widget.substationName,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: theme.colorScheme.onSurface
+                                        .withOpacity(0.7),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
 
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8.0),
-                  elevation: 2,
-                  child: ListTile(
-                    leading: Icon(
-                      isBayCompleteForSlot ? Icons.check_circle : Icons.cancel,
-                      color: isBayCompleteForSlot ? Colors.green : Colors.red,
-                    ),
-                    title: Text(
-                      '${bay.name} (${bay.voltageLevel} ${bay.bayType})',
-                    ),
-                    subtitle: Text(
-                      isBayCompleteForSlot
-                          ? 'Readings complete'
-                          : 'Readings incomplete',
-                    ),
-                    trailing: const Icon(Icons.arrow_forward_ios),
-                    onTap: () {
-                      Navigator.of(context)
-                          .push(
-                            MaterialPageRoute(
-                              builder: (context) => LogsheetEntryScreen(
-                                substationId: widget.substationId,
-                                substationName: widget.substationName,
-                                bayId: bay.id,
-                                readingDate: widget.selectedDate,
-                                frequency: widget.frequencyType,
-                                selectedHour: widget.selectedHour,
-                                currentUser: widget.currentUser,
+                      // Completion Stats
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: theme.colorScheme.outline.withOpacity(0.2),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '$completedBays/$totalBays',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: completedBays == totalBays
+                                          ? Colors.green
+                                          : Colors.orange,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Completed',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.onSurface
+                                          .withOpacity(0.6),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          )
-                          .then(
-                            (_) => _loadDataAndCalculateStatuses(),
-                          ); // Update status on return
-                    },
+                            Container(
+                              width: 1,
+                              height: 40,
+                              color: theme.colorScheme.outline.withOpacity(0.2),
+                            ),
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${completionPercentage.toInt()}%',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: completionPercentage == 100
+                                          ? Colors.green
+                                          : Colors.orange,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Progress',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.onSurface
+                                          .withOpacity(0.6),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              },
+                ),
+
+                // Bay list
+                Expanded(
+                  child: _baysInSubstation.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 64,
+                                  color: Colors.grey.shade400,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No Assigned Bays Found',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No bays with assigned readings found for ${widget.substationName} for this frequency and date. Please assign reading templates to bays in Asset Management.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          itemCount: _baysInSubstation.length,
+                          itemBuilder: (context, index) {
+                            final bay = _baysInSubstation[index];
+                            final bool isBayCompleteForSlot =
+                                _bayCompletionStatus[bay.id] ?? false;
+                            final int mandatoryFieldsCount =
+                                _bayMandatoryFields[bay.id]?.length ?? 0;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(16),
+                                leading: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        (isBayCompleteForSlot
+                                                ? Colors.green
+                                                : Colors.red)
+                                            .withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    isBayCompleteForSlot
+                                        ? Icons.check_circle
+                                        : Icons.cancel,
+                                    color: isBayCompleteForSlot
+                                        ? Colors.green
+                                        : Colors.red,
+                                    size: 24,
+                                  ),
+                                ),
+                                title: Row(
+                                  children: [
+                                    _EquipmentIcon(
+                                      bayType: bay.bayType,
+                                      color: theme.colorScheme.primary,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        bay.name,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${bay.voltageLevel} ${bay.bayType}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.6),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 8,
+                                          height: 8,
+                                          decoration: BoxDecoration(
+                                            color: isBayCompleteForSlot
+                                                ? Colors.green
+                                                : Colors.red,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          isBayCompleteForSlot
+                                              ? 'Readings complete'
+                                              : 'Readings incomplete',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: isBayCompleteForSlot
+                                                ? Colors.green
+                                                : Colors.red,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        Text(
+                                          '$mandatoryFieldsCount fields',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: theme.colorScheme.onSurface
+                                                .withOpacity(0.5),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                trailing: const Icon(
+                                  Icons.arrow_forward_ios,
+                                  size: 16,
+                                ),
+                                onTap: () {
+                                  Navigator.of(context)
+                                      .push(
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              LogsheetEntryScreen(
+                                                substationId:
+                                                    widget.substationId,
+                                                substationName:
+                                                    widget.substationName,
+                                                bayId: bay.id,
+                                                readingDate:
+                                                    widget.selectedDate,
+                                                frequency: widget.frequencyType,
+                                                readingHour:
+                                                    widget.selectedHour,
+                                                currentUser: widget.currentUser,
+                                              ),
+                                        ),
+                                      )
+                                      .then(
+                                        (_) => _loadDataAndCalculateStatuses(),
+                                      );
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
     );
-  }
-}
-
-// Extension to capitalize first letter
-extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) {
-      return this;
-    }
-    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }
