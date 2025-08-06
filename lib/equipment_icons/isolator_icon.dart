@@ -15,7 +15,6 @@ class IsolatorIconPainter extends EquipmentPainter {
   void paint(Canvas canvas, Size size) {
     final colors = EquipmentPainter.equipmentColorScheme['Isolator']!;
     final strokePaint = createGradientPaint(size, colors, isFill: false);
-    final fillPaint = createGradientPaint(size, colors, isFill: true);
     final shadowPaint = createShadowPaint();
 
     final double centerX = size.width / 2;
@@ -33,16 +32,16 @@ class IsolatorIconPainter extends EquipmentPainter {
       size.height * 0.8,
     );
 
-    // Connection lines with shadows
+    // Connection lines with shadows (subtle)
     canvas.drawLine(
       Offset(centerX + 1, 1),
       Offset(centerX + 1, startPoint.dy + 1),
-      shadowPaint..strokeWidth = strokeWidth,
+      shadowPaint..strokeWidth = strokeWidth * 0.5, // Lighter shadow
     );
     canvas.drawLine(
       Offset(centerX + 1, size.height + 1),
       Offset(centerX + 1, endPoint.dy + 1),
-      shadowPaint..strokeWidth = strokeWidth,
+      shadowPaint..strokeWidth = strokeWidth * 0.5,
     );
 
     // Connection lines
@@ -57,11 +56,11 @@ class IsolatorIconPainter extends EquipmentPainter {
       strokePaint,
     );
 
-    // Diagonal line shadow
+    // Diagonal line shadow (subtle)
     canvas.drawLine(
       Offset(startPoint.dx + 1, startPoint.dy + 1),
       Offset(endPoint.dx + 1, endPoint.dy + 1),
-      shadowPaint..strokeWidth = strokeWidth * 1.5,
+      shadowPaint..strokeWidth = strokeWidth * 0.8,
     );
 
     // Diagonal line with gradient
@@ -74,13 +73,12 @@ class IsolatorIconPainter extends EquipmentPainter {
       ..strokeWidth = strokeWidth * 1.5
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-
     canvas.drawLine(startPoint, endPoint, bladePaint);
 
-    // Contact points with enhanced styling
+    // Contact points with enhanced styling (no background fill)
     final double contactSize = 5;
 
-    // Top contact shadow
+    // Top contact shadow (subtle)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
@@ -90,10 +88,10 @@ class IsolatorIconPainter extends EquipmentPainter {
         ),
         const Radius.circular(2),
       ),
-      shadowPaint,
+      shadowPaint..color = shadowPaint.color.withOpacity(0.1), // More subtle
     );
 
-    // Bottom contact shadow
+    // Bottom contact shadow (subtle)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
@@ -103,10 +101,10 @@ class IsolatorIconPainter extends EquipmentPainter {
         ),
         const Radius.circular(2),
       ),
-      shadowPaint,
+      shadowPaint..color = shadowPaint.color.withOpacity(0.1),
     );
 
-    // Top contact
+    // Top contact (no fill, just stroke)
     final topContactRect = RRect.fromRectAndRadius(
       Rect.fromCenter(
         center: startPoint,
@@ -115,10 +113,9 @@ class IsolatorIconPainter extends EquipmentPainter {
       ),
       const Radius.circular(2),
     );
-    canvas.drawRRect(topContactRect, fillPaint);
     canvas.drawRRect(topContactRect, strokePaint..style = PaintingStyle.stroke);
 
-    // Bottom contact
+    // Bottom contact (no fill, just stroke)
     final bottomContactRect = RRect.fromRectAndRadius(
       Rect.fromCenter(
         center: endPoint,
@@ -127,28 +124,12 @@ class IsolatorIconPainter extends EquipmentPainter {
       ),
       const Radius.circular(2),
     );
-    canvas.drawRRect(bottomContactRect, fillPaint);
     canvas.drawRRect(
       bottomContactRect,
       strokePaint..style = PaintingStyle.stroke,
     );
 
-    // Add insulator body representation
-    final insulatorPaint = Paint()
-      ..color = colors[1].withOpacity(0.2)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(centerX, size.height * 0.5),
-          width: size.width * 0.1,
-          height: size.height * 0.3,
-        ),
-        const Radius.circular(3),
-      ),
-      insulatorPaint,
-    );
+    // Removed insulator body representation for cleanliness
   }
 
   @override

@@ -150,7 +150,7 @@ class _OperationsTabState extends State<OperationsTab> {
                       Text(
                         'Operations Data Viewer',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: theme.colorScheme.onSurface,
                         ),

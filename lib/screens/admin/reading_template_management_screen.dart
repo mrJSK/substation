@@ -5,6 +5,23 @@ import '../../models/reading_models.dart';
 import '../../utils/snackbar_utils.dart';
 import 'package:intl/intl.dart';
 
+// Import your existing custom icon painters
+import 'package:substation_manager/equipment_icons/battery_icon.dart';
+import 'package:substation_manager/equipment_icons/busbar_icon.dart';
+import 'package:substation_manager/equipment_icons/capacitor_bank_icon.dart';
+import 'package:substation_manager/equipment_icons/circuit_breaker_icon.dart';
+import 'package:substation_manager/equipment_icons/energy_meter_icon.dart';
+import 'package:substation_manager/equipment_icons/feeder_icon.dart';
+import 'package:substation_manager/equipment_icons/ground_icon.dart';
+import 'package:substation_manager/equipment_icons/isolator_icon.dart';
+import 'package:substation_manager/equipment_icons/line_icon.dart';
+import 'package:substation_manager/equipment_icons/other_icon.dart';
+import 'package:substation_manager/equipment_icons/pt_icon.dart';
+import 'package:substation_manager/equipment_icons/relay_icon.dart';
+import 'package:substation_manager/equipment_icons/reactor_icon.dart';
+import 'package:substation_manager/equipment_icons/surge_arrester_icon.dart';
+import 'package:substation_manager/equipment_icons/transformer_icon.dart';
+
 class ReadingTemplateManagementScreen extends StatefulWidget {
   const ReadingTemplateManagementScreen({super.key});
 
@@ -54,7 +71,6 @@ class _ReadingTemplateManagementScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
@@ -209,10 +225,10 @@ class _ReadingTemplateManagementScreenState
                     color: _getBayTypeColor(bayType),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(
-                    _getBayTypeIcon(bayType),
+                  child: _getBayTypeIcon(
+                    bayType,
+                    size: 18.0,
                     color: Colors.white,
-                    size: 18,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -291,7 +307,6 @@ class _ReadingTemplateManagementScreenState
                         )
                         .length;
                     if (count == 0) return const SizedBox.shrink();
-
                     return Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -437,10 +452,10 @@ class _ReadingTemplateManagementScreenState
                         color: _getBayTypeColor(type),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Icon(
-                        _getBayTypeIcon(type),
+                      child: _getBayTypeIcon(
+                        type,
+                        size: 12.0,
                         color: Colors.white,
-                        size: 12,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -467,6 +482,95 @@ class _ReadingTemplateManagementScreenState
           ),
         ],
       ),
+    );
+  }
+
+  // Updated function to use your existing icon painters
+  Widget _getBayTypeIcon(
+    String bayType, {
+    double size = 20.0,
+    Color color = Colors.white,
+  }) {
+    EquipmentPainter painter;
+
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        painter = TransformerIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      case 'line':
+        painter = LineIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      case 'feeder':
+        painter = FeederIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      case 'capacitor bank':
+        painter = CapacitorBankIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      case 'reactor':
+        painter = ReactorIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      case 'bus coupler':
+        painter = CircuitBreakerIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      case 'battery':
+        painter = BatteryIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      case 'busbar':
+        painter = BusbarIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+        break;
+      default:
+        painter = OtherIconPainter(
+          color: color,
+          strokeWidth: 2.0,
+          equipmentSize: Size(size, size),
+          symbolSize: Size(size, size),
+        );
+    }
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: painter),
     );
   }
 
@@ -498,6 +602,7 @@ class _ReadingTemplateManagementScreenState
                 ),
               ),
               const Spacer(),
+              // ADD FIELD BUTTON
               TextButton.icon(
                 onPressed: _addReadingField,
                 icon: Icon(
@@ -521,6 +626,7 @@ class _ReadingTemplateManagementScreenState
                 ),
               ),
               const SizedBox(width: 8),
+              // ADD GROUP BUTTON
               TextButton.icon(
                 onPressed: _addGroupReadingField,
                 icon: Icon(
@@ -596,6 +702,7 @@ class _ReadingTemplateManagementScreenState
     );
   }
 
+  // Keep all your existing methods for the rest of the UI
   Widget _buildReadingFieldCard(
     Map<String, dynamic> field,
     int index,
@@ -604,8 +711,8 @@ class _ReadingTemplateManagementScreenState
     int? subFieldIndex,
     int? groupIndex,
   }) {
+    // Your existing implementation from the attachment
     final isDefault = field['isDefault'] ?? false;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -910,6 +1017,7 @@ class _ReadingTemplateManagementScreenState
     int index,
     ThemeData theme,
   ) {
+    // Your existing implementation from the attachment
     final isDefault = group['isDefault'] ?? false;
 
     return ExpansionTile(
@@ -1156,29 +1264,6 @@ class _ReadingTemplateManagementScreenState
     }
   }
 
-  IconData _getBayTypeIcon(String bayType) {
-    switch (bayType.toLowerCase()) {
-      case 'transformer':
-        return Icons.transform;
-      case 'line':
-        return Icons.linear_scale;
-      case 'feeder':
-        return Icons.power;
-      case 'capacitor bank':
-        return Icons.battery_charging_full;
-      case 'reactor':
-        return Icons.wb_incandescent;
-      case 'bus coupler':
-        return Icons.link;
-      case 'battery':
-        return Icons.battery_full;
-      case 'busbar':
-        return Icons.view_headline;
-      default:
-        return Icons.electrical_services;
-    }
-  }
-
   Color _getFrequencyColor(String frequency) {
     switch (frequency.toLowerCase()) {
       case 'hourly':
@@ -1269,7 +1354,7 @@ class _ReadingTemplateManagementScreenState
   }
 
   bool _isDefaultField(String fieldName) {
-    return false; // Simplified, implement logic if needed
+    return false;
   }
 
   void _addReadingField() {

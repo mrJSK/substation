@@ -38,4 +38,33 @@ class AppConstants {
     'L&T',
     'Other',
   ];
+
+  // Common equipments
+  static const List<String> equipments = [
+    'Transformer',
+    'Circuit Breaker',
+    'Current Transformer',
+    'Voltage Transformer',
+    'Relay',
+    'Capacitor Bank',
+    'Reactor',
+    'Surge Arrester',
+    'Energy Meter',
+    'Ground',
+    'Busbar',
+    'Isolator',
+    'Other',
+  ];
+
+  // Common bay types
+  static const List<String> bayTypes = [
+    'Transformer',
+    'Line',
+    'Feeder',
+    'Capacitor Bank',
+    'Reactor',
+    'Bus Coupler',
+    'Battery',
+    'Busbar',
+  ];
 }

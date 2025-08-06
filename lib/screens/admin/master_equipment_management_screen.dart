@@ -847,116 +847,258 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   Widget _buildCustomFieldInput(
     Map<String, dynamic> field,
     int index,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    bool isSubField = false,
+    int? subFieldIndex,
+  }) {
+    final isDefault = field['isDefault'] ?? false;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16), // Increased for better breathing room
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+        color: isDefault ? Colors.blue.shade50 : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDefault
+              ? Colors.blue.shade200
+              : theme.colorScheme.outline.withOpacity(0.2),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Expanded(
-                child: TextFormField(
-                  initialValue: field['name'],
-                  decoration: InputDecoration(
-                    labelText: 'Field Name',
-                    isDense: true,
-                    border: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withOpacity(0.3),
-                      ),
-                    ),
-                    labelStyle: const TextStyle(
-                      fontSize: 14,
-                    ), // Consistent size
+              if (isDefault)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
                   ),
-                  style: const TextStyle(
-                    fontSize: 14,
-                  ), // Consistent input text size
-                  onChanged: (value) => field['name'] = value,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'DEFAULT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
                 ),
-              ),
+              const Spacer(),
+              if (!isDefault)
+                IconButton(
+                  onPressed: () => isSubField
+                      ? _removeSubField(index, subFieldIndex!)
+                      : _removeCustomField(index),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.error,
+                    size: 18,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDropdown(
-                  value: field['dataType'],
-                  label: 'Data Type',
-                  items: _dataTypes,
-                  theme: theme,
-                  onChanged: (value) => setState(() {
+
+          // Field Name
+          TextFormField(
+            initialValue: field['name'],
+            decoration: InputDecoration(
+              labelText: isSubField ? 'Sub-field Name' : 'Field Name',
+              isDense: true,
+              labelStyle: TextStyle(
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                fontSize: 14,
+              ),
+              border: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              errorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: theme.colorScheme.error),
+              ),
+              focusedErrorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.error,
+                  width: 2,
+                ),
+              ),
+            ),
+            style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+            onChanged: isDefault ? null : (value) => field['name'] = value,
+            readOnly: isDefault,
+          ),
+          const SizedBox(height: 12),
+
+          // Data Type - Using DropdownButtonFormField directly instead of _buildDropdown
+          DropdownButtonFormField<String>(
+            value: field['dataType'],
+            decoration: InputDecoration(
+              labelText: 'Data Type',
+              isDense: true,
+              labelStyle: TextStyle(
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                fontSize: 14,
+              ),
+              border: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              errorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: theme.colorScheme.error),
+              ),
+              focusedErrorBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.error,
+                  width: 2,
+                ),
+              ),
+            ),
+            items: _dataTypes.map((item) {
+              return DropdownMenuItem(
+                value: item,
+                child: Text(
+                  item,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              );
+            }).toList(),
+            onChanged: isDefault
+                ? null
+                : (value) => setState(() {
                     field['dataType'] = value;
                     if (value != 'number') {
                       field['hasUnits'] = false;
                       field['units'] = '';
                     }
                   }),
-                ),
-              ),
-            ],
+            style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
+            dropdownColor: Colors.white,
+            icon: Icon(
+              Icons.arrow_drop_down,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
           ),
           const SizedBox(height: 12),
-          // Mandatory Checkbox in its own row
+
+          // Mandatory Checkbox
           CheckboxListTile(
-            title: const Text(
-              'Mandatory',
-              style: TextStyle(fontSize: 14), // Consistent size
-            ),
+            title: const Text('Mandatory', style: TextStyle(fontSize: 14)),
             value: field['isMandatory'] ?? false,
-            onChanged: (value) => setState(() => field['isMandatory'] = value),
+            onChanged: isDefault
+                ? null
+                : (value) => setState(() => field['isMandatory'] = value),
             dense: true,
             contentPadding: EdgeInsets.zero,
           ),
           const SizedBox(height: 8),
-          // Has Units Checkbox (conditional) in its own row
+
+          // Has Units Checkbox (conditional)
           if (field['dataType'] == 'number')
             CheckboxListTile(
-              title: const Text(
-                'Has Units',
-                style: TextStyle(fontSize: 14), // Consistent size
-              ),
+              title: const Text('Has Units', style: TextStyle(fontSize: 14)),
               value: field['hasUnits'] ?? false,
-              onChanged: (value) => setState(() => field['hasUnits'] = value),
+              onChanged: isDefault
+                  ? null
+                  : (value) => setState(() => field['hasUnits'] = value),
               dense: true,
               contentPadding: EdgeInsets.zero,
             ),
-          if (field['hasUnits'] == true && field['dataType'] == 'number')
+
+          // Units Field (conditional)
+          if (field['hasUnits'] == true && field['dataType'] == 'number') ...[
             const SizedBox(height: 12),
-          if (field['hasUnits'] == true && field['dataType'] == 'number')
             TextFormField(
               initialValue: field['units'],
               decoration: InputDecoration(
-                labelText: 'Units',
+                labelText: 'Unit (e.g., V, A, kW)',
                 isDense: true,
-                labelStyle: const TextStyle(fontSize: 14), // Consistent size
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                errorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: theme.colorScheme.error),
+                ),
+                focusedErrorBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.error,
+                    width: 2,
+                  ),
+                ),
               ),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-              ), // Consistent input text size
-              onChanged: (value) => field['units'] = value,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: isDefault ? null : (value) => field['units'] = value,
+              readOnly: isDefault,
             ),
-          const SizedBox(height: 12),
-          // Has Remarks Field Checkbox in its own row
+          ],
+
+          // Has Remarks Field Checkbox
           CheckboxListTile(
             title: const Text(
               'Has Remarks Field',
-              style: TextStyle(fontSize: 14), // Consistent size
+              style: TextStyle(fontSize: 14),
             ),
             value: field['hasRemarksField'] ?? false,
-            onChanged: (value) =>
-                setState(() => field['hasRemarksField'] = value),
+            onChanged: isDefault
+                ? null
+                : (value) => setState(() => field['hasRemarksField'] = value),
             dense: true,
             contentPadding: EdgeInsets.zero,
           ),
+
+          // Template Remark Text (conditional)
           if (field['hasRemarksField'] == true) ...[
             const SizedBox(height: 12),
             TextFormField(
@@ -964,53 +1106,60 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
               decoration: InputDecoration(
                 labelText: 'Template Remark Text',
                 isDense: true,
-                labelStyle: const TextStyle(fontSize: 14), // Consistent size
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
               ),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-              ), // Consistent input text size
-              onChanged: (value) => field['templateRemarkText'] = value,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: isDefault
+                  ? null
+                  : (value) => field['templateRemarkText'] = value,
+              readOnly: isDefault,
             ),
           ],
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                icon: const Icon(
-                  Icons.delete_outline,
-                  size: 20,
-                  color: Colors.red,
-                ),
-                onPressed: () => _removeCustomField(index),
-              ),
-            ],
-          ),
+
+          // Dropdown Options (conditional)
           if (field['dataType'] == 'dropdown') ...[
             const SizedBox(height: 12),
             Row(
               children: [
-                const Text(
-                  'Options:',
-                  style: TextStyle(fontSize: 14),
-                ), // Consistent size
+                const Text('Options:', style: TextStyle(fontSize: 14)),
                 const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => _addDropdownOption(index),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text(
-                    'Add Option',
-                    style: TextStyle(fontSize: 14), // Consistent size
+                if (!isDefault)
+                  TextButton.icon(
+                    onPressed: () => _addDropdownOption(index),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text(
+                      'Add Option',
+                      style: TextStyle(fontSize: 14),
+                    ),
                   ),
-                ),
               ],
             ),
             ...List.generate(
               (field['options'] as List<String>).length,
               (optionIndex) => Padding(
-                padding: const EdgeInsets.only(
-                  top: 8,
-                ), // Added spacing between options
+                padding: const EdgeInsets.only(top: 8),
                 child: Row(
                   children: [
                     Expanded(
@@ -1020,21 +1169,24 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
                         decoration: InputDecoration(
                           labelText: 'Option ${optionIndex + 1}',
                           isDense: true,
-                          labelStyle: const TextStyle(
-                            fontSize: 14,
-                          ), // Consistent
+                          labelStyle: const TextStyle(fontSize: 14),
                         ),
-                        style: const TextStyle(fontSize: 14), // Consistent
-                        onChanged: (value) =>
-                            (field['options'] as List<String>)[optionIndex] =
-                                value,
+                        style: const TextStyle(fontSize: 14),
+                        onChanged: isDefault
+                            ? null
+                            : (value) =>
+                                  (field['options']
+                                          as List<String>)[optionIndex] =
+                                      value,
+                        readOnly: isDefault,
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, size: 16),
-                      onPressed: () =>
-                          _removeDropdownOption(index, optionIndex),
-                    ),
+                    if (!isDefault)
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, size: 16),
+                        onPressed: () =>
+                            _removeDropdownOption(index, optionIndex),
+                      ),
                   ],
                 ),
               ),
@@ -1050,186 +1202,166 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     int groupIndex,
     ThemeData theme,
   ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16), // Increased for better breathing room
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3)),
-        borderRadius: BorderRadius.circular(8),
-        color: theme.colorScheme.primary.withOpacity(0.05),
+    final isDefault = group['isDefault'] ?? false;
+
+    return ExpansionTile(
+      title: Text(
+        group['name'].isEmpty ? 'Unnamed Group' : group['name'],
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: theme.colorScheme.onSurface,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Group Name in its own separate row
-          Row(
-            children: [
-              const Icon(Icons.folder_outlined, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextFormField(
-                  initialValue: group['name'],
-                  decoration: InputDecoration(
-                    labelText: 'Group Name',
-                    isDense: true,
-                    labelStyle: const TextStyle(
-                      fontSize: 14,
-                    ), // Consistent size
+      leading: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(Icons.group, size: 16, color: theme.colorScheme.primary),
+      ),
+      trailing: isDefault
+          ? null
+          : IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: theme.colorScheme.error,
+              ),
+              onPressed: () => _removeCustomField(groupIndex),
+            ),
+      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+      backgroundColor: isDefault ? Colors.blue.shade50 : Colors.grey.shade50,
+      collapsedBackgroundColor: isDefault
+          ? Colors.blue.shade50
+          : Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      collapsedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      children: [
+        Row(
+          children: [
+            if (isDefault)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'DEFAULT',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue.shade700,
                   ),
-                  style: const TextStyle(
-                    fontSize: 14,
-                  ), // Consistent input text size
-                  onChanged: (value) => group['name'] = value,
                 ),
               ),
-            ],
+            if (isDefault) const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade100,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'GROUP',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.purple.shade700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        TextFormField(
+          initialValue: group['name'],
+          decoration: InputDecoration(
+            labelText: 'Group Name',
+            isDense: true,
+            labelStyle: TextStyle(
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+              fontSize: 14,
+            ),
+            border: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
           ),
-          const SizedBox(height: 12), // Spacing after group name
-          // Action buttons in their own row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
+          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+          onChanged: isDefault ? null : (value) => group['name'] = value,
+          readOnly: isDefault,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Subfields',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+            ),
+            if (!isDefault)
               TextButton.icon(
                 onPressed: () => _addSubFieldToGroup(groupIndex),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text(
-                  'Add Sub-field',
-                  style: TextStyle(fontSize: 14), // Consistent size
+                icon: Icon(
+                  Icons.add,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                label: Text(
+                  'Add Subfield',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(
-                  Icons.delete_outline,
-                  size: 20,
-                  color: Colors.red,
-                ),
-                onPressed: () => _removeCustomField(groupIndex),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...(group['nestedFields'] as List<Map<String, dynamic>>)
+            .asMap()
+            .entries
+            .map(
+              (entry) => _buildCustomFieldInput(
+                entry.value,
+                groupIndex,
+                theme,
+                isSubField: true,
+                subFieldIndex: entry.key,
               ),
-            ],
-          ),
-          const SizedBox(height: 12), // Spacing before sub-fields
-          // Sub-fields
-          ...List.generate(
-            (group['nestedFields'] as List<Map<String, dynamic>>).length,
-            (subFieldIndex) {
-              final subField =
-                  (group['nestedFields']
-                      as List<Map<String, dynamic>>)[subFieldIndex];
-              return Container(
-                margin: const EdgeInsets.only(
-                  bottom: 12,
-                  left: 16,
-                ), // Consistent margin
-                padding: const EdgeInsets.all(16), // Increased padding
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(6),
-                  color: Colors.white,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Sub-field Name in its own row
-                    TextFormField(
-                      initialValue: subField['name'],
-                      decoration: InputDecoration(
-                        labelText: 'Sub-field Name',
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 8,
-                          horizontal: 8,
-                        ),
-                        labelStyle: const TextStyle(fontSize: 14), // Consistent
-                      ),
-
-                      style: const TextStyle(fontSize: 14), // Consistent
-                      onChanged: (value) => subField['name'] = value,
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Data Type Dropdown in its own row
-                    _buildDropdown(
-                      value: subField['dataType'],
-                      label: 'Data Type',
-                      items: _dataTypes,
-                      theme: theme,
-                      onChanged: (value) => setState(() {
-                        subField['dataType'] = value;
-                        if (value != 'number') {
-                          subField['hasUnits'] = false;
-                          subField['units'] = '';
-                        }
-                      }),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Mandatory Checkbox in its own row
-                    CheckboxListTile(
-                      title: const Text(
-                        'Mandatory',
-                        style: TextStyle(fontSize: 14), // Consistent
-                      ),
-                      value: subField['isMandatory'] ?? false,
-                      onChanged: (value) =>
-                          setState(() => subField['isMandatory'] = value),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Has Units Checkbox (conditional) in its own row
-                    if (subField['dataType'] == 'number')
-                      CheckboxListTile(
-                        title: const Text(
-                          'Has Units',
-                          style: TextStyle(fontSize: 14), // Consistent
-                        ),
-                        value: subField['hasUnits'] ?? false,
-                        onChanged: (value) =>
-                            setState(() => subField['hasUnits'] = value),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    if (subField['hasUnits'] == true &&
-                        subField['dataType'] == 'number')
-                      const SizedBox(height: 12),
-
-                    // Units Field (conditional) in its own row
-                    if (subField['hasUnits'] == true &&
-                        subField['dataType'] == 'number')
-                      TextFormField(
-                        initialValue: subField['units'],
-                        decoration: InputDecoration(
-                          labelText: 'Units',
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 8,
-                          ),
-                          labelStyle: const TextStyle(
-                            fontSize: 14,
-                          ), // Consistent
-                        ),
-                        style: const TextStyle(fontSize: 14), // Consistent
-                        onChanged: (value) => subField['units'] = value,
-                      ),
-
-                    // Remove button in its own row (aligned to end)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, size: 16),
-                        onPressed: () =>
-                            _removeSubField(groupIndex, subFieldIndex),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
+            ),
+      ],
     );
   }
 

@@ -22,21 +22,20 @@ class OtherIconPainter extends EquipmentPainter {
     final centerY = size.height / 2;
     final radius = size.width * 0.3;
 
-    // Draw diamond shape
+    // Draw diamond shape (no fill for cleanliness)
     final path = Path();
     path.moveTo(centerX, centerY - radius);
     path.lineTo(centerX + radius, centerY);
     path.lineTo(centerX, centerY + radius);
     path.lineTo(centerX - radius, centerY);
     path.close();
-
     canvas.drawPath(path, paint);
 
-    // Draw question mark inside
+    // Draw question mark inside (subtle)
     final textSpan = TextSpan(
       text: '?',
       style: TextStyle(
-        color: color,
+        color: color.withOpacity(0.7), // More subtle
         fontSize: size.width * 0.4,
         fontWeight: FontWeight.bold,
       ),
@@ -51,7 +50,7 @@ class OtherIconPainter extends EquipmentPainter {
       Offset(centerX - textPainter.width / 2, centerY - textPainter.height / 2),
     );
 
-    // Connection lines
+    // Connection lines (no shade)
     canvas.drawLine(
       Offset(centerX, 0),
       Offset(centerX, centerY - radius),

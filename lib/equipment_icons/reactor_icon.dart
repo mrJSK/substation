@@ -23,11 +23,10 @@ class ReactorIconPainter extends EquipmentPainter {
     final coilHeight = size.height * 0.5;
     final coilWidth = size.width * 0.3;
 
-    // Draw inductor coil (series of arcs) with shadows
+    // Draw inductor coil (series of arcs) with subtle shadows
     final numCoils = 4;
     final coilSpacing = coilHeight / numCoils;
 
-    // Enhanced coil drawing with gradient and shadows
     for (int i = 0; i < numCoils; i++) {
       final y = centerY - coilHeight / 2 + i * coilSpacing;
       final rect = Rect.fromCenter(
@@ -36,7 +35,7 @@ class ReactorIconPainter extends EquipmentPainter {
         height: coilSpacing,
       );
 
-      // Draw shadow
+      // Draw shadow (subtle)
       final shadowRect = Rect.fromCenter(
         center: Offset(centerX + 1, y + coilSpacing / 2 + 1),
         width: coilWidth,
@@ -47,10 +46,10 @@ class ReactorIconPainter extends EquipmentPainter {
         0,
         pi,
         false,
-        shadowPaint..strokeWidth = strokeWidth,
+        shadowPaint..strokeWidth = strokeWidth * 0.5, // Lighter
       );
 
-      // Draw coil with gradient
+      // Draw coil with gradient (stroke only, no fill)
       final coilPaint = Paint()
         ..shader = LinearGradient(
           begin: Alignment.centerLeft,
@@ -60,7 +59,6 @@ class ReactorIconPainter extends EquipmentPainter {
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
-
       canvas.drawArc(rect, 0, pi, false, coilPaint);
     }
 
@@ -76,22 +74,7 @@ class ReactorIconPainter extends EquipmentPainter {
       strokePaint,
     );
 
-    // Add core representation
-    final corePaint = Paint()
-      ..color = colors[1].withOpacity(0.2)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(centerX + coilWidth * 0.4, centerY),
-          width: coilWidth * 0.15,
-          height: coilHeight * 0.8,
-        ),
-        const Radius.circular(2),
-      ),
-      corePaint,
-    );
+    // Removed core representation for cleanliness
 
     // Draw "L" text
     drawStyledText(

@@ -17,38 +17,25 @@ class PotentialTransformerIconPainter extends EquipmentPainter {
     final colors =
         EquipmentPainter.equipmentColorScheme['Voltage Transformer']!;
     final strokePaint = createGradientPaint(size, colors, isFill: false);
-    final fillPaint = createGradientPaint(size, colors, isFill: true);
     final shadowPaint = createShadowPaint();
 
     final centerX = size.width / 2;
     final centerY = size.height / 2;
     final coilRadius = min(size.width, size.height) * 0.2;
 
-    // Draw shadows
+    // Draw shadows (subtle)
     canvas.drawCircle(
       Offset(centerX + 1, centerY - coilRadius / 2 + 1),
       coilRadius,
-      shadowPaint,
+      shadowPaint..color = shadowPaint.color.withOpacity(0.1),
     );
     canvas.drawCircle(
       Offset(centerX + 1, centerY + coilRadius / 2 + 1),
       coilRadius,
-      shadowPaint,
+      shadowPaint..color = shadowPaint.color.withOpacity(0.1),
     );
 
-    // Draw coil shapes with gradient fill
-    canvas.drawCircle(
-      Offset(centerX, centerY - coilRadius / 2),
-      coilRadius,
-      fillPaint..color = colors[1].withOpacity(0.2),
-    );
-    canvas.drawCircle(
-      Offset(centerX, centerY + coilRadius / 2),
-      coilRadius,
-      fillPaint..color = colors[1].withOpacity(0.2),
-    );
-
-    // Draw outlines
+    // Draw coil shapes without fill, just outlines
     canvas.drawCircle(
       Offset(centerX, centerY - coilRadius / 2),
       coilRadius,
@@ -60,7 +47,7 @@ class PotentialTransformerIconPainter extends EquipmentPainter {
       strokePaint,
     );
 
-    // Primary lines with enhanced styling
+    // Primary lines with gradient
     canvas.drawLine(
       Offset(centerX, 0),
       Offset(centerX, centerY - coilRadius),
@@ -72,17 +59,16 @@ class PotentialTransformerIconPainter extends EquipmentPainter {
       strokePaint,
     );
 
-    // Add connection dots
-    final dotPaint = createGradientPaint(size, colors, isFill: true);
+    // Connection dots (subtle, no heavy shade)
     canvas.drawCircle(
       Offset(centerX, centerY - coilRadius),
       strokeWidth * 0.8,
-      dotPaint,
+      strokePaint..style = PaintingStyle.stroke, // Stroke only
     );
     canvas.drawCircle(
       Offset(centerX, centerY + coilRadius),
       strokeWidth * 0.8,
-      dotPaint,
+      strokePaint..style = PaintingStyle.stroke,
     );
 
     // Draw "PT" text
@@ -93,6 +79,8 @@ class PotentialTransformerIconPainter extends EquipmentPainter {
       colors[0],
       size.width * 0.25,
     );
+
+    // Removed core representation for cleanliness
   }
 
   @override

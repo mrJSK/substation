@@ -16,22 +16,20 @@ class EnergyMeterIconPainter extends EquipmentPainter {
   void paint(Canvas canvas, Size size) {
     final colors = EquipmentPainter.equipmentColorScheme['Energy Meter']!;
     final strokePaint = createGradientPaint(size, colors, isFill: false);
-    final fillPaint = createGradientPaint(size, colors, isFill: true);
     final shadowPaint = createShadowPaint();
 
     final centerX = size.width / 2;
     final centerY = size.height / 2;
     final radius = min(size.width, size.height) * 0.35;
 
-    // Draw shadow
-    canvas.drawCircle(Offset(centerX + 2, centerY + 2), radius, shadowPaint);
-
-    // Draw circular meter body with gradient fill
+    // Draw shadow (subtle)
     canvas.drawCircle(
-      Offset(centerX, centerY),
+      Offset(centerX + 2, centerY + 2),
       radius,
-      fillPaint..color = colors[1].withOpacity(0.1),
+      shadowPaint..color = shadowPaint.color.withOpacity(0.1),
     );
+
+    // Draw circular meter body (stroke only, no fill)
     canvas.drawCircle(Offset(centerX, centerY), radius, strokePaint);
 
     // Draw scale marks with enhanced styling
@@ -40,12 +38,10 @@ class EnergyMeterIconPainter extends EquipmentPainter {
       final innerRadius = radius * 0.75;
       final outerRadius = radius * 0.9;
       final isMainMark = i % 2 == 0;
-
       final scalePaint = Paint()
         ..color = isMainMark ? colors[0] : colors[1]
         ..strokeWidth = isMainMark ? strokeWidth * 0.8 : strokeWidth * 0.5
         ..strokeCap = StrokeCap.round;
-
       canvas.drawLine(
         Offset(
           centerX + innerRadius * cos(angle),
@@ -65,7 +61,7 @@ class EnergyMeterIconPainter extends EquipmentPainter {
     final needleEndX = centerX + needleLength * cos(needleAngle);
     final needleEndY = centerY + needleLength * sin(needleAngle);
 
-    // Needle shadow
+    // Needle shadow (subtle)
     canvas.drawLine(
       Offset(centerX + 1, centerY + 1),
       Offset(needleEndX + 1, needleEndY + 1),
@@ -89,16 +85,18 @@ class EnergyMeterIconPainter extends EquipmentPainter {
       ..strokeWidth = strokeWidth * 0.8
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-
     canvas.drawLine(
       Offset(centerX, centerY),
       Offset(needleEndX, needleEndY),
       needlePaint,
     );
 
-    // Center hub with gradient
-    canvas.drawCircle(Offset(centerX + 0.5, centerY + 0.5), 3, shadowPaint);
-    canvas.drawCircle(Offset(centerX, centerY), 3, fillPaint);
+    // Center hub with gradient (subtle)
+    canvas.drawCircle(
+      Offset(centerX + 0.5, centerY + 0.5),
+      3,
+      shadowPaint..color = shadowPaint.color.withOpacity(0.1),
+    );
     canvas.drawCircle(
       Offset(centerX, centerY),
       3,
@@ -117,7 +115,7 @@ class EnergyMeterIconPainter extends EquipmentPainter {
       strokePaint,
     );
 
-    // Add display window
+    // Add display window (subtle, lower opacity)
     final displayRect = RRect.fromRectAndRadius(
       Rect.fromCenter(
         center: Offset(centerX, centerY + radius * 0.4),
@@ -126,10 +124,9 @@ class EnergyMeterIconPainter extends EquipmentPainter {
       ),
       const Radius.circular(2),
     );
-
     canvas.drawRRect(
       displayRect,
-      Paint()..color = Colors.black.withOpacity(0.8),
+      Paint()..color = Colors.black.withOpacity(0.4), // Reduced opacity
     );
 
     // Digital display text

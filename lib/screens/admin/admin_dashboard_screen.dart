@@ -1,5 +1,3 @@
-// lib/screens/admin/admin_dashboard_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../utils/snackbar_utils.dart';
+import '../../widgets/modern_app_drawer.dart';
 
 import 'admin_hierarchy_screen.dart';
 import 'master_equipment_management_screen.dart';
@@ -15,9 +14,8 @@ import 'reading_template_management_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final AppUser adminUser;
-  final Widget? drawer;
 
-  const AdminDashboardScreen({super.key, required this.adminUser, this.drawer});
+  const AdminDashboardScreen({super.key, required this.adminUser});
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -40,7 +38,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       appBar: _buildAppBar(theme),
-      drawer: widget.drawer,
       body: _buildBody(theme),
     );
   }
@@ -57,11 +54,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           fontWeight: FontWeight.w600,
         ),
       ),
-      leading: Builder(
-        builder: (context) => IconButton(
-          icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
-          onPressed: () => Scaffold.of(context).openDrawer(),
-        ),
+      leading: IconButton(
+        icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+        onPressed: () {
+          // Debugging: Check if the button is pressed
+          print('Menu button pressed');
+          if (mounted) {
+            ModernAppDrawer.show(context, widget.adminUser);
+          } else {
+            print('Context is not mounted');
+          }
+        },
       ),
     );
   }
@@ -377,15 +380,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ),
               const SizedBox(width: 16),
-              Expanded(
-                child: _buildTemplateStatCard(
-                  'Total Substations',
-                  _stats['totalSubstations'] ?? 0,
-                  Icons.electrical_services,
-                  Colors.indigo,
-                  theme,
-                ),
-              ),
             ],
           ),
         ),
@@ -502,9 +496,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // The text widget itself can now expand as needed
                 Text(
-                  '$voltage Substations', // Using string interpolation for clarity
+                  '$voltage Substations',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
@@ -534,7 +527,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // [Rest of the methods remain the same...]
   List<Map<String, dynamic>> _getAdminFunctions() {
     return [
       {
@@ -630,9 +622,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _isLoadingStats = false;
       });
     } catch (e) {
-      print('Error loading dashboard stats: $e');
       if (mounted) {
         setState(() => _isLoadingStats = false);
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to load stats: $e',
+          isError: true,
+        );
       }
     }
   }

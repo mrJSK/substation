@@ -16,7 +16,6 @@ class LineIconPainter extends EquipmentPainter {
   void paint(Canvas canvas, Size size) {
     final colors = [Color(0xFF1565C0), Color(0xFF42A5F5)]; // Blue for line
     final strokePaint = createGradientPaint(size, colors, isFill: false);
-    final fillPaint = createGradientPaint(size, colors, isFill: true);
     final shadowPaint = createShadowPaint();
 
     final double centerX = size.width / 2;
@@ -27,11 +26,11 @@ class LineIconPainter extends EquipmentPainter {
     // Enhanced stroke paint
     strokePaint.strokeCap = StrokeCap.round;
 
-    // Line shadow
+    // Line shadow (subtle)
     canvas.drawLine(
       Offset(centerX + 1, lineStartY + 1),
       Offset(centerX + 1, size.height + 1),
-      shadowPaint..strokeWidth = strokeWidth,
+      shadowPaint..strokeWidth = strokeWidth * 0.5, // Lighter
     );
 
     // Main vertical line with gradient
@@ -52,14 +51,13 @@ class LineIconPainter extends EquipmentPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-
     canvas.drawLine(
       Offset(centerX, lineStartY),
       Offset(centerX, size.height),
       linePaint,
     );
 
-    // Arrowhead with shadow
+    // Arrowhead with shadow (subtle)
     final Offset arrowBaseCenter = Offset(centerX, lineStartY);
     final arrowPath = Path()
       ..moveTo(arrowBaseCenter.dx - arrowBaseWidth / 2, arrowBaseCenter.dy)
@@ -67,7 +65,7 @@ class LineIconPainter extends EquipmentPainter {
       ..lineTo(centerX, arrowBaseCenter.dy - arrowHeight)
       ..close();
 
-    // Arrow shadow
+    // Arrow shadow (lighter)
     final arrowShadowPath = Path()
       ..moveTo(
         arrowBaseCenter.dx - arrowBaseWidth / 2 + 1,
@@ -79,14 +77,18 @@ class LineIconPainter extends EquipmentPainter {
       )
       ..lineTo(centerX + 1, arrowBaseCenter.dy - arrowHeight + 1)
       ..close();
+    canvas.drawPath(
+      arrowShadowPath,
+      shadowPaint..color = shadowPaint.color.withOpacity(0.1),
+    );
 
-    canvas.drawPath(arrowShadowPath, shadowPaint);
-    canvas.drawPath(arrowPath, fillPaint);
+    // Arrow without background fill, just stroke
     canvas.drawPath(arrowPath, strokePaint..style = PaintingStyle.stroke);
 
-    // Add transmission line characteristics (parallel lines)
+    // Add transmission line characteristics (parallel lines, no shade)
     final conductorPaint = Paint()
-      ..color = colors[1].withOpacity(0.6)
+      ..color = colors[1]
+          .withOpacity(0.6) // Subtle opacity
       ..strokeWidth = strokeWidth * 0.4
       ..strokeCap = StrokeCap.round;
 

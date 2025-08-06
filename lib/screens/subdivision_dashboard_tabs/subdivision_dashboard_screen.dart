@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart';
+import '../../widgets/modern_app_drawer.dart';
 import 'operations_tab.dart';
 import 'energy_tab.dart';
 import 'tripping_tab.dart';
@@ -16,13 +17,9 @@ import 'asset_management_tab.dart';
 
 class SubdivisionDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
-  final Widget? drawer;
 
-  const SubdivisionDashboardScreen({
-    Key? key,
-    required this.currentUser,
-    this.drawer,
-  }) : super(key: key);
+  const SubdivisionDashboardScreen({Key? key, required this.currentUser})
+    : super(key: key);
 
   @override
   State<SubdivisionDashboardScreen> createState() =>
@@ -48,6 +45,8 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   @override
   void initState() {
     super.initState();
+    print('🔍 DEBUG: SubdivisionDashboardScreen initState called');
+    print('🔍 DEBUG: Current user: ${widget.currentUser.email}');
     final tabCount = widget.currentUser.role == UserRole.subdivisionManager
         ? _tabs.length
         : _tabs.length - 1; // Exclude Asset Management for non-managers
@@ -62,14 +61,25 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    print('🔍 DEBUG: SubdivisionDashboardScreen build called');
     final theme = Theme.of(context);
     final appState = Provider.of<AppStateData>(context);
     final accessibleSubstations = appState.accessibleSubstations;
     Substation? selectedSubstation = appState.selectedSubstation;
 
+    print(
+      '🔍 DEBUG: Accessible substations count: ${accessibleSubstations.length}',
+    );
+    print(
+      '🔍 DEBUG: Selected substation: ${selectedSubstation?.name ?? 'null'}',
+    );
+
     // Auto-select first substation if none selected
     if (selectedSubstation == null && accessibleSubstations.isNotEmpty) {
       selectedSubstation = accessibleSubstations.first;
+      print(
+        '🔍 DEBUG: Auto-selecting first substation: ${selectedSubstation.name}',
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         appState.setSelectedSubstation(selectedSubstation!);
       });
@@ -81,16 +91,15 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      appBar: _buildAppBar(theme, selectedSubstation),
-      drawer: widget.drawer,
+      appBar: _buildAppBar(
+        theme,
+        selectedSubstation,
+        accessibleSubstations,
+        appState,
+      ),
       body: Column(
         children: [
-          _buildSubstationSelector(
-            theme,
-            appState,
-            accessibleSubstations,
-            selectedSubstation,
-          ),
+          // Removed _buildWelcomeHeader() completely
           _buildTabBar(theme),
           Expanded(
             child: TabBarView(
@@ -106,39 +115,123 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   PreferredSizeWidget _buildAppBar(
     ThemeData theme,
     Substation selectedSubstation,
+    List<Substation> accessibleSubstations,
+    AppStateData appState,
   ) {
+    print(
+      '🔍 DEBUG: Building AppBar with selected substation: ${selectedSubstation.name}',
+    );
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      toolbarHeight: 70,
+      title: Row(
         children: [
-          Text(
-            'Subdivision Dashboard',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+          // Fixed substation selector in app bar
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withOpacity(0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.location_on,
+                    color: theme.colorScheme.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<Substation>(
+                        value: selectedSubstation,
+                        items: accessibleSubstations.map((substation) {
+                          return DropdownMenuItem<Substation>(
+                            value: substation,
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                                horizontal: 4,
+                              ),
+                              child: Text(
+                                substation.name,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (Substation? newValue) {
+                          print(
+                            '🔍 DEBUG: Dropdown changed to: ${newValue?.name}',
+                          );
+                          if (newValue != null) {
+                            appState.setSelectedSubstation(newValue);
+                          }
+                        },
+                        icon: Icon(
+                          Icons.keyboard_arrow_down,
+                          color: theme.colorScheme.primary,
+                          size: 20,
+                        ),
+                        isDense: true,
+                        isExpanded: true,
+                        // Fixed dropdown styling
+                        dropdownColor: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        elevation: 8,
+                        menuMaxHeight: 300,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
+                          fontSize: 14,
+                        ),
+                        selectedItemBuilder: (BuildContext context) {
+                          // This ensures the selected item displays correctly
+                          return accessibleSubstations.map((
+                            Substation substation,
+                          ) {
+                            return Container(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                substation.name,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList();
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          Text(
-            selectedSubstation.name,
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
+          const SizedBox(width: 12),
+          _buildDateRangeChip(theme),
         ],
       ),
-      leading: widget.drawer != null
-          ? Builder(
-              builder: (context) => IconButton(
-                icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
-                onPressed: () => Scaffold.of(context).openDrawer(),
-              ),
-            )
-          : null,
-      actions: [_buildDateRangeChip(theme), const SizedBox(width: 16)],
+      leading: IconButton(
+        icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+        onPressed: () {
+          print('🔍 DEBUG: Menu button pressed in SubdivisionDashboard');
+          ModernAppDrawer.show(context, widget.currentUser);
+        },
+      ),
     );
   }
 
@@ -147,110 +240,33 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       onTap: _showDateRangePicker,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withOpacity(0.1),
+          color: theme.colorScheme.secondary.withOpacity(0.1),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3)),
+          border: Border.all(
+            color: theme.colorScheme.secondary.withOpacity(0.3),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.date_range, size: 16, color: theme.colorScheme.primary),
+            Icon(
+              Icons.date_range,
+              size: 16,
+              color: theme.colorScheme.secondary,
+            ),
             const SizedBox(width: 4),
             Text(
               '${DateFormat('dd.MMM').format(_dashboardStartDate)} - ${DateFormat('dd.MMM').format(_dashboardEndDate)}',
               style: TextStyle(
                 fontSize: 12,
-                color: theme.colorScheme.primary,
+                color: theme.colorScheme.secondary,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSubstationSelector(
-    ThemeData theme,
-    AppStateData appState,
-    List<Substation> accessibleSubstations,
-    Substation selectedSubstation,
-  ) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.location_on,
-              color: theme.colorScheme.primary,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Active Substation',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                DropdownButtonHideUnderline(
-                  child: DropdownButton<Substation>(
-                    value: selectedSubstation,
-                    items: accessibleSubstations.map((substation) {
-                      return DropdownMenuItem(
-                        value: substation,
-                        child: Text(
-                          substation.name,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (Substation? newValue) {
-                      if (newValue != null) {
-                        appState.setSelectedSubstation(newValue);
-                      }
-                    },
-                    icon: Icon(
-                      Icons.keyboard_arrow_down,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -261,7 +277,12 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         : _tabs.where((tab) => tab.label != 'Asset Management').toList();
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
+      margin: const EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        0,
+      ), // Added top margin since welcome header is removed
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -286,6 +307,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         labelStyle: const TextStyle(fontWeight: FontWeight.w600),
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400),
         padding: const EdgeInsets.all(8),
+        tabAlignment: TabAlignment.start,
       ),
     );
   }
@@ -309,6 +331,16 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   Widget _buildNoSubstationState(ThemeData theme) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+          onPressed: () {
+            ModernAppDrawer.show(context, widget.currentUser);
+          },
+        ),
+      ),
       body: Center(
         child: Container(
           margin: const EdgeInsets.all(32),
