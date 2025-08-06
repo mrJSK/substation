@@ -32,10 +32,12 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _equipmentTypeController =
       TextEditingController();
-  final TextEditingController _makeController = TextEditingController();
 
+  // ✅ KEEP these fields for data model but don't show in UI
+  final TextEditingController _makeController = TextEditingController();
   DateTime? _dateOfManufacture;
   DateTime? _dateOfCommissioning;
+
   String? _selectedSymbolKey;
   MasterEquipmentTemplate? _templateToEdit;
   List<MasterEquipmentTemplate> _templates = [];
@@ -181,7 +183,6 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
@@ -368,22 +369,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
               ),
             ],
           ),
-          if (template.make != null) ...[
-            const SizedBox(height: 12),
-            _buildInfoChip(
-              'Make: ${template.make!}',
-              Icons.business_outlined,
-              theme,
-            ),
-          ],
-          if (template.dateOfCommissioning != null) ...[
-            const SizedBox(height: 8),
-            _buildInfoChip(
-              'Commissioned: ${DateFormat('yyyy-MM-dd').format(template.dateOfCommissioning!.toDate())}',
-              Icons.calendar_today_outlined,
-              theme,
-            ),
-          ],
+          // ✅ REMOVED: Make and Date of Commissioning display
           const SizedBox(height: 8),
           _buildInfoChip(
             '${template.equipmentCustomFields.length} custom fields',
@@ -479,34 +465,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
           ),
           const SizedBox(height: 16),
           _buildSymbolDropdown(theme),
-          const SizedBox(height: 16),
-          _buildTextField(
-            controller: _makeController,
-            label: 'Make (Optional)',
-            theme: theme,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDateField(
-                  'Date of Manufacture',
-                  _dateOfManufacture,
-                  (date) => setState(() => _dateOfManufacture = date),
-                  theme,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildDateField(
-                  'Date of Commissioning',
-                  _dateOfCommissioning,
-                  (date) => setState(() => _dateOfCommissioning = date),
-                  theme,
-                ),
-              ),
-            ],
-          ),
+          // ✅ Fields are hidden from UI but will be saved with default values
         ],
       ),
     );
@@ -747,127 +706,591 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     );
   }
 
-  // [Keep all the remaining methods unchanged - _buildCustomFieldsSection, _buildCustomFieldInput, etc.]
-  // Due to length constraints, I'm showing only the key changes. The rest of your methods remain the same.
-
   Widget _buildCustomFieldsSection(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ✅ Header outside the card
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Text(
+            'Custom Fields',
+            style: TextStyle(
+              fontSize: 18, // ✅ Larger font size for header
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.primary,
+              letterSpacing: 0.5,
+            ),
           ),
-        ],
+        ),
+        const SizedBox(height: 8),
+
+        // ✅ Card content without header inside
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ✅ Action buttons row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: _addCustomField,
+                    icon: Icon(
+                      Icons.add,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    label: Text(
+                      'Add Field',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: _addGroupField,
+                    icon: Icon(
+                      Icons.group_add,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    label: Text(
+                      'Add Group',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_customFields.isEmpty)
+                Container(
+                  width: double.infinity, // ✅ Make container take full width
+                  padding: const EdgeInsets.all(
+                    24,
+                  ), // ✅ Increased padding for better spacing
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    mainAxisAlignment:
+                        MainAxisAlignment.center, // ✅ Center content vertically
+                    crossAxisAlignment: CrossAxisAlignment
+                        .center, // ✅ Center content horizontally
+                    children: [
+                      Icon(
+                        Icons.list_alt,
+                        color: theme.colorScheme.onSurface.withOpacity(0.4),
+                        size: 40,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No custom fields or groups defined',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: theme.colorScheme.onSurface.withOpacity(0.5),
+                        ),
+                        textAlign: TextAlign.center, // ✅ Center text alignment
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...List.generate(_customFields.length, (index) {
+                  final field = _customFields[index];
+                  if (field['isGroup'] == true) {
+                    return _buildGroupFieldInput(field, index, theme);
+                  } else {
+                    return _buildCustomFieldInput(field, index, theme);
+                  }
+                }),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomFieldInput(
+    Map<String, dynamic> field,
+    int index,
+    ThemeData theme,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16), // Increased for better breathing room
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text(
-                'Custom Fields',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _addCustomField,
-                icon: Icon(
-                  Icons.add,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                label: Text(
-                  'Add Field',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.primary,
+              Expanded(
+                child: TextFormField(
+                  initialValue: field['name'],
+                  decoration: InputDecoration(
+                    labelText: 'Field Name',
+                    isDense: true,
+                    border: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    labelStyle: const TextStyle(
+                      fontSize: 14,
+                    ), // Consistent size
                   ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: _addGroupField,
-                icon: Icon(
-                  Icons.group_add,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                label: Text(
-                  'Add Group',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
+                  style: const TextStyle(
+                    fontSize: 14,
+                  ), // Consistent input text size
+                  onChanged: (value) => field['name'] = value,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          if (_customFields.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(6),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDropdown(
+                  value: field['dataType'],
+                  label: 'Data Type',
+                  items: _dataTypes,
+                  theme: theme,
+                  onChanged: (value) => setState(() {
+                    field['dataType'] = value;
+                    if (value != 'number') {
+                      field['hasUnits'] = false;
+                      field['units'] = '';
+                    }
+                  }),
+                ),
               ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.list_alt,
-                    color: theme.colorScheme.onSurface.withOpacity(0.4),
-                    size: 40,
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Mandatory Checkbox in its own row
+          CheckboxListTile(
+            title: const Text(
+              'Mandatory',
+              style: TextStyle(fontSize: 14), // Consistent size
+            ),
+            value: field['isMandatory'] ?? false,
+            onChanged: (value) => setState(() => field['isMandatory'] = value),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+          const SizedBox(height: 8),
+          // Has Units Checkbox (conditional) in its own row
+          if (field['dataType'] == 'number')
+            CheckboxListTile(
+              title: const Text(
+                'Has Units',
+                style: TextStyle(fontSize: 14), // Consistent size
+              ),
+              value: field['hasUnits'] ?? false,
+              onChanged: (value) => setState(() => field['hasUnits'] = value),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+            ),
+          if (field['hasUnits'] == true && field['dataType'] == 'number')
+            const SizedBox(height: 12),
+          if (field['hasUnits'] == true && field['dataType'] == 'number')
+            TextFormField(
+              initialValue: field['units'],
+              decoration: InputDecoration(
+                labelText: 'Units',
+                isDense: true,
+                labelStyle: const TextStyle(fontSize: 14), // Consistent size
+              ),
+              style: const TextStyle(
+                fontSize: 14,
+              ), // Consistent input text size
+              onChanged: (value) => field['units'] = value,
+            ),
+          const SizedBox(height: 12),
+          // Has Remarks Field Checkbox in its own row
+          CheckboxListTile(
+            title: const Text(
+              'Has Remarks Field',
+              style: TextStyle(fontSize: 14), // Consistent size
+            ),
+            value: field['hasRemarksField'] ?? false,
+            onChanged: (value) =>
+                setState(() => field['hasRemarksField'] = value),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+          if (field['hasRemarksField'] == true) ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: field['templateRemarkText'],
+              decoration: InputDecoration(
+                labelText: 'Template Remark Text',
+                isDense: true,
+                labelStyle: const TextStyle(fontSize: 14), // Consistent size
+              ),
+              style: const TextStyle(
+                fontSize: 14,
+              ), // Consistent input text size
+              onChanged: (value) => field['templateRemarkText'] = value,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: Colors.red,
+                ),
+                onPressed: () => _removeCustomField(index),
+              ),
+            ],
+          ),
+          if (field['dataType'] == 'dropdown') ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text(
+                  'Options:',
+                  style: TextStyle(fontSize: 14),
+                ), // Consistent size
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () => _addDropdownOption(index),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text(
+                    'Add Option',
+                    style: TextStyle(fontSize: 14), // Consistent size
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'No custom fields or groups defined',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                ),
+              ],
+            ),
+            ...List.generate(
+              (field['options'] as List<String>).length,
+              (optionIndex) => Padding(
+                padding: const EdgeInsets.only(
+                  top: 8,
+                ), // Added spacing between options
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        initialValue:
+                            (field['options'] as List<String>)[optionIndex],
+                        decoration: InputDecoration(
+                          labelText: 'Option ${optionIndex + 1}',
+                          isDense: true,
+                          labelStyle: const TextStyle(
+                            fontSize: 14,
+                          ), // Consistent
+                        ),
+                        style: const TextStyle(fontSize: 14), // Consistent
+                        onChanged: (value) =>
+                            (field['options'] as List<String>)[optionIndex] =
+                                value,
+                      ),
                     ),
-                  ),
-                ],
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, size: 16),
+                      onPressed: () =>
+                          _removeDropdownOption(index, optionIndex),
+                    ),
+                  ],
+                ),
               ),
-            )
-          else
-            ...List.generate(_customFields.length, (index) {
-              final field = _customFields[index];
-              if (field['isGroup'] == true) {
-                return _buildGroupFieldInput(field, index, theme);
-              } else {
-                return _buildCustomFieldInput(field, index, theme);
-              }
-            }),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  // Include all other existing methods here...
-  // [All your existing methods like _buildCustomFieldInput, _buildGroupFieldInput, etc. remain exactly the same]
+  Widget _buildGroupFieldInput(
+    Map<String, dynamic> group,
+    int groupIndex,
+    ThemeData theme,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16), // Increased for better breathing room
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.primary.withOpacity(0.05),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Group Name in its own separate row
+          Row(
+            children: [
+              const Icon(Icons.folder_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  initialValue: group['name'],
+                  decoration: InputDecoration(
+                    labelText: 'Group Name',
+                    isDense: true,
+                    labelStyle: const TextStyle(
+                      fontSize: 14,
+                    ), // Consistent size
+                  ),
+                  style: const TextStyle(
+                    fontSize: 14,
+                  ), // Consistent input text size
+                  onChanged: (value) => group['name'] = value,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12), // Spacing after group name
+          // Action buttons in their own row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton.icon(
+                onPressed: () => _addSubFieldToGroup(groupIndex),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text(
+                  'Add Sub-field',
+                  style: TextStyle(fontSize: 14), // Consistent size
+                ),
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: Colors.red,
+                ),
+                onPressed: () => _removeCustomField(groupIndex),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12), // Spacing before sub-fields
+          // Sub-fields
+          ...List.generate(
+            (group['nestedFields'] as List<Map<String, dynamic>>).length,
+            (subFieldIndex) {
+              final subField =
+                  (group['nestedFields']
+                      as List<Map<String, dynamic>>)[subFieldIndex];
+              return Container(
+                margin: const EdgeInsets.only(
+                  bottom: 12,
+                  left: 16,
+                ), // Consistent margin
+                padding: const EdgeInsets.all(16), // Increased padding
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(6),
+                  color: Colors.white,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Sub-field Name in its own row
+                    TextFormField(
+                      initialValue: subField['name'],
+                      decoration: InputDecoration(
+                        labelText: 'Sub-field Name',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 8,
+                        ),
+                        labelStyle: const TextStyle(fontSize: 14), // Consistent
+                      ),
+
+                      style: const TextStyle(fontSize: 14), // Consistent
+                      onChanged: (value) => subField['name'] = value,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Data Type Dropdown in its own row
+                    _buildDropdown(
+                      value: subField['dataType'],
+                      label: 'Data Type',
+                      items: _dataTypes,
+                      theme: theme,
+                      onChanged: (value) => setState(() {
+                        subField['dataType'] = value;
+                        if (value != 'number') {
+                          subField['hasUnits'] = false;
+                          subField['units'] = '';
+                        }
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Mandatory Checkbox in its own row
+                    CheckboxListTile(
+                      title: const Text(
+                        'Mandatory',
+                        style: TextStyle(fontSize: 14), // Consistent
+                      ),
+                      value: subField['isMandatory'] ?? false,
+                      onChanged: (value) =>
+                          setState(() => subField['isMandatory'] = value),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Has Units Checkbox (conditional) in its own row
+                    if (subField['dataType'] == 'number')
+                      CheckboxListTile(
+                        title: const Text(
+                          'Has Units',
+                          style: TextStyle(fontSize: 14), // Consistent
+                        ),
+                        value: subField['hasUnits'] ?? false,
+                        onChanged: (value) =>
+                            setState(() => subField['hasUnits'] = value),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    if (subField['hasUnits'] == true &&
+                        subField['dataType'] == 'number')
+                      const SizedBox(height: 12),
+
+                    // Units Field (conditional) in its own row
+                    if (subField['hasUnits'] == true &&
+                        subField['dataType'] == 'number')
+                      TextFormField(
+                        initialValue: subField['units'],
+                        decoration: InputDecoration(
+                          labelText: 'Units',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                            horizontal: 8,
+                          ),
+                          labelStyle: const TextStyle(
+                            fontSize: 14,
+                          ), // Consistent
+                        ),
+                        style: const TextStyle(fontSize: 14), // Consistent
+                        onChanged: (value) => subField['units'] = value,
+                      ),
+
+                    // Remove button in its own row (aligned to end)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, size: 16),
+                        onPressed: () =>
+                            _removeSubField(groupIndex, subFieldIndex),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(ThemeData theme) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextButton(
+            onPressed: _showListView,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.onSurface.withOpacity(0.7),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+            ),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _isSaving ? null : _saveTemplate,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 2,
+            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    _templateToEdit == null
+                        ? 'Create Template'
+                        : 'Update Template',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
 
   void _showListView() {
     setState(() {
@@ -891,6 +1314,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       _showForm = true;
       _templateToEdit = template;
       _equipmentTypeController.text = template.equipmentType;
+      // ✅ Load hidden field values (even though not shown in UI)
       _makeController.text = template.make ?? '';
       _dateOfManufacture = template.dateOfManufacture?.toDate();
       _dateOfCommissioning = template.dateOfCommissioning?.toDate();
@@ -903,6 +1327,7 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
 
   void _clearForm() {
     _equipmentTypeController.clear();
+    // ✅ Clear hidden fields too
     _makeController.clear();
     _dateOfManufacture = null;
     _dateOfCommissioning = null;
@@ -971,6 +1396,20 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
       final group = _customFields[groupIndex];
       (group['nestedFields'] as List<Map<String, dynamic>>).removeAt(
         subFieldIndex,
+      );
+    });
+  }
+
+  void _addDropdownOption(int fieldIndex) {
+    setState(() {
+      (_customFields[fieldIndex]['options'] as List<String>).add('');
+    });
+  }
+
+  void _removeDropdownOption(int fieldIndex, int optionIndex) {
+    setState(() {
+      (_customFields[fieldIndex]['options'] as List<String>).removeAt(
+        optionIndex,
       );
     });
   }
@@ -1046,47 +1485,48 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
     }
 
     try {
-      final customFields = _customFields.map((fieldMap) {
-        if (fieldMap['isGroup'] == true) {
-          return CustomField.fromMap({
-            ...fieldMap,
-            'nestedFields':
-                (fieldMap['nestedFields'] as List<Map<String, dynamic>>)
-                    .map((subField) => CustomField.fromMap(subField).toMap())
-                    .toList(),
-          });
-        }
-        return CustomField.fromMap(fieldMap);
-      }).toList();
-
-      final template = MasterEquipmentTemplate(
-        equipmentType: _equipmentTypeController.text.trim(),
-        symbolKey: _selectedSymbolKey!,
-        equipmentCustomFields: customFields,
-        createdBy: currentUser.uid,
-        createdAt: Timestamp.now(),
-        make: _makeController.text.trim().isEmpty
+      final templateData = {
+        'equipmentType': _equipmentTypeController.text.trim(),
+        'symbolKey': _selectedSymbolKey!,
+        // ✅ Include hidden fields with default values
+        'make': _makeController.text.trim().isEmpty
             ? null
             : _makeController.text.trim(),
-        dateOfManufacture: _dateOfManufacture != null
+        'dateOfManufacture': _dateOfManufacture != null
             ? Timestamp.fromDate(_dateOfManufacture!)
             : null,
-        dateOfCommissioning: _dateOfCommissioning != null
+        'dateOfCommissioning': _dateOfCommissioning != null
             ? Timestamp.fromDate(_dateOfCommissioning!)
             : null,
-      );
+        'equipmentCustomFields': _customFields
+            .map((field) => CustomField.fromMap(field).toMap())
+            .toList(),
+        'createdBy': currentUser.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
 
       if (_templateToEdit == null) {
+        // Creating new template
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
-            .add(template.toFirestore());
-        SnackBarUtils.showSnackBar(context, 'Template created successfully!');
+            .add(templateData);
+
+        SnackBarUtils.showSnackBar(
+          context,
+          'Equipment template created successfully!',
+        );
       } else {
+        // Updating existing template
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
             .doc(_templateToEdit!.id)
-            .update(template.toFirestore());
-        SnackBarUtils.showSnackBar(context, 'Template updated successfully!');
+            .update(templateData);
+
+        SnackBarUtils.showSnackBar(
+          context,
+          'Equipment template updated successfully!',
+        );
       }
 
       _showListView();
@@ -1102,60 +1542,48 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
   }
 
   Future<void> _deleteTemplate(String? templateId) async {
-    if (templateId == null) return;
+    // ✅ Add null check
+    if (templateId == null) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Error: Template ID is null.',
+        isError: true,
+      );
+      return;
+    }
 
-    final confirm = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text(
-          'Delete Template',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-        content: Text(
-          'Are you sure you want to delete this template? This action cannot be undone.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-          ),
+        title: const Text('Delete Template'),
+        content: const Text(
+          'Are you sure you want to delete this equipment template?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(
-                context,
-              ).colorScheme.onSurface.withOpacity(0.7),
-            ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
+            child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Delete',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
+    if (confirmed == true) {
       try {
         await FirebaseFirestore.instance
             .collection('masterEquipmentTemplates')
-            .doc(templateId)
+            .doc(templateId) // ✅ Now templateId is guaranteed to be non-null
             .delete();
-        SnackBarUtils.showSnackBar(context, 'Template deleted successfully!');
+
+        SnackBarUtils.showSnackBar(
+          context,
+          'Equipment template deleted successfully!',
+        );
+
         _fetchEquipmentTemplates();
       } catch (e) {
         SnackBarUtils.showSnackBar(
@@ -1165,524 +1593,5 @@ class _MasterEquipmentScreenState extends State<MasterEquipmentScreen> {
         );
       }
     }
-  }
-
-  // Add all the missing methods here (keeping them exactly as they were)
-  Widget _buildCustomFieldInput(
-    Map<String, dynamic> field,
-    int index,
-    ThemeData theme, {
-    bool isSubField = false,
-    int? subFieldIndex,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  initialValue: field['name'],
-                  decoration: InputDecoration(
-                    labelText: 'Field Name *',
-                    isDense: true,
-                    labelStyle: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      fontSize: 14,
-                    ),
-                    border: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withOpacity(0.3),
-                      ),
-                    ),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withOpacity(0.3),
-                      ),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                    ),
-                    errorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: theme.colorScheme.error),
-                    ),
-                    focusedErrorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.error,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                  onChanged: (value) => field['name'] = value,
-                  validator: (value) =>
-                      value?.trim().isEmpty == true ? 'Required' : null,
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => isSubField
-                    ? _removeSubField(index, subFieldIndex!)
-                    : _removeCustomField(index),
-                icon: Icon(
-                  Icons.delete_outline,
-                  size: 18,
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: field['dataType'],
-                  decoration: InputDecoration(
-                    labelText: 'Type *',
-                    isDense: true,
-                    labelStyle: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      fontSize: 14,
-                    ),
-                    border: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withOpacity(0.3),
-                      ),
-                    ),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withOpacity(0.3),
-                      ),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                    ),
-                    errorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: theme.colorScheme.error),
-                    ),
-                    focusedErrorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.error,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  items: _dataTypes
-                      .map(
-                        (type) => DropdownMenuItem(
-                          value: type,
-                          child: Text(
-                            type,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) =>
-                      setState(() => field['dataType'] = value),
-                  validator: (value) => value == null ? 'Required' : null,
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface,
-                    fontSize: 14,
-                  ),
-                  dropdownColor: Colors.white,
-                  icon: Icon(
-                    Icons.arrow_drop_down,
-                    color: theme.colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 120,
-                child: CheckboxListTile(
-                  title: const Text(
-                    'Required',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                  value: field['isMandatory'] ?? false,
-                  onChanged: (value) =>
-                      setState(() => field['isMandatory'] = value),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  activeColor: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-          if (field['dataType'] == 'number') ...[
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: field['units'],
-              decoration: InputDecoration(
-                labelText: 'Unit (e.g., V, A, kW)',
-                isDense: true,
-                labelStyle: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                  fontSize: 14,
-                ),
-                border: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                  ),
-                ),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                  ),
-                ),
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-                errorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: theme.colorScheme.error),
-                ),
-                focusedErrorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.error,
-                    width: 2,
-                  ),
-                ),
-              ),
-              style: TextStyle(
-                fontSize: 14,
-                color: theme.colorScheme.onSurface,
-              ),
-              onChanged: (value) => field['units'] = value,
-            ),
-          ],
-          if (field['dataType'] == 'dropdown') ...[
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: (field['options'] as List<dynamic>?)?.join(', '),
-              decoration: InputDecoration(
-                labelText: 'Options (comma-separated)',
-                isDense: true,
-                labelStyle: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                  fontSize: 14,
-                ),
-                border: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                  ),
-                ),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                  ),
-                ),
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-                errorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: theme.colorScheme.error),
-                ),
-                focusedErrorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.error,
-                    width: 2,
-                  ),
-                ),
-              ),
-              style: TextStyle(
-                fontSize: 14,
-                color: theme.colorScheme.onSurface,
-              ),
-              onChanged: (value) => field['options'] = value
-                  .split(',')
-                  .map((e) => e.trim())
-                  .toList(),
-            ),
-          ],
-          const SizedBox(height: 12),
-          CheckboxListTile(
-            title: const Text(
-              'Include Remarks Field',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-            value: field['hasRemarksField'] ?? false,
-            onChanged: (value) =>
-                setState(() => field['hasRemarksField'] = value),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            activeColor: theme.colorScheme.primary,
-          ),
-          if (field['hasRemarksField'] == true) ...[
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: field['templateRemarkText'],
-              decoration: InputDecoration(
-                labelText: 'Remark Template',
-                isDense: true,
-                labelStyle: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                  fontSize: 14,
-                ),
-                border: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                  ),
-                ),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                  ),
-                ),
-                focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-                errorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: theme.colorScheme.error),
-                ),
-                focusedErrorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.error,
-                    width: 2,
-                  ),
-                ),
-              ),
-              style: TextStyle(
-                fontSize: 14,
-                color: theme.colorScheme.onSurface,
-              ),
-              onChanged: (value) => field['templateRemarkText'] = value,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGroupFieldInput(
-    Map<String, dynamic> group,
-    int index,
-    ThemeData theme,
-  ) {
-    return ExpansionTile(
-      title: Text(
-        group['name'].isEmpty ? 'Unnamed Group' : group['name'],
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: theme.colorScheme.onSurface,
-        ),
-      ),
-      leading: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Icon(Icons.group, size: 16, color: theme.colorScheme.primary),
-      ),
-      trailing: IconButton(
-        icon: Icon(
-          Icons.delete_outline,
-          size: 18,
-          color: theme.colorScheme.error,
-        ),
-        onPressed: () => _removeCustomField(index),
-      ),
-      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-      backgroundColor: Colors.grey.shade50,
-      collapsedBackgroundColor: Colors.grey.shade50,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      collapsedShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.purple.shade100,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'GROUP',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.purple.shade700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        TextFormField(
-          initialValue: group['name'],
-          decoration: InputDecoration(
-            labelText: 'Group Name *',
-            isDense: true,
-            labelStyle: TextStyle(
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
-              fontSize: 14,
-            ),
-            border: UnderlineInputBorder(
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
-              ),
-            ),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
-              ),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(
-                color: theme.colorScheme.primary,
-                width: 2,
-              ),
-            ),
-            errorBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: theme.colorScheme.error),
-            ),
-            focusedErrorBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
-            ),
-          ),
-          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
-          onChanged: (value) => group['name'] = value,
-          validator: (value) =>
-              value?.trim().isEmpty == true ? 'Required' : null,
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Subfields',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-            ),
-            TextButton.icon(
-              onPressed: () => _addSubFieldToGroup(index),
-              icon: Icon(Icons.add, size: 16, color: theme.colorScheme.primary),
-              label: Text(
-                'Add Subfield',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ...(group['nestedFields'] as List<Map<String, dynamic>>)
-            .asMap()
-            .entries
-            .map(
-              (entry) => _buildCustomFieldInput(
-                entry.value,
-                index,
-                theme,
-                isSubField: true,
-                subFieldIndex: entry.key,
-              ),
-            ),
-      ],
-    );
-  }
-
-  Widget _buildActionButtons(ThemeData theme) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextButton(
-            onPressed: _showListView,
-            style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.onSurface.withOpacity(0.7),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(
-                  color: theme.colorScheme.outline.withOpacity(0.3),
-                ),
-              ),
-            ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: ElevatedButton(
-            onPressed: _isSaving ? null : _saveTemplate,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              elevation: 2,
-            ),
-            child: _isSaving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : Text(
-                    _templateToEdit == null
-                        ? 'Create Template'
-                        : 'Update Template',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-          ),
-        ),
-      ],
-    );
   }
 }
