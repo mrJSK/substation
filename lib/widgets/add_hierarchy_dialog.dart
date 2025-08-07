@@ -1,20 +1,15 @@
-// lib/widgets/add_hierarchy_dialog.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../models/hierarchy_models.dart';
 import '../utils/snackbar_utils.dart';
 
-// Define the global list of designation options
 const List<String> DESIGNATION_OPTIONS = ['CE', 'SE', 'EE', 'SDO', 'JE'];
 
 class AddHierarchyDialog extends StatefulWidget {
-  final String
-  hierarchyType; // e.g., 'DistributionZone', 'DistributionCircle', 'DistributionDivision', 'DistributionSubdivision'
-  final String?
-  parentId; // ID of the parent hierarchy item (e.g., zoneId for circle)
-  final String?
-  parentIdFieldName; // Field name for parent ID (e.g., 'distributionZoneId')
+  final String hierarchyType;
+  final String? parentId;
+  final String? parentIdFieldName;
   final AppUser currentUser;
 
   const AddHierarchyDialog({
@@ -29,30 +24,77 @@ class AddHierarchyDialog extends StatefulWidget {
   State<AddHierarchyDialog> createState() => _AddHierarchyDialogState();
 }
 
-class _AddHierarchyDialogState extends State<AddHierarchyDialog> {
+class _AddHierarchyDialogState extends State<AddHierarchyDialog>
+    with TickerProviderStateMixin {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _landmarkController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
   final TextEditingController _contactNumberController =
       TextEditingController();
   final TextEditingController _contactPersonController =
       TextEditingController();
+
   String? _selectedDesignation;
   bool _isSaving = false;
+
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+
+    _animationController.forward();
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
     _landmarkController.dispose();
+    _addressController.dispose();
     _contactNumberController.dispose();
     _contactPersonController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
+  String get _displayName {
+    return widget.hierarchyType.replaceAll('Distribution', 'Dist. ');
+  }
+
+  IconData get _hierarchyIcon {
+    switch (widget.hierarchyType) {
+      case 'DistributionZone':
+        return Icons.public;
+      case 'DistributionCircle':
+        return Icons.radio_button_unchecked;
+      case 'DistributionDivision':
+        return Icons.account_tree;
+      case 'DistributionSubdivision':
+        return Icons.location_on;
+      default:
+        return Icons.folder;
+    }
+  }
+
   Future<void> _saveHierarchyItem() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_isSaving || !_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
 
@@ -63,6 +105,9 @@ class _AddHierarchyDialogState extends State<AddHierarchyDialog> {
         'description': _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
+        'address': _addressController.text.trim().isEmpty
+            ? null
+            : _addressController.text.trim(),
         'landmark': _landmarkController.text.trim().isEmpty
             ? null
             : _landmarkController.text.trim(),
@@ -82,40 +127,46 @@ class _AddHierarchyDialogState extends State<AddHierarchyDialog> {
       switch (widget.hierarchyType) {
         case 'DistributionZone':
           collectionName = 'distributionZones';
-          data['stateName'] =
-              'Uttar Pradesh'; // Assuming a default state for now, or fetch from user context
+          data['stateName'] = 'Uttar Pradesh';
           break;
         case 'DistributionCircle':
           collectionName = 'distributionCircles';
           if (widget.parentId == null || widget.parentIdFieldName == null) {
-            throw 'Parent Zone is required for creating a Distribution Circle.';
+            throw 'Parent Zone ID and field name are required for creating a Distribution Circle.';
           }
           data[widget.parentIdFieldName!] = widget.parentId!;
           break;
         case 'DistributionDivision':
           collectionName = 'distributionDivisions';
           if (widget.parentId == null || widget.parentIdFieldName == null) {
-            throw 'Parent Circle is required for creating a Distribution Division.';
+            throw 'Parent Circle ID and field name are required for creating a Distribution Division.';
           }
           data[widget.parentIdFieldName!] = widget.parentId!;
           break;
-        case 'DistributionSubdivision': // Handle DistributionSubdivision creation
+        case 'DistributionSubdivision':
           collectionName = 'distributionSubdivisions';
           if (widget.parentId == null || widget.parentIdFieldName == null) {
-            throw 'Parent Division is required for creating a Distribution Subdivision.';
+            throw 'Parent Division ID and field name are required for creating a Distribution Subdivision.';
           }
           data[widget.parentIdFieldName!] = widget.parentId!;
+          data['substationIds'] = [];
           break;
         default:
           throw 'Unsupported hierarchy type: ${widget.hierarchyType}';
       }
 
+      // Save to Firestore
       final docRef = await FirebaseFirestore.instance
           .collection(collectionName)
           .add(data);
-      final newDoc = await docRef.get();
 
-      // Convert the new document to the appropriate HierarchyItem subclass
+      // Fetch the newly created document
+      final newDoc = await docRef.get();
+      if (!newDoc.exists) {
+        throw 'Failed to retrieve the newly created document.';
+      }
+
+      // Create the appropriate model instance
       switch (widget.hierarchyType) {
         case 'DistributionZone':
           newHierarchyItem = DistributionZone.fromFirestore(newDoc);
@@ -134,17 +185,32 @@ class _AddHierarchyDialogState extends State<AddHierarchyDialog> {
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          '${widget.hierarchyType} created successfully!',
+          '${_displayName} created successfully!',
         );
-        Navigator.of(
-          context,
-        ).pop(newHierarchyItem); // Return the newly created item
+        Navigator.of(context).pop(newHierarchyItem);
+      }
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        String errorMessage;
+        switch (e.code) {
+          case 'permission-denied':
+            errorMessage =
+                'You do not have permission to create a ${_displayName}.';
+            break;
+          case 'unavailable':
+            errorMessage =
+                'Network error: Please check your internet connection.';
+            break;
+          default:
+            errorMessage = 'Failed to create ${_displayName}: ${e.message}';
+        }
+        SnackBarUtils.showSnackBar(context, errorMessage, isError: true);
       }
     } catch (e) {
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to create ${widget.hierarchyType}: $e',
+          'Failed to create ${_displayName}: $e',
           isError: true,
         );
       }
@@ -155,98 +221,386 @@ class _AddHierarchyDialogState extends State<AddHierarchyDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        'Create New ${widget.hierarchyType.replaceAll('Distribution', 'Dist. ')}',
-      ),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: InputDecoration(
-                  labelText:
-                      '${widget.hierarchyType.replaceAll('Distribution', 'Dist. ')} Name',
-                  prefixIcon: const Icon(Icons.drive_file_rename_outline),
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Name is required' : null,
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: Opacity(
+            opacity: _fadeAnimation.value,
+            child: Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _contactPersonController,
-                decoration: const InputDecoration(
-                  labelText: 'Contact Person Name',
-                  prefixIcon: Icon(Icons.person),
+              elevation: 8,
+              child: Container(
+                constraints: const BoxConstraints(
+                  maxWidth: 500,
+                  maxHeight: 750,
                 ),
-                validator: (value) =>
-                    value!.isEmpty ? 'Contact Person is required' : null,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedDesignation,
-                decoration: const InputDecoration(
-                  labelText: 'Designation',
-                  prefixIcon: Icon(Icons.badge),
+                decoration: BoxDecoration(
+                  color: isDarkMode ? Colors.grey[900] : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                items: DESIGNATION_OPTIONS.map((designation) {
-                  return DropdownMenuItem(
-                    value: designation,
-                    child: Text(designation),
-                  );
-                }).toList(),
-                onChanged: (value) =>
-                    setState(() => _selectedDesignation = value),
-                validator: (value) =>
-                    value == null ? 'Designation is required' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Description (Optional)',
-                  prefixIcon: Icon(Icons.description),
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _landmarkController,
-                decoration: const InputDecoration(
-                  labelText: 'Landmark (Optional)',
-                  prefixIcon: Icon(Icons.flag),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHeader(theme, isDarkMode),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildInfoCard(theme, isDarkMode),
+                              const SizedBox(height: 24),
+                              _buildBasicInfoSection(theme, isDarkMode),
+                              const SizedBox(height: 24),
+                              _buildContactInfoSection(theme, isDarkMode),
+                              const SizedBox(height: 24),
+                              _buildLocationInfoSection(theme, isDarkMode),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    _buildActionButtons(theme, isDarkMode),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _contactNumberController,
-                decoration: const InputDecoration(
-                  labelText: 'Contact Number (Optional)',
-                  prefixIcon: Icon(Icons.phone),
-                ),
-                keyboardType: TextInputType.phone,
-              ),
-            ],
+            ),
           ),
-        ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme, bool isDarkMode) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.primaryColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(
-            context,
-          ).pop(), // Close dialog without returning data
-          child: const Text('Cancel'),
+      child: Row(
+        children: [
+          Icon(_hierarchyIcon, color: Colors.white, size: 24),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              'Create ${_displayName}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(ThemeData theme, bool isDarkMode) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: theme.primaryColor, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Enter details for the new ${_displayName.toLowerCase()}. Required fields are marked with an asterisk (*).',
+              style: TextStyle(
+                color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBasicInfoSection(ThemeData theme, bool isDarkMode) {
+    return _buildSection(
+      title: 'Basic Information',
+      icon: Icons.info_outline,
+      children: [
+        _buildTextField(
+          controller: _nameController,
+          label: '${_displayName} Name*',
+          hint: 'Enter ${_displayName.toLowerCase()} name',
+          icon: Icons.drive_file_rename_outline,
+          validator: (value) => value!.isEmpty ? 'Name is required' : null,
+          theme: theme,
+          isDarkMode: isDarkMode,
         ),
-        ElevatedButton(
-          onPressed: _isSaving ? null : _saveHierarchyItem,
-          child: _isSaving
-              ? const CircularProgressIndicator(strokeWidth: 2)
-              : const Text('Create'),
+        const SizedBox(height: 16),
+        _buildTextField(
+          controller: _descriptionController,
+          label: 'Description',
+          hint: 'Enter description',
+          icon: Icons.description,
+          maxLines: 3,
+          theme: theme,
+          isDarkMode: isDarkMode,
         ),
       ],
+    );
+  }
+
+  Widget _buildContactInfoSection(ThemeData theme, bool isDarkMode) {
+    return _buildSection(
+      title: 'Contact Information',
+      icon: Icons.contacts,
+      children: [
+        _buildTextField(
+          controller: _contactPersonController,
+          label: 'Contact Person*',
+          hint: 'Enter contact person name',
+          icon: Icons.person,
+          validator: (value) =>
+              value!.isEmpty ? 'Contact Person is required' : null,
+          theme: theme,
+          isDarkMode: isDarkMode,
+        ),
+        const SizedBox(height: 16),
+        _buildDesignationDropdown(theme, isDarkMode),
+        const SizedBox(height: 16),
+        _buildTextField(
+          controller: _contactNumberController,
+          label: 'Contact Number',
+          hint: 'Enter contact number',
+          icon: Icons.phone,
+          keyboardType: TextInputType.phone,
+          theme: theme,
+          isDarkMode: isDarkMode,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationInfoSection(ThemeData theme, bool isDarkMode) {
+    return _buildSection(
+      title: 'Location Information',
+      icon: Icons.location_on,
+      children: [
+        _buildTextField(
+          controller: _addressController,
+          label: 'Address',
+          hint: 'Enter address',
+          icon: Icons.home,
+          theme: theme,
+          isDarkMode: isDarkMode,
+        ),
+        const SizedBox(height: 16),
+        _buildTextField(
+          controller: _landmarkController,
+          label: 'Landmark',
+          hint: 'Enter landmark',
+          icon: Icons.flag,
+          theme: theme,
+          isDarkMode: isDarkMode,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Theme.of(context).primaryColor, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required ThemeData theme,
+    required bool isDarkMode,
+    String? Function(String?)? validator,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      validator: validator,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(icon, color: theme.primaryColor),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: theme.primaryColor, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red, width: 2),
+        ),
+        filled: true,
+        fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesignationDropdown(ThemeData theme, bool isDarkMode) {
+    return DropdownButtonFormField<String>(
+      value: _selectedDesignation,
+      decoration: InputDecoration(
+        labelText: 'Designation*',
+        prefixIcon: Icon(Icons.badge, color: theme.primaryColor),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: theme.primaryColor, width: 2),
+        ),
+        filled: true,
+        fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+      ),
+      items: DESIGNATION_OPTIONS.map((designation) {
+        return DropdownMenuItem(value: designation, child: Text(designation));
+      }).toList(),
+      onChanged: _isSaving
+          ? null
+          : (value) => setState(() => _selectedDesignation = value),
+      validator: (value) => value == null ? 'Designation is required' : null,
+      dropdownColor: isDarkMode ? Colors.grey[800] : Colors.white,
+    );
+  }
+
+  Widget _buildActionButtons(ThemeData theme, bool isDarkMode) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                side: BorderSide(
+                  color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _saveHierarchyItem,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              child: _isSaving
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Creating...'),
+                      ],
+                    )
+                  : const Text(
+                      'Create',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

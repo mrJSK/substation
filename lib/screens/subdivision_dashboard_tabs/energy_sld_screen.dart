@@ -3,6 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
+import 'package:flutter/rendering.dart';
 
 import '../../controllers/sld_controller.dart';
 import '../../models/saved_sld_model.dart';
@@ -40,6 +43,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   bool _showTables = true;
   bool _isViewingSavedSld = false;
   late final EnergyDataService _energyDataService;
+
+  // Global key for RepaintBoundary to capture SLD as image
+  final GlobalKey _sldRepaintBoundaryKey = GlobalKey();
 
   @override
   void initState() {
@@ -95,6 +101,30 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
+  // Method to capture SLD as image - accessible from utils
+  Future<Uint8List> captureSldAsImage() async {
+    try {
+      final RenderRepaintBoundary boundary =
+          _sldRepaintBoundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+
+      final ByteData? byteData = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+
+      if (byteData != null) {
+        return byteData.buffer.asUint8List();
+      } else {
+        return Uint8List(0);
+      }
+    } catch (e) {
+      print('Error capturing SLD image: $e');
+      return Uint8List(0);
+    }
+  }
+
   Future<void> _selectDate(BuildContext context) async {
     if (_isViewingSavedSld) return;
 
@@ -115,15 +145,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Enhanced back press handling with save/discard options
   Future<void> _handleBackPress() async {
     final sldController = Provider.of<SldController>(context, listen: false);
 
-    // Check if there are unsaved changes
     if (sldController.hasUnsavedChanges()) {
       final result = await showDialog<String>(
         context: context,
-        barrierDismissible: false, // Prevent dismissing by tapping outside
+        barrierDismissible: false,
         builder: (context) => AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -213,7 +241,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       );
 
       if (result == 'save') {
-        // Show loading dialog while saving
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -241,14 +268,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           final success = await sldController.saveAllPendingChanges();
 
           if (mounted) {
-            Navigator.of(context).pop(); // Close loading dialog
+            Navigator.of(context).pop();
 
             if (success) {
               SnackBarUtils.showSnackBar(
                 context,
                 'Layout changes saved successfully!',
               );
-              Navigator.of(context).pop(); // Go back to previous screen
+              Navigator.of(context).pop();
             } else {
               SnackBarUtils.showSnackBar(
                 context,
@@ -259,7 +286,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           }
         } catch (e) {
           if (mounted) {
-            Navigator.of(context).pop(); // Close loading dialog
+            Navigator.of(context).pop();
             SnackBarUtils.showSnackBar(
               context,
               'Error saving changes: $e',
@@ -273,7 +300,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         if (mounted) Navigator.of(context).pop();
       }
     } else {
-      // No unsaved changes, go back directly
       Navigator.of(context).pop();
     }
   }
@@ -303,7 +329,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       body: Stack(
         children: [
           _isLoading ? _buildLoadingState() : _buildBody(sldController),
-          // Position the speed dial widget in the stack for proper bottom-right placement
           _buildFloatingActionButton(sldController),
         ],
       ),
@@ -491,20 +516,23 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     return Column(
       children: [
         Expanded(
-          child: SldViewWidget(
-            isEnergySld: true,
-            onBayTapped: (bay, tapPosition) {
-              if (sldController.selectedBayForMovementId == null) {
-                EnergySldUtils.showBayActions(
-                  context,
-                  bay,
-                  tapPosition,
-                  sldController,
-                  _isViewingSavedSld,
-                  _energyDataService,
-                );
-              }
-            },
+          child: RepaintBoundary(
+            key: _sldRepaintBoundaryKey,
+            child: SldViewWidget(
+              isEnergySld: true,
+              onBayTapped: (bay, tapPosition) {
+                if (sldController.selectedBayForMovementId == null) {
+                  EnergySldUtils.showBayActions(
+                    context,
+                    bay,
+                    tapPosition,
+                    sldController,
+                    _isViewingSavedSld,
+                    _energyDataService,
+                  );
+                }
+              },
+            ),
           ),
         ),
         if (_showTables)
@@ -543,6 +571,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         _energyDataService.allAssessmentsForDisplay,
         _isViewingSavedSld,
         _energyDataService.loadedAssessmentsSummary,
+        // this, // Pass the state instance for image capture
       ),
       onConfigureBusbar: () =>
           _energyDataService.showBusbarSelectionDialog(context, sldController),
