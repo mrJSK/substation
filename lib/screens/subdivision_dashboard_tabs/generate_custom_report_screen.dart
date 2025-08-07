@@ -5,43 +5,84 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:excel/excel.dart' hide Border;
+import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:open_filex/open_filex.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:dropdown_search/dropdown_search.dart';
 
 import '../../models/app_state_data.dart';
-import '../../models/report_template_model.dart';
-import '../../models/logsheet_models.dart';
 import '../../models/bay_model.dart';
+import '../../models/logsheet_models.dart';
 import '../../models/reading_models.dart';
-import '../../models/user_model.dart';
+import '../../models/report_template_model.dart';
+import '../../models/tripping_shutdown_model.dart';
 import '../../utils/snackbar_utils.dart';
+
+enum ExportDataType { operations, tripping, energy, customReports }
 
 class GenerateCustomReportScreen extends StatefulWidget {
   static const routeName = '/generate-custom-report';
 
-  const GenerateCustomReportScreen({super.key});
+  final DateTime startDate;
+  final DateTime endDate;
+
+  const GenerateCustomReportScreen({
+    super.key,
+    required this.startDate,
+    required this.endDate,
+  });
 
   @override
   State<GenerateCustomReportScreen> createState() =>
       _GenerateCustomReportScreenState();
 }
 
-class _GenerateCustomReportScreenState
-    extends State<GenerateCustomReportScreen> {
+class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
+    with TickerProviderStateMixin {
   List<ReportTemplate> _availableTemplates = [];
   ReportTemplate? _selectedTemplate;
   bool _isLoading = false;
   bool _isGenerating = false;
-  ReportFrequency _selectedPeriodType = ReportFrequency.daily;
-  DateTime _fromDate = DateTime.now().subtract(const Duration(days: 7));
-  DateTime _toDate = DateTime.now();
+  ExportDataType _selectedDataType = ExportDataType.operations;
+  late TabController _tabController;
+
+  List<String> _selectedBayTypes = [];
+  List<String> _selectedVoltageLevels = [];
+  List<ReadingField> _selectedReadingFields = [];
+  List<String> _selectedEventTypes = ['Tripping', 'Shutdown'];
+  List<String> _selectedStatuses = ['OPEN', 'CLOSED'];
+  List<String> _selectedEnergyFields = [
+    'Energy_Import_Present',
+    'Energy_Export_Present',
+    'Current',
+    'Voltage',
+    'Power Factor',
+  ];
+
+  List<String> _allBayTypes = [];
+  final List<String> _allVoltageLevels = [
+    '765kV',
+    '400kV',
+    '220kV',
+    '132kV',
+    '33kV',
+    '11kV',
+  ];
   List<ReadingField> _availableReadingFields = [];
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 4, vsync: this);
     _fetchInitialData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -53,9 +94,23 @@ class _GenerateCustomReportScreenState
       appBar: _buildAppBar(theme),
       body: _isLoading
           ? _buildLoadingState()
-          : _availableTemplates.isEmpty
-          ? _buildEmptyState(theme)
-          : _buildMainContent(theme),
+          : Column(
+              children: [
+                _buildHeaderSection(theme),
+                _buildTabBar(theme),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildOperationsTab(theme),
+                      _buildTrippingTab(theme),
+                      _buildEnergyTab(theme),
+                      _buildCustomReportsTab(theme),
+                    ],
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -64,11 +119,11 @@ class _GenerateCustomReportScreenState
       backgroundColor: Colors.white,
       elevation: 0,
       title: Text(
-        'Generate Custom Report',
+        'Generate Reports',
         style: TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 18,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
         ),
       ),
       leading: IconButton(
@@ -85,74 +140,26 @@ class _GenerateCustomReportScreenState
         children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
-          Text('Loading report templates...'),
+          Text('Loading export options...'),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState(ThemeData theme) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.description_outlined,
-              size: 64,
-              color: theme.colorScheme.onSurface.withOpacity(0.3),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No Report Templates Found',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w500,
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Create a report template first to generate custom reports.',
-              style: TextStyle(
-                fontSize: 14,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMainContent(ThemeData theme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildTemplateSelection(theme),
-          const SizedBox(height: 24),
-          _buildPeriodTypeSelection(theme),
-          const SizedBox(height: 24),
-          if (_selectedPeriodType == ReportFrequency.custom)
-            _buildDateRangeSelection(theme),
-          const SizedBox(height: 32),
-          _buildGenerateButton(theme),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTemplateSelection(ThemeData theme) {
+  Widget _buildHeaderSection(ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,28 +167,504 @@ class _GenerateCustomReportScreenState
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primary,
+                      theme.colorScheme.primary.withOpacity(0.7),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  Icons.description,
-                  color: theme.colorScheme.primary,
-                  size: 18,
+                child: const Icon(
+                  Icons.download,
+                  color: Colors.white,
+                  size: 24,
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Report Template',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Generate Reports',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Export Operations, Tripping, Energy data and Custom Reports',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.secondary.withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.date_range,
+                  size: 16,
+                  color: theme.colorScheme.secondary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${DateFormat('MMM dd').format(widget.startDate)} - ${DateFormat('MMM dd, yyyy').format(widget.endDate)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '(From Dashboard)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.secondary.withOpacity(0.7),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabBar(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TabBar(
+        controller: _tabController,
+        isScrollable: true,
+        tabs: [
+          _buildTabItem('Operations', Icons.settings, Colors.blue),
+          _buildTabItem('Tripping', Icons.warning, Colors.orange),
+          _buildTabItem('Energy', Icons.electrical_services, Colors.green),
+          _buildTabItem('Custom Reports', Icons.description, Colors.purple),
+        ],
+        indicator: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: theme.colorScheme.primary.withOpacity(0.1),
+        ),
+        labelColor: theme.colorScheme.primary,
+        unselectedLabelColor: Colors.grey.shade600,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400),
+        padding: const EdgeInsets.all(8),
+        tabAlignment: TabAlignment.start,
+      ),
+    );
+  }
+
+  Widget _buildTabItem(String label, IconData icon, Color color) {
+    return Tab(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOperationsTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildOperationsFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(theme, 'Operations', ExportDataType.operations),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrippingTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildTrippingFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(theme, 'Tripping', ExportDataType.tripping),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnergyTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildEnergyFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(theme, 'Energy', ExportDataType.energy),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomReportsTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildCustomReportFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(
+            theme,
+            'Custom Report',
+            ExportDataType.customReports,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOperationsFilters(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Operations Export Filters',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<String>.multiSelection(
+            items: _allBayTypes,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Bay Types',
+                prefixIcon: const Icon(Icons.settings),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedBayTypes = data),
+            selectedItems: _selectedBayTypes,
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<String>.multiSelection(
+            items: _allVoltageLevels,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Voltage Levels',
+                prefixIcon: const Icon(Icons.flash_on),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedVoltageLevels = data),
+            selectedItems: _selectedVoltageLevels,
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<ReadingField>.multiSelection(
+            items: _availableReadingFields,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+              itemBuilder: (context, field, isSelected) {
+                return ListTile(
+                  title: Text(field.name),
+                  subtitle: Text(
+                    '${field.dataType.toString().split('.').last}${field.unit != null ? ' (${field.unit})' : ''}',
+                  ),
+                  selected: isSelected,
+                );
+              },
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Reading Fields',
+                prefixIcon: const Icon(Icons.list),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            itemAsString: (field) =>
+                '${field.name}${field.unit != null ? ' (${field.unit})' : ''}',
+            onChanged: (data) => setState(() => _selectedReadingFields = data),
+            selectedItems: _selectedReadingFields,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrippingFilters(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tripping Export Filters',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<String>.multiSelection(
+            items: const ['Tripping', 'Shutdown'],
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Event Types',
+                prefixIcon: const Icon(Icons.warning),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedEventTypes = data),
+            selectedItems: _selectedEventTypes,
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<String>.multiSelection(
+            items: const ['OPEN', 'CLOSED'],
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Event Status',
+                prefixIcon: const Icon(Icons.check_circle),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedStatuses = data),
+            selectedItems: _selectedStatuses,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnergyFilters(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Energy Export Filters',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<String>.multiSelection(
+            items: const [
+              'Energy_Import_Present',
+              'Energy_Export_Present',
+              'Current',
+              'Voltage',
+              'Power Factor',
+              'Frequency',
+              'Active Power',
+              'Reactive Power',
+            ],
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Energy Fields',
+                prefixIcon: const Icon(Icons.electrical_services),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedEnergyFields = data),
+            selectedItems: _selectedEnergyFields,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomReportFilters(ThemeData theme) {
+    if (_availableTemplates.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(
+                Icons.description_outlined,
+                size: 48,
+                color: theme.colorScheme.onSurface.withOpacity(0.3),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No Report Templates Found',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Create a report template first to generate custom reports.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Custom Report Template',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<ReportTemplate>(
@@ -195,6 +678,8 @@ class _GenerateCustomReportScreenState
                 horizontal: 16,
                 vertical: 12,
               ),
+              filled: true,
+              fillColor: Colors.grey.shade50,
             ),
             items: _availableTemplates
                 .map(
@@ -222,7 +707,6 @@ class _GenerateCustomReportScreenState
             onChanged: (template) {
               setState(() {
                 _selectedTemplate = template;
-                _selectedPeriodType = template!.frequency;
               });
             },
           ),
@@ -231,326 +715,87 @@ class _GenerateCustomReportScreenState
     );
   }
 
-  Widget _buildPeriodTypeSelection(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(
-                  Icons.schedule,
-                  color: Colors.orange,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Report Period',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Column(
-            children: ReportFrequency.values
-                .map(
-                  (freq) => RadioListTile<ReportFrequency>(
-                    title: Text(freq.toShortString().capitalize()),
-                    subtitle: Text(_getFrequencyDescription(freq)),
-                    value: freq,
-                    groupValue: _selectedPeriodType,
-                    onChanged: (value) =>
-                        setState(() => _selectedPeriodType = value!),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                )
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDateRangeSelection(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(
-                  Icons.date_range,
-                  color: Colors.blue,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Date Range',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDateField(
-                  label: 'From Date',
-                  date: _fromDate,
-                  onTap: () => _selectDate(true),
-                  icon: Icons.calendar_today,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildDateField(
-                  label: 'To Date',
-                  date: _toDate,
-                  onTap: () => _selectDate(false),
-                  icon: Icons.calendar_today,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Add a quick date range selector
-          _buildQuickDateRanges(theme),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDateField({
-    required String label,
-    required DateTime date,
-    required VoidCallback onTap,
-    required IconData icon,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: Colors.grey.shade600),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  DateFormat('MMM dd, yyyy').format(date),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickDateRanges(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Quick Select',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey.shade600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _buildQuickDateChip('Last 7 days', 7),
-            _buildQuickDateChip('Last 15 days', 15),
-            _buildQuickDateChip('Last 30 days', 30),
-            _buildQuickDateChip('This month', 0, isThisMonth: true),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildQuickDateChip(
+  Widget _buildExportButton(
+    ThemeData theme,
     String label,
-    int days, {
-    bool isThisMonth = false,
-  }) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          if (isThisMonth) {
-            final now = DateTime.now();
-            _fromDate = DateTime(now.year, now.month, 1);
-            _toDate = DateTime(now.year, now.month + 1, 0);
-          } else {
-            _toDate = DateTime.now();
-            _fromDate = _toDate.subtract(Duration(days: days));
-          }
-        });
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.blue.shade50,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blue.shade200),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
-        ),
-      ),
-    );
-  }
+    ExportDataType type,
+  ) {
+    bool canExport = true;
+    String? disabledReason;
 
-  Widget _buildGenerateButton(ThemeData theme) {
-    return SizedBox(
+    switch (type) {
+      case ExportDataType.operations:
+        canExport = _selectedReadingFields.isNotEmpty;
+        disabledReason = canExport ? null : 'Select at least one reading field';
+        break;
+      case ExportDataType.tripping:
+        canExport = _selectedEventTypes.isNotEmpty;
+        disabledReason = canExport ? null : 'Select at least one event type';
+        break;
+      case ExportDataType.energy:
+        canExport = _selectedEnergyFields.isNotEmpty;
+        disabledReason = canExport ? null : 'Select at least one energy field';
+        break;
+      case ExportDataType.customReports:
+        canExport = _selectedTemplate != null;
+        disabledReason = canExport ? null : 'Select a report template';
+        break;
+    }
+
+    return Container(
       width: double.infinity,
       height: 48,
       child: ElevatedButton.icon(
-        onPressed: _isGenerating || _selectedTemplate == null
+        onPressed: (_isGenerating || !canExport)
             ? null
-            : _generateExcelReport,
+            : () => _generateReport(type),
         style: ElevatedButton.styleFrom(
           backgroundColor: theme.colorScheme.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 0,
         ),
         icon: _isGenerating
             ? const SizedBox(
-                width: 16,
-                height: 16,
+                width: 20,
+                height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: Colors.white,
                 ),
               )
-            : const Icon(Icons.download),
-        label: Text(
-          _isGenerating ? 'Generating Report...' : 'Generate Excel Report',
-          style: const TextStyle(fontWeight: FontWeight.w500),
+            : const Icon(Icons.download, size: 20),
+        label: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _isGenerating ? 'Generating...' : 'Export $label Data',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+            if (disabledReason != null)
+              Text(
+                disabledReason,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 
-  String _getFrequencyDescription(ReportFrequency freq) {
-    switch (freq) {
-      case ReportFrequency.hourly:
-        return 'Generate report with hourly data points';
-      case ReportFrequency.daily:
-        return 'Generate report with daily aggregated data';
-      case ReportFrequency.monthly:
-        return 'Generate report with monthly aggregated data';
-      case ReportFrequency.custom:
-        return 'Select custom date range for the report';
-      default:
-        return '';
-    }
-  }
-
-  Future<void> _selectDate(bool isFrom) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: isFrom ? _fromDate : _toDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null) {
-      setState(() {
-        if (isFrom) {
-          _fromDate = picked;
-          // Ensure to date is not before from date
-          if (_toDate.isBefore(_fromDate)) {
-            _toDate = _fromDate;
-          }
-        } else {
-          _toDate = picked;
-          // Ensure from date is not after to date
-          if (_fromDate.isAfter(_toDate)) {
-            _fromDate = _toDate;
-          }
-        }
-      });
-    }
-  }
-
   Future<void> _fetchInitialData() async {
     setState(() => _isLoading = true);
-
     try {
       final appState = Provider.of<AppStateData>(context, listen: false);
       final currentUserUid = appState.currentUser?.uid;
-      final selectedSubstationId = appState.selectedSubstation?.id;
+      final selectedSubstation = appState.selectedSubstation;
 
-      if (currentUserUid == null || selectedSubstationId == null) {
+      if (currentUserUid == null || selectedSubstation == null) {
         if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
@@ -561,11 +806,10 @@ class _GenerateCustomReportScreenState
         return;
       }
 
-      // Fetch Report Templates
       final templateQuerySnapshot = await FirebaseFirestore.instance
           .collection('reportTemplates')
           .where('createdByUid', isEqualTo: currentUserUid)
-          .where('substationId', isEqualTo: selectedSubstationId)
+          .where('substationId', isEqualTo: selectedSubstation.id)
           .get();
 
       _availableTemplates = templateQuerySnapshot.docs
@@ -574,29 +818,27 @@ class _GenerateCustomReportScreenState
 
       if (_availableTemplates.isNotEmpty) {
         _selectedTemplate = _availableTemplates.first;
-        _selectedPeriodType = _selectedTemplate!.frequency;
       }
 
-      // Fetch all Reading Templates and extract unique ReadingFields
-      final readingTemplateDocs = await FirebaseFirestore.instance
+      final readingTemplatesSnapshot = await FirebaseFirestore.instance
           .collection('readingTemplates')
           .get();
 
-      final allReadingTemplates = readingTemplateDocs.docs
+      final availableReadingTemplates = readingTemplatesSnapshot.docs
           .map((doc) => ReadingTemplate.fromFirestore(doc))
           .toList();
 
-      final Set<ReadingField> uniqueReadingFields = {};
-      for (var template in allReadingTemplates) {
-        for (var field in template.readingFields) {
-          if (field.name.isNotEmpty && field.dataType != null) {
-            uniqueReadingFields.add(field);
-          }
-        }
+      final Set<String> bayTypesSet = {};
+      final Set<ReadingField> readingFieldsSet = {};
+
+      for (final template in availableReadingTemplates) {
+        bayTypesSet.add(template.bayType);
+        readingFieldsSet.addAll(template.readingFields);
       }
 
-      _availableReadingFields = uniqueReadingFields.toList();
-      _availableReadingFields.sort((a, b) => a.name.compareTo(b.name));
+      _allBayTypes = bayTypesSet.toList()..sort();
+      _availableReadingFields = readingFieldsSet.toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
     } catch (e) {
       if (mounted) {
         SnackBarUtils.showSnackBar(
@@ -610,27 +852,23 @@ class _GenerateCustomReportScreenState
     }
   }
 
-  Future<void> _generateExcelReport() async {
-    if (_selectedTemplate == null) {
-      SnackBarUtils.showSnackBar(context, 'Please select a report template.');
-      return;
-    }
-
-    if (_selectedPeriodType == ReportFrequency.custom &&
-        _fromDate.isAfter(_toDate)) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'From Date cannot be after To Date.',
-        isError: true,
-      );
-      return;
-    }
-
+  Future<void> _generateReport(ExportDataType type) async {
     setState(() => _isGenerating = true);
-
     try {
-      await _performExcelGeneration();
-
+      switch (type) {
+        case ExportDataType.operations:
+          await _generateOperationsReport();
+          break;
+        case ExportDataType.tripping:
+          await _generateTrippingReport();
+          break;
+        case ExportDataType.energy:
+          await _generateEnergyReport();
+          break;
+        case ExportDataType.customReports:
+          await _generateCustomReport();
+          break;
+      }
       if (mounted) {
         SnackBarUtils.showSnackBar(context, 'Report generated successfully!');
       }
@@ -647,10 +885,377 @@ class _GenerateCustomReportScreenState
     }
   }
 
-  Future<void> _performExcelGeneration() async {
+  Future<void> _generateOperationsReport() async {
     final appState = Provider.of<AppStateData>(context, listen: false);
     final selectedSubstation = appState.selectedSubstation;
 
+    if (selectedSubstation == null) {
+      throw Exception('No substation selected');
+    }
+
+    List<List<dynamic>> rows = [];
+
+    List<String> headers = [
+      'Timestamp',
+      'Bay Name',
+      'Bay Type',
+      'Voltage Level',
+      'Frequency',
+      'Recorded By',
+    ];
+
+    for (final field in _selectedReadingFields) {
+      headers.add(
+        '${field.name}${field.unit != null ? ' (${field.unit})' : ''}',
+      );
+    }
+
+    rows.add(headers);
+
+    await _addOperationsDataForSubstation(selectedSubstation, rows);
+    await _saveAndShareCsv(rows, 'operations_report');
+  }
+
+  Future<void> _generateTrippingReport() async {
+    final appState = Provider.of<AppStateData>(context, listen: false);
+    final selectedSubstation = appState.selectedSubstation;
+
+    if (selectedSubstation == null) {
+      throw Exception('No substation selected');
+    }
+
+    List<List<dynamic>> rows = [];
+
+    rows.add([
+      'Bay Name',
+      'Event Type',
+      'Start Time',
+      'End Time',
+      'Status',
+      'Duration (Hours)',
+      'Flags/Cause',
+      'Phase Faults',
+      'Distance',
+      'Shutdown Type',
+      'Shutdown Person',
+      'Created By',
+      'Created At',
+      'Closed By',
+      'Closed At',
+    ]);
+
+    await _addTrippingDataForSubstation(selectedSubstation, rows);
+    await _saveAndShareCsv(rows, 'tripping_report');
+  }
+
+  Future<void> _generateEnergyReport() async {
+    final appState = Provider.of<AppStateData>(context, listen: false);
+    final selectedSubstation = appState.selectedSubstation;
+
+    if (selectedSubstation == null) {
+      throw Exception('No substation selected');
+    }
+
+    List<List<dynamic>> rows = [];
+
+    List<String> headers = [
+      'Timestamp',
+      'Bay Name',
+      'Bay Type',
+      'Voltage Level',
+      'Frequency',
+    ];
+
+    headers.addAll(_selectedEnergyFields);
+
+    rows.add(headers);
+
+    await _addEnergyDataForSubstation(selectedSubstation, rows);
+    await _saveAndShareCsv(rows, 'energy_report');
+  }
+
+  Future<void> _generateCustomReport() async {
+    if (_selectedTemplate == null) {
+      throw Exception('No template selected');
+    }
+
+    await _performExcelGeneration();
+  }
+
+  Future<void> _addOperationsDataForSubstation(
+    substation,
+    List<List<dynamic>> rows,
+  ) async {
+    try {
+      Query baysQuery = FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: substation.id);
+
+      if (_selectedBayTypes.isNotEmpty) {
+        baysQuery = baysQuery.where('bayType', whereIn: _selectedBayTypes);
+      }
+
+      if (_selectedVoltageLevels.isNotEmpty) {
+        baysQuery = baysQuery.where(
+          'voltageLevel',
+          whereIn: _selectedVoltageLevels,
+        );
+      }
+
+      final baysSnapshot = await baysQuery.get();
+      final bays = baysSnapshot.docs
+          .map((doc) => Bay.fromFirestore(doc))
+          .toList();
+
+      if (bays.isEmpty) return;
+
+      final bayIds = bays.map((bay) => bay.id).toList();
+      final baysMap = {for (var bay in bays) bay.id: bay};
+
+      Query logsheetQuery = FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('bayId', whereIn: bayIds);
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+      );
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isLessThanOrEqualTo: Timestamp.fromDate(widget.endDate),
+      );
+
+      final logsheetSnapshot = await logsheetQuery.get();
+      final logsheetEntries = logsheetSnapshot.docs
+          .map((doc) => LogsheetEntry.fromFirestore(doc))
+          .toList();
+
+      for (final entry in logsheetEntries) {
+        final bay = baysMap[entry.bayId];
+        if (bay == null) continue;
+
+        List<dynamic> row = [
+          DateFormat(
+            'yyyy-MM-dd HH:mm:ss',
+          ).format(entry.readingTimestamp.toDate()),
+          bay.name,
+          bay.bayType,
+          bay.voltageLevel,
+          entry.frequency,
+          entry.recordedBy,
+        ];
+
+        for (final field in _selectedReadingFields) {
+          final value = entry.values[field.name];
+          row.add(value?.toString() ?? '');
+        }
+
+        rows.add(row);
+      }
+    } catch (e) {
+      print('Error adding operations data for ${substation.name}: $e');
+    }
+  }
+
+  Future<void> _addTrippingDataForSubstation(
+    substation,
+    List<List<dynamic>> rows,
+  ) async {
+    try {
+      Query trippingQuery = FirebaseFirestore.instance
+          .collection('trippingShutdownEntries')
+          .where('substationId', isEqualTo: substation.id);
+
+      if (_selectedEventTypes.isNotEmpty) {
+        trippingQuery = trippingQuery.where(
+          'eventType',
+          whereIn: _selectedEventTypes,
+        );
+      }
+
+      if (_selectedStatuses.isNotEmpty) {
+        trippingQuery = trippingQuery.where(
+          'status',
+          whereIn: _selectedStatuses,
+        );
+      }
+
+      trippingQuery = trippingQuery.where(
+        'startTime',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+      );
+
+      trippingQuery = trippingQuery.where(
+        'startTime',
+        isLessThanOrEqualTo: Timestamp.fromDate(widget.endDate),
+      );
+
+      final trippingSnapshot = await trippingQuery.get();
+      final trippingEntries = trippingSnapshot.docs
+          .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+          .toList();
+
+      for (final entry in trippingEntries) {
+        final duration = entry.endTime != null
+            ? entry.endTime!
+                  .toDate()
+                  .difference(entry.startTime.toDate())
+                  .inHours
+            : null;
+
+        rows.add([
+          entry.bayName,
+          entry.eventType,
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.startTime.toDate()),
+          entry.endTime != null
+              ? DateFormat(
+                  'yyyy-MM-dd HH:mm:ss',
+                ).format(entry.endTime!.toDate())
+              : '',
+          entry.status,
+          duration?.toString() ?? '',
+          entry.flagsCause,
+          entry.phaseFaults?.join(', ') ?? '',
+          entry.distance ?? '',
+          entry.shutdownType ?? '',
+          entry.shutdownPersonName ?? '',
+          entry.createdBy,
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.createdAt.toDate()),
+          entry.closedBy ?? '',
+          entry.closedAt != null
+              ? DateFormat(
+                  'yyyy-MM-dd HH:mm:ss',
+                ).format(entry.closedAt!.toDate())
+              : '',
+        ]);
+      }
+    } catch (e) {
+      print('Error adding tripping data for ${substation.name}: $e');
+    }
+  }
+
+  Future<void> _addEnergyDataForSubstation(
+    substation,
+    List<List<dynamic>> rows,
+  ) async {
+    try {
+      Query baysQuery = FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: substation.id);
+
+      if (_selectedBayTypes.isNotEmpty) {
+        baysQuery = baysQuery.where('bayType', whereIn: _selectedBayTypes);
+      }
+
+      if (_selectedVoltageLevels.isNotEmpty) {
+        baysQuery = baysQuery.where(
+          'voltageLevel',
+          whereIn: _selectedVoltageLevels,
+        );
+      }
+
+      final baysSnapshot = await baysQuery.get();
+      final bays = baysSnapshot.docs
+          .map((doc) => Bay.fromFirestore(doc))
+          .toList();
+
+      if (bays.isEmpty) return;
+
+      final bayIds = bays.map((bay) => bay.id).toList();
+      final baysMap = {for (var bay in bays) bay.id: bay};
+
+      Query logsheetQuery = FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('bayId', whereIn: bayIds);
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+      );
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isLessThanOrEqualTo: Timestamp.fromDate(widget.endDate),
+      );
+
+      final logsheetSnapshot = await logsheetQuery.get();
+      final logsheetEntries = logsheetSnapshot.docs
+          .map((doc) => LogsheetEntry.fromFirestore(doc))
+          .toList();
+
+      for (final entry in logsheetEntries) {
+        final bay = baysMap[entry.bayId];
+        if (bay == null) continue;
+
+        List<dynamic> row = [
+          DateFormat(
+            'yyyy-MM-dd HH:mm:ss',
+          ).format(entry.readingTimestamp.toDate()),
+          bay.name,
+          bay.bayType,
+          bay.voltageLevel,
+          entry.frequency,
+        ];
+
+        for (final fieldName in _selectedEnergyFields) {
+          final value = entry.values[fieldName];
+          row.add(value?.toString() ?? '');
+        }
+
+        rows.add(row);
+      }
+    } catch (e) {
+      print('Error adding energy data for ${substation.name}: $e');
+    }
+  }
+
+  Future<void> _saveAndShareCsv(
+    List<List<dynamic>> rows,
+    String fileName,
+  ) async {
+    if (rows.length <= 1) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'No data available to export.',
+        isError: true,
+      );
+      return;
+    }
+
+    try {
+      String csv = const ListToCsvConverter().convert(rows);
+
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final file = File('${directory.path}/${fileName}_$timestamp.csv');
+
+      await file.writeAsString(csv);
+
+      await Share.shareXFiles([XFile(file.path)], text: 'Data Export');
+
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Report generated successfully! ${rows.length - 1} records exported.',
+          isError: false,
+        );
+      }
+    } catch (e) {
+      print("Error saving CSV: $e");
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to generate CSV file: $e',
+          isError: true,
+        );
+      }
+    }
+  }
+
+  Future<void> _performExcelGeneration() async {
+    final appState = Provider.of<AppStateData>(context, listen: false);
+    final selectedSubstation = appState.selectedSubstation;
     if (selectedSubstation == null) {
       SnackBarUtils.showSnackBar(
         context,
@@ -660,231 +1265,220 @@ class _GenerateCustomReportScreenState
       return;
     }
 
-    // 1. Fetch Bay details for selected bays
-    Map<String, Bay> baysMap = {};
-    if (_selectedTemplate!.selectedBayIds.isNotEmpty) {
-      for (int i = 0; i < _selectedTemplate!.selectedBayIds.length; i += 10) {
-        final chunk = _selectedTemplate!.selectedBayIds.sublist(
-          i,
-          i + 10 > _selectedTemplate!.selectedBayIds.length
-              ? _selectedTemplate!.selectedBayIds.length
-              : i + 10,
-        );
-
-        final bayDocs = await FirebaseFirestore.instance
-            .collection('bays')
-            .where(FieldPath.documentId, whereIn: chunk)
-            .get();
-
-        for (var doc in bayDocs.docs) {
-          baysMap[doc.id] = Bay.fromFirestore(doc);
-        }
-      }
-    } else {
+    if (_selectedTemplate == null) {
       SnackBarUtils.showSnackBar(
         context,
-        'Selected template has no bays. Please edit the template to include bays.',
+        'No template selected. Cannot generate report.',
         isError: true,
       );
       return;
     }
 
-    // 2. Determine date range for logsheet query
-    DateTime queryStartDate = _fromDate;
-    DateTime queryEndDate = _toDate;
+    try {
+      final baysQuery = await FirebaseFirestore.instance
+          .collection('bays')
+          .where(
+            FieldPath.documentId,
+            whereIn: _selectedTemplate!.selectedBayIds,
+          )
+          .get();
 
-    // Adjust dates to cover entire period
-    if (_selectedPeriodType == ReportFrequency.hourly) {
-      queryStartDate = DateTime(
-        queryStartDate.year,
-        queryStartDate.month,
-        queryStartDate.day,
-        queryStartDate.hour,
-      );
-      queryEndDate = DateTime(
-        queryEndDate.year,
-        queryEndDate.month,
-        queryEndDate.day,
-        queryEndDate.hour,
-        59,
-        59,
-      );
-    } else {
-      queryStartDate = DateTime(
-        queryStartDate.year,
-        queryStartDate.month,
-        queryStartDate.day,
-      );
-      queryEndDate = DateTime(
-        queryEndDate.year,
-        queryEndDate.month,
-        queryEndDate.day,
-        23,
-        59,
-        59,
-      );
-    }
-
-    // 3. Fetch all relevant LogsheetEntries
-    List<LogsheetEntry> allReadings = [];
-    final List<String> bayIdsToQuery = _selectedTemplate!.selectedBayIds;
-
-    if (bayIdsToQuery.isNotEmpty) {
-      for (int i = 0; i < bayIdsToQuery.length; i += 10) {
-        final chunk = bayIdsToQuery.sublist(
-          i,
-          i + 10 > bayIdsToQuery.length ? bayIdsToQuery.length : i + 10,
+      final bays = baysQuery.docs.map((doc) => Bay.fromFirestore(doc)).toList();
+      if (bays.isEmpty) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'No bays found for this template.',
+          isError: true,
         );
-
-        final logsheetSnapshot = await FirebaseFirestore.instance
-            .collection('logsheetEntries')
-            .where('bayId', whereIn: chunk)
-            .where(
-              'frequency',
-              isEqualTo: _selectedTemplate!.frequency.toShortString(),
-            )
-            .where(
-              'readingTimestamp',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(queryStartDate),
-            )
-            .where(
-              'readingTimestamp',
-              isLessThanOrEqualTo: Timestamp.fromDate(queryEndDate),
-            )
-            .orderBy('readingTimestamp')
-            .get();
-
-        allReadings.addAll(
-          logsheetSnapshot.docs
-              .map((doc) => LogsheetEntry.fromFirestore(doc))
-              .toList(),
-        );
+        return;
       }
-    }
 
-    // Sort readings by timestamp and bay name
-    allReadings.sort((a, b) {
-      int timestampCompare = a.readingTimestamp.compareTo(b.readingTimestamp);
-      if (timestampCompare != 0) return timestampCompare;
-      final bayA = baysMap[a.bayId]?.name ?? '';
-      final bayB = baysMap[b.bayId]?.name ?? '';
-      return bayA.compareTo(bayB);
-    });
+      List<ReadingField> readingFields = [];
 
-    // 4. Create Excel workbook
-    var excel = Excel.createExcel();
-    Sheet sheetObject = excel['Report for ${selectedSubstation.name}'];
+      final readingTemplatesSnapshot = await FirebaseFirestore.instance
+          .collection('readingTemplates')
+          .get();
 
-    // 5. Create header row
-    List<CellValue> headerCells = [
-      TextCellValue('Date/Time'),
-      TextCellValue('Bay Name'),
-    ];
+      final availableReadingTemplates = readingTemplatesSnapshot.docs
+          .map((doc) => ReadingTemplate.fromFirestore(doc))
+          .toList();
 
-    for (var fieldName in _selectedTemplate!.selectedReadingFieldIds) {
-      final fieldDef = _availableReadingFields.firstWhere(
-        (f) => f.name == fieldName,
-        orElse: () =>
-            ReadingField(name: fieldName, dataType: ReadingFieldDataType.text),
-      );
-
-      headerCells.add(
-        TextCellValue(
-          '${fieldDef.name} ${fieldDef.unit != null && fieldDef.unit!.isNotEmpty ? '(${fieldDef.unit})' : ''}',
-        ),
-      );
-    }
-
-    for (var customCol in _selectedTemplate!.customColumns) {
-      headerCells.add(TextCellValue(customCol.columnName));
-    }
-
-    sheetObject.appendRow(headerCells);
-
-    // 6. Add data rows
-    for (var entry in allReadings) {
-      final currentBay = baysMap[entry.bayId];
-
-      List<CellValue> rowCells = [
-        TextCellValue(
-          DateFormat(
-            'yyyy-MM-dd HH:mm',
-          ).format(entry.readingTimestamp.toDate()),
-        ),
-        TextCellValue(currentBay?.name ?? 'Unknown Bay'),
-      ];
-
-      // Add reading field values
-      for (var fieldName in _selectedTemplate!.selectedReadingFieldIds) {
-        final value = entry.values[fieldName];
-        if (value != null && double.tryParse(value.toString()) != null) {
-          rowCells.add(DoubleCellValue(double.parse(value.toString())));
-        } else {
-          rowCells.add(TextCellValue(value?.toString() ?? ''));
+      for (final template in availableReadingTemplates) {
+        for (final field in template.readingFields) {
+          if (_selectedTemplate!.selectedReadingFieldIds.contains(field.name)) {
+            readingFields.add(field);
+          }
         }
       }
 
-      // Add custom column values (simplified calculation)
-      for (var customCol in _selectedTemplate!.customColumns) {
-        final baseValue = entry.values[customCol.baseReadingFieldId];
-        if (baseValue != null &&
-            double.tryParse(baseValue.toString()) != null) {
-          double calculatedValue = double.parse(baseValue.toString());
+      // FIXED: Use field.name instead of field.id for uniqueness
+      final Map<String, ReadingField> uniqueFields = {};
+      for (final field in readingFields) {
+        uniqueFields[field.name] = field;
+      }
+      readingFields = uniqueFields.values.toList();
 
-          // Apply operation if specified
-          if (customCol.operandValue != null) {
-            final operand = double.tryParse(customCol.operandValue!);
-            if (operand != null) {
-              switch (customCol.operation) {
-                case MathOperation.add:
-                  calculatedValue += operand;
-                  break;
-                case MathOperation.subtract:
-                  calculatedValue -= operand;
-                  break;
-                case MathOperation.multiply:
-                  calculatedValue *= operand;
-                  break;
-                case MathOperation.divide:
-                  if (operand != 0) calculatedValue /= operand;
-                  break;
-                default:
-                  break;
-              }
+      if (readingFields.isEmpty) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'No reading fields found for this template.',
+          isError: true,
+        );
+        return;
+      }
+
+      // Rest of the method remains the same...
+      final queryStartTime = Timestamp.fromDate(widget.startDate);
+      final queryEndTime = Timestamp.fromDate(widget.endDate);
+
+      final logsheetEntriesQuery = await FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('bayId', whereIn: _selectedTemplate!.selectedBayIds)
+          .where('readingTimestamp', isGreaterThanOrEqualTo: queryStartTime)
+          .where('readingTimestamp', isLessThanOrEqualTo: queryEndTime)
+          .orderBy('readingTimestamp')
+          .get();
+
+      final logsheetEntries = logsheetEntriesQuery.docs
+          .map((doc) => LogsheetEntry.fromFirestore(doc))
+          .toList();
+
+      if (logsheetEntries.isEmpty) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'No data found for the selected date range.',
+          isError: true,
+        );
+        return;
+      }
+
+      final excel = Excel.createExcel();
+      final sheet = excel['Report'];
+
+      final headerRow = ['Date', 'Time', 'Bay Name', 'Bay Type', 'Frequency'];
+      for (final field in readingFields) {
+        headerRow.add(
+          '${field.name}${field.unit != null ? ' (${field.unit})' : ''}',
+        );
+      }
+
+      for (int col = 0; col < headerRow.length; col++) {
+        sheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
+            .value = TextCellValue(
+          headerRow[col],
+        );
+      }
+
+      int rowIndex = 1;
+      for (final entry in logsheetEntries) {
+        final bay = bays.firstWhere((b) => b.id == entry.bayId);
+        final timestamp = entry.readingTimestamp.toDate();
+
+        int colIndex = 0;
+        sheet
+            .cell(
+              CellIndex.indexByColumnRow(
+                columnIndex: colIndex++,
+                rowIndex: rowIndex,
+              ),
+            )
+            .value = TextCellValue(
+          DateFormat('yyyy-MM-dd').format(timestamp),
+        );
+        sheet
+            .cell(
+              CellIndex.indexByColumnRow(
+                columnIndex: colIndex++,
+                rowIndex: rowIndex,
+              ),
+            )
+            .value = TextCellValue(
+          DateFormat('HH:mm:ss').format(timestamp),
+        );
+        sheet
+            .cell(
+              CellIndex.indexByColumnRow(
+                columnIndex: colIndex++,
+                rowIndex: rowIndex,
+              ),
+            )
+            .value = TextCellValue(
+          bay.name,
+        );
+        sheet
+            .cell(
+              CellIndex.indexByColumnRow(
+                columnIndex: colIndex++,
+                rowIndex: rowIndex,
+              ),
+            )
+            .value = TextCellValue(
+          bay.bayType,
+        );
+        sheet
+            .cell(
+              CellIndex.indexByColumnRow(
+                columnIndex: colIndex++,
+                rowIndex: rowIndex,
+              ),
+            )
+            .value = TextCellValue(
+          entry.frequency,
+        );
+
+        for (final field in readingFields) {
+          final value = entry.values[field.name];
+          String cellValue = '';
+
+          if (value != null) {
+            if (field.dataType == ReadingFieldDataType.boolean &&
+                value is Map) {
+              cellValue = value['value']?.toString() ?? '';
+            } else {
+              cellValue = value.toString();
             }
           }
 
-          rowCells.add(DoubleCellValue(calculatedValue));
-        } else {
-          rowCells.add(TextCellValue('N/A'));
+          sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: colIndex++,
+                  rowIndex: rowIndex,
+                ),
+              )
+              .value = TextCellValue(
+            cellValue,
+          );
         }
+
+        rowIndex++;
       }
 
-      sheetObject.appendRow(rowCells);
-    }
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final filePath =
+          '${directory.path}/${_selectedTemplate!.templateName}_$timestamp.xlsx';
+      final excelBytes = excel.save();
 
-    // 7. Save file
-    final directory = await getApplicationDocumentsDirectory();
-    final String fileName =
-        'SubstationReport_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
-    final String filePath = '${directory.path}/$fileName';
-    final File file = File(filePath);
+      if (excelBytes != null) {
+        final file = File(filePath);
+        await file.writeAsBytes(excelBytes);
 
-    List<int>? excelBytes = excel.encode();
-    if (excelBytes != null) {
-      await file.writeAsBytes(excelBytes);
-      if (mounted) {
-        SnackBarUtils.showSnackBar(context, 'Report saved to: ${file.path}');
-        await OpenFilex.open(filePath);
-      }
-    } else {
-      if (mounted) {
+        await Share.shareXFiles([XFile(filePath)]);
+
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to generate Excel file.',
-          isError: true,
+          'Excel report generated successfully!',
         );
       }
+    } catch (e) {
+      print('Error generating Excel report: $e');
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to generate Excel report: $e',
+        isError: true,
+      );
     }
   }
 }

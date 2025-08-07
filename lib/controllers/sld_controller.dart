@@ -1,10 +1,11 @@
 // lib/controllers/sld_controller.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart'; // For firstWhereOrNull, etc.
 import 'dart:math';
-import '../models/assessment_model.dart';
 
+import '../models/assessment_model.dart';
 import '../models/bay_model.dart';
 import '../models/bay_connection_model.dart';
 import '../models/energy_readings_data.dart';
@@ -788,12 +789,7 @@ class SldController extends ChangeNotifier {
         }
       } else {
         // If unselecting, clear local adjustments to revert to saved state unless saved
-        _localBayPositions.clear();
-        _localTextOffsets.clear();
-        _localBusbarLengths.clear();
-        _localEnergyReadingOffsets.clear();
-        _localEnergyReadingFontSizes.clear();
-        _localEnergyReadingIsBold.clear();
+        _clearAllLocalAdjustments();
       }
       _rebuildSldRenderData(); // Rebuild to reflect selection and local adjustments
     }
@@ -838,7 +834,7 @@ class SldController extends ChangeNotifier {
     final currentLength =
         _localBusbarLengths[_selectedBayForMovementId!] ?? 200.0;
     _localBusbarLengths[_selectedBayForMovementId!] = max(
-      20.0,
+      50.0, // Minimum length increased from 20 to 50
       currentLength + change,
     );
     _rebuildSldRenderData(); // Rebuild to show length change
@@ -862,11 +858,9 @@ class SldController extends ChangeNotifier {
     _rebuildSldRenderData(); // Rebuild to show bold change
   }
 
-  /// Saves the current local adjustments for the selected bay to Firestore.
+  /// Save the current local adjustments for the selected bay to Firestore (individual bay save).
   Future<bool> saveSelectedBayLayoutChanges() async {
-    // Changed return type from Future<void> to Future<bool>
-    if (_selectedBayForMovementId == null)
-      return false; // Return false if no bay is selected
+    if (_selectedBayForMovementId == null) return false;
 
     final bayId = _selectedBayForMovementId!;
     try {
@@ -904,28 +898,129 @@ class SldController extends ChangeNotifier {
             .collection('bays')
             .doc(bayId)
             .update(updateData);
-        // After saving, clear local adjustments to ensure next read picks up from Firestore
+
+        // Clear only this bay's local adjustments after saving
         _localBayPositions.remove(bayId);
         _localTextOffsets.remove(bayId);
         _localBusbarLengths.remove(bayId);
         _localEnergyReadingOffsets.remove(bayId);
         _localEnergyReadingFontSizes.remove(bayId);
         _localEnergyReadingIsBold.remove(bayId);
-        setSelectedBayForMovement(null); // Deselect
-        // _rebuildSldRenderData() will be called by Firestore listener on update
-        return true; // Return true on successful save
+
+        // Don't auto-deselect - user can continue editing other aspects
+        return true;
       }
     } catch (e) {
       print('Error saving layout changes: $e');
-      return false; // Return false on error
+      return false;
     }
-    return false; // Return false if no updates were made (updateData was empty)
+    return false;
+  }
+
+  /// Save ALL pending changes to Firestore using batch write (cost-efficient).
+  Future<bool> saveAllPendingChanges() async {
+    try {
+      // Collect all bays with pending changes
+      Set<String> affectedBayIds = {
+        ..._localBayPositions.keys,
+        ..._localTextOffsets.keys,
+        ..._localBusbarLengths.keys,
+        ..._localEnergyReadingOffsets.keys,
+        ..._localEnergyReadingFontSizes.keys,
+        ..._localEnergyReadingIsBold.keys,
+      };
+
+      if (affectedBayIds.isEmpty) return true;
+
+      // Use batch write for efficiency - single operation instead of multiple
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (String bayId in affectedBayIds) {
+        final updateData = <String, dynamic>{};
+
+        if (_localBayPositions.containsKey(bayId)) {
+          updateData['xPosition'] = _localBayPositions[bayId]!.dx;
+          updateData['yPosition'] = _localBayPositions[bayId]!.dy;
+        }
+
+        if (_localTextOffsets.containsKey(bayId)) {
+          updateData['textOffset'] = {
+            'dx': _localTextOffsets[bayId]!.dx,
+            'dy': _localTextOffsets[bayId]!.dy,
+          };
+        }
+
+        if (_localBusbarLengths.containsKey(bayId)) {
+          updateData['busbarLength'] = _localBusbarLengths[bayId];
+        }
+
+        if (_localEnergyReadingOffsets.containsKey(bayId)) {
+          updateData['energyReadingOffset'] = {
+            'dx': _localEnergyReadingOffsets[bayId]!.dx,
+            'dy': _localEnergyReadingOffsets[bayId]!.dy,
+          };
+        }
+
+        if (_localEnergyReadingFontSizes.containsKey(bayId)) {
+          updateData['energyReadingFontSize'] =
+              _localEnergyReadingFontSizes[bayId];
+        }
+
+        if (_localEnergyReadingIsBold.containsKey(bayId)) {
+          updateData['energyReadingIsBold'] = _localEnergyReadingIsBold[bayId];
+        }
+
+        if (updateData.isNotEmpty) {
+          final bayRef = FirebaseFirestore.instance
+              .collection('bays')
+              .doc(bayId);
+          batch.update(bayRef, updateData);
+        }
+      }
+
+      // Execute batch write - single operation, reduced cost
+      await batch.commit();
+
+      // Clear all local adjustments after successful save
+      _clearAllLocalAdjustments();
+
+      return true;
+    } catch (e) {
+      print('Error saving all pending changes: $e');
+      return false;
+    }
+  }
+
+  /// Helper method to clear all local changes
+  void _clearAllLocalAdjustments() {
+    _localBayPositions.clear();
+    _localTextOffsets.clear();
+    _localBusbarLengths.clear();
+    _localEnergyReadingOffsets.clear();
+    _localEnergyReadingFontSizes.clear();
+    _localEnergyReadingIsBold.clear();
+
+    // Deselect current bay
+    _selectedBayForMovementId = null;
+    _movementMode = MovementMode.bay;
+
+    // Update from Firestore
+    _updateLocalBayPropertiesFromFirestore();
+    _rebuildSldRenderData();
   }
 
   void cancelLayoutChanges() {
-    setSelectedBayForMovement(null); // Deselect and clear local adjustments
-    // _rebuildSldRenderData() will be called automatically due to _selectedBayForMovementId being null,
-    // which triggers _updateLocalBayPropertiesFromFirestore to sync from the current Firestore data.
+    _clearAllLocalAdjustments();
+  }
+
+  /// Check if there are any unsaved changes
+  bool hasUnsavedChanges() {
+    return _localBayPositions.isNotEmpty ||
+        _localTextOffsets.isNotEmpty ||
+        _localBusbarLengths.isNotEmpty ||
+        _localEnergyReadingOffsets.isNotEmpty ||
+        _localEnergyReadingFontSizes.isNotEmpty ||
+        _localEnergyReadingIsBold.isNotEmpty;
   }
 
   // --- Energy Data Specific Logic (to be called by Energy SLD Screen) ---
@@ -943,5 +1038,10 @@ class SldController extends ChangeNotifier {
     _aggregatedFeederEnergyData = aggregatedFeederEnergyData;
     _latestAssessmentsPerBay = latestAssessmentsPerBay;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 }

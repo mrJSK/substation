@@ -115,6 +115,169 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
+  // Enhanced back press handling with save/discard options
+  Future<void> _handleBackPress() async {
+    final sldController = Provider.of<SldController>(context, listen: false);
+
+    // Check if there are unsaved changes
+    if (sldController.hasUnsavedChanges()) {
+      final result = await showDialog<String>(
+        context: context,
+        barrierDismissible: false, // Prevent dismissing by tapping outside
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.save_outlined,
+                color: Theme.of(context).colorScheme.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              const Text('Save Changes?'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'You have unsaved layout changes. What would you like to do?',
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.blue.shade700,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Saving will update the layout for all users',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('discard'),
+              child: Text(
+                'Discard Changes',
+                style: TextStyle(
+                  color: Colors.red.shade600,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('cancel'),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop('save'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Save & Exit'),
+            ),
+          ],
+        ),
+      );
+
+      if (result == 'save') {
+        // Show loading dialog while saving
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => Dialog(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(
+                    strokeWidth: 3,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  const Text('Saving changes...'),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        try {
+          final success = await sldController.saveAllPendingChanges();
+
+          if (mounted) {
+            Navigator.of(context).pop(); // Close loading dialog
+
+            if (success) {
+              SnackBarUtils.showSnackBar(
+                context,
+                'Layout changes saved successfully!',
+              );
+              Navigator.of(context).pop(); // Go back to previous screen
+            } else {
+              SnackBarUtils.showSnackBar(
+                context,
+                'Failed to save changes. Please try again.',
+                isError: true,
+              );
+            }
+          }
+        } catch (e) {
+          if (mounted) {
+            Navigator.of(context).pop(); // Close loading dialog
+            SnackBarUtils.showSnackBar(
+              context,
+              'Error saving changes: $e',
+              isError: true,
+            );
+          }
+        }
+      } else if (result == 'discard') {
+        sldController.cancelLayoutChanges();
+        SnackBarUtils.showSnackBar(context, 'Changes discarded');
+        if (mounted) Navigator.of(context).pop();
+      }
+    } else {
+      // No unsaved changes, go back directly
+      Navigator.of(context).pop();
+    }
+  }
+
   String get _dateRangeText {
     if (_startDate.isAtSameMomentAs(_endDate)) {
       return DateFormat('dd-MMM-yyyy').format(_startDate);
@@ -136,9 +299,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
-      appBar: _buildAppBar(),
-      body: _isLoading ? _buildLoadingState() : _buildBody(sldController),
-      floatingActionButton: _buildFloatingActionButton(sldController),
+      appBar: _buildAppBar(sldController),
+      body: Stack(
+        children: [
+          _isLoading ? _buildLoadingState() : _buildBody(sldController),
+          // Position the speed dial widget in the stack for proper bottom-right placement
+          _buildFloatingActionButton(sldController),
+        ],
+      ),
       bottomNavigationBar: _buildBottomNavigationBar(sldController),
     );
   }
@@ -192,31 +360,95 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
+          CircularProgressIndicator(
+            strokeWidth: 3,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 20),
           Text(
             'Loading energy data...',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please wait while we fetch the latest information',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
+  PreferredSizeWidget _buildAppBar(SldController sldController) {
+    final hasUnsavedChanges = sldController.hasUnsavedChanges();
+
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
+      leading: IconButton(
+        icon: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: hasUnsavedChanges
+                ? Colors.orange.withOpacity(0.1)
+                : Theme.of(context).colorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            Icons.arrow_back_ios,
+            color: hasUnsavedChanges
+                ? Colors.orange.shade700
+                : Theme.of(context).colorScheme.primary,
+            size: 18,
+          ),
+        ),
+        onPressed: _handleBackPress,
+        tooltip: hasUnsavedChanges
+            ? 'Back (Unsaved Changes)'
+            : 'Back to Dashboard',
+      ),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Energy Account',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
+          Row(
+            children: [
+              Text(
+                'Energy Account',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              if (hasUnsavedChanges) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'MODIFIED',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           Text(
             '${widget.substationName} ($_dateRangeText)',
@@ -287,7 +519,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  Widget? _buildFloatingActionButton(SldController sldController) {
+  Widget _buildFloatingActionButton(SldController sldController) {
     return EnergySpeedDialWidget(
       isViewingSavedSld: _isViewingSavedSld,
       showTables: _showTables,

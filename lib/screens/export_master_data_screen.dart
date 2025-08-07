@@ -1,6 +1,6 @@
 // lib/screens/export_master_data_screen.dart
-import 'dart:io';
 
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:csv/csv.dart';
 import 'package:dropdown_search/dropdown_search.dart';
@@ -8,25 +8,24 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-
-import '../../models/bay_model.dart';
-import '../../models/equipment_model.dart';
-import '../../models/hierarchy_models.dart';
-import '../../models/user_model.dart';
-import '../../utils/snackbar_utils.dart';
+import '../models/bay_model.dart';
+import '../models/equipment_model.dart';
+import '../models/hierarchy_models.dart';
+import '../models/user_model.dart';
+import '../utils/snackbar_utils.dart';
 
 enum ExportDataType { equipment, bays, substations }
 
 class ExportMasterDataScreen extends StatefulWidget {
   final AppUser currentUser;
+  final String? subdivisionId;
 
   const ExportMasterDataScreen({
     super.key,
     required this.currentUser,
-    required String subdivisionId,
+    this.subdivisionId,
   });
 
-  // FIX: Add the static routeName property
   static const routeName = '/export-master-data';
 
   @override
@@ -34,25 +33,28 @@ class ExportMasterDataScreen extends StatefulWidget {
 }
 
 class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
-  // --- State variables for UI and Filtering ---
   bool _isLoading = true;
   bool _isGeneratingReport = false;
   ExportDataType _selectedDataType = ExportDataType.equipment;
 
-  // Hierarchy Selection
+  AppScreenState? _selectedState;
+  Company? _selectedCompany;
   Zone? _selectedZone;
   Circle? _selectedCircle;
   Division? _selectedDivision;
   Subdivision? _selectedSubdivision;
   Substation? _selectedSubstation;
 
-  // Filter Selections
+  DistributionZone? _selectedDistributionZone;
+  DistributionCircle? _selectedDistributionCircle;
+  DistributionDivision? _selectedDistributionDivision;
+  DistributionSubdivision? _selectedDistributionSubdivision;
+
   List<MasterEquipmentTemplate> _selectedEquipmentTypes = [];
   List<String> _selectedVoltageLevels = [];
   DateTime? _startDate;
   DateTime? _endDate;
 
-  // Data for Dropdowns
   List<MasterEquipmentTemplate> _allEquipmentTemplates = [];
   final List<String> _allVoltageLevels = [
     '765kV',
@@ -69,7 +71,59 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
     _fetchInitialData();
   }
 
-  /// Fetches data required for the filter dropdowns, like all equipment templates.
+  String _getStartingHierarchyLevel() {
+    switch (widget.currentUser.role) {
+      case UserRole.admin:
+      case UserRole.superAdmin:
+        return 'state';
+      case UserRole.stateManager:
+        return 'company';
+      case UserRole.companyManager:
+        return 'zone';
+      case UserRole.zoneManager:
+        return 'circle';
+      case UserRole.circleManager:
+        return 'division';
+      case UserRole.divisionManager:
+        return 'subdivision';
+      case UserRole.subdivisionManager:
+        return 'substation';
+      case UserRole.substationUser:
+        return 'substation';
+      case UserRole.pending:
+        // TODO: Handle this case.
+        throw UnimplementedError();
+    }
+  }
+
+  String? _getUserAssignedId() {
+    final assignedLevels = widget.currentUser.assignedLevels;
+    if (assignedLevels == null) return null;
+
+    switch (widget.currentUser.role) {
+      case UserRole.stateManager:
+        return assignedLevels['stateId'];
+      case UserRole.companyManager:
+        return assignedLevels['companyId'];
+      case UserRole.zoneManager:
+        return assignedLevels['zoneId'];
+      case UserRole.circleManager:
+        return assignedLevels['circleId'];
+      case UserRole.divisionManager:
+        return assignedLevels['divisionId'];
+      case UserRole.subdivisionManager:
+        return assignedLevels['subdivisionId'] ?? widget.subdivisionId;
+      case UserRole.substationUser:
+        return assignedLevels['substationId'];
+      case UserRole.admin:
+      case UserRole.superAdmin:
+        return null;
+      case UserRole.pending:
+        // TODO: Handle this case.
+        throw UnimplementedError();
+    }
+  }
+
   Future<void> _fetchInitialData() async {
     setState(() => _isLoading = true);
     try {
@@ -77,9 +131,12 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
           .collection('masterEquipmentTemplates')
           .orderBy('equipmentType')
           .get();
+
       _allEquipmentTemplates = templatesSnapshot.docs
           .map((doc) => MasterEquipmentTemplate.fromFirestore(doc))
           .toList();
+
+      await _autoSelectUserLevel();
     } catch (e) {
       print("Error fetching initial data: $e");
       if (mounted) {
@@ -96,11 +153,90 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
     }
   }
 
-  /// Main function to trigger the report generation process based on the selected data type.
+  Future<void> _autoSelectUserLevel() async {
+    final assignedId = _getUserAssignedId();
+    if (assignedId == null) return;
+
+    try {
+      switch (widget.currentUser.role) {
+        case UserRole.stateManager:
+          final doc = await FirebaseFirestore.instance
+              .collection('appScreenStates')
+              .doc(assignedId)
+              .get();
+          if (doc.exists) {
+            _selectedState = AppScreenState.fromFirestore(doc);
+          }
+          break;
+        case UserRole.companyManager:
+          final doc = await FirebaseFirestore.instance
+              .collection('companies')
+              .doc(assignedId)
+              .get();
+          if (doc.exists) {
+            _selectedCompany = Company.fromFirestore(doc);
+          }
+          break;
+        case UserRole.zoneManager:
+          final doc = await FirebaseFirestore.instance
+              .collection('zones')
+              .doc(assignedId)
+              .get();
+          if (doc.exists) {
+            _selectedZone = Zone.fromFirestore(doc);
+          }
+          break;
+        case UserRole.circleManager:
+          final doc = await FirebaseFirestore.instance
+              .collection('circles')
+              .doc(assignedId)
+              .get();
+          if (doc.exists) {
+            _selectedCircle = Circle.fromFirestore(doc);
+          }
+          break;
+        case UserRole.divisionManager:
+          final doc = await FirebaseFirestore.instance
+              .collection('divisions')
+              .doc(assignedId)
+              .get();
+          if (doc.exists) {
+            _selectedDivision = Division.fromFirestore(doc);
+          }
+          break;
+        case UserRole.subdivisionManager:
+          final doc = await FirebaseFirestore.instance
+              .collection('subdivisions')
+              .doc(assignedId)
+              .get();
+          if (doc.exists) {
+            _selectedSubdivision = Subdivision.fromFirestore(doc);
+          }
+          break;
+        case UserRole.substationUser:
+          final doc = await FirebaseFirestore.instance
+              .collection('substations')
+              .doc(assignedId)
+              .get();
+          if (doc.exists) {
+            _selectedSubstation = Substation.fromFirestore(doc);
+          }
+          break;
+        case UserRole.admin:
+        case UserRole.superAdmin:
+          break;
+        case UserRole.pending:
+          // TODO: Handle this case.
+          throw UnimplementedError();
+      }
+    } catch (e) {
+      print("Error auto-selecting user level: $e");
+    }
+  }
+
   Future<void> _generateAndShareReport() async {
     if (_isGeneratingReport) return;
     setState(() => _isGeneratingReport = true);
-
     try {
       switch (_selectedDataType) {
         case ExportDataType.equipment:
@@ -130,813 +266,1153 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   Future<void> _generateEquipmentReport() async {
-    // 1. Determine the set of Bay IDs to query based on hierarchy and voltage filters.
-    final Map<String, Bay> filteredBays = await _getFilteredBays();
-    if (filteredBays.isEmpty) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'No bays found matching the selected criteria.',
-        isError: true,
-      );
-      return;
-    }
+    List<List<dynamic>> rows = [];
 
-    // 2. Fetch equipment instances based on the filtered Bay IDs and other filters.
-    final List<EquipmentInstance> equipmentInstances =
-        await _fetchEquipmentInstances(filteredBays.keys.toList());
-    if (equipmentInstances.isEmpty) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'No equipment found matching the selected criteria.',
-        isError: true,
-      );
-      return;
-    }
-
-    // 3. Fetch hierarchy details for CSV enrichment.
-    final hierarchyData = await _fetchHierarchyData(
-      filteredBays.values.toList(),
-    );
-
-    // 4. Generate and share the CSV file.
-    await _createAndShareCsv(equipmentInstances, filteredBays, hierarchyData);
-  }
-
-  Future<void> _generateBaysReport() async {
-    final Map<String, Bay> filteredBays = await _getFilteredBays();
-    if (filteredBays.isEmpty) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'No bays found for the selected scope.',
-        isError: true,
-      );
-      return;
-    }
-    final hierarchyData = await _fetchHierarchyData(
-      filteredBays.values.toList(),
-    );
-
-    List<String> headers = [
-      'Bay ID',
+    rows.add([
+      'Equipment ID',
+      'Name',
+      'Type',
       'Bay Name',
-      'Voltage Level',
       'Bay Type',
+      'Voltage Level',
       'Substation',
       'Subdivision',
       'Division',
       'Circle',
       'Zone',
+      'Status',
       'Created At',
-    ];
-    List<List<dynamic>> rows = [headers];
+    ]);
 
-    for (var bay in filteredBays.values) {
-      final substation = hierarchyData['substations']?[bay.substationId];
-      final subdivision =
-          hierarchyData['subdivisions']?[substation?.subdivisionId];
-      final division = hierarchyData['divisions']?[subdivision?.divisionId];
-      final circle = hierarchyData['circles']?[division?.circleId];
-      final zone = hierarchyData['zones']?[circle?.zoneId];
-
-      rows.add([
-        bay.id,
-        bay.name,
-        bay.voltageLevel,
-        bay.bayType,
-        substation?.name ?? 'N/A',
-        subdivision?.name ?? 'N/A',
-        division?.name ?? 'N/A',
-        circle?.name ?? 'N/A',
-        zone?.name ?? 'N/A',
-        _formatDate(bay.createdAt.toDate()),
-      ]);
-    }
-
-    await _exportCsv(rows, 'bays_report');
-  }
-
-  Future<void> _generateSubstationsReport() async {
-    final substationIds = await _getFilteredSubstationIds();
+    List<String> substationIds = await _getSubstationIds();
     if (substationIds.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
-        'No substations found for the selected scope.',
+        'No substations found for the selected criteria.',
         isError: true,
       );
       return;
     }
 
-    final hierarchyData = await _fetchHierarchyDataForSubstations(
-      substationIds,
-    );
-    final substations = hierarchyData['substations']?.values.toList() ?? [];
+    for (int i = 0; i < substationIds.length; i += 10) {
+      final chunk = substationIds.sublist(
+        i,
+        i + 10 > substationIds.length ? substationIds.length : i + 10,
+      );
 
-    List<String> headers = [
+      final baysSnapshot = await FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', whereIn: chunk)
+          .get();
+
+      final bays = baysSnapshot.docs
+          .map((doc) => Bay.fromFirestore(doc))
+          .toList();
+
+      if (_selectedVoltageLevels.isNotEmpty) {
+        bays.retainWhere(
+          (bay) => _selectedVoltageLevels.contains(bay.voltageLevel),
+        );
+      }
+
+      if (bays.isNotEmpty) {
+        final bayIds = bays.map((bay) => bay.id).toList();
+
+        for (int j = 0; j < bayIds.length; j += 10) {
+          final bayChunk = bayIds.sublist(
+            j,
+            j + 10 > bayIds.length ? bayIds.length : j + 10,
+          );
+
+          Query equipmentQuery = FirebaseFirestore.instance
+              .collection('equipmentInstances')
+              .where('bayId', whereIn: bayChunk);
+
+          if (_selectedEquipmentTypes.isNotEmpty) {
+            final equipmentTypeNames = _selectedEquipmentTypes
+                .map((template) => template.equipmentType)
+                .toList();
+            equipmentQuery = equipmentQuery.where(
+              'equipmentTypeName',
+              whereIn: equipmentTypeNames,
+            );
+          }
+
+          if (_startDate != null) {
+            equipmentQuery = equipmentQuery.where(
+              'createdAt',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(_startDate!),
+            );
+          }
+
+          if (_endDate != null) {
+            equipmentQuery = equipmentQuery.where(
+              'createdAt',
+              isLessThanOrEqualTo: Timestamp.fromDate(_endDate!),
+            );
+          }
+
+          final equipmentSnapshot = await equipmentQuery.get();
+          final equipment = equipmentSnapshot.docs
+              .map((doc) => EquipmentInstance.fromFirestore(doc))
+              .toList();
+
+          for (final eq in equipment) {
+            final bay = bays.firstWhere((b) => b.id == eq.bayId);
+            final substationInfo = await _getSubstationHierarchyInfo(
+              bay.substationId,
+            );
+
+            rows.add([
+              eq.id,
+              eq.equipmentTypeName,
+              bay.name,
+              bay.bayType,
+              bay.voltageLevel,
+              substationInfo['substationName'],
+              substationInfo['subdivisionName'],
+              substationInfo['divisionName'],
+              substationInfo['circleName'],
+              substationInfo['zoneName'],
+              eq.status,
+              eq.createdAt?.toDate().toString() ?? 'N/A',
+            ]);
+          }
+        }
+      }
+    }
+
+    await _saveAndShareCsv(rows, 'equipment_report');
+  }
+
+  Future<void> _generateBaysReport() async {
+    List<List<dynamic>> rows = [];
+
+    rows.add([
+      'Bay ID',
+      'Bay Name',
+      'Bay Type',
+      'Voltage Level',
+      'Substation',
+      'Subdivision',
+      'Division',
+      'Circle',
+      'Zone',
+      'Equipment Count',
+      'Multiplying Factor',
+      'Created At',
+    ]);
+
+    List<String> substationIds = await _getSubstationIds();
+    if (substationIds.isEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'No substations found for the selected criteria.',
+        isError: true,
+      );
+      return;
+    }
+
+    for (int i = 0; i < substationIds.length; i += 10) {
+      final chunk = substationIds.sublist(
+        i,
+        i + 10 > substationIds.length ? substationIds.length : i + 10,
+      );
+
+      Query baysQuery = FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', whereIn: chunk);
+
+      final baysSnapshot = await baysQuery.get();
+      final bays = baysSnapshot.docs
+          .map((doc) => Bay.fromFirestore(doc))
+          .toList();
+
+      if (_selectedVoltageLevels.isNotEmpty) {
+        bays.retainWhere(
+          (bay) => _selectedVoltageLevels.contains(bay.voltageLevel),
+        );
+      }
+
+      for (final bay in bays) {
+        final equipmentSnapshot = await FirebaseFirestore.instance
+            .collection('equipmentInstances')
+            .where('bayId', isEqualTo: bay.id)
+            .get();
+
+        final substationInfo = await _getSubstationHierarchyInfo(
+          bay.substationId,
+        );
+
+        rows.add([
+          bay.id,
+          bay.name,
+          bay.bayType,
+          bay.voltageLevel,
+          substationInfo['substationName'],
+          substationInfo['subdivisionName'],
+          substationInfo['divisionName'],
+          substationInfo['circleName'],
+          substationInfo['zoneName'],
+          equipmentSnapshot.docs.length,
+          bay.multiplyingFactor?.toString() ?? 'N/A',
+          bay.createdAt?.toDate().toString() ?? 'N/A',
+        ]);
+      }
+    }
+
+    await _saveAndShareCsv(rows, 'bays_report');
+  }
+
+  Future<void> _generateSubstationsReport() async {
+    List<List<dynamic>> rows = [];
+
+    rows.add([
       'Substation ID',
       'Substation Name',
       'Voltage Level',
-      'Type',
-      'Operation',
       'Subdivision',
       'Division',
       'Circle',
       'Zone',
+      'Bay Count',
+      'Equipment Count',
       'Created At',
-    ];
-    List<List<dynamic>> rows = [headers];
+    ]);
 
-    for (var substation in substations) {
-      final subdivision =
-          hierarchyData['subdivisions']?[substation.subdivisionId];
-      final division = hierarchyData['divisions']?[subdivision?.divisionId];
-      final circle = hierarchyData['circles']?[division?.circleId];
-      final zone = hierarchyData['zones']?[circle?.zoneId];
-
-      rows.add([
-        substation.id,
-        '${substation.voltageLevel} Substation ${substation.name}', // Apply new naming convention
-        substation.voltageLevel,
-        substation.type,
-        substation.operation,
-        subdivision?.name ?? 'N/A',
-        division?.name ?? 'N/A',
-        circle?.name ?? 'N/A',
-        zone?.name ?? 'N/A',
-        _formatDate(substation.createdAt.toDate()),
-      ]);
-    }
-
-    await _exportCsv(rows, 'substations_report');
-  }
-
-  /// Recursively fetches all substation IDs under a given hierarchy node.
-  Future<List<String>> _getAllSubstationIds(
-    String parentCollection,
-    List<String> parentIds,
-  ) async {
-    if (parentIds.isEmpty) return [];
-
-    const hierarchy = {
-      'zones': {'child': 'circles', 'key': 'zoneId'},
-      'circles': {'child': 'divisions', 'key': 'circleId'},
-      'divisions': {'child': 'subdivisions', 'key': 'divisionId'},
-      'subdivisions': {'child': 'substations', 'key': 'subdivisionId'},
-    };
-
-    if (!hierarchy.containsKey(parentCollection)) {
-      return parentCollection == 'substations' ? parentIds : [];
-    }
-
-    final childInfo = hierarchy[parentCollection]!;
-    final snapshot = await FirebaseFirestore.instance
-        .collection(childInfo['child']!)
-        .where(childInfo['key']!, whereIn: parentIds)
-        .get();
-
-    final childIds = snapshot.docs.map((doc) => doc.id).toList();
-    if (childIds.isEmpty) return [];
-
-    return _getAllSubstationIds(childInfo['child']!, childIds);
-  }
-
-  /// Fetches all Bay documents that match the hierarchy and voltage level filters.
-  Future<Map<String, Bay>> _getFilteredBays() async {
-    List<String> substationIds = await _getFilteredSubstationIds();
-    if (substationIds.isEmpty) return {};
-
-    // Fetch bays belonging to the determined substations
-    Query baysQuery = FirebaseFirestore.instance
-        .collection('bays')
-        .where('substationId', whereIn: substationIds);
-
-    // Apply voltage level filter if selected
-    if (_selectedVoltageLevels.isNotEmpty) {
-      baysQuery = baysQuery.where(
-        'voltageLevel',
-        whereIn: _selectedVoltageLevels,
+    List<String> substationIds = await _getSubstationIds();
+    if (substationIds.isEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'No substations found for the selected criteria.',
+        isError: true,
       );
+      return;
     }
 
-    final baysSnapshot = await baysQuery.get();
-    final Map<String, Bay> bayMap = {
-      for (var doc in baysSnapshot.docs) doc.id: Bay.fromFirestore(doc),
-    };
-    return bayMap;
-  }
+    for (final substationId in substationIds) {
+      final substationDoc = await FirebaseFirestore.instance
+          .collection('substations')
+          .doc(substationId)
+          .get();
 
-  /// Fetches equipment instances based on bay IDs and equipment type/date filters.
-  Future<List<EquipmentInstance>> _fetchEquipmentInstances(
-    List<String> bayIds,
-  ) async {
-    List<EquipmentInstance> instances = [];
-    List<String> templateIds = _selectedEquipmentTypes
-        .map((t) => t.id!)
-        .toList();
+      if (substationDoc.exists) {
+        final substation = Substation.fromFirestore(substationDoc);
 
-    // Firestore `whereIn` queries are limited to 30 elements. Chunk the bayIds.
-    for (int i = 0; i < bayIds.length; i += 30) {
-      final chunk = bayIds.sublist(
-        i,
-        i + 30 > bayIds.length ? bayIds.length : i + 30,
-      );
-      if (chunk.isEmpty) continue;
+        final baysSnapshot = await FirebaseFirestore.instance
+            .collection('bays')
+            .where('substationId', isEqualTo: substationId)
+            .get();
 
-      Query query = FirebaseFirestore.instance
-          .collection('equipmentInstances')
-          .where('bayId', whereIn: chunk);
+        final equipmentSnapshot = await FirebaseFirestore.instance
+            .collection('equipmentInstances')
+            .where(
+              'bayId',
+              whereIn: baysSnapshot.docs.map((doc) => doc.id).toList(),
+            )
+            .get();
 
-      // Apply equipment type filter
-      if (templateIds.isNotEmpty) {
-        query = query.where('templateId', whereIn: templateIds);
+        final substationInfo = await _getSubstationHierarchyInfo(substationId);
+
+        rows.add([
+          substation.id,
+          substation.name,
+          substation.voltageLevel,
+          substationInfo['subdivisionName'],
+          substationInfo['divisionName'],
+          substationInfo['circleName'],
+          substationInfo['zoneName'],
+          baysSnapshot.docs.length,
+          equipmentSnapshot.docs.length,
+          substation.createdAt?.toDate().toString() ?? 'N/A',
+        ]);
       }
-      // Apply date range filter
-      if (_startDate != null) {
-        query = query.where(
-          'createdAt',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(_startDate!),
-        );
-      }
-      if (_endDate != null) {
-        final endOfDay = DateTime(
-          _endDate!.year,
-          _endDate!.month,
-          _endDate!.day,
-          23,
-          59,
-          59,
-        );
-        query = query.where(
-          'createdAt',
-          isLessThanOrEqualTo: Timestamp.fromDate(endOfDay),
-        );
-      }
-
-      final snapshot = await query.get();
-      instances.addAll(
-        snapshot.docs.map((doc) => EquipmentInstance.fromFirestore(doc)),
-      );
-    }
-    return instances;
-  }
-
-  /// Fetches all necessary Zone, Circle, Division, and Substation documents for CSV enrichment.
-  Future<Map<String, dynamic>> _fetchHierarchyData(List<Bay> bays) async {
-    final substationIds = bays.map((b) => b.substationId).toSet().toList();
-    return _fetchHierarchyDataForSubstations(substationIds);
-  }
-
-  /// Fetches hierarchy data starting from a list of substation IDs.
-  Future<Map<String, dynamic>> _fetchHierarchyDataForSubstations(
-    List<String> substationIds,
-  ) async {
-    if (substationIds.isEmpty) return {};
-
-    final substations = await FirebaseFirestore.instance
-        .collection('substations')
-        .where(FieldPath.documentId, whereIn: substationIds)
-        .get();
-    final Map<String, Substation> substationMap = {
-      for (var doc in substations.docs) doc.id: Substation.fromFirestore(doc),
-    };
-
-    final subdivisionIds = substationMap.values
-        .map((s) => s.subdivisionId)
-        .toSet()
-        .toList();
-    if (subdivisionIds.isEmpty) return {'substations': substationMap};
-
-    final subdivisions = await FirebaseFirestore.instance
-        .collection('subdivisions')
-        .where(FieldPath.documentId, whereIn: subdivisionIds)
-        .get();
-    final Map<String, Subdivision> subdivisionMap = {
-      for (var doc in subdivisions.docs) doc.id: Subdivision.fromFirestore(doc),
-    };
-
-    final divisionIds = subdivisionMap.values
-        .map((s) => s.divisionId)
-        .toSet()
-        .toList();
-    if (divisionIds.isEmpty)
-      return {'substations': substationMap, 'subdivisions': subdivisionMap};
-
-    final divisions = await FirebaseFirestore.instance
-        .collection('divisions')
-        .where(FieldPath.documentId, whereIn: divisionIds)
-        .get();
-    final Map<String, Division> divisionMap = {
-      for (var doc in divisions.docs) doc.id: Division.fromFirestore(doc),
-    };
-
-    final circleIds = divisionMap.values
-        .map((d) => d.circleId)
-        .toSet()
-        .toList();
-    if (circleIds.isEmpty)
-      return {
-        'substations': substationMap,
-        'subdivisions': subdivisionMap,
-        'divisions': divisionMap,
-      };
-
-    final circles = await FirebaseFirestore.instance
-        .collection('circles')
-        .where(FieldPath.documentId, whereIn: circleIds)
-        .get();
-    final Map<String, Circle> circleMap = {
-      for (var doc in circles.docs) doc.id: Circle.fromFirestore(doc),
-    };
-
-    final zoneIds = circleMap.values.map((c) => c.zoneId).toSet().toList();
-    if (zoneIds.isEmpty)
-      return {
-        'substations': substationMap,
-        'subdivisions': subdivisionMap,
-        'divisions': divisionMap,
-        'circles': circleMap,
-      };
-
-    final zones = await FirebaseFirestore.instance
-        .collection('zones')
-        .where(FieldPath.documentId, whereIn: zoneIds)
-        .get();
-    final Map<String, Zone> zoneMap = {
-      for (var doc in zones.docs) doc.id: Zone.fromFirestore(doc),
-    };
-
-    return {
-      'zones': zoneMap,
-      'circles': circleMap,
-      'divisions': divisionMap,
-      'subdivisions': subdivisionMap,
-      'substations': substationMap,
-    };
-  }
-
-  /// Takes the final equipment data and converts it into a shareable CSV file.
-  Future<void> _createAndShareCsv(
-    List<EquipmentInstance> instances,
-    Map<String, Bay> bayMap,
-    Map<String, dynamic> hierarchyData,
-  ) async {
-    // Dynamically generate headers
-    Set<String> customFieldHeaders = {};
-    for (var eq in instances) {
-      final flattened = <String, dynamic>{};
-      _flattenCustomFields(eq.customFieldValues, '', flattened);
-      customFieldHeaders.addAll(flattened.keys);
-    }
-    final sortedCustomHeaders = customFieldHeaders.toList()..sort();
-
-    List<String> headers = [
-      'Equipment ID',
-      'Equipment Type',
-      'Status',
-      'Zone',
-      'Circle',
-      'Division',
-      'Subdivision',
-      'Substation',
-      'Bay Name',
-      'Bay Voltage',
-      'Created At',
-      ...sortedCustomHeaders,
-    ];
-
-    List<List<dynamic>> rows = [headers];
-
-    // Populate rows
-    for (var eq in instances) {
-      final bay = bayMap[eq.bayId];
-      if (bay == null) continue;
-
-      final substation = hierarchyData['substations']?[bay.substationId];
-      final subdivision =
-          hierarchyData['subdivisions']?[substation?.subdivisionId];
-      final division = hierarchyData['divisions']?[subdivision?.divisionId];
-      final circle = hierarchyData['circles']?[division?.circleId];
-      final zone = hierarchyData['zones']?[circle?.zoneId];
-
-      final flattened = <String, dynamic>{};
-      _flattenCustomFields(eq.customFieldValues, '', flattened);
-
-      List<dynamic> row = [
-        eq.id, eq.equipmentTypeName, eq.status,
-        zone?.name ?? 'N/A',
-        circle?.name ?? 'N/A',
-        division?.name ?? 'N/A',
-        subdivision?.name ?? 'N/A',
-        substation != null
-            ? '${substation.voltageLevel} Substation ${substation.name}'
-            : 'N/A', // Apply new naming convention
-        bay.name,
-        bay.voltageLevel,
-        _formatDate(eq.createdAt.toDate()),
-      ];
-
-      for (var header in sortedCustomHeaders) {
-        row.add(flattened[header] ?? '');
-      }
-      rows.add(row);
     }
 
-    await _exportCsv(rows, 'equipment_report');
+    await _saveAndShareCsv(rows, 'substations_report');
   }
 
-  Future<void> _exportCsv(List<List<dynamic>> rows, String reportName) async {
-    String csv = const ListToCsvConverter().convert(rows);
-    final directory = await getTemporaryDirectory();
-    final path =
-        '${directory.path}/${reportName}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv';
-    final file = File(path);
-    await file.writeAsString(csv);
-
-    if (mounted) {
-      Share.shareXFiles([XFile(path)], text: 'Exported Master Data');
-    }
-  }
-
-  Future<List<String>> _getFilteredSubstationIds() async {
+  Future<List<String>> _getSubstationIds() async {
     if (_selectedSubstation != null) {
       return [_selectedSubstation!.id];
-    } else if (_selectedSubdivision != null) {
-      return await _getAllSubstationIds('subdivisions', [
-        _selectedSubdivision!.id,
-      ]);
+    }
+
+    String? parentId;
+    String? parentField;
+
+    if (_selectedSubdivision != null) {
+      parentId = _selectedSubdivision!.id;
+      parentField = 'subdivisionId';
     } else if (_selectedDivision != null) {
-      return await _getAllSubstationIds('divisions', [_selectedDivision!.id]);
-    } else if (_selectedCircle != null) {
-      return await _getAllSubstationIds('circles', [_selectedCircle!.id]);
-    } else if (_selectedZone != null) {
-      return await _getAllSubstationIds('zones', [_selectedZone!.id]);
-    } else {
-      final allSubstations = await FirebaseFirestore.instance
-          .collection('substations')
+      final subdivisionsSnapshot = await FirebaseFirestore.instance
+          .collection('subdivisions')
+          .where('divisionId', isEqualTo: _selectedDivision!.id)
           .get();
-      return allSubstations.docs.map((doc) => doc.id).toList();
+
+      if (subdivisionsSnapshot.docs.isEmpty) return [];
+
+      final subdivisionIds = subdivisionsSnapshot.docs
+          .map((doc) => doc.id)
+          .toList();
+
+      final substationsSnapshot = await FirebaseFirestore.instance
+          .collection('substations')
+          .where('subdivisionId', whereIn: subdivisionIds)
+          .get();
+
+      return substationsSnapshot.docs.map((doc) => doc.id).toList();
+    } else if (_selectedCircle != null) {
+      final divisionsSnapshot = await FirebaseFirestore.instance
+          .collection('divisions')
+          .where('circleId', isEqualTo: _selectedCircle!.id)
+          .get();
+
+      if (divisionsSnapshot.docs.isEmpty) return [];
+
+      final divisionIds = divisionsSnapshot.docs.map((doc) => doc.id).toList();
+
+      List<String> subdivisionIds = [];
+      for (int i = 0; i < divisionIds.length; i += 10) {
+        final chunk = divisionIds.sublist(
+          i,
+          i + 10 > divisionIds.length ? divisionIds.length : i + 10,
+        );
+
+        final subdivisionsSnapshot = await FirebaseFirestore.instance
+            .collection('subdivisions')
+            .where('divisionId', whereIn: chunk)
+            .get();
+
+        subdivisionIds.addAll(subdivisionsSnapshot.docs.map((doc) => doc.id));
+      }
+
+      if (subdivisionIds.isEmpty) return [];
+
+      List<String> substationIds = [];
+      for (int i = 0; i < subdivisionIds.length; i += 10) {
+        final chunk = subdivisionIds.sublist(
+          i,
+          i + 10 > subdivisionIds.length ? subdivisionIds.length : i + 10,
+        );
+
+        final substationsSnapshot = await FirebaseFirestore.instance
+            .collection('substations')
+            .where('subdivisionId', whereIn: chunk)
+            .get();
+
+        substationIds.addAll(substationsSnapshot.docs.map((doc) => doc.id));
+      }
+
+      return substationIds;
+    }
+
+    if (parentId != null && parentField != null) {
+      final substationsSnapshot = await FirebaseFirestore.instance
+          .collection('substations')
+          .where(parentField, isEqualTo: parentId)
+          .get();
+
+      return substationsSnapshot.docs.map((doc) => doc.id).toList();
+    }
+
+    return [];
+  }
+
+  Future<Map<String, String>> _getSubstationHierarchyInfo(
+    String substationId,
+  ) async {
+    try {
+      final substationDoc = await FirebaseFirestore.instance
+          .collection('substations')
+          .doc(substationId)
+          .get();
+
+      if (!substationDoc.exists) {
+        return {
+          'substationName': 'Unknown',
+          'subdivisionName': 'Unknown',
+          'divisionName': 'Unknown',
+          'circleName': 'Unknown',
+          'zoneName': 'Unknown',
+        };
+      }
+
+      final substation = Substation.fromFirestore(substationDoc);
+      Map<String, String> info = {
+        'substationName': substation.name,
+        'subdivisionName': 'Unknown',
+        'divisionName': 'Unknown',
+        'circleName': 'Unknown',
+        'zoneName': 'Unknown',
+      };
+
+      if (substation.subdivisionId != null) {
+        final subdivisionDoc = await FirebaseFirestore.instance
+            .collection('subdivisions')
+            .doc(substation.subdivisionId!)
+            .get();
+
+        if (subdivisionDoc.exists) {
+          final subdivision = Subdivision.fromFirestore(subdivisionDoc);
+          info['subdivisionName'] = subdivision.name;
+
+          if (subdivision.divisionId != null) {
+            final divisionDoc = await FirebaseFirestore.instance
+                .collection('divisions')
+                .doc(subdivision.divisionId!)
+                .get();
+
+            if (divisionDoc.exists) {
+              final division = Division.fromFirestore(divisionDoc);
+              info['divisionName'] = division.name;
+
+              if (division.circleId != null) {
+                final circleDoc = await FirebaseFirestore.instance
+                    .collection('circles')
+                    .doc(division.circleId!)
+                    .get();
+
+                if (circleDoc.exists) {
+                  final circle = Circle.fromFirestore(circleDoc);
+                  info['circleName'] = circle.name;
+
+                  if (circle.zoneId != null) {
+                    final zoneDoc = await FirebaseFirestore.instance
+                        .collection('zones')
+                        .doc(circle.zoneId!)
+                        .get();
+
+                    if (zoneDoc.exists) {
+                      final zone = Zone.fromFirestore(zoneDoc);
+                      info['zoneName'] = zone.name;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return info;
+    } catch (e) {
+      print("Error getting substation hierarchy info: $e");
+      return {
+        'substationName': 'Error',
+        'subdivisionName': 'Error',
+        'divisionName': 'Error',
+        'circleName': 'Error',
+        'zoneName': 'Error',
+      };
     }
   }
 
-  /// Flattens nested maps from custom fields into a single-level map for CSV.
-  void _flattenCustomFields(
-    Map<String, dynamic> customFields,
-    String prefix,
-    Map<String, dynamic> flattened,
-  ) {
-    customFields.forEach((key, value) {
-      final newKey = prefix.isEmpty ? key : '${prefix}_$key';
-      if (value is Map<String, dynamic>) {
-        if (value.containsKey('value') &&
-            value.containsKey('description_remarks')) {
-          flattened['${newKey}_value'] = value['value'];
-          flattened['${newKey}_remarks'] = value['description_remarks'];
-        } else {
-          _flattenCustomFields(value, newKey, flattened);
-        }
-      } else if (value is Timestamp) {
-        flattened[newKey] = DateFormat(
-          'yyyy-MM-dd HH:mm',
-        ).format(value.toDate());
-      } else {
-        flattened[newKey] = value;
+  Future<void> _saveAndShareCsv(
+    List<List<dynamic>> rows,
+    String fileName,
+  ) async {
+    if (rows.length <= 1) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'No data available to export.',
+        isError: true,
+      );
+      return;
+    }
+
+    try {
+      String csv = const ListToCsvConverter().convert(rows);
+
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final file = File('${directory.path}/${fileName}_$timestamp.csv');
+
+      await file.writeAsString(csv);
+
+      await Share.shareXFiles([XFile(file.path)], text: 'Master Data Export');
+
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Report generated successfully! ${rows.length - 1} records exported.',
+          isError: false,
+        );
       }
-    });
+    } catch (e) {
+      print("Error saving CSV: $e");
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to generate CSV file: $e',
+          isError: true,
+        );
+      }
+    }
   }
-
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'N/A';
-    return DateFormat('yyyy-MM-dd').format(date);
-  }
-
-  // --- UI WIDGETS ---
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Export Master Data')),
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: _buildAppBar(theme),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? _buildLoadingState(theme)
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Select Data to Export',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildDataTypeSelector(),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Select Export Scope',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildHierarchySelectors(),
-                  const SizedBox(height: 24),
+                  _buildHeaderSection(theme),
+                  const SizedBox(height: 20),
+                  _buildDataTypeSelector(theme),
+                  const SizedBox(height: 20),
+                  _buildHierarchySelectors(theme),
+                  const SizedBox(height: 20),
                   if (_selectedDataType == ExportDataType.equipment) ...[
-                    Text(
-                      'Apply Filters (Optional)',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildFilterSelectors(),
+                    _buildFilterSelectors(theme),
+                    const SizedBox(height: 20),
                   ],
-                  const SizedBox(height: 32),
-                  _buildGenerateButton(),
+                  _buildGenerateButton(theme),
                 ],
               ),
             ),
     );
   }
 
-  Widget _buildDataTypeSelector() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: DropdownButtonFormField<ExportDataType>(
-          value: _selectedDataType,
-          decoration: _decoratorProps(
-            "Data Type",
-            Icons.source,
-          ).dropdownSearchDecoration,
-          items: ExportDataType.values.map((type) {
-            return DropdownMenuItem(
-              value: type,
-              child: Text(type.name[0].toUpperCase() + type.name.substring(1)),
-            );
-          }).toList(),
-          onChanged: (ExportDataType? newValue) {
-            if (newValue != null) {
-              setState(() => _selectedDataType = newValue);
-            }
-          },
+  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      title: Text(
+        'Export Master Data',
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface,
         ),
+      ),
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+        onPressed: () => Navigator.of(context).pop(),
       ),
     );
   }
 
-  Widget _buildHierarchySelectors() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Zone
-            DropdownSearch<Zone>(
-              popupProps: _popupProps("Search Zone"),
-              dropdownDecoratorProps: _decoratorProps("Zone", Icons.public),
-              asyncItems: (filter) =>
-                  _fetchHierarchyItems<Zone>('zones', filter: filter),
-              itemAsString: (Zone z) => z.name,
-              onChanged: (Zone? data) => setState(() {
-                _selectedZone = data;
+  Widget _buildLoadingState(ThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 60,
+            height: 60,
+            child: CircularProgressIndicator(
+              strokeWidth: 4,
+              valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Loading Export Options',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderSection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.green, Colors.green.withOpacity(0.7)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.download, color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Export Master Data',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Generate comprehensive CSV reports of your assets',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataTypeSelector(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Select Data to Export',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<ExportDataType>(
+            value: _selectedDataType,
+            decoration: InputDecoration(
+              labelText: 'Data Type',
+              prefixIcon: const Icon(Icons.source),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              filled: true,
+              fillColor: Colors.grey.shade50,
+            ),
+            items: ExportDataType.values.map((type) {
+              String displayName =
+                  type.name[0].toUpperCase() + type.name.substring(1);
+              return DropdownMenuItem(
+                value: type,
+                child: Text(displayName, style: const TextStyle(fontSize: 14)),
+              );
+            }).toList(),
+            onChanged: (ExportDataType? newValue) {
+              if (newValue != null) {
+                setState(() => _selectedDataType = newValue);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHierarchySelectors(ThemeData theme) {
+    final startingLevel = _getStartingHierarchyLevel();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Select Export Scope',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          if (['state'].contains(startingLevel)) ...[
+            _buildHierarchyDropdown<AppScreenState>(
+              collection: 'appScreenStates',
+              label: 'State',
+              icon: Icons.flag,
+              selectedItem: _selectedState,
+              itemAsString: (state) => state.name,
+              onChanged: (state) => setState(() {
+                _selectedState = state;
+                _selectedCompany = null;
+                _selectedZone = null;
                 _selectedCircle = null;
                 _selectedDivision = null;
                 _selectedSubdivision = null;
                 _selectedSubstation = null;
               }),
-              selectedItem: _selectedZone,
+              fromFirestore: (doc) => AppScreenState.fromFirestore(doc),
             ),
             const SizedBox(height: 16),
-            // Circle
-            DropdownSearch<Circle>(
-              popupProps: _popupProps("Search Circle"),
-              dropdownDecoratorProps: _decoratorProps(
-                "Circle",
-                Icons.circle_outlined,
-              ),
-              asyncItems: (filter) => _fetchHierarchyItems<Circle>(
-                'circles',
-                parentId: _selectedZone?.id,
-                parentField: 'zoneId',
-                filter: filter,
-              ),
-              itemAsString: (Circle c) => c.name,
-              onChanged: (Circle? data) => setState(() {
-                _selectedCircle = data;
+          ],
+
+          if (['state', 'company'].contains(startingLevel) ||
+              _selectedState != null) ...[
+            _buildHierarchyDropdown<Company>(
+              collection: 'companies',
+              label: 'Company',
+              icon: Icons.business,
+              selectedItem: _selectedCompany,
+              itemAsString: (company) => company.name,
+              parentId: startingLevel == 'company'
+                  ? _getUserAssignedId()
+                  : _selectedState?.id,
+              parentField: 'stateId',
+              onChanged: (company) => setState(() {
+                _selectedCompany = company;
+                _selectedZone = null;
+                _selectedCircle = null;
                 _selectedDivision = null;
                 _selectedSubdivision = null;
                 _selectedSubstation = null;
               }),
-              selectedItem: _selectedCircle,
-              enabled: _selectedZone != null,
+              fromFirestore: (doc) => Company.fromFirestore(doc),
+              enabled: startingLevel == 'company' || _selectedState != null,
             ),
             const SizedBox(height: 16),
-            // Division
-            DropdownSearch<Division>(
-              popupProps: _popupProps("Search Division"),
-              dropdownDecoratorProps: _decoratorProps(
-                "Division",
-                Icons.business,
-              ),
-              asyncItems: (filter) => _fetchHierarchyItems<Division>(
-                'divisions',
-                parentId: _selectedCircle?.id,
-                parentField: 'circleId',
-                filter: filter,
-              ),
-              itemAsString: (Division d) => d.name,
-              onChanged: (Division? data) => setState(() {
-                _selectedDivision = data;
+          ],
+
+          if (['state', 'company', 'zone'].contains(startingLevel) ||
+              _selectedCompany != null) ...[
+            _buildHierarchyDropdown<Zone>(
+              collection: 'zones',
+              label: 'Zone',
+              icon: Icons.public,
+              selectedItem: _selectedZone,
+              itemAsString: (zone) => zone.name,
+              parentId: startingLevel == 'zone'
+                  ? _getUserAssignedId()
+                  : _selectedCompany?.id,
+              parentField: 'companyId',
+              onChanged: (zone) => setState(() {
+                _selectedZone = zone;
+                _selectedCircle = null;
+                _selectedDivision = null;
                 _selectedSubdivision = null;
                 _selectedSubstation = null;
               }),
-              selectedItem: _selectedDivision,
-              enabled: _selectedCircle != null,
+              fromFirestore: (doc) => Zone.fromFirestore(doc),
+              enabled: startingLevel == 'zone' || _selectedCompany != null,
             ),
             const SizedBox(height: 16),
-            // Subdivision
-            DropdownSearch<Subdivision>(
-              popupProps: _popupProps("Search Subdivision"),
-              dropdownDecoratorProps: _decoratorProps(
-                "Subdivision",
-                Icons.apartment,
-              ),
-              asyncItems: (filter) => _fetchHierarchyItems<Subdivision>(
-                'subdivisions',
-                parentId: _selectedDivision?.id,
-                parentField: 'divisionId',
-                filter: filter,
-              ),
-              itemAsString: (Subdivision s) => s.name,
-              onChanged: (Subdivision? data) => setState(() {
-                _selectedSubdivision = data;
+          ],
+
+          if (['zone', 'circle'].contains(startingLevel) ||
+              _selectedZone != null) ...[
+            _buildHierarchyDropdown<Circle>(
+              collection: 'circles',
+              label: 'Circle',
+              icon: Icons.circle_outlined,
+              selectedItem: _selectedCircle,
+              itemAsString: (circle) => circle.name,
+              parentId: startingLevel == 'circle'
+                  ? _getUserAssignedId()
+                  : _selectedZone?.id,
+              parentField: 'zoneId',
+              onChanged: (circle) => setState(() {
+                _selectedCircle = circle;
+                _selectedDivision = null;
+                _selectedSubdivision = null;
                 _selectedSubstation = null;
               }),
+              fromFirestore: (doc) => Circle.fromFirestore(doc),
+              enabled: startingLevel == 'circle' || _selectedZone != null,
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          if (['circle', 'division'].contains(startingLevel) ||
+              _selectedCircle != null) ...[
+            _buildHierarchyDropdown<Division>(
+              collection: 'divisions',
+              label: 'Division',
+              icon: Icons.business,
+              selectedItem: _selectedDivision,
+              itemAsString: (division) => division.name,
+              parentId: startingLevel == 'division'
+                  ? _getUserAssignedId()
+                  : _selectedCircle?.id,
+              parentField: 'circleId',
+              onChanged: (division) => setState(() {
+                _selectedDivision = division;
+                _selectedSubdivision = null;
+                _selectedSubstation = null;
+              }),
+              fromFirestore: (doc) => Division.fromFirestore(doc),
+              enabled: startingLevel == 'division' || _selectedCircle != null,
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          if (['division', 'subdivision'].contains(startingLevel) ||
+              _selectedDivision != null) ...[
+            _buildHierarchyDropdown<Subdivision>(
+              collection: 'subdivisions',
+              label: 'Subdivision',
+              icon: Icons.apartment,
               selectedItem: _selectedSubdivision,
-              enabled: _selectedDivision != null,
+              itemAsString: (subdivision) => subdivision.name,
+              parentId: startingLevel == 'subdivision'
+                  ? _getUserAssignedId()
+                  : _selectedDivision?.id,
+              parentField: 'divisionId',
+              onChanged: (subdivision) => setState(() {
+                _selectedSubdivision = subdivision;
+                _selectedSubstation = null;
+              }),
+              fromFirestore: (doc) => Subdivision.fromFirestore(doc),
+              enabled:
+                  startingLevel == 'subdivision' || _selectedDivision != null,
             ),
             const SizedBox(height: 16),
-            // Substation
-            DropdownSearch<Substation>(
-              popupProps: _popupProps("Search Substation"),
-              dropdownDecoratorProps: _decoratorProps(
-                "Substation",
-                Icons.electrical_services,
-              ),
-              asyncItems: (filter) => _fetchHierarchyItems<Substation>(
-                'substations',
-                parentId: _selectedSubdivision?.id,
-                parentField: 'subdivisionId',
-                filter: filter,
-              ),
-              itemAsString: (Substation s) => s.name,
-              onChanged: (Substation? data) =>
-                  setState(() => _selectedSubstation = data),
+          ],
+
+          if (['subdivision', 'substation'].contains(startingLevel) ||
+              _selectedSubdivision != null) ...[
+            _buildHierarchyDropdown<Substation>(
+              collection: 'substations',
+              label: 'Substation',
+              icon: Icons.electrical_services,
               selectedItem: _selectedSubstation,
-              enabled: _selectedSubdivision != null,
+              itemAsString: (substation) => substation.name,
+              parentId: startingLevel == 'substation'
+                  ? _getUserAssignedId()
+                  : _selectedSubdivision?.id,
+              parentField: 'subdivisionId',
+              onChanged: (substation) => setState(() {
+                _selectedSubstation = substation;
+              }),
+              fromFirestore: (doc) => Substation.fromFirestore(doc),
+              enabled:
+                  startingLevel == 'substation' || _selectedSubdivision != null,
             ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildFilterSelectors() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            DropdownSearch<MasterEquipmentTemplate>.multiSelection(
-              items: _allEquipmentTemplates,
-              popupProps: _popupPropsMulti("Search Equipment Types"),
-              dropdownDecoratorProps: _decoratorProps(
-                "Equipment Types",
-                Icons.construction,
-              ),
-              itemAsString: (MasterEquipmentTemplate t) => t.equipmentType,
-              onChanged: (List<MasterEquipmentTemplate> data) =>
-                  setState(() => _selectedEquipmentTypes = data),
-              selectedItems: _selectedEquipmentTypes,
-            ),
-            const SizedBox(height: 16),
-            DropdownSearch<String>.multiSelection(
-              items: _allVoltageLevels,
-              popupProps: _popupPropsMulti("Search Voltage Levels"),
-              dropdownDecoratorProps: _decoratorProps(
-                "Bay Voltage Levels",
-                Icons.flash_on,
-              ),
-              onChanged: (List<String> data) =>
-                  setState(() => _selectedVoltageLevels = data),
-              selectedItems: _selectedVoltageLevels,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ListTile(
-                    title: Text(
-                      _startDate == null
-                          ? 'Start Date'
-                          : 'Start: ${_formatDate(_startDate)}',
-                    ),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () => _selectDate(context, true),
-                  ),
-                ),
-                Expanded(
-                  child: ListTile(
-                    title: Text(
-                      _endDate == null
-                          ? 'End Date'
-                          : 'End: ${_formatDate(_endDate)}',
-                    ),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () => _selectDate(context, false),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGenerateButton() {
-    return Center(
-      child: _isGeneratingReport
-          ? const CircularProgressIndicator()
-          : ElevatedButton.icon(
-              onPressed: _generateAndShareReport,
-              icon: const Icon(Icons.download),
-              label: const Text('Generate & Share CSV'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 50),
-              ),
-            ),
-    );
-  }
-
-  /// Generic method to fetch items for hierarchy dropdowns.
-  Future<List<T>> _fetchHierarchyItems<T extends HierarchyItem>(
-    String collection, {
+  Widget _buildHierarchyDropdown<T extends HierarchyItem>({
+    required String collection,
+    required String label,
+    required IconData icon,
+    required T? selectedItem,
+    required String Function(T) itemAsString,
+    required void Function(T?) onChanged,
+    required T Function(DocumentSnapshot) fromFirestore,
     String? parentId,
     String? parentField,
+    bool enabled = true,
+  }) {
+    return DropdownSearch<T>(
+      popupProps: PopupProps.menu(
+        showSearchBox: true,
+        menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+        searchFieldProps: TextFieldProps(
+          decoration: InputDecoration(
+            labelText: 'Search $label',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+      ),
+      dropdownDecoratorProps: DropDownDecoratorProps(
+        dropdownSearchDecoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          filled: true,
+          fillColor: enabled ? Colors.grey.shade50 : Colors.grey.shade100,
+        ),
+      ),
+      asyncItems: (filter) => _fetchHierarchyItems<T>(
+        collection,
+        fromFirestore,
+        filter: filter,
+        parentId: parentId,
+        parentField: parentField,
+      ),
+      itemAsString: itemAsString,
+      onChanged: enabled ? onChanged : null,
+      selectedItem: selectedItem,
+      enabled: enabled,
+    );
+  }
+
+  Future<List<T>> _fetchHierarchyItems<T extends HierarchyItem>(
+    String collection,
+    T Function(DocumentSnapshot) fromFirestore, {
     required String filter,
+    String? parentId,
+    String? parentField,
   }) async {
-    Query query = FirebaseFirestore.instance.collection(collection);
-    if (parentId != null && parentField != null) {
-      query = query.where(parentField, isEqualTo: parentId);
+    try {
+      Query query = FirebaseFirestore.instance.collection(collection);
+
+      if (parentId != null && parentField != null) {
+        query = query.where(parentField, isEqualTo: parentId);
+      }
+
+      final snapshot = await query.orderBy('name').get();
+      return snapshot.docs
+          .map((doc) => fromFirestore(doc))
+          .where(
+            (item) => item.name.toLowerCase().contains(filter.toLowerCase()),
+          )
+          .toList();
+    } catch (e) {
+      print("Error fetching $collection: $e");
+      return [];
     }
-    final snapshot = await query.orderBy('name').get();
-
-    return snapshot.docs
-        .map((doc) {
-          switch (T) {
-            case Zone:
-              return Zone.fromFirestore(doc) as T;
-            case Circle:
-              return Circle.fromFirestore(doc) as T;
-            case Division:
-              return Division.fromFirestore(doc) as T;
-            case Subdivision:
-              return Subdivision.fromFirestore(doc) as T;
-            case Substation:
-              return Substation.fromFirestore(doc) as T;
-            default:
-              throw Exception("Unknown hierarchy type");
-          }
-        })
-        .where((item) => item.name.toLowerCase().contains(filter.toLowerCase()))
-        .toList();
   }
 
-  PopupProps<T> _popupProps<T>(String hintText) {
-    return PopupProps.menu(
-      showSearchBox: true,
-      menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
-      searchFieldProps: TextFieldProps(
-        decoration: InputDecoration(
-          labelText: hintText,
-          prefixIcon: const Icon(Icons.search),
-        ),
+  Widget _buildFilterSelectors(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Apply Filters (Optional)',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<MasterEquipmentTemplate>.multiSelection(
+            items: _allEquipmentTemplates,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+              searchFieldProps: TextFieldProps(
+                decoration: InputDecoration(
+                  labelText: 'Search Equipment Types',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Equipment Types',
+                prefixIcon: const Icon(Icons.construction),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            itemAsString: (template) => template.equipmentType,
+            onChanged: (data) => setState(() => _selectedEquipmentTypes = data),
+            selectedItems: _selectedEquipmentTypes,
+          ),
+          const SizedBox(height: 16),
+
+          DropdownSearch<String>.multiSelection(
+            items: _allVoltageLevels,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+              searchFieldProps: TextFieldProps(
+                decoration: InputDecoration(
+                  labelText: 'Search Voltage Levels',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Bay Voltage Levels',
+                prefixIcon: const Icon(Icons.flash_on),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedVoltageLevels = data),
+            selectedItems: _selectedVoltageLevels,
+          ),
+          const SizedBox(height: 16),
+
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectDate(context, true),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey.shade50,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 20,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _startDate == null
+                                ? 'Start Date'
+                                : 'Start: ${_formatDate(_startDate)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: _startDate == null
+                                  ? Colors.grey.shade600
+                                  : Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectDate(context, false),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey.shade50,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 20,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _endDate == null
+                                ? 'End Date'
+                                : 'End: ${_formatDate(_endDate)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: _endDate == null
+                                  ? Colors.grey.shade600
+                                  : Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  PopupPropsMultiSelection<T> _popupPropsMulti<T>(String hintText) {
-    return PopupPropsMultiSelection.menu(
-      showSearchBox: true,
-      menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
-      searchFieldProps: TextFieldProps(
-        decoration: InputDecoration(
-          labelText: hintText,
-          prefixIcon: const Icon(Icons.search),
+  Widget _buildGenerateButton(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton.icon(
+        onPressed: _isGeneratingReport ? null : _generateAndShareReport,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: theme.colorScheme.primary,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 0,
         ),
-      ),
-    );
-  }
-
-  DropDownDecoratorProps _decoratorProps(String label, IconData icon) {
-    return DropDownDecoratorProps(
-      dropdownSearchDecoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
+        icon: _isGeneratingReport
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.download, size: 20),
+        label: Text(
+          _isGeneratingReport ? 'Generating...' : 'Generate & Share CSV',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        ),
       ),
     );
   }
@@ -946,15 +1422,21 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
       context: context,
       initialDate: (isStart ? _startDate : _endDate) ?? DateTime.now(),
       firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      lastDate: DateTime.now(),
     );
     if (picked != null) {
       setState(() {
-        if (isStart)
+        if (isStart) {
           _startDate = picked;
-        else
+        } else {
           _endDate = picked;
+        }
       });
     }
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'N/A';
+    return DateFormat('yyyy-MM-dd').format(date);
   }
 }

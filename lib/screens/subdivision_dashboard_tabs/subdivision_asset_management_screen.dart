@@ -2,15 +2,16 @@
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:dropdown_search/dropdown_search.dart';
 import 'package:provider/provider.dart';
-
-import '../../../models/user_model.dart';
-import '../../../models/hierarchy_models.dart';
-import '../../../utils/snackbar_utils.dart';
+import '../../controllers/sld_controller.dart';
+import '../../models/app_state_data.dart';
+import '../../models/bay_model.dart';
+import '../../models/equipment_model.dart';
+import '../../models/hierarchy_models.dart';
+import '../../models/user_model.dart';
+import '../../utils/snackbar_utils.dart';
 import 'substation_detail_screen.dart';
 import '../export_master_data_screen.dart';
-import '../../controllers/sld_controller.dart';
 
 class SubdivisionAssetManagementScreen extends StatefulWidget {
   final String subdivisionId;
@@ -32,6 +33,10 @@ class _SubdivisionAssetManagementScreenState
     with TickerProviderStateMixin {
   bool _isLoading = true;
   List<Substation> _substationsInSubdivision = [];
+  Map<String, int> _bayTypeStats = {};
+  Map<String, int> _equipmentTypeStats = {};
+  int _totalBays = 0;
+  int _totalEquipment = 0;
   late AnimationController _animationController;
 
   @override
@@ -41,7 +46,7 @@ class _SubdivisionAssetManagementScreenState
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
-    _fetchSubstationsInSubdivision();
+    _fetchSubdivisionAssets();
   }
 
   @override
@@ -53,7 +58,6 @@ class _SubdivisionAssetManagementScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       body: _isLoading ? _buildLoadingState(theme) : _buildMainContent(theme),
@@ -90,17 +94,15 @@ class _SubdivisionAssetManagementScreenState
   Widget _buildMainContent(ThemeData theme) {
     return RefreshIndicator(
       color: theme.colorScheme.primary,
-      onRefresh: _fetchSubstationsInSubdivision,
+      onRefresh: _fetchSubdivisionAssets,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(16), // Reduced padding
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeaderSection(theme),
-            const SizedBox(height: 32),
-            _buildStatsCards(theme),
-            const SizedBox(height: 32),
+            _buildStatsSection(theme),
+            const SizedBox(height: 20), // Reduced spacing
             _buildActionCards(theme),
           ],
         ),
@@ -108,85 +110,169 @@ class _SubdivisionAssetManagementScreenState
     );
   }
 
-  Widget _buildHeaderSection(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.primary.withOpacity(0.7),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+  Widget _buildStatsSection(ThemeData theme) {
+    // If no data, don't show any stats
+    if (_totalBays == 0 && _totalEquipment == 0) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(Icons.info_outline, size: 40, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'No Assets Found',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
+                ),
               ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.business, color: Colors.white, size: 28),
+              const SizedBox(height: 4),
+              Text(
+                'No bays or equipment found in subdivision substations',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Asset Management',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Manage and monitor your electrical infrastructure assets',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade600,
-                    height: 1.3,
-                  ),
-                ),
-              ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Overview stats
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                theme: theme,
+                title: 'Total Substations',
+                value: '${_substationsInSubdivision.length}',
+                icon: Icons.electrical_services,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildStatCard(
+                theme: theme,
+                title: 'Total Bays',
+                value: '$_totalBays',
+                icon: Icons.settings,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildStatCard(
+                theme: theme,
+                title: 'Total Equipment',
+                value: '$_totalEquipment',
+                icon: Icons.construction,
+                color: Colors.orange,
+              ),
+            ),
+          ],
+        ),
+
+        if (_bayTypeStats.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Text(
+            'Bay Types',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
             ),
           ),
+          const SizedBox(height: 12),
+          _buildBayTypeStats(theme),
         ],
-      ),
+
+        if (_equipmentTypeStats.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Text(
+            'Equipment Types',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildEquipmentTypeStats(theme),
+        ],
+      ],
     );
   }
 
-  Widget _buildStatsCards(ThemeData theme) {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            theme: theme,
-            title: 'Total Substations',
-            value: '${_substationsInSubdivision.length}',
-            icon: Icons.electrical_services,
-            color: Colors.blue,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
-            theme: theme,
-            title: 'Active Assets',
-            value: '${_substationsInSubdivision.length * 8}', // Estimated
-            icon: Icons.settings,
-            color: Colors.green,
-          ),
-        ),
-      ],
+  Widget _buildBayTypeStats(ThemeData theme) {
+    final colors = [
+      Colors.purple,
+      Colors.teal,
+      Colors.indigo,
+      Colors.red,
+      Colors.amber,
+    ];
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: _bayTypeStats.entries.map((entry) {
+        final color =
+            colors[_bayTypeStats.keys.toList().indexOf(entry.key) %
+                colors.length];
+        return _buildStatCard(
+          theme: theme,
+          title: '${entry.key} Bays',
+          value: '${entry.value}',
+          icon: Icons.settings_input_component,
+          color: color,
+          isCompact: true,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildEquipmentTypeStats(ThemeData theme) {
+    final colors = [
+      Colors.cyan,
+      Colors.pink,
+      Colors.brown,
+      Colors.lime,
+      Colors.deepOrange,
+    ];
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: _equipmentTypeStats.entries.map((entry) {
+        final color =
+            colors[_equipmentTypeStats.keys.toList().indexOf(entry.key) %
+                colors.length];
+        return _buildStatCard(
+          theme: theme,
+          title: entry.key,
+          value: '${entry.value}',
+          icon: Icons.precision_manufacturing,
+          color: color,
+          isCompact: true,
+        );
+      }).toList(),
     );
   }
 
@@ -196,13 +282,23 @@ class _SubdivisionAssetManagementScreenState
     required String value,
     required IconData icon,
     required Color color,
+    bool isCompact = false,
   }) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      width: isCompact ? 140 : null,
+      padding: EdgeInsets.all(
+        isCompact ? 12 : 16,
+      ), // Smaller padding for compact cards
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,21 +307,21 @@ class _SubdivisionAssetManagementScreenState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: isCompact ? 32 : 36, // Smaller for compact
+                height: isCompact ? 32 : 36,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: color, size: 20),
+                child: Icon(icon, color: color, size: isCompact ? 16 : 18),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: isCompact ? 8 : 12),
           Text(
             value,
             style: TextStyle(
-              fontSize: 24,
+              fontSize: isCompact ? 18 : 20, // Smaller for compact
               fontWeight: FontWeight.w700,
               color: theme.colorScheme.onSurface,
             ),
@@ -233,7 +329,12 @@ class _SubdivisionAssetManagementScreenState
           const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            style: TextStyle(
+              fontSize: isCompact ? 11 : 13, // Smaller for compact
+              color: Colors.grey.shade600,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -241,66 +342,41 @@ class _SubdivisionAssetManagementScreenState
   }
 
   Widget _buildActionCards(ThemeData theme) {
+    final appState = Provider.of<AppStateData>(context);
+    final selectedSubstation = appState.selectedSubstation;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Quick Actions',
           style: TextStyle(
-            fontSize: 18,
+            fontSize: 16, // Reduced font size
             fontWeight: FontWeight.w600,
             color: theme.colorScheme.onSurface,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12), // Reduced spacing
         _buildActionCard(
           theme: theme,
           icon: Icons.electrical_services,
           title: 'Manage Bays & Equipment',
-          subtitle: 'View and manage assets within your substations',
+          subtitle: selectedSubstation != null
+              ? 'View and manage assets in ${selectedSubstation.name}'
+              : 'Select a substation from the app bar to manage assets',
           color: theme.colorScheme.primary,
-          onTap: () async {
-            _animationController.forward();
-            final selectedSubstation = await _showSubstationSelectionDialog();
-            if (selectedSubstation != null && mounted) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => ChangeNotifierProvider(
-                    create: (context) => SldController(
-                      substationId: selectedSubstation.id,
-                      transformationController: TransformationController(),
-                    ),
-                    child: SubstationDetailScreen(
-                      substationId: selectedSubstation.id,
-                      substationName: selectedSubstation.name,
-                      currentUser: widget.currentUser,
-                    ),
-                  ),
-                ),
-              );
-            }
-            _animationController.reverse();
-          },
+          onTap: selectedSubstation != null
+              ? () => _navigateToSubstationDetail(selectedSubstation)
+              : null,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12), // Reduced spacing
         _buildActionCard(
           theme: theme,
           icon: Icons.download,
           title: 'Export Master Data',
           subtitle: 'Generate comprehensive CSV reports of your assets',
           color: Colors.green,
-          onTap: () {
-            _animationController.forward();
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => ExportMasterDataScreen(
-                  currentUser: widget.currentUser,
-                  subdivisionId: widget.subdivisionId,
-                ),
-              ),
-            );
-            _animationController.reverse();
-          },
+          onTap: () => _navigateToExportScreen(),
         ),
       ],
     );
@@ -312,8 +388,10 @@ class _SubdivisionAssetManagementScreenState
     required String title,
     required String subtitle,
     required Color color,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
   }) {
+    final isDisabled = onTap == null;
+
     return AnimatedBuilder(
       animation: _animationController,
       builder: (context, child) {
@@ -321,34 +399,44 @@ class _SubdivisionAssetManagementScreenState
           scale: 1.0 - (_animationController.value * 0.02),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDisabled ? Colors.grey.shade100 : Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              border: Border.all(
+                color: isDisabled ? Colors.grey.shade300 : Colors.grey.shade200,
+              ),
+              boxShadow: isDisabled
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
             ),
             child: InkWell(
-              onTap: onTap,
+              onTap: isDisabled ? null : onTap,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(16), // Reduced padding
                 child: Row(
                   children: [
                     Container(
-                      width: 52,
-                      height: 52,
+                      width: 44, // Reduced size
+                      height: 44,
                       decoration: BoxDecoration(
-                        color: color.withOpacity(0.1),
+                        color: isDisabled
+                            ? Colors.grey.shade300
+                            : color.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(icon, color: color, size: 24),
+                      child: Icon(
+                        icon,
+                        color: isDisabled ? Colors.grey.shade500 : color,
+                        size: 20, // Reduced icon size
+                      ),
                     ),
-                    const SizedBox(width: 20),
+                    const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,36 +444,41 @@ class _SubdivisionAssetManagementScreenState
                           Text(
                             title,
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 15, // Reduced font size
                               fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.onSurface,
+                              color: isDisabled
+                                  ? Colors.grey.shade500
+                                  : theme.colorScheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             subtitle,
                             style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
+                              fontSize: 13, // Reduced font size
+                              color: isDisabled
+                                  ? Colors.grey.shade400
+                                  : Colors.grey.shade600,
                               height: 1.3,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
+                    if (!isDisabled)
+                      Container(
+                        width: 28, // Reduced size
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.arrow_forward_ios,
+                          size: 12, // Reduced icon size
+                          color: color,
+                        ),
                       ),
-                      child: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 14,
-                        color: color,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -396,125 +489,127 @@ class _SubdivisionAssetManagementScreenState
     );
   }
 
-  Future<Substation?> _showSubstationSelectionDialog() async {
-    if (_substationsInSubdivision.isEmpty) {
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'No substations found in this subdivision.',
-          isError: true,
-        );
-      }
-      return null;
-    }
-
-    return await showModalBottomSheet<Substation>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+  void _navigateToSubstationDetail(Substation substation) {
+    _animationController.forward();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ChangeNotifierProvider(
+          create: (context) => SldController(
+            substationId: substation.id,
+            transformationController: TransformationController(),
           ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(
-                      Icons.location_on,
-                      color: Theme.of(context).colorScheme.primary,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Select Substation',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              DropdownSearch<Substation>(
-                popupProps: PopupProps.menu(
-                  showSearchBox: true,
-                  searchFieldProps: TextFieldProps(
-                    decoration: InputDecoration(
-                      hintText: 'Search substations...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      prefixIcon: const Icon(Icons.search),
-                    ),
-                  ),
-                ),
-                items: _substationsInSubdivision,
-                itemAsString: (s) => s.name,
-                dropdownDecoratorProps: DropDownDecoratorProps(
-                  dropdownSearchDecoration: InputDecoration(
-                    labelText: 'Choose Substation',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-                onChanged: (Substation? selected) {
-                  Navigator.of(context).pop(selected);
-                },
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                ],
-              ),
-            ],
+          child: SubstationDetailScreen(
+            substationId: substation.id,
+            substationName: substation.name,
+            currentUser: widget.currentUser,
           ),
-        );
-      },
+        ),
+      ),
     );
+    _animationController.reverse();
   }
 
-  Future<void> _fetchSubstationsInSubdivision() async {
+  void _navigateToExportScreen() {
+    _animationController.forward();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ExportMasterDataScreen(
+          currentUser: widget.currentUser,
+          subdivisionId: widget.subdivisionId,
+        ),
+      ),
+    );
+    _animationController.reverse();
+  }
+
+  Future<void> _fetchSubdivisionAssets() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
-      final snapshot = await FirebaseFirestore.instance
+      // Fetch substations in subdivision
+      final substationsSnapshot = await FirebaseFirestore.instance
           .collection('substations')
           .where('subdivisionId', isEqualTo: widget.subdivisionId)
           .orderBy('name')
           .get();
 
-      _substationsInSubdivision = snapshot.docs
+      _substationsInSubdivision = substationsSnapshot.docs
           .map((doc) => Substation.fromFirestore(doc))
           .toList();
+
+      if (_substationsInSubdivision.isNotEmpty) {
+        // Get all substation IDs
+        final substationIds = _substationsInSubdivision
+            .map((s) => s.id)
+            .toList();
+
+        // Fetch bays for all substations
+        final baysSnapshot = await FirebaseFirestore.instance
+            .collection('bays')
+            .where('substationId', whereIn: substationIds)
+            .get();
+
+        final bays = baysSnapshot.docs
+            .map((doc) => Bay.fromFirestore(doc))
+            .toList();
+
+        // Calculate bay type stats
+        _bayTypeStats.clear();
+        for (final bay in bays) {
+          _bayTypeStats[bay.bayType] = (_bayTypeStats[bay.bayType] ?? 0) + 1;
+        }
+        _totalBays = bays.length;
+
+        // Fetch equipment for all bays
+        if (bays.isNotEmpty) {
+          final bayIds = bays.map((b) => b.id).toList();
+
+          // Query equipment instances in chunks of 10 (Firestore limit)
+          List<EquipmentInstance> allEquipment = [];
+          for (int i = 0; i < bayIds.length; i += 10) {
+            final chunk = bayIds.sublist(
+              i,
+              (i + 10 < bayIds.length) ? i + 10 : bayIds.length,
+            );
+            final equipmentSnapshot = await FirebaseFirestore.instance
+                .collection('equipmentInstances')
+                .where('bayId', whereIn: chunk)
+                .where(
+                  'status',
+                  isEqualTo: 'active',
+                ) // Only count active equipment
+                .get();
+
+            allEquipment.addAll(
+              equipmentSnapshot.docs.map(
+                (doc) => EquipmentInstance.fromFirestore(doc),
+              ),
+            );
+          }
+
+          // Calculate equipment type stats
+          _equipmentTypeStats.clear();
+          for (final equipment in allEquipment) {
+            _equipmentTypeStats[equipment.equipmentTypeName] =
+                (_equipmentTypeStats[equipment.equipmentTypeName] ?? 0) + 1;
+          }
+          _totalEquipment = allEquipment.length;
+        } else {
+          _equipmentTypeStats.clear();
+          _totalEquipment = 0;
+        }
+      } else {
+        _bayTypeStats.clear();
+        _equipmentTypeStats.clear();
+        _totalBays = 0;
+        _totalEquipment = 0;
+      }
     } catch (e) {
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to load substations: $e',
+          'Failed to load assets: $e',
           isError: true,
         );
       }

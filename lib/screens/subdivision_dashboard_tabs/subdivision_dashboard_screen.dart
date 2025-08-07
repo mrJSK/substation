@@ -9,11 +9,11 @@ import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart';
 import '../../widgets/modern_app_drawer.dart';
+import 'create_report_template_screen.dart';
 import 'operations_tab.dart';
 import 'energy_tab.dart';
+import 'subdivision_asset_management_screen.dart';
 import 'tripping_tab.dart';
-import 'reports_tab.dart';
-import 'asset_management_tab.dart';
 
 class SubdivisionDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -38,7 +38,11 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     TabData('Operations', Icons.settings, Colors.blue),
     TabData('Energy', Icons.electrical_services, Colors.green),
     TabData('Tripping', Icons.warning, Colors.orange),
-    TabData('Reports', Icons.assessment, Colors.purple),
+    TabData(
+      'Reports',
+      Icons.assessment,
+      Colors.purple,
+    ), // Keep the same name and icon
     TabData('Asset Management', Icons.business, Colors.indigo),
   ];
 
@@ -99,7 +103,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       ),
       body: Column(
         children: [
-          // Removed _buildWelcomeHeader() completely
           _buildTabBar(theme),
           Expanded(
             child: TabBarView(
@@ -186,7 +189,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
                         ),
                         isDense: true,
                         isExpanded: true,
-                        // Fixed dropdown styling
                         dropdownColor: Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         elevation: 8,
@@ -196,7 +198,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
                           fontSize: 14,
                         ),
                         selectedItemBuilder: (BuildContext context) {
-                          // This ensures the selected item displays correctly
                           return accessibleSubstations.map((
                             Substation substation,
                           ) {
@@ -277,12 +278,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         : _tabs.where((tab) => tab.label != 'Asset Management').toList();
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        0,
-      ), // Added top margin since welcome header is removed
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -404,12 +400,8 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         startDate: _dashboardStartDate,
         endDate: _dashboardEndDate,
       ),
-      ReportsTab(
-        currentUser: widget.currentUser,
-        selectedSubstationId: selectedSubstation.id,
-        subdivisionId:
-            widget.currentUser.assignedLevels?['subdivisionId'] ?? '',
-        substationId: selectedSubstation.id,
+      // REPLACED: ReportsTab with GenerateCustomReportScreen
+      GenerateCustomReportScreen(
         startDate: _dashboardStartDate,
         endDate: _dashboardEndDate,
       ),
@@ -417,12 +409,10 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
 
     if (widget.currentUser.role == UserRole.subdivisionManager) {
       views.add(
-        AssetManagementTab(
-          currentUser: widget.currentUser,
+        SubdivisionAssetManagementScreen(
           subdivisionId:
               widget.currentUser.assignedLevels?['subdivisionId'] ?? '',
-          selectedSubstationId: selectedSubstation.id,
-          substationId: selectedSubstation.id,
+          currentUser: widget.currentUser,
         ),
       );
     }

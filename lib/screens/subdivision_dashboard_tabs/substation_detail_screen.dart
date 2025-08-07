@@ -7,7 +7,6 @@ import 'dart:math';
 
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
-import '../../models/bay_connection_model.dart';
 import '../../models/equipment_model.dart';
 import '../../models/user_readings_config_model.dart';
 import '../../painters/single_line_diagram_painter.dart';

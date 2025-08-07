@@ -1,18 +1,16 @@
-// lib/screens/bay_reading_assignment_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../models/reading_models.dart';
-import '../models/bay_model.dart'; // Import Bay model to get bay type
-import '../models/user_model.dart'; // Import AppUser model to check roles
+import '../models/bay_model.dart';
+import '../models/user_model.dart';
 import '../utils/snackbar_utils.dart';
 
 class BayReadingAssignmentScreen extends StatefulWidget {
   final String bayId;
   final String bayName;
-  final AppUser currentUser; // Pass the current user for role-based logic
+  final AppUser currentUser;
 
   const BayReadingAssignmentScreen({
     super.key,
@@ -26,26 +24,21 @@ class BayReadingAssignmentScreen extends StatefulWidget {
       _BayReadingAssignmentScreenState();
 }
 
-class _BayReadingAssignmentScreenState
-    extends State<BayReadingAssignmentScreen> {
+class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
+    with TickerProviderStateMixin {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
   bool _isLoading = true;
   bool _isSaving = false;
-  String?
-  _bayType; // The type of the current bay (e.g., 'Transformer', 'Feeder')
+  String? _bayType;
   List<ReadingTemplate> _availableReadingTemplates = [];
   ReadingTemplate? _selectedTemplate;
-  String?
-  _existingAssignmentId; // Firestore document ID if an assignment already exists
-
-  // NEW: State variable for the reading start date
+  String? _existingAssignmentId;
   DateTime? _readingStartDate;
 
-  // List to hold the effective reading fields for this bay (template fields + user-added fields)
-  // This is the working list for the UI.
   final List<Map<String, dynamic>> _instanceReadingFields = [];
-
-  // Controllers/Values for the dynamic fields in _instanceReadingFields
   final Map<String, TextEditingController> _textFieldControllers = {};
   final Map<String, bool> _booleanFieldValues = {};
   final Map<String, DateTime?> _dateFieldValues = {};
@@ -62,11 +55,19 @@ class _BayReadingAssignmentScreenState
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
     _initializeScreenData();
   }
 
   @override
   void dispose() {
+    _animationController.dispose();
     _textFieldControllers.forEach((key, controller) => controller.dispose());
     _booleanDescriptionControllers.forEach(
       (key, controller) => controller.dispose(),
@@ -75,15 +76,15 @@ class _BayReadingAssignmentScreenState
   }
 
   Future<void> _initializeScreenData() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
+
     try {
-      // 1. Fetch bay details to get its type
+      // Bay details
       final bayDoc = await FirebaseFirestore.instance
           .collection('bays')
           .doc(widget.bayId)
           .get();
+
       if (bayDoc.exists) {
         _bayType = (bayDoc.data() as Map<String, dynamic>)['bayType'];
       } else {
@@ -98,17 +99,17 @@ class _BayReadingAssignmentScreenState
         return;
       }
 
-      // 2. Fetch all available reading templates for the specific bay type
+      // Reading templates
       final templatesSnapshot = await FirebaseFirestore.instance
           .collection('readingTemplates')
           .where('bayType', isEqualTo: _bayType)
-          .orderBy('createdAt', descending: true) // Order to show latest first
+          .orderBy('createdAt', descending: true)
           .get();
       _availableReadingTemplates = templatesSnapshot.docs
           .map((doc) => ReadingTemplate.fromFirestore(doc))
           .toList();
 
-      // 3. Fetch existing assignment for this bay
+      // Existing assignment
       final existingAssignmentSnapshot = await FirebaseFirestore.instance
           .collection('bayReadingAssignments')
           .where('bayId', isEqualTo: widget.bayId)
@@ -120,38 +121,32 @@ class _BayReadingAssignmentScreenState
         _existingAssignmentId = existingDoc.id;
         final assignedData = existingDoc.data();
 
-        // Load the reading start date if it exists
         if (assignedData.containsKey('readingStartDate') &&
             assignedData['readingStartDate'] != null) {
           _readingStartDate = (assignedData['readingStartDate'] as Timestamp)
               .toDate();
         } else {
-          _readingStartDate = DateTime.now(); // Default to today if not set
+          _readingStartDate = DateTime.now();
         }
 
-        // Reconstruct the _selectedTemplate and _instanceReadingFields
         final existingTemplateId = assignedData['templateId'] as String?;
         if (existingTemplateId != null) {
           _selectedTemplate = _availableReadingTemplates.firstWhere(
             (template) => template.id == existingTemplateId,
-            orElse: () => _availableReadingTemplates.first, // Fallback
+            orElse: () => _availableReadingTemplates.first,
           );
         }
 
-        // Populate _instanceReadingFields from the 'assignedFields' in Firestore
         final List<dynamic> assignedFieldsRaw =
             assignedData['assignedFields'] as List? ?? [];
         _instanceReadingFields.addAll(
           assignedFieldsRaw.map((e) => Map<String, dynamic>.from(e)).toList(),
         );
 
-        // Initialize controllers and values from loaded fields
         _initializeFieldControllers();
       } else {
-        // Default start date for new assignments
         _readingStartDate = DateTime.now();
         if (_availableReadingTemplates.isNotEmpty) {
-          // If no existing assignment, pre-select the first available template
           _selectedTemplate = _availableReadingTemplates.first;
           _instanceReadingFields.addAll(
             _selectedTemplate!.readingFields.map((e) => e.toMap()).toList(),
@@ -159,6 +154,8 @@ class _BayReadingAssignmentScreenState
           _initializeFieldControllers();
         }
       }
+
+      _animationController.forward();
     } catch (e) {
       print("Error loading bay reading assignment screen data: $e");
       if (mounted) {
@@ -169,9 +166,7 @@ class _BayReadingAssignmentScreenState
         );
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
@@ -215,7 +210,6 @@ class _BayReadingAssignmentScreenState
       _dropdownFieldValues.clear();
       _booleanDescriptionControllers.clear();
 
-      // Add fields from the newly selected template
       for (var field in template.readingFields) {
         _instanceReadingFields.add(field.toMap());
       }
@@ -233,7 +227,7 @@ class _BayReadingAssignmentScreenState
         'options': [],
         'isMandatory': false,
         'frequency': ReadingFrequency.daily.toString().split('.').last,
-        'description_remarks': '', // For boolean
+        'description_remarks': '',
       });
     });
   }
@@ -243,7 +237,6 @@ class _BayReadingAssignmentScreenState
       final fieldName = _instanceReadingFields[index]['name'];
       _instanceReadingFields.removeAt(index);
 
-      // Dispose controllers/clear values for removed fields
       _textFieldControllers.remove(fieldName)?.dispose();
       _booleanFieldValues.remove(fieldName);
       _dateFieldValues.remove(fieldName);
@@ -253,9 +246,7 @@ class _BayReadingAssignmentScreenState
   }
 
   Future<void> _saveAssignment() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     if (_selectedTemplate == null) {
       SnackBarUtils.showSnackBar(
@@ -275,21 +266,16 @@ class _BayReadingAssignmentScreenState
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     try {
-      // Prepare the 'assignedFields' list with current values from UI
       final List<Map<String, dynamic>> finalAssignedFields = [];
       for (var fieldMap in _instanceReadingFields) {
         final String fieldName = fieldMap['name'] as String;
         final String dataType = fieldMap['dataType'] as String;
 
-        // Clone the field map to avoid modifying the original list directly
         Map<String, dynamic> currentFieldData = Map.from(fieldMap);
 
-        // Assign current UI values based on data type
         if (dataType == 'text' || dataType == 'number') {
           currentFieldData['value'] = _textFieldControllers[fieldName]?.text
               .trim();
@@ -308,16 +294,13 @@ class _BayReadingAssignmentScreenState
         finalAssignedFields.add(currentFieldData);
       }
 
-      // Create or update the BayReadingAssignment document
       final Map<String, dynamic> assignmentData = {
         'bayId': widget.bayId,
-        'bayType': _bayType, // Store bay type for easier querying
+        'bayType': _bayType,
         'templateId': _selectedTemplate!.id!,
         'assignedFields': finalAssignedFields,
-        'readingStartDate': Timestamp.fromDate(
-          _readingStartDate!,
-        ), // Save the start date
-        'recordedBy': widget.currentUser.uid, // The user making the assignment
+        'readingStartDate': Timestamp.fromDate(_readingStartDate!),
+        'recordedBy': widget.currentUser.uid,
         'recordedAt': FieldValue.serverTimestamp(),
       };
 
@@ -344,9 +327,7 @@ class _BayReadingAssignmentScreenState
         }
       }
 
-      if (mounted) {
-        Navigator.of(context).pop(); // Go back after saving
-      }
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
       print("Error saving bay reading assignment: $e");
       if (mounted) {
@@ -357,352 +338,8 @@ class _BayReadingAssignmentScreenState
         );
       }
     } finally {
-      setState(() {
-        _isSaving = false;
-      });
+      setState(() => _isSaving = false);
     }
-  }
-
-  Widget _buildFieldInputForAssignment({
-    required String fieldName,
-    required String dataType,
-    String? unit,
-    List<String>? options,
-    bool isMandatory = false,
-    String frequency = '',
-    String? initialDescriptionRemarks,
-    bool isUserAdded =
-        false, // Flag to differentiate template fields from user-added
-  }) {
-    // Determine which controller map to use based on isUserAdded flag
-    final Map<String, TextEditingController> currentTextFieldControllers =
-        _textFieldControllers;
-    final Map<String, bool> currentBooleanFieldValues = _booleanFieldValues;
-    final Map<String, DateTime?> currentDateFieldValues = _dateFieldValues;
-    final Map<String, String?> currentDropdownFieldValues =
-        _dropdownFieldValues;
-    final Map<String, TextEditingController>
-    currentBooleanDescriptionControllers = _booleanDescriptionControllers;
-
-    final inputDecoration = InputDecoration(
-      labelText: fieldName + (isMandatory ? ' *' : ''),
-      border: const OutlineInputBorder(),
-      suffixText: unit,
-      hintText: (dataType == 'number' && unit != null && unit.isNotEmpty)
-          ? 'Enter value in $unit'
-          : null,
-    );
-
-    // Common validator for all field types
-    String? Function(String?)? commonValidator;
-    if (isMandatory) {
-      commonValidator = (value) {
-        if (value == null || value.trim().isEmpty) {
-          return '$fieldName is mandatory';
-        }
-        return null;
-      };
-    }
-
-    Widget fieldWidget;
-    switch (dataType) {
-      case 'text':
-        fieldWidget = TextFormField(
-          controller: currentTextFieldControllers.putIfAbsent(
-            fieldName,
-            () => TextEditingController(),
-          ),
-          decoration: inputDecoration,
-          validator: commonValidator,
-        );
-        break;
-      case 'number':
-        fieldWidget = TextFormField(
-          controller: currentTextFieldControllers.putIfAbsent(
-            fieldName,
-            () => TextEditingController(),
-          ),
-          decoration: inputDecoration.copyWith(suffixText: unit),
-          keyboardType: TextInputType.number,
-          validator: (value) {
-            if (commonValidator != null && commonValidator(value) != null) {
-              return commonValidator(value);
-            }
-            if (value!.isNotEmpty && double.tryParse(value) == null) {
-              return 'Enter a valid number for $fieldName';
-            }
-            return null;
-          },
-        );
-        break;
-      case 'boolean':
-        fieldWidget = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SwitchListTile(
-              title: Text(fieldName + (isMandatory ? ' *' : '')),
-              value: currentBooleanFieldValues.putIfAbsent(
-                fieldName,
-                () => false,
-              ),
-              onChanged: (value) {
-                setState(() {
-                  currentBooleanFieldValues[fieldName] = value;
-                });
-              },
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (currentBooleanFieldValues[fieldName]!) // Show description only if true
-              Padding(
-                padding: const EdgeInsets.only(
-                  left: 16.0,
-                  right: 16.0,
-                  bottom: 8.0,
-                ),
-                child: TextFormField(
-                  controller: currentBooleanDescriptionControllers.putIfAbsent(
-                    fieldName,
-                    () =>
-                        TextEditingController(text: initialDescriptionRemarks),
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Description / Remarks (Optional)',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      vertical: 10.0,
-                      horizontal: 12.0,
-                    ),
-                  ),
-                  maxLines: 2,
-                ),
-              ),
-          ],
-        );
-        break;
-      case 'date':
-        fieldWidget = ListTile(
-          title: Text(
-            fieldName +
-                (isMandatory ? ' *' : '') +
-                ': ' +
-                (currentDateFieldValues[fieldName] == null
-                    ? 'Select Date'
-                    : DateFormat(
-                        'yyyy-MM-dd',
-                      ).format(currentDateFieldValues[fieldName]!)),
-          ),
-          trailing: const Icon(Icons.calendar_today),
-          onTap: () async {
-            final DateTime? picked = await showDatePicker(
-              context: context,
-              initialDate: currentDateFieldValues[fieldName] ?? DateTime.now(),
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2101),
-            );
-            if (picked != null) {
-              setState(() {
-                currentDateFieldValues[fieldName] = picked;
-              });
-            }
-          },
-        );
-        break;
-      case 'dropdown':
-        fieldWidget = DropdownButtonFormField<String>(
-          value: currentDropdownFieldValues[fieldName],
-          decoration: inputDecoration,
-          items: options!.map((option) {
-            return DropdownMenuItem(value: option, child: Text(option));
-          }).toList(),
-          onChanged: (value) {
-            setState(() {
-              currentDropdownFieldValues[fieldName] = value;
-            });
-          },
-          validator: commonValidator,
-        );
-        break;
-      default:
-        fieldWidget = Text('Unsupported data type: $dataType for $fieldName');
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Display the actual input widget
-          fieldWidget,
-          if (isUserAdded &&
-              widget.currentUser.role == UserRole.subdivisionManager)
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                icon: Icon(
-                  Icons.remove_circle_outline,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                onPressed: () {
-                  // Find the index of this field to remove it from _instanceReadingFields
-                  final fieldIndex = _instanceReadingFields.indexWhere(
-                    (element) => element['name'] == fieldName,
-                  );
-                  if (fieldIndex != -1) {
-                    _removeInstanceReadingField(fieldIndex);
-                  }
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReadingFieldDefinitionInput(
-    Map<String, dynamic> fieldDef,
-    int index,
-  ) {
-    final String currentFieldName = fieldDef['name'] as String;
-    final String currentDataType = fieldDef['dataType'] as String;
-    final bool currentIsMandatory = fieldDef['isMandatory'] as bool;
-    final String currentUnit = fieldDef['unit'] as String? ?? '';
-    final List<String> currentOptions = List.from(fieldDef['options'] ?? []);
-    final String currentFrequency = fieldDef['frequency'] as String;
-    final String currentDescriptionRemarks =
-        fieldDef['description_remarks'] as String? ?? '';
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextFormField(
-              initialValue: currentFieldName,
-              decoration: const InputDecoration(
-                labelText: 'Field Name',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  fieldDef['name'] = value;
-                  if (_textFieldControllers.containsKey(currentFieldName)) {
-                    _textFieldControllers[value] = _textFieldControllers.remove(
-                      currentFieldName,
-                    )!;
-                  }
-                  if (_booleanDescriptionControllers.containsKey(
-                    currentFieldName,
-                  )) {
-                    _booleanDescriptionControllers[value] =
-                        _booleanDescriptionControllers.remove(
-                          currentFieldName,
-                        )!;
-                  }
-                });
-              },
-              validator: (value) => value == null || value.trim().isEmpty
-                  ? 'Field name required'
-                  : null,
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: currentDataType,
-              decoration: const InputDecoration(
-                labelText: 'Data Type',
-                border: OutlineInputBorder(),
-              ),
-              items: _dataTypes.map((type) {
-                return DropdownMenuItem(value: type, child: Text(type));
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  fieldDef['dataType'] = value!;
-                  fieldDef['options'] = [];
-                  fieldDef['unit'] = '';
-                  fieldDef['description_remarks'] = '';
-                });
-              },
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: currentFrequency,
-              decoration: const InputDecoration(
-                labelText: 'Reading Frequency',
-                border: OutlineInputBorder(),
-              ),
-              items: _frequencies.map((freq) {
-                return DropdownMenuItem(value: freq, child: Text(freq));
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  fieldDef['frequency'] = value!;
-                });
-              },
-            ),
-            const SizedBox(height: 10),
-            if (currentDataType == 'dropdown')
-              TextFormField(
-                initialValue: currentOptions.join(','),
-                decoration: const InputDecoration(
-                  labelText: 'Options (comma-separated)',
-                  hintText: 'e.g., Option1, Option2',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) => fieldDef['options'] = value
-                    .split(',')
-                    .map((e) => e.trim())
-                    .where((e) => e.isNotEmpty)
-                    .toList(),
-              ),
-            if (currentDataType == 'number')
-              TextFormField(
-                initialValue: currentUnit,
-                decoration: const InputDecoration(
-                  labelText: 'Unit (e.g., V, A, kW)',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) => fieldDef['unit'] = value,
-              ),
-            if (currentDataType == 'boolean')
-              TextFormField(
-                initialValue: currentDescriptionRemarks,
-                decoration: const InputDecoration(
-                  labelText: 'Description / Remarks for Boolean (Optional)',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) => fieldDef['description_remarks'] = value,
-                maxLines: 2,
-              ),
-            CheckboxListTile(
-              title: const Text('Mandatory'),
-              value: currentIsMandatory,
-              onChanged: (value) {
-                setState(() {
-                  fieldDef['isMandatory'] = value!;
-                });
-              },
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                icon: Icon(
-                  Icons.delete_forever,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                onPressed: () => _removeInstanceReadingField(index),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Future<void> _selectReadingStartDate(BuildContext context) async {
@@ -711,166 +348,739 @@ class _BayReadingAssignmentScreenState
       initialDate: _readingStartDate ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && picked != _readingStartDate) {
-      setState(() {
-        _readingStartDate = picked;
-      });
+      setState(() => _readingStartDate = picked);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final screenHeight = MediaQuery.of(context).size.height;
 
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F9FA),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Loading assignment data...',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: Text('Assign Readings to Bay: ${widget.bayName}'),
+        backgroundColor: Colors.white,
         elevation: 0,
+        centerTitle: false,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reading Assignment',
+              style: TextStyle(
+                color: theme.colorScheme.onSurface,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              widget.bayName,
+              style: TextStyle(
+                color: theme.colorScheme.primary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios, color: theme.colorScheme.onSurface),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: Colors.grey.shade200),
+        ),
       ),
-      body: GestureDetector(
-        onTap: () =>
-            FocusScope.of(context).unfocus(), // Dismiss keyboard on tap
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(screenHeight * 0.02),
-          child: Form(
-            key: _formKey,
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _buildHeaderSection(theme)),
+            SliverToBoxAdapter(child: _buildDateSelector(theme)),
+            SliverToBoxAdapter(child: _buildTemplateSelector(theme)),
+            if (_selectedTemplate != null)
+              SliverToBoxAdapter(child: _buildFieldsSection(theme)),
+            SliverToBoxAdapter(child: _buildActionButtons(theme)),
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderSection(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary.withOpacity(0.1),
+            theme.colorScheme.primary.withOpacity(0.05),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.electrical_services,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Bay Type: ${_bayType ?? 'N/A'}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                  'Bay Information',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 20),
-                ListTile(
-                  title: Text(
-                    'Reading Start Date: ${DateFormat('dd-MM-yyyy').format(_readingStartDate ?? DateTime.now())}',
-                  ),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () => _selectReadingStartDate(context),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: Colors.grey.shade300),
-                  ),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 4),
                 Text(
-                  'Select Reading Template',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+                  'Type: ${_bayType ?? 'Unknown'}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w500,
                   ),
-                ),
-                const SizedBox(height: 10),
-                if (_availableReadingTemplates.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                      child: Text(
-                        'No reading templates defined for "${_bayType ?? 'this bay type'}". Please define them in Admin Dashboard > Reading Templates.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontStyle: FontStyle.italic,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  DropdownButtonFormField<ReadingTemplate>(
-                    value: _selectedTemplate,
-                    decoration: const InputDecoration(
-                      labelText: 'Choose Reading Template',
-                      prefixIcon: Icon(Icons.description),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _availableReadingTemplates.map((template) {
-                      return DropdownMenuItem(
-                        value: template,
-                        child: Text(
-                          template.bayType +
-                              (template.id != null
-                                  ? ' (${template.id!.substring(0, 4)}...)'
-                                  : ''),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: _onTemplateSelected,
-                    validator: (value) =>
-                        value == null ? 'Please select a template' : null,
-                  ),
-                const SizedBox(height: 24),
-                if (_selectedTemplate != null) ...[
-                  Text(
-                    'Configured Reading Fields',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _instanceReadingFields.length,
-                    itemBuilder: (context, index) {
-                      final field = _instanceReadingFields[index];
-                      return AnimatedOpacity(
-                        opacity: 1.0,
-                        duration: const Duration(milliseconds: 300),
-                        child: _buildReadingFieldDefinitionInput(field, index),
-                      );
-                    },
-                  ),
-                  if (widget.currentUser.role == UserRole.admin ||
-                      widget.currentUser.role == UserRole.subdivisionManager)
-                    ElevatedButton.icon(
-                      onPressed: _addInstanceReadingField,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add Additional Reading Field'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.secondary,
-                        foregroundColor: theme.colorScheme.onSecondary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 32),
-                ],
-                Center(
-                  child: _isSaving
-                      ? const CircularProgressIndicator()
-                      : ElevatedButton.icon(
-                          onPressed: _selectedTemplate != null
-                              ? _saveAssignment
-                              : null,
-                          icon: const Icon(Icons.save),
-                          label: Text(
-                            _existingAssignmentId == null
-                                ? 'Save Assignment'
-                                : 'Update Assignment',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 50),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 2,
-                          ),
-                        ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateSelector(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(20),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.secondary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            Icons.calendar_today,
+            color: theme.colorScheme.secondary,
+            size: 20,
+          ),
+        ),
+        title: Text(
+          'Reading Start Date',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        subtitle: Text(
+          DateFormat(
+            'EEEE, MMM dd, yyyy',
+          ).format(_readingStartDate ?? DateTime.now()),
+          style: TextStyle(
+            fontSize: 14,
+            color: theme.colorScheme.secondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        trailing: Icon(Icons.edit_calendar, color: theme.colorScheme.primary),
+        onTap: () => _selectReadingStartDate(context),
+      ),
+    );
+  }
+
+  Widget _buildTemplateSelector(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.description,
+                  color: Colors.purple,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Reading Template',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_availableReadingTemplates.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber, color: Colors.orange),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'No reading templates available for "${_bayType ?? 'this bay type'}". Please create templates in Admin Dashboard.',
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            DropdownButtonFormField<ReadingTemplate>(
+              value: _selectedTemplate,
+              decoration: InputDecoration(
+                labelText: 'Select Template',
+                prefixIcon: const Icon(Icons.list_alt),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+              items: _availableReadingTemplates.map((template) {
+                return DropdownMenuItem(
+                  value: template,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        template.bayType,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (template.id != null)
+                        Text(
+                          'ID: ${template.id!.substring(0, 8)}...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: _onTemplateSelected,
+              validator: (value) =>
+                  value == null ? 'Please select a template' : null,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFieldsSection(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.settings,
+                    color: Colors.blue,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Reading Fields Configuration',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _instanceReadingFields.length,
+              itemBuilder: (context, index) {
+                final field = _instanceReadingFields[index];
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: _buildReadingFieldDefinitionInput(field, index),
+                );
+              },
+            ),
+            if (widget.currentUser.role == UserRole.admin ||
+                widget.currentUser.role == UserRole.subdivisionManager)
+              Container(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _addInstanceReadingField,
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('Add Custom Field'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    side: BorderSide(color: theme.colorScheme.primary),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildReadingFieldDefinitionInput(
+    Map<String, dynamic> fieldDef,
+    int index,
+  ) {
+    final theme = Theme.of(context);
+    final String currentFieldName = fieldDef['name'] as String;
+    final String currentDataType = fieldDef['dataType'] as String;
+    final bool currentIsMandatory = fieldDef['isMandatory'] as bool;
+    final String currentUnit = fieldDef['unit'] as String? ?? '';
+    final List<String> currentOptions = List.from(fieldDef['options'] ?? []);
+    final String currentFrequency = fieldDef['frequency'] as String;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: _getDataTypeColor(currentDataType).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  _getDataTypeIcon(currentDataType),
+                  color: _getDataTypeColor(currentDataType),
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  currentFieldName.isNotEmpty
+                      ? currentFieldName
+                      : 'Unnamed Field',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (currentIsMandatory)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Required',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            initialValue: currentFieldName,
+            decoration: InputDecoration(
+              labelText: 'Field Name',
+              prefixIcon: const Icon(Icons.edit, size: 20),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            onChanged: (value) {
+              setState(() {
+                fieldDef['name'] = value;
+                if (_textFieldControllers.containsKey(currentFieldName)) {
+                  _textFieldControllers[value] = _textFieldControllers.remove(
+                    currentFieldName,
+                  )!;
+                }
+                if (_booleanDescriptionControllers.containsKey(
+                  currentFieldName,
+                )) {
+                  _booleanDescriptionControllers[value] =
+                      _booleanDescriptionControllers.remove(currentFieldName)!;
+                }
+              });
+            },
+            validator: (value) => value == null || value.trim().isEmpty
+                ? 'Field name required'
+                : null,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: currentDataType,
+                  decoration: InputDecoration(
+                    labelText: 'Data Type',
+                    prefixIcon: Icon(
+                      _getDataTypeIcon(currentDataType),
+                      size: 20,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  items: _dataTypes.map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Row(
+                        children: [
+                          Icon(
+                            _getDataTypeIcon(type),
+                            size: 16,
+                            color: _getDataTypeColor(type),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(type),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      fieldDef['dataType'] = value!;
+                      fieldDef['options'] = [];
+                      fieldDef['unit'] = '';
+                      fieldDef['description_remarks'] = '';
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: currentFrequency,
+                  decoration: InputDecoration(
+                    labelText: 'Frequency',
+                    prefixIcon: const Icon(Icons.schedule, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  items: _frequencies.map((freq) {
+                    return DropdownMenuItem(value: freq, child: Text(freq));
+                  }).toList(),
+                  onChanged: (value) =>
+                      setState(() => fieldDef['frequency'] = value!),
+                ),
+              ),
+            ],
+          ),
+          if (currentDataType == 'dropdown') ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: currentOptions.join(', '),
+              decoration: InputDecoration(
+                labelText: 'Options (comma-separated)',
+                hintText: 'Option1, Option2, Option3',
+                prefixIcon: const Icon(Icons.list, size: 20),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              onChanged: (value) => fieldDef['options'] = value
+                  .split(',')
+                  .map((e) => e.trim())
+                  .where((e) => e.isNotEmpty)
+                  .toList(),
+            ),
+          ],
+          if (currentDataType == 'number') ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: currentUnit,
+              decoration: InputDecoration(
+                labelText: 'Unit (e.g., V, A, kW)',
+                prefixIcon: const Icon(Icons.straighten, size: 20),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              onChanged: (value) => fieldDef['unit'] = value,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: CheckboxListTile(
+                  title: const Text('Mandatory Field'),
+                  value: currentIsMandatory,
+                  onChanged: (value) =>
+                      setState(() => fieldDef['isMandatory'] = value!),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              IconButton(
+                onPressed: () => _removeInstanceReadingField(index),
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: theme.colorScheme.error,
+                ),
+                style: IconButton.styleFrom(
+                  backgroundColor: theme.colorScheme.error.withOpacity(0.1),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          if (_isSaving)
+            Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Saving assignment...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton.icon(
+                onPressed: _selectedTemplate != null ? _saveAssignment : null,
+                icon: Icon(
+                  _existingAssignmentId == null ? Icons.save : Icons.update,
+                  size: 24,
+                ),
+                label: Text(
+                  _existingAssignmentId == null
+                      ? 'Save Assignment'
+                      : 'Update Assignment',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _getDataTypeColor(String dataType) {
+    switch (dataType) {
+      case 'text':
+        return Colors.blue;
+      case 'number':
+        return Colors.green;
+      case 'boolean':
+        return Colors.orange;
+      case 'date':
+        return Colors.purple;
+      case 'dropdown':
+        return Colors.teal;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getDataTypeIcon(String dataType) {
+    switch (dataType) {
+      case 'text':
+        return Icons.text_fields;
+      case 'number':
+        return Icons.numbers;
+      case 'boolean':
+        return Icons.toggle_on;
+      case 'date':
+        return Icons.calendar_today;
+      case 'dropdown':
+        return Icons.arrow_drop_down_circle;
+      default:
+        return Icons.help;
+    }
   }
 }

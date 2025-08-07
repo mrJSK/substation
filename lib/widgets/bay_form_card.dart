@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
+import 'package:substation_manager/equipment_icons/busbar_icon.dart';
 import 'package:substation_manager/equipment_icons/line_icon.dart';
 import 'package:substation_manager/equipment_icons/reactor_icon.dart';
 
@@ -71,7 +72,7 @@ class _EquipmentIcon extends StatelessWidget {
         );
         break;
       case 'busbar':
-        painter = EnergyMeterIconPainter(
+        painter = BusbarIconPainter(
           color: color,
           strokeWidth: 2.5,
           equipmentSize: Size(size, size),

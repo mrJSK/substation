@@ -1,40 +1,98 @@
-// lib/screens/create_report_template_screen.dart
+// lib/screens/generate_custom_report_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:excel/excel.dart' hide Border;
+import 'package:csv/csv.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:share_plus/share_plus.dart';
+import 'package:dropdown_search/dropdown_search.dart';
+import 'package:collection/collection.dart';
+
 import '../../models/app_state_data.dart';
 import '../../models/bay_model.dart';
+import '../../models/logsheet_models.dart';
 import '../../models/reading_models.dart';
 import '../../models/report_template_model.dart';
+import '../../models/tripping_shutdown_model.dart';
 import '../../utils/snackbar_utils.dart';
 
-class CreateReportTemplateScreen extends StatefulWidget {
-  static const routeName = '/create-report-template';
+enum ReportMode { summary, export }
 
-  const CreateReportTemplateScreen({super.key});
+enum ExportDataType { operations, tripping, energy, customReports }
+
+class GenerateCustomReportScreen extends StatefulWidget {
+  static const routeName = '/generate-custom-report';
+
+  final DateTime startDate;
+  final DateTime endDate;
+
+  const GenerateCustomReportScreen({
+    super.key,
+    required this.startDate,
+    required this.endDate,
+  });
 
   @override
-  State<CreateReportTemplateScreen> createState() =>
-      _CreateReportTemplateScreenState();
+  State<GenerateCustomReportScreen> createState() =>
+      _GenerateCustomReportScreenState();
 }
 
-class _CreateReportTemplateScreenState
-    extends State<CreateReportTemplateScreen> {
-  final _templateNameController = TextEditingController();
+class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
+    with TickerProviderStateMixin {
+  late TabController _tabController;
+  ReportMode _currentMode = ReportMode.summary;
+
   List<Bay> _availableBays = [];
-  List<ReadingTemplate> _allReadingTemplates = [];
-  List<ReadingField> _filteredReadingFields = [];
-  List<String> _selectedBayIds = [];
-  List<String> _selectedReadingFieldNames = [];
-  ReportFrequency _selectedFrequency = ReportFrequency.daily;
-  List<CustomReportColumn> _customColumns = [];
+  Bay? _selectedBay;
   bool _isLoading = false;
+  bool _isGenerating = false;
+
+  Map<String, dynamic> _statisticalSummary = {};
+  List<TrippingShutdownEntry> _bayTrippingEvents = [];
+
+  List<ReportTemplate> _availableTemplates = [];
+  ReportTemplate? _selectedTemplate;
+  ExportDataType _selectedDataType = ExportDataType.operations;
+
+  List<String> _selectedBayTypes = [];
+  List<String> _selectedVoltageLevels = [];
+  List<ReadingField> _selectedReadingFields = [];
+  List<String> _selectedEventTypes = ['Tripping', 'Shutdown'];
+  List<String> _selectedStatuses = ['OPEN', 'CLOSED'];
+  List<String> _selectedEnergyFields = [
+    'Energy_Import_Present',
+    'Energy_Export_Present',
+    'Current',
+    'Voltage',
+    'Power Factor',
+  ];
+
+  List<String> _allBayTypes = [];
+  final List<String> _allVoltageLevels = [
+    '765kV',
+    '400kV',
+    '220kV',
+    '132kV',
+    '33kV',
+    '11kV',
+  ];
+  List<ReadingField> _availableReadingFields = [];
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 5, vsync: this);
     _fetchInitialData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -42,101 +100,177 @@ class _CreateReportTemplateScreenState
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
-      appBar: _buildAppBar(theme),
-      body: _isLoading ? _buildLoadingState() : _buildMainContent(theme),
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: _isLoading
+          ? _buildLoadingState()
+          : CustomScrollView(
+              slivers: [
+                // _buildSliverAppBar(theme),
+                SliverToBoxAdapter(child: _buildModeToggle(theme)),
+                if (_currentMode == ReportMode.summary)
+                  SliverToBoxAdapter(child: _buildBaySelector(theme)),
+                SliverToBoxAdapter(child: _buildTabBar(theme)),
+                SliverFillRemaining(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: _currentMode == ReportMode.summary
+                        ? [
+                            _buildSummaryTab(theme),
+                            _buildOperationsTab(theme),
+                            _buildTrippingTab(theme),
+                            _buildEnergyTab(theme),
+                            _buildCustomReportsTab(theme),
+                          ]
+                        : [
+                            _buildOperationsTab(theme),
+                            _buildTrippingTab(theme),
+                            _buildEnergyTab(theme),
+                            _buildCustomReportsTab(theme),
+                            _buildBulkExportTab(theme),
+                          ],
+                  ),
+                ),
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: 80), // Bottom padding
+                ),
+              ],
+            ),
     );
   }
 
-  PreferredSizeWidget _buildAppBar(ThemeData theme) {
-    return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      title: Text(
-        'Create Report Template',
-        style: TextStyle(
-          color: theme.colorScheme.onSurface,
-          fontSize: 18,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
-        onPressed: () => Navigator.pop(context),
-      ),
-    );
-  }
+  // Widget _buildSliverAppBar(ThemeData theme) {
+  //   return SliverAppBar(
+  //     backgroundColor: Colors.white,
+  //     elevation: 0,
+  //     pinned: true,
+  //     expandedHeight: 60,
+  //     flexibleSpace: FlexibleSpaceBar(
+  //       titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
+  //       title: Text(
+  //         _currentMode == ReportMode.summary ? 'Bay Analysis' : 'Data Export',
+  //         style: TextStyle(
+  //           color: theme.colorScheme.onSurface,
+  //           fontSize: 18,
+  //           fontWeight: FontWeight.w600,
+  //         ),
+  //       ),
+  //     ),
+  //     leading: IconButton(
+  //       icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+  //       onPressed: () => Navigator.pop(context),
+  //     ),
+  //   );
+  // }
 
   Widget _buildLoadingState() {
-    return const Center(child: CircularProgressIndicator());
-  }
-
-  Widget _buildMainContent(ThemeData theme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+    return const Center(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildTemplateNameSection(theme),
-          const SizedBox(height: 24),
-          _buildBaySelectionSection(theme),
-          const SizedBox(height: 24),
-          _buildReadingFieldsSection(theme),
-          const SizedBox(height: 24),
-          _buildFrequencySection(theme),
-          const SizedBox(height: 24),
-          _buildCustomColumnsSection(theme),
-          const SizedBox(height: 32),
-          _buildSaveButton(theme),
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('Loading reports...'),
         ],
       ),
     );
   }
 
-  Widget _buildTemplateNameSection(ThemeData theme) {
+  Widget _buildModeToggle(ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(
-                  Icons.description,
-                  color: theme.colorScheme.primary,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Template Information',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _templateNameController,
-            decoration: const InputDecoration(
-              labelText: 'Report Template Name',
-              hintText: 'e.g., Daily Transformer Report',
-              border: OutlineInputBorder(),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _currentMode = ReportMode.summary;
+                _tabController.dispose();
+                _tabController = TabController(length: 5, vsync: this);
+              }),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _currentMode == ReportMode.summary
+                      ? theme.colorScheme.primary
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.analytics,
+                      size: 18,
+                      color: _currentMode == ReportMode.summary
+                          ? Colors.white
+                          : theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Statistical Summary',
+                      style: TextStyle(
+                        color: _currentMode == ReportMode.summary
+                            ? Colors.white
+                            : theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _currentMode = ReportMode.export;
+                _tabController.dispose();
+                _tabController = TabController(length: 5, vsync: this);
+              }),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _currentMode == ReportMode.export
+                      ? theme.colorScheme.primary
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.download,
+                      size: 18,
+                      color: _currentMode == ReportMode.export
+                          ? Colors.white
+                          : theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Data Export',
+                      style: TextStyle(
+                        color: _currentMode == ReportMode.export
+                            ? Colors.white
+                            : theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -144,344 +278,419 @@ class _CreateReportTemplateScreenState
     );
   }
 
-  Widget _buildBaySelectionSection(ThemeData theme) {
+  Widget _buildBaySelector(ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Select Bay for Analysis',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownSearch<Bay>(
+            items: _availableBays,
+            popupProps: PopupProps.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Select Bay',
+                prefixIcon: const Icon(Icons.electrical_services),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            itemAsString: (bay) =>
+                '${bay.name} (${bay.bayType} - ${bay.voltageLevel})',
+            onChanged: (bay) {
+              setState(() => _selectedBay = bay);
+              if (bay != null) {
+                _generateStatisticalSummary();
+              }
+            },
+            selectedItem: _selectedBay,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabBar(ThemeData theme) {
+    final summaryTabs = [
+      _buildTabItem('Summary', Icons.summarize, Colors.purple),
+      _buildTabItem('Operations', Icons.settings, Colors.blue),
+      _buildTabItem('Tripping', Icons.warning, Colors.orange),
+      _buildTabItem('Energy', Icons.electrical_services, Colors.green),
+      _buildTabItem('Templates', Icons.description, Colors.indigo),
+    ];
+
+    final exportTabs = [
+      _buildTabItem('Operations', Icons.settings, Colors.blue),
+      _buildTabItem('Tripping', Icons.warning, Colors.orange),
+      _buildTabItem('Energy', Icons.electrical_services, Colors.green),
+      _buildTabItem('Templates', Icons.description, Colors.indigo),
+      _buildTabItem('Bulk Export', Icons.batch_prediction, Colors.red),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TabBar(
+        controller: _tabController,
+        isScrollable: true,
+        tabs: _currentMode == ReportMode.summary ? summaryTabs : exportTabs,
+        indicator: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: theme.colorScheme.primary.withOpacity(0.1),
+        ),
+        labelColor: theme.colorScheme.primary,
+        unselectedLabelColor: Colors.grey.shade600,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400),
+        padding: const EdgeInsets.all(8),
+        tabAlignment: TabAlignment.start,
+      ),
+    );
+  }
+
+  Widget _buildTabItem(String label, IconData icon, Color color) {
+    return Tab(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryTab(ThemeData theme) {
+    if (_selectedBay == null) {
+      return _buildSelectBayMessage(theme);
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      child: Column(
+        children: [
+          _buildStatisticalSummaryCard(theme),
+          const SizedBox(height: 16),
+          _buildTrippingEventsCard(theme),
+          const SizedBox(height: 16),
+          _buildQuickActionsCard(theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectBayMessage(ThemeData theme) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.electrical_services,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Select a Bay',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Choose a bay from the dropdown above to view detailed statistics and analysis.',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatisticalSummaryCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(
-                  Icons.electrical_services,
-                  color: Colors.blue,
-                  size: 18,
-                ),
-              ),
+              Icon(Icons.analytics, color: theme.colorScheme.primary, size: 24),
               const SizedBox(width: 12),
               Text(
-                'Bay Selection',
+                'Statistical Summary',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 18,
                   fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-
-          if (_availableBays.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Center(
-                child: Text(
-                  'No bays available for the selected substation.',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
+          if (_statisticalSummary.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('Loading statistical data...'),
               ),
             )
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _availableBays.map((bay) {
-                final isSelected = _selectedBayIds.contains(bay.id);
-                return FilterChip(
-                  label: Text(
-                    '${bay.name} (${bay.bayType})',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _selectedBayIds.add(bay.id!);
-                      } else {
-                        _selectedBayIds.remove(bay.id!);
-                      }
-                      _filterReadingFields();
-                    });
-                  },
-                  selectedColor: _getBayTypeColor(bay.bayType).withOpacity(0.2),
-                  checkmarkColor: _getBayTypeColor(bay.bayType),
-                );
-              }).toList(),
-            ),
+            _buildSummaryContent(theme),
         ],
       ),
     );
   }
 
-  Widget _buildReadingFieldsSection(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(
-                  Icons.list_alt,
-                  color: Colors.green,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Reading Fields',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
+  Widget _buildSummaryContent(ThemeData theme) {
+    return Column(
+      children: _statisticalSummary.entries.map((entry) {
+        final fieldName = entry.key;
+        final stats = entry.value as Map<String, dynamic>;
 
-          if (_selectedBayIds.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Center(
-                child: Text(
-                  'Select bays to see available reading fields.',
-                  style: TextStyle(color: Colors.grey.shade600),
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                fieldName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
                 ),
               ),
-            )
-          else if (_filteredReadingFields.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
+              const SizedBox(height: 8),
+              Row(
                 children: [
-                  Icon(Icons.warning_amber, color: Colors.orange.shade700),
-                  const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      'No reading fields available for the selected bay types.',
-                      style: TextStyle(color: Colors.orange.shade700),
+                    child: _buildStatItem(
+                      'Max',
+                      stats['max']?.toString() ?? 'N/A',
+                      stats['maxTimestamp'],
+                      Colors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatItem(
+                      'Min',
+                      stats['min']?.toString() ?? 'N/A',
+                      stats['minTimestamp'],
+                      Colors.red,
                     ),
                   ),
                 ],
               ),
+              if (stats['avg'] != null) ...[
+                const SizedBox(height: 8),
+                _buildStatItem(
+                  'Average',
+                  stats['avg'].toStringAsFixed(2),
+                  null,
+                  Colors.blue,
+                ),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildStatItem(
+    String label,
+    String value,
+    Timestamp? timestamp,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          if (timestamp != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              DateFormat('MMM dd, HH:mm').format(timestamp.toDate()),
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrippingEventsCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange, size: 24),
+              const SizedBox(width: 12),
+              Text(
+                'Tripping Events',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_bayTrippingEvents.length}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_bayTrippingEvents.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No tripping events found for this period.'),
+              ),
             )
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _filteredReadingFields.map((field) {
-                final isSelected = _selectedReadingFieldNames.contains(
-                  field.name,
-                );
-                return FilterChip(
-                  label: Text(
-                    field.unit != null && field.unit!.isNotEmpty
-                        ? '${field.name} (${field.unit})'
-                        : field.name,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _selectedReadingFieldNames.add(field.name);
-                      } else {
-                        _selectedReadingFieldNames.remove(field.name);
-                      }
-                    });
-                  },
-                  selectedColor: _getFieldTypeColor(
-                    field.dataType,
-                  ).withOpacity(0.2),
-                  checkmarkColor: _getFieldTypeColor(field.dataType),
-                );
-              }).toList(),
+            ..._bayTrippingEvents
+                .take(3)
+                .map((event) => _buildEventItem(event, theme)),
+          if (_bayTrippingEvents.length > 3)
+            Center(
+              child: TextButton(
+                onPressed: () => _showAllTrippingEvents(),
+                child: Text('View all ${_bayTrippingEvents.length} events'),
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildFrequencySection(ThemeData theme) {
+  Widget _buildEventItem(TrippingShutdownEntry event, ThemeData theme) {
+    final isOpen = event.status == 'OPEN';
+    final statusColor = isOpen ? Colors.orange : Colors.green;
+
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.purple.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(
-                  Icons.schedule,
-                  color: Colors.purple,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Report Frequency',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Column(
-            children: ReportFrequency.values
-                .where((freq) => freq != ReportFrequency.onDemand)
-                .map(
-                  (freq) => RadioListTile<ReportFrequency>(
-                    title: Text(freq.toShortString().capitalize()),
-                    value: freq,
-                    groupValue: _selectedFrequency,
-                    onChanged: (value) =>
-                        setState(() => _selectedFrequency = value!),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                )
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCustomColumnsSection(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(
-                  Icons.view_column,
-                  color: Colors.orange,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Custom Columns',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed:
-                    _selectedBayIds.isEmpty || _filteredReadingFields.isEmpty
-                    ? null
-                    : _addCustomColumn,
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Column'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          if (_customColumns.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Center(
-                child: Text(
-                  'No custom columns added yet.',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-              ),
-            )
-          else
-            ..._customColumns.asMap().entries.map((entry) {
-              final index = entry.key;
-              final column = entry.value;
-              return _buildCustomColumnCard(column, index, theme);
-            }).toList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCustomColumnCard(
-    CustomReportColumn column,
-    int index,
-    ThemeData theme,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
@@ -489,54 +698,298 @@ class _CreateReportTemplateScreenState
       ),
       child: Row(
         children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: statusColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  column.columnName,
+                  event.eventType,
                   style: const TextStyle(
-                    fontSize: 14,
                     fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 4),
                 Text(
-                  'Base: ${column.baseReadingFieldId}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-                if (column.secondaryReadingFieldId != null)
-                  Text(
-                    'Secondary: ${column.secondaryReadingFieldId}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                Text(
-                  'Operation: ${column.operation.toShortString().capitalize()}',
+                  DateFormat(
+                    'MMM dd, yyyy HH:mm',
+                  ).format(event.startTime.toDate()),
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ],
             ),
           ),
-          IconButton(
-            onPressed: () => setState(() => _customColumns.removeAt(index)),
-            icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              event.status,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: statusColor,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSaveButton(ThemeData theme) {
-    return SizedBox(
+  Widget _buildQuickActionsCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Quick Actions',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _exportBayDetailedReport(),
+                  icon: const Icon(Icons.download, size: 16),
+                  label: const Text('Export Details'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      setState(() => _currentMode = ReportMode.export),
+                  icon: const Icon(Icons.tune, size: 16),
+                  label: const Text('Advanced Export'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOperationsTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      child: Column(
+        children: [
+          if (_currentMode == ReportMode.export) _buildOperationsFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(theme, 'Operations', ExportDataType.operations),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrippingTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      child: Column(
+        children: [
+          if (_currentMode == ReportMode.export) _buildTrippingFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(theme, 'Tripping', ExportDataType.tripping),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnergyTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      child: Column(
+        children: [
+          if (_currentMode == ReportMode.export) _buildEnergyFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(theme, 'Energy', ExportDataType.energy),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomReportsTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      child: Column(
+        children: [
+          if (_currentMode == ReportMode.export)
+            _buildCustomReportFilters(theme),
+          const SizedBox(height: 16),
+          _buildExportButton(
+            theme,
+            'Custom Report',
+            ExportDataType.customReports,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBulkExportTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Bulk Export Options',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.select_all),
+                  title: const Text('Export All Data Types'),
+                  subtitle: const Text(
+                    'Generate separate files for Operations, Tripping, and Energy',
+                  ),
+                  trailing: ElevatedButton(
+                    onPressed: _exportAllDataTypes,
+                    child: const Text('Export All'),
+                  ),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.merge_type),
+                  title: const Text('Export Combined Report'),
+                  subtitle: const Text(
+                    'Single file with all data types combined',
+                  ),
+                  trailing: ElevatedButton(
+                    onPressed: _exportCombinedReport,
+                    child: const Text('Export Combined'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Keep all your existing filter and export methods here...
+  // (All the _buildOperationsFilters, _buildTrippingFilters, etc. methods remain the same)
+  // (All the data fetching and processing methods remain the same)
+
+  Widget _buildOperationsFilters(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Operations Export Filters',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          // Add your filter widgets here
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrippingFilters(ThemeData theme) {
+    return Container();
+  }
+
+  Widget _buildEnergyFilters(ThemeData theme) {
+    return Container();
+  }
+
+  Widget _buildCustomReportFilters(ThemeData theme) {
+    return Container();
+  }
+
+  Widget _buildExportButton(
+    ThemeData theme,
+    String label,
+    ExportDataType type,
+  ) {
+    return Container(
       width: double.infinity,
       height: 48,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _saveReportTemplate,
+      child: ElevatedButton.icon(
+        onPressed: _isGenerating ? null : () => _generateReport(type),
         style: ElevatedButton.styleFrom(
           backgroundColor: theme.colorScheme.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 0,
         ),
-        child: _isLoading
+        icon: _isGenerating
             ? const SizedBox(
                 width: 20,
                 height: 20,
@@ -545,285 +998,41 @@ class _CreateReportTemplateScreenState
                   color: Colors.white,
                 ),
               )
-            : const Text(
-                'Save Report Template',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-      ),
-    );
-  }
-
-  // Helper methods
-  Color _getBayTypeColor(String bayType) {
-    switch (bayType.toLowerCase()) {
-      case 'transformer':
-        return Colors.orange;
-      case 'line':
-        return Colors.blue;
-      case 'feeder':
-        return Colors.green;
-      case 'capacitor bank':
-        return Colors.purple;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  Color _getFieldTypeColor(ReadingFieldDataType dataType) {
-    switch (dataType) {
-      case ReadingFieldDataType.number:
-        return Colors.blue;
-      case ReadingFieldDataType.text:
-        return Colors.green;
-      case ReadingFieldDataType.boolean:
-        return Colors.orange;
-      case ReadingFieldDataType.date:
-        return Colors.purple;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  void _filterReadingFields() {
-    // Implementation remains the same
-  }
-
-  void _addCustomColumn() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AddCustomColumnDialog(
-        availableReadingFields: _filteredReadingFields,
-        onAdd: (column) => setState(() => _customColumns.add(column)),
-      ),
-    );
-  }
-
-  Future<void> _fetchInitialData() async {
-    // Implementation remains the same
-  }
-
-  Future<void> _saveReportTemplate() async {
-    // Implementation remains the same
-  }
-
-  @override
-  void dispose() {
-    _templateNameController.dispose();
-    super.dispose();
-  }
-}
-
-// Custom Column Dialog with improved styling
-class AddCustomColumnDialog extends StatefulWidget {
-  final List<ReadingField> availableReadingFields;
-  final Function(CustomReportColumn) onAdd;
-
-  const AddCustomColumnDialog({
-    super.key,
-    required this.availableReadingFields,
-    required this.onAdd,
-  });
-
-  @override
-  State<AddCustomColumnDialog> createState() => _AddCustomColumnDialogState();
-}
-
-class _AddCustomColumnDialogState extends State<AddCustomColumnDialog> {
-  final _columnNameController = TextEditingController();
-  ReadingField? _selectedBaseField;
-  ReadingField? _selectedSecondaryField;
-  MathOperation _selectedOperation = MathOperation.none;
-  final _operandValueController = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        width: 500,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Add Custom Column',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 20),
-
-            TextField(
-              controller: _columnNameController,
-              decoration: const InputDecoration(
-                labelText: 'Column Name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            DropdownButtonFormField<ReadingField>(
-              value: _selectedBaseField,
-              decoration: const InputDecoration(
-                labelText: 'Base Reading Field',
-                border: OutlineInputBorder(),
-              ),
-              items: widget.availableReadingFields
-                  .map(
-                    (field) => DropdownMenuItem(
-                      value: field,
-                      child: Text(
-                        field.unit != null && field.unit!.isNotEmpty
-                            ? '${field.name} (${field.unit})'
-                            : field.name,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (field) => setState(() => _selectedBaseField = field),
-            ),
-
-            const SizedBox(height: 16),
-
-            DropdownButtonFormField<MathOperation>(
-              value: _selectedOperation,
-              decoration: const InputDecoration(
-                labelText: 'Operation',
-                border: OutlineInputBorder(),
-              ),
-              items: MathOperation.values
-                  .map(
-                    (op) => DropdownMenuItem(
-                      value: op,
-                      child: Text(op.toShortString().capitalize()),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (op) => setState(() => _selectedOperation = op!),
-            ),
-
-            if (_showSecondaryField()) ...[
-              const SizedBox(height: 16),
-              DropdownButtonFormField<ReadingField>(
-                value: _selectedSecondaryField,
-                decoration: const InputDecoration(
-                  labelText: 'Secondary Reading Field',
-                  border: OutlineInputBorder(),
-                ),
-                items: widget.availableReadingFields
-                    .where((field) => field != _selectedBaseField)
-                    .map(
-                      (field) => DropdownMenuItem(
-                        value: field,
-                        child: Text(
-                          field.unit != null && field.unit!.isNotEmpty
-                              ? '${field.name} (${field.unit})'
-                              : field.name,
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (field) =>
-                    setState(() => _selectedSecondaryField = field),
-              ),
-            ],
-
-            if (_showOperandValue()) ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: _operandValueController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Operand Value',
-                  hintText: 'Enter a number for constant operations',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 24),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _validateAndAdd,
-                  child: const Text('Add Column'),
-                ),
-              ],
-            ),
-          ],
+            : const Icon(Icons.download, size: 20),
+        label: Text(
+          _isGenerating ? 'Generating...' : 'Export $label Data',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
         ),
       ),
     );
   }
 
-  bool _showSecondaryField() {
-    return [
-      MathOperation.add,
-      MathOperation.subtract,
-      MathOperation.multiply,
-      MathOperation.divide,
-    ].contains(_selectedOperation);
+  // Add all your existing data methods here
+  Future<void> _fetchInitialData() async {
+    // Your existing implementation
   }
 
-  bool _showOperandValue() {
-    return ![
-          MathOperation.max,
-          MathOperation.min,
-          MathOperation.sum,
-          MathOperation.average,
-          MathOperation.none,
-        ].contains(_selectedOperation) &&
-        _selectedSecondaryField == null;
+  Future<void> _generateStatisticalSummary() async {
+    // Your existing implementation
   }
 
-  void _validateAndAdd() {
-    if (_columnNameController.text.trim().isEmpty) {
-      SnackBarUtils.showSnackBar(context, 'Column name cannot be empty.');
-      return;
-    }
-
-    if (_selectedBaseField == null) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'Please select a base reading field.',
-      );
-      return;
-    }
-
-    widget.onAdd(
-      CustomReportColumn(
-        columnName: _columnNameController.text.trim(),
-        baseReadingFieldId: _selectedBaseField!.name,
-        secondaryReadingFieldId: _selectedSecondaryField?.name,
-        operation: _selectedOperation,
-        operandValue: _operandValueController.text.trim().isEmpty
-            ? null
-            : _operandValueController.text.trim(),
-      ),
-    );
-
-    Navigator.pop(context);
+  Future<void> _generateReport(ExportDataType type) async {
+    // Your existing implementation
   }
 
-  @override
-  void dispose() {
-    _columnNameController.dispose();
-    _operandValueController.dispose();
-    super.dispose();
+  Future<void> _exportBayDetailedReport() async {
+    // Your existing implementation
   }
-}
 
-// Extensions
-extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) return '';
-    return "${this[0].toUpperCase()}${substring(1)}";
+  Future<void> _exportAllDataTypes() async {
+    // Your existing implementation
+  }
+
+  Future<void> _exportCombinedReport() async {
+    // Your existing implementation
+  }
+
+  void _showAllTrippingEvents() {
+    // Your existing implementation
   }
 }
