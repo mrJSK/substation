@@ -1,4 +1,3 @@
-// lib/screens/substation_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -11,11 +10,10 @@ import '../../models/equipment_model.dart';
 import '../../models/user_readings_config_model.dart';
 import '../../painters/single_line_diagram_painter.dart';
 import '../../utils/snackbar_utils.dart';
+import '../../widgets/bay_form_card.dart';
 import '../bay_equipment_management_screen.dart';
 import '../bay_reading_assignment_screen.dart';
 import 'energy_sld_screen.dart';
-import '../../widgets/bay_form_card.dart';
-import '../../widgets/sld_view_widget.dart';
 import '../../controllers/sld_controller.dart';
 import '../../enums/movement_mode.dart';
 
@@ -262,16 +260,6 @@ class BayEquipmentListScreen extends StatelessWidget {
                           color: theme.colorScheme.onSurface.withOpacity(0.6),
                         ),
                       ),
-                      // if (equipment.serialNumber?.isNotEmpty == true) ...[
-                      //   const SizedBox(height: 2),
-                      //   Text(
-                      //     'S/N: ${equipment.serialNumber}',
-                      //     style: TextStyle(
-                      //       fontSize: 12,
-                      //       color: theme.colorScheme.onSurface.withOpacity(0.5),
-                      //     ),
-                      //   ),
-                      // ],
                     ],
                   ),
                   trailing: Container(
@@ -511,7 +499,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         ),
         body: _viewMode == BayDetailViewMode.list
             ? _buildBaysAndEquipmentList()
-            : BayFormCard(
+            : BayFormScreen(
                 bayToEdit: _bayToEdit,
                 substationId: widget.substationId,
                 currentUser: widget.currentUser,

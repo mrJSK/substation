@@ -126,6 +126,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.defaultLineFeederColor,
     required this.transformerColor,
     required this.connectionLineColor,
+    required bool isCapturing,
   });
 
   Color _getBusbarColor(String voltageLevel) {

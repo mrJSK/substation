@@ -43,33 +43,57 @@ class PdfGeneratorData {
 
 class PdfGenerator {
   static double _getVoltageLevelValue(String voltageLevel) {
+    print('DEBUG: Getting voltage level value for: $voltageLevel');
     final regex = RegExp(r'(\d+(\.\d+)?)');
     final match = regex.firstMatch(voltageLevel);
     if (match != null) {
-      return double.tryParse(match.group(1)!) ?? 0.0;
+      final value = double.tryParse(match.group(1)!) ?? 0.0;
+      print('DEBUG: Extracted voltage value: $value');
+      return value;
     }
+    print('DEBUG: No voltage value found, returning 0.0');
     return 0.0;
   }
 
   static Future<Uint8List> generateEnergyReportPdf(
     PdfGeneratorData data,
   ) async {
+    print('DEBUG: Starting PDF generation');
+    print('DEBUG: SLD image bytes length: ${data.sldImageBytes.length}');
+
     final pdf = pw.Document();
+
+    // Load fonts to prevent Unicode issues
+    pw.Font? regularFont;
+    pw.Font? boldFont;
+    try {
+      regularFont = await PdfGoogleFonts.notoSansRegular();
+      boldFont = await PdfGoogleFonts.notoSansBold();
+      print('DEBUG: Fonts loaded successfully');
+    } catch (e) {
+      print('DEBUG: Could not load fonts, using defaults: $e');
+    }
 
     pw.MemoryImage? sldPdfImage;
     if (data.sldImageBytes.isNotEmpty) {
-      sldPdfImage = pw.MemoryImage(data.sldImageBytes);
+      try {
+        sldPdfImage = pw.MemoryImage(data.sldImageBytes);
+        print('DEBUG: SLD image successfully created from bytes');
+      } catch (e) {
+        print('DEBUG ERROR: Failed to create SLD image: $e');
+      }
     }
 
+    // Build abstract table data
     List<String> abstractTableHeaders = [''];
     for (String voltage in data.uniqueBusVoltages) {
       abstractTableHeaders.add('$voltage BUS');
     }
     abstractTableHeaders.add('ABSTRACT OF S/S');
     abstractTableHeaders.add('TOTAL');
+    print('DEBUG: Abstract table headers: $abstractTableHeaders');
 
     List<List<String>> abstractTableData = [];
-
     final List<String> rowLabels = [
       'Imp. (MWH)',
       'Exp. (MWH)',
@@ -77,6 +101,7 @@ class PdfGenerator {
       '% Loss',
     ];
 
+    // Generate abstract table data (keeping your existing logic)
     for (int i = 0; i < rowLabels.length; i++) {
       List<String> row = [rowLabels[i]];
       double rowTotalSummable = 0.0;
@@ -87,6 +112,7 @@ class PdfGenerator {
         final busbarsOfThisVoltage = data.allBaysInSubstation.where(
           (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
         );
+
         double totalForThisBusVoltageImp = 0.0;
         double totalForThisBusVoltageExp = 0.0;
         double totalForThisBusVoltageDiff = 0.0;
@@ -164,178 +190,202 @@ class PdfGenerator {
       abstractTableData.add(row);
     }
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.copyWith(
-          marginBottom: 1.5 * PdfPageFormat.cm,
-          marginTop: 1.5 * PdfPageFormat.cm,
-          marginLeft: 1.5 * PdfPageFormat.cm,
-          marginRight: 1.5 * PdfPageFormat.cm,
-        ),
-        header: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'Substation Energy Account Report',
-                style: pw.TextStyle(
-                  fontSize: 18,
-                  fontWeight: pw.FontWeight.bold,
+    print('DEBUG: Starting PDF page construction');
+
+    // CRITICAL FIX: Use Page instead of MultiPage to avoid infinite loops
+    try {
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.all(20),
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // Header section - REMOVE border and shadow
+                pw.Container(
+                  width: double.infinity,
+                  padding: pw.EdgeInsets.all(12),
+                  // REMOVED: decoration with border
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Substation Energy Account Report',
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: 18,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        data.substationName,
+                        style: pw.TextStyle(font: regularFont, fontSize: 14),
+                      ),
+                      pw.Text(
+                        'Period: ${data.dateRange}',
+                        style: pw.TextStyle(font: regularFont, fontSize: 12),
+                      ),
+                      pw.Text(
+                        'Generated: ${DateFormat('dd-MMM-yyyy HH:mm').format(DateTime.now())}',
+                        style: pw.TextStyle(
+                          font: regularFont,
+                          fontSize: 10,
+                          color: PdfColors.grey600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              pw.Text(data.substationName, style: pw.TextStyle(fontSize: 14)),
-              pw.Text(
-                'Period: ${data.dateRange}',
-                style: pw.TextStyle(fontSize: 12),
-              ),
-              pw.Divider(),
-            ],
-          );
-        },
-        build: (pw.Context context) {
-          return [
-            if (sldPdfImage != null)
-              pw.Center(
-                child: pw.Column(
-                  children: [
-                    pw.Text(
-                      'Single Line Diagram',
-                      style: pw.TextStyle(
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
+
+                pw.SizedBox(height: 12),
+
+                // SLD Image section - REMOVE border
+                if (sldPdfImage != null)
+                  pw.Container(
+                    width: double.infinity,
+                    height: 200,
+                    child: pw.Column(
+                      children: [
+                        pw.Text(
+                          'Single Line Diagram',
+                          style: pw.TextStyle(font: boldFont, fontSize: 14),
+                        ),
+                        pw.SizedBox(height: 8),
+                        pw.Expanded(
+                          child: pw.Container(
+                            // REMOVED: decoration with border
+                            child: pw.Image(
+                              sldPdfImage,
+                              fit: pw.BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  pw.Container(
+                    height: 40,
+                    child: pw.Center(
+                      child: pw.Text(
+                        'SLD Diagram could not be captured.',
+                        style: pw.TextStyle(
+                          font: regularFont,
+                          color: PdfColors.red,
+                        ),
                       ),
                     ),
-                    pw.SizedBox(height: 10),
-                    pw.Image(
-                      sldPdfImage,
-                      fit: pw.BoxFit.contain,
-                      width: PdfPageFormat.a4.width - (3 * PdfPageFormat.cm),
-                    ),
-                    pw.SizedBox(height: 30),
-                  ],
-                ),
-              )
-            else
-              pw.Text(
-                'SLD Diagram could not be captured.',
-                style: pw.TextStyle(color: PdfColors.red),
-              ),
-            pw.Header(
-              level: 0,
-              text: 'Consolidated Energy Abstract',
-              decoration: pw.BoxDecoration(
-                border: pw.Border(bottom: pw.BorderSide()),
-              ),
-            ),
-            pw.Table.fromTextArray(
-              context: context,
-              headers: abstractTableHeaders,
-              data: abstractTableData,
-              border: pw.TableBorder.all(width: 0.5),
-              headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 8,
-              ),
-              cellAlignment: pw.Alignment.center,
-              cellPadding: const pw.EdgeInsets.all(3),
-              columnWidths: {
-                0: const pw.FlexColumnWidth(1.2),
-                for (int i = 0; i < data.uniqueBusVoltages.length; i++)
-                  (i + 1).toInt(): const pw.FlexColumnWidth(1.0),
-                (data.uniqueBusVoltages.length + 1).toInt():
-                    const pw.FlexColumnWidth(1.2),
-                (data.uniqueBusVoltages.length + 2).toInt():
-                    const pw.FlexColumnWidth(1.2),
-              },
-            ),
-            pw.SizedBox(height: 20),
-            pw.Header(
-              level: 0,
-              text: 'Feeder Energy Supplied by Distribution Hierarchy',
-              decoration: pw.BoxDecoration(
-                border: pw.Border(bottom: pw.BorderSide()),
-              ),
-            ),
-            if (data.aggregatedFeederData.isNotEmpty)
-              pw.Table.fromTextArray(
-                context: context,
-                headers: <String>[
-                  'D-Zone',
-                  'D-Circle',
-                  'D-Division',
-                  'D-Subdivision',
-                  'Import (MWH)',
-                  'Export (MWH)',
-                ],
-                data: data.aggregatedFeederData.map((d) {
-                  return <String>[
-                    d.zoneName,
-                    d.circleName,
-                    d.divisionName,
-                    d.distributionSubdivisionName,
-                    d.importedEnergy.toStringAsFixed(2),
-                    d.exportedEnergy.toStringAsFixed(2),
-                  ];
-                }).toList(),
-                border: pw.TableBorder.all(width: 0.5),
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                cellAlignment: pw.Alignment.centerLeft,
-                cellPadding: const pw.EdgeInsets.all(4),
-              )
-            else
-              pw.Text('No aggregated feeder energy data available.'),
-            pw.SizedBox(height: 20),
-            pw.Header(
-              level: 0,
-              text: 'Assessments for this Period',
-              decoration: pw.BoxDecoration(
-                border: pw.Border(bottom: pw.BorderSide()),
-              ),
-            ),
-            if (data.assessmentsForPdf.isNotEmpty)
-              pw.Table.fromTextArray(
-                context: context,
-                headers: <String>[
-                  'Bay Name',
-                  'Import Adj.',
-                  'Export Adj.',
-                  'Reason',
-                  'Timestamp',
-                ],
-                data: data.assessmentsForPdf.map((assessmentMap) {
-                  final Assessment assessment = Assessment.fromMap(
-                    assessmentMap,
-                  );
-                  return <String>[
-                    assessmentMap['bayName'] ?? 'N/A',
-                    assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A',
-                    assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A',
-                    assessment.reason,
-                    DateFormat(
-                      'dd-MMM-yyyy HH:mm',
-                    ).format(assessment.assessmentTimestamp.toDate()),
-                  ];
-                }).toList(),
-                border: pw.TableBorder.all(width: 0.5),
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                cellAlignment: pw.Alignment.centerLeft,
-                cellPadding: const pw.EdgeInsets.all(4),
-                columnWidths: {
-                  0: const pw.FlexColumnWidth(2),
-                  1: const pw.FlexColumnWidth(1.2),
-                  2: const pw.FlexColumnWidth(1.2),
-                  3: const pw.FlexColumnWidth(3),
-                  4: const pw.FlexColumnWidth(2),
-                },
-              )
-            else
-              pw.Text('No assessments were made for this period.'),
-          ];
-        },
-      ),
-    );
+                  ),
 
-    return await pdf.save();
+                pw.SizedBox(height: 12),
+
+                // Abstract table (constrained)
+                pw.Container(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Consolidated Energy Abstract',
+                        style: pw.TextStyle(font: boldFont, fontSize: 14),
+                      ),
+                      pw.SizedBox(height: 8),
+                      pw.Table.fromTextArray(
+                        context: context,
+                        headers: abstractTableHeaders,
+                        data: abstractTableData,
+                        border: pw.TableBorder.all(width: 0.5),
+                        headerStyle: pw.TextStyle(
+                          font: boldFont,
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 8,
+                        ),
+                        cellStyle: pw.TextStyle(font: regularFont, fontSize: 8),
+                        cellAlignment: pw.Alignment.center,
+                        cellPadding: pw.EdgeInsets.all(2),
+                      ),
+                    ],
+                  ),
+                ),
+
+                pw.SizedBox(height: 12),
+
+                // Assessments section (if space allows)
+                if (data.assessmentsForPdf.isNotEmpty)
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Assessments for this Period',
+                          style: pw.TextStyle(font: boldFont, fontSize: 14),
+                        ),
+                        pw.SizedBox(height: 8),
+                        pw.Table.fromTextArray(
+                          context: context,
+                          headers: [
+                            'Bay Name',
+                            'Import Adj.',
+                            'Export Adj.',
+                            'Reason',
+                          ],
+                          data: data.assessmentsForPdf.take(5).map((
+                            assessmentMap,
+                          ) {
+                            return [
+                              assessmentMap['bayName'] ?? 'N/A',
+                              (assessmentMap['importAdjustment'] ?? 0.0)
+                                  .toString(),
+                              (assessmentMap['exportAdjustment'] ?? 0.0)
+                                  .toString(),
+                              (assessmentMap['reason'] ?? '')
+                                          .toString()
+                                          .length >
+                                      30
+                                  ? (assessmentMap['reason'] ?? '')
+                                            .toString()
+                                            .substring(0, 30) +
+                                        '...'
+                                  : (assessmentMap['reason'] ?? '').toString(),
+                            ];
+                          }).toList(),
+                          border: pw.TableBorder.all(width: 0.5),
+                          headerStyle: pw.TextStyle(
+                            font: boldFont,
+                            fontSize: 8,
+                          ),
+                          cellStyle: pw.TextStyle(
+                            font: regularFont,
+                            fontSize: 7,
+                          ),
+                          cellPadding: pw.EdgeInsets.all(2),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      );
+
+      print('DEBUG: PDF page added successfully');
+    } catch (e) {
+      print('DEBUG ERROR: Failed to create PDF page: $e');
+      throw e;
+    }
+
+    try {
+      final pdfBytes = await pdf.save();
+      print(
+        'DEBUG: PDF generation completed successfully. Size: ${pdfBytes.length} bytes',
+      );
+      return pdfBytes;
+    } catch (e) {
+      print('DEBUG ERROR: Failed to save PDF: $e');
+      throw e;
+    }
   }
 
   static Future<void> sharePdf(
@@ -343,10 +393,35 @@ class PdfGenerator {
     String filename,
     String subject,
   ) async {
-    final output = await getTemporaryDirectory();
-    final file = File('${output.path}/$filename');
-    await file.writeAsBytes(pdfBytes);
+    print('DEBUG: Starting PDF sharing process');
+    print('DEBUG: PDF size: ${pdfBytes.length} bytes');
+    print('DEBUG: Filename: $filename');
+    print('DEBUG: Subject: $subject');
 
-    await Share.shareXFiles([XFile(file.path)], subject: subject);
+    try {
+      final output = await getTemporaryDirectory();
+      print('DEBUG: Temporary directory: ${output.path}');
+
+      final file = File('${output.path}/$filename');
+      print('DEBUG: Full file path: ${file.path}');
+
+      await file.writeAsBytes(pdfBytes);
+      print('DEBUG: PDF file written successfully');
+
+      final fileExists = await file.exists();
+      if (fileExists) {
+        final fileSize = await file.length();
+        print('DEBUG: Confirmed file exists with size: $fileSize bytes');
+      } else {
+        print('DEBUG ERROR: File was not created successfully');
+        throw Exception('Failed to create temporary PDF file');
+      }
+
+      await Share.shareXFiles([XFile(file.path)], subject: subject);
+      print('DEBUG: PDF sharing completed successfully');
+    } catch (e) {
+      print('DEBUG ERROR: PDF sharing failed: $e');
+      throw e;
+    }
   }
 }

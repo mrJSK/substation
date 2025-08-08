@@ -1,9 +1,9 @@
-// lib/utils/energy_sld_utils.dart
-
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 
 import '../enums/movement_mode.dart';
@@ -12,6 +12,7 @@ import '../models/bay_model.dart';
 import '../models/saved_sld_model.dart';
 import '../models/assessment_model.dart';
 import '../controllers/sld_controller.dart';
+import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart';
 import '../services/energy_data_service.dart';
 import '../widgets/energy_assessment_dialog.dart';
 import '../utils/snackbar_utils.dart';
@@ -583,6 +584,21 @@ class EnergySldUtils {
         .toList();
   }
 
+  static Future<Uint8List> _captureSldAsImage(BuildContext context) async {
+    try {
+      final energySldState = context
+          .findAncestorStateOfType<State<EnergySldScreen>>();
+      if (energySldState != null) {
+        return await (energySldState as dynamic).captureSldAsImage();
+      }
+      print('Could not find EnergySldScreen state for image capture');
+      return Uint8List(0);
+    } catch (e) {
+      print('Error capturing SLD image: $e');
+      return Uint8List(0);
+    }
+  }
+
   static Future<void> shareAsPdf(
     BuildContext context,
     String substationName,
@@ -591,12 +607,23 @@ class EnergySldUtils {
     SldController sldController,
     List<Assessment> allAssessmentsForDisplay,
     bool isViewingSavedSld,
-    dynamic loadedAssessmentsSummary,
-  ) async {
+    dynamic loadedAssessmentsSummary, {
+    required Uint8List sldImageBytes,
+  }) async {
     try {
       SnackBarUtils.showSnackBar(context, 'Generating PDF...');
 
-      // Create date range string
+      // Capture SLD image using EnergySldScreen state
+      Uint8List sldImageBytes = Uint8List(0);
+      final energySldState = context
+          .findAncestorStateOfType<State<EnergySldScreen>>();
+      if (energySldState != null) {
+        sldImageBytes = await (energySldState as dynamic).captureSldAsImage();
+        print('SLD image captured: ${sldImageBytes.length} bytes');
+      } else {
+        print('Could not find EnergySldScreen state');
+      }
+
       String dateRange;
       if (startDate.isAtSameMomentAs(endDate)) {
         dateRange = DateFormat('dd-MMM-yyyy').format(startDate);
@@ -605,19 +632,12 @@ class EnergySldUtils {
             '${DateFormat('dd-MMM-yyyy').format(startDate)} to ${DateFormat('dd-MMM-yyyy').format(endDate)}';
       }
 
-      // Capture SLD as image (you might need to implement this)
-      Uint8List sldImageBytes = Uint8List(
-        0,
-      ); // Placeholder - implement SLD capture
-
-      // Get unique bus voltages
       List<String> uniqueBusVoltages = sldController.allBays
           .where((bay) => bay.bayType == 'Busbar')
           .map((bay) => bay.voltageLevel)
           .toSet()
           .toList();
 
-      // Sort voltages by value
       uniqueBusVoltages.sort((a, b) {
         double getVoltage(String v) {
           final regex = RegExp(r'(\d+(\.\d+)?)');
@@ -628,7 +648,6 @@ class EnergySldUtils {
         return getVoltage(b).compareTo(getVoltage(a));
       });
 
-      // Prepare assessments data for PDF
       List<Map<String, dynamic>> assessmentsForPdf = allAssessmentsForDisplay
           .map((assessment) {
             Map<String, dynamic> assessmentMap = assessment.toFirestore();
@@ -638,7 +657,6 @@ class EnergySldUtils {
           })
           .toList();
 
-      // Create PdfGeneratorData
       final pdfData = PdfGeneratorData(
         substationName: substationName,
         dateRange: dateRange,
@@ -650,17 +668,14 @@ class EnergySldUtils {
         uniqueBusVoltages: uniqueBusVoltages,
         allBaysInSubstation: sldController.allBays,
         baysMap: sldController.baysMap,
-        uniqueDistributionSubdivisionNames: [], // Add if needed
+        uniqueDistributionSubdivisionNames: [],
       );
 
-      // Generate PDF using your existing PdfGenerator
       final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
 
-      // Create filename
       final filename =
           'Energy_SLD_${substationName.replaceAll(' ', '_')}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}.pdf';
 
-      // Share PDF using your existing method
       await PdfGenerator.sharePdf(
         pdfBytes,
         filename,
@@ -668,9 +683,7 @@ class EnergySldUtils {
       );
 
       if (context.mounted) {
-        // Hide generating message
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
         SnackBarUtils.showSnackBar(
           context,
           'PDF generated and shared successfully!',
