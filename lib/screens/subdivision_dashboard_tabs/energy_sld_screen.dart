@@ -94,6 +94,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         );
       }
 
+      // Debug the loaded data
+      print('DEBUG: SLD Controller after data load:');
+      print('DEBUG: Bay count: ${sldController.allBays.length}');
+      print(
+        'DEBUG: Bay energy data count: ${sldController.bayEnergyData.length}',
+      );
+      print(
+        'DEBUG: Bus energy summary count: ${sldController.busEnergySummary.length}',
+      );
+
       // Wait for widget tree to settle after data load
       await Future.delayed(const Duration(milliseconds: 300));
     } catch (e) {
@@ -109,56 +119,77 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  /// Improved SLD image capture with proper timing and error handling
+  /// Enhanced SLD image capture with detailed debugging
   Future<Uint8List?> captureSldAsImage() async {
     try {
-      print('Starting SLD image capture...');
+      print('DEBUG: Starting SLD image capture...');
+      print(
+        'DEBUG: Checking RepaintBoundary key: ${_sldRepaintBoundaryKey.toString()}',
+      );
 
-      // Ensure frame is painted before capture
-      await WidgetsBinding.instance.endOfFrame;
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      final RenderRepaintBoundary? boundary =
-          _sldRepaintBoundaryKey.currentContext?.findRenderObject()
-              as RenderRepaintBoundary?;
-
-      if (boundary == null) {
-        print('RepaintBoundary not found');
+      // Ensure we're not already capturing
+      if (_isCapturingPdf) {
+        print('DEBUG: Already capturing, returning null');
         return null;
       }
 
-      if (boundary.debugNeedsPaint) {
-        print('Boundary needs paint, waiting...');
-        await Future.delayed(const Duration(milliseconds: 150));
+      // Check if the key has a current context
+      if (_sldRepaintBoundaryKey.currentContext == null) {
+        print('DEBUG ERROR: RepaintBoundary key has no current context');
+        print(
+          'DEBUG: This means the RepaintBoundary widget is not in the widget tree',
+        );
+        return null;
       }
 
-      // Set capture state to trigger flattened view
+      print('DEBUG: RepaintBoundary context found, getting RenderObject...');
+
+      // Get the RenderObject
+      final RenderObject? renderObject = _sldRepaintBoundaryKey.currentContext!
+          .findRenderObject();
+
+      if (renderObject == null) {
+        print('DEBUG ERROR: RenderObject is null');
+        return null;
+      }
+
+      if (renderObject is! RenderRepaintBoundary) {
+        print('DEBUG ERROR: RenderObject is not a RenderRepaintBoundary');
+        print('DEBUG: Actual type: ${renderObject.runtimeType}');
+        return null;
+      }
+
+      final RenderRepaintBoundary boundary = renderObject;
+      print('DEBUG: RenderRepaintBoundary found successfully');
+
+      // Check if boundary needs painting
+      if (boundary.debugNeedsPaint) {
+        print('DEBUG: Boundary needs paint, waiting...');
+        await Future.delayed(const Duration(milliseconds: 200));
+        await WidgetsBinding.instance.endOfFrame;
+      }
+
+      // Set capture state
       if (mounted) {
         setState(() {
           _isCapturingPdf = true;
         });
+
+        // Wait for UI to update
+        await WidgetsBinding.instance.endOfFrame;
+        await Future.delayed(const Duration(milliseconds: 100));
       }
 
-      // Wait for rebuild with flattened view
-      await WidgetsBinding.instance.endOfFrame;
-      await Future.delayed(const Duration(milliseconds: 150));
-
-      // Calculate content bounds for proper sizing
+      // Calculate content bounds for optimal pixel ratio
       final contentBounds = _calculateContentBounds();
-      print('Content bounds: $contentBounds');
+      final pixelRatio = _calculateOptimalPixelRatio(contentBounds);
 
-      // Use boundary.toImage directly (more reliable)
-      Uint8List? bytes;
-      try {
-        final image = await boundary.toImage(
-          pixelRatio: _calculateOptimalPixelRatio(contentBounds),
-        );
-        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-        bytes = byteData?.buffer.asUint8List();
-      } catch (e) {
-        print('boundary.toImage failed: $e');
-        return null;
-      }
+      print('DEBUG: Capturing with pixel ratio: $pixelRatio');
+      print('DEBUG: Content bounds: $contentBounds');
+
+      // Capture the image
+      final image = await boundary.toImage(pixelRatio: pixelRatio);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
       // Reset capture state
       if (mounted) {
@@ -167,28 +198,30 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         });
       }
 
-      if (bytes != null && bytes.isNotEmpty) {
-        print('Successfully captured SLD image: ${bytes.length} bytes');
+      if (byteData != null) {
+        final bytes = byteData.buffer.asUint8List();
+        print('DEBUG: Successfully captured SLD image: ${bytes.length} bytes');
 
-        // Validate image by decoding
+        // Validate the captured image
         try {
           final codec = await ui.instantiateImageCodec(bytes);
           final frame = await codec.getNextFrame();
           print(
-            'Image dimensions: ${frame.image.width} x ${frame.image.height}',
+            'DEBUG: Image validation successful - dimensions: ${frame.image.width} x ${frame.image.height}',
           );
         } catch (e) {
-          print('Warning: Could not validate captured image: $e');
+          print('DEBUG WARNING: Could not validate captured image: $e');
         }
 
         return bytes;
       }
 
-      print('Capture returned empty bytes');
+      print('DEBUG ERROR: ByteData is null after image capture');
       return null;
     } catch (e, stackTrace) {
-      print('Error capturing SLD image: $e');
-      print('Stack trace: $stackTrace');
+      print('DEBUG ERROR: Exception in captureSldAsImage: $e');
+      print('DEBUG ERROR: Stack trace: $stackTrace');
+
       if (mounted) {
         setState(() {
           _isCapturingPdf = false;
@@ -215,7 +248,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     ); // Cap at 6.0 for memory
 
     print(
-      'Calculated pixel ratio: $finalRatio for content dimension: $maxContentDimension',
+      'DEBUG: Calculated pixel ratio: $finalRatio for content dimension: $maxContentDimension',
     );
     return finalRatio;
   }
@@ -296,7 +329,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       return bounds;
     } catch (e) {
-      print('Error calculating content bounds: $e');
+      print('DEBUG ERROR: Error calculating content bounds: $e');
       return const Rect.fromLTWH(0, 0, 800, 600);
     }
   }
@@ -506,11 +539,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        SnackBarUtils.showSnackBar(
-          context,
-          'Error generating PDF: $e',
-          isError: true,
-        );
+
+        String errorMessage = 'Error generating PDF';
+        if (e.toString().contains('TooManyPagesException')) {
+          errorMessage = 'PDF content too large - please try with less data';
+        } else if (e.toString().contains('Memory')) {
+          errorMessage =
+              'Not enough memory to generate PDF - try reducing image size';
+        }
+
+        SnackBarUtils.showSnackBar(context, errorMessage, isError: true);
       }
     }
   }
@@ -834,14 +872,79 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFAFA),
         appBar: _buildAppBar(sldController),
-        body: Stack(
-          children: [
-            _isLoading ? _buildLoadingState() : _buildBody(sldController),
-            _buildFloatingActionButton(sldController),
-          ],
-        ),
+        body: _buildBodyWithRepaintBoundary(
+          sldController,
+        ), // NEW: Dedicated method
         bottomNavigationBar: _buildBottomNavigationBar(sldController),
       ),
+    );
+  }
+
+  // NEW: Dedicated method to ensure RepaintBoundary is properly placed
+  Widget _buildBodyWithRepaintBoundary(SldController sldController) {
+    return Stack(
+      children: [
+        if (_isLoading)
+          _buildLoadingState()
+        else
+          // CRITICAL: RepaintBoundary must wrap the actual SLD content
+          RepaintBoundary(
+            key: _sldRepaintBoundaryKey,
+            child: Column(
+              children: [
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    color: Colors.white, // Ensure solid background for capture
+                    child: SldViewWidget(
+                      isEnergySld: true,
+                      isCapturingPdf: _isCapturingPdf,
+                      onBayTapped: _isCapturingPdf
+                          ? null
+                          : (bay, tapPosition) {
+                              if (sldController.selectedBayForMovementId ==
+                                  null) {
+                                EnergySldUtils.showBayActions(
+                                  context,
+                                  bay,
+                                  tapPosition,
+                                  sldController,
+                                  _isViewingSavedSld,
+                                  _energyDataService,
+                                );
+                              }
+                            },
+                    ),
+                  ),
+                ),
+                // Tables OUTSIDE RepaintBoundary to avoid capture issues
+              ],
+            ),
+          ),
+
+        // Tables as overlay when needed
+        if (_showTables && !_isCapturingPdf && !_isLoading)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              height: 200,
+              child: EnergyTablesWidget(
+                isViewingSavedSld: _isViewingSavedSld,
+                loadedAssessmentsSummary:
+                    _energyDataService.loadedAssessmentsSummary,
+                allAssessmentsForDisplay:
+                    _energyDataService.allAssessmentsForDisplay,
+              ),
+            ),
+          ),
+
+        // FAB outside RepaintBoundary
+        if (!_isCapturingPdf && !_isLoading)
+          _buildFloatingActionButton(sldController),
+      ],
     );
   }
 
@@ -1021,46 +1124,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  Widget _buildBody(SldController sldController) {
-    return Column(
-      children: [
-        Expanded(
-          child: RepaintBoundary(
-            key: _sldRepaintBoundaryKey,
-            child: SldViewWidget(
-              isEnergySld: true,
-              isCapturingPdf: _isCapturingPdf,
-              onBayTapped: (bay, tapPosition) {
-                if (sldController.selectedBayForMovementId == null &&
-                    !_isCapturingPdf) {
-                  EnergySldUtils.showBayActions(
-                    context,
-                    bay,
-                    tapPosition,
-                    sldController,
-                    _isViewingSavedSld,
-                    _energyDataService,
-                  );
-                }
-              },
-            ),
-          ),
-        ),
-        if (_showTables && !_isCapturingPdf)
-          EnergyTablesWidget(
-            isViewingSavedSld: _isViewingSavedSld,
-            loadedAssessmentsSummary:
-                _energyDataService.loadedAssessmentsSummary,
-            allAssessmentsForDisplay:
-                _energyDataService.allAssessmentsForDisplay,
-          ),
-      ],
-    );
-  }
-
   Widget _buildFloatingActionButton(SldController sldController) {
-    if (_isCapturingPdf) return const SizedBox.shrink();
-
     return EnergySpeedDialWidget(
       isViewingSavedSld: _isViewingSavedSld,
       showTables: _showTables,
