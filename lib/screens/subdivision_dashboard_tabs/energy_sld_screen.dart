@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
@@ -18,6 +20,7 @@ import '../../utils/snackbar_utils.dart';
 import '../../widgets/energy_movement_controls_widget.dart';
 import '../../widgets/energy_speed_dial_widget.dart';
 import '../../widgets/energy_tables_widget.dart';
+import '../../widgets/print_preview_dialog.dart';
 import '../../widgets/sld_view_widget.dart';
 
 class EnergySldScreen extends StatefulWidget {
@@ -108,15 +111,180 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       await Future.delayed(const Duration(milliseconds: 300));
     } catch (e) {
       if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Failed to load energy data: $e',
-          isError: true,
-        );
+        _showFixedSnackBar('Failed to load energy data: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // NEW: Show print preview as screen instead of dialog
+  Future<void> showPrintPreview() async {
+    if (_isLoading) {
+      _showFixedSnackBar(
+        'Please wait for SLD to load completely',
+        isError: true,
+      );
+      return;
+    }
+
+    // Get the SldController from the current context
+    final sldController = Provider.of<SldController>(context, listen: false);
+
+    // Navigate to print preview screen with ChangeNotifierProvider
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ChangeNotifierProvider<SldController>.value(
+          value: sldController,
+          child: PrintPreviewScreen(
+            substationName: widget.substationName,
+            startDate: _startDate,
+            endDate: _endDate,
+            sldController: sldController,
+            onGeneratePdf: (zoom, position) =>
+                _generatePdfWithLayout(zoom, position),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // NEW: Generate PDF with layout parameters
+  Future<void> _generatePdfWithLayout(double zoom, Offset position) async {
+    try {
+      _showFixedSnackBar('Generating PDF...');
+
+      final sldController = Provider.of<SldController>(context, listen: false);
+
+      // Capture SLD with specific zoom and position
+      final sldImageBytes = await captureSldAsImageWithLayout(zoom, position);
+
+      if (sldImageBytes == null || sldImageBytes.isEmpty) {
+        throw Exception('Failed to capture SLD image');
+      }
+
+      // Build PDF data with layout parameters
+      final pdfData = PdfGeneratorData(
+        substationName: widget.substationName,
+        dateRange:
+            '${DateFormat('dd-MMM-yyyy').format(_startDate)} to ${DateFormat('dd-MMM-yyyy').format(_endDate)}',
+        sldImageBytes: sldImageBytes,
+        abstractEnergyData: _buildAbstractEnergyData(sldController),
+        busEnergySummaryData: _buildBusEnergySummaryData(sldController),
+        aggregatedFeederData: _buildAggregatedFeederData(sldController),
+        assessmentsForPdf: _buildAssessmentsForPdf(sldController),
+        uniqueBusVoltages: _getUniqueBusVoltages(sldController),
+        allBaysInSubstation: sldController.allBays,
+        baysMap: sldController.baysMap,
+        uniqueDistributionSubdivisionNames: [],
+        // Add layout parameters
+        sldZoom: zoom,
+        sldPosition: position,
+      );
+
+      final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
+
+      final timestamp = DateFormat('yyyy-MM-dd_HH-mm').format(DateTime.now());
+      final filename =
+          'Energy_SLD_${widget.substationName.replaceAll(' ', '_')}_$timestamp.pdf';
+
+      await PdfGenerator.sharePdf(
+        pdfBytes,
+        filename,
+        'Energy SLD Report - ${widget.substationName}',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        _showFixedSnackBar('PDF generated successfully!');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        _showFixedSnackBar('Error generating PDF: $e', isError: true);
+      }
+    }
+  }
+
+  // UPDATED: Enhanced capture method with more robust waiting mechanism
+  Future<Uint8List?> captureSldAsImageWithLayout(
+    double zoom,
+    Offset position,
+  ) async {
+    try {
+      if (_sldRepaintBoundaryKey.currentContext == null) {
+        print('DEBUG ERROR: RepaintBoundary key has no current context');
+        return null;
+      }
+
+      final RenderObject? renderObject = _sldRepaintBoundaryKey.currentContext!
+          .findRenderObject();
+      if (renderObject is! RenderRepaintBoundary) {
+        print('DEBUG ERROR: RenderObject is not a RenderRepaintBoundary');
+        return null;
+      }
+
+      final RenderRepaintBoundary boundary = renderObject;
+
+      // NEW: Wait for the next frame to ensure the widget is painted
+      await _ensureWidgetHasPainted(boundary);
+
+      if (boundary.debugNeedsPaint) {
+        print(
+          'DEBUG ERROR: Failed to capture image after waiting for post-frame callback. Boundary still needs painting.',
+        );
+        return null;
+      }
+
+      // Use layout parameters for capture
+      final pixelRatio = _calculateOptimalPixelRatio(zoom);
+
+      // ADDED: Try-catch specifically for image capture
+      ui.Image? image;
+      try {
+        image = await boundary.toImage(pixelRatio: pixelRatio);
+      } catch (captureError) {
+        print('DEBUG ERROR: Image capture failed: $captureError');
+        return null;
+      }
+
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+      if (byteData != null) {
+        return byteData.buffer.asUint8List();
+      }
+      return null;
+    } catch (e) {
+      print('DEBUG ERROR: Exception in captureSldAsImageWithLayout: $e');
+      return null;
+    } finally {
+      // Ensure state is reset
+      if (mounted) {
+        setState(() {
+          _isCapturingPdf = false;
+        });
+      }
+    }
+  }
+
+  // NEW HELPER METHOD:
+  Future<void> _ensureWidgetHasPainted(RenderRepaintBoundary boundary) async {
+    final Completer<void> completer = Completer<void>();
+    // Wait until the end of the current frame to ensure a build is scheduled
+    await WidgetsBinding.instance.endOfFrame;
+    // Wait for the next frame to ensure it has been painted
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      completer.complete();
+    });
+    return completer.future;
+  }
+
+  // NEW: Calculate optimal pixel ratio considering zoom level
+  double _calculateOptimalPixelRatio(double zoom) {
+    // Base pixel ratio calculation considering zoom level
+    const double baseMaxDimension = 4000.0;
+    final double adjustedMaxDimension = baseMaxDimension * zoom;
+    return (adjustedMaxDimension / 1000.0).clamp(1.0, 6.0);
   }
 
   /// Enhanced SLD image capture with detailed debugging
@@ -182,7 +350,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       // Calculate content bounds for optimal pixel ratio
       final contentBounds = _calculateContentBounds();
-      final pixelRatio = _calculateOptimalPixelRatio(contentBounds);
+      final pixelRatio = _calculateOptimalPixelRatio(1.0); // Default zoom
 
       print('DEBUG: Capturing with pixel ratio: $pixelRatio');
       print('DEBUG: Content bounds: $contentBounds');
@@ -229,28 +397,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
       return null;
     }
-  }
-
-  /// Calculate optimal pixel ratio to balance quality vs memory
-  double _calculateOptimalPixelRatio(Rect contentBounds) {
-    const double maxDimension = 4000.0;
-    final double maxContentDimension = math.max(
-      contentBounds.width,
-      contentBounds.height,
-    );
-
-    if (maxContentDimension <= 0) return 2.0;
-
-    final double optimalRatio = maxDimension / maxContentDimension;
-    final double finalRatio = math.min(
-      optimalRatio,
-      6.0,
-    ); // Cap at 6.0 for memory
-
-    print(
-      'DEBUG: Calculated pixel ratio: $finalRatio for content dimension: $maxContentDimension',
-    );
-    return finalRatio;
   }
 
   /// Calculate content bounds for proper capture sizing
@@ -412,14 +558,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  /// Direct PDF generation method with proper image data flow
+  /// Original PDF generation method (kept for backward compatibility)
   Future<void> generateAndSharePdf() async {
     print('DEBUG: Starting generateAndSharePdf method...');
 
     if (_isLoading) {
       print('DEBUG: Cannot generate PDF - still loading SLD data');
-      SnackBarUtils.showSnackBar(
-        context,
+      _showFixedSnackBar(
         'Please wait for SLD to load completely',
         isError: true,
       );
@@ -428,11 +573,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     if (_isCapturingPdf) {
       print('DEBUG: Cannot generate PDF - already capturing PDF in progress');
-      SnackBarUtils.showSnackBar(
-        context,
-        'PDF generation already in progress',
-        isError: true,
-      );
+      _showFixedSnackBar('PDF generation already in progress', isError: true);
       return;
     }
 
@@ -441,7 +582,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       // Show progress indicator
       print('DEBUG: Showing progress snackbar to user');
-      SnackBarUtils.showSnackBar(context, 'Generating PDF...');
+      _showFixedSnackBar('Generating PDF...');
 
       print('DEBUG: Accessing SldController via Provider');
       final sldController = Provider.of<SldController>(context, listen: false);
@@ -529,7 +670,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       if (mounted) {
         print('DEBUG: Widget still mounted, updating UI');
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        SnackBarUtils.showSnackBar(context, 'PDF generated successfully!');
+        _showFixedSnackBar('PDF generated successfully!');
       }
     } catch (e, stackTrace) {
       print('DEBUG ERROR: Exception caught in generateAndSharePdf');
@@ -548,7 +689,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               'Not enough memory to generate PDF - try reducing image size';
         }
 
-        SnackBarUtils.showSnackBar(context, errorMessage, isError: true);
+        _showFixedSnackBar(errorMessage, isError: true);
       }
     }
   }
@@ -741,7 +882,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   ],
                 ),
               ),
-
               // Content section
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
@@ -850,14 +990,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             Navigator.of(context).pop();
 
             if (success) {
-              SnackBarUtils.showSnackBar(
-                context,
-                'Layout changes saved successfully!',
-              );
+              _showFixedSnackBar('Layout changes saved successfully!');
               Navigator.of(context).pop();
             } else {
-              SnackBarUtils.showSnackBar(
-                context,
+              _showFixedSnackBar(
                 'Failed to save changes. Please try again.',
                 isError: true,
               );
@@ -866,16 +1002,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         } catch (e) {
           if (mounted) {
             Navigator.of(context).pop();
-            SnackBarUtils.showSnackBar(
-              context,
-              'Error saving changes: $e',
-              isError: true,
-            );
+            _showFixedSnackBar('Error saving changes: $e', isError: true);
           }
         }
       } else if (result == 'discard') {
         sldController.cancelLayoutChanges();
-        SnackBarUtils.showSnackBar(context, 'Changes discarded');
+        _showFixedSnackBar('Changes discarded');
         if (mounted) Navigator.of(context).pop();
       }
     } else {
@@ -889,6 +1021,21 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     } else {
       return '${DateFormat('dd-MMM-yyyy').format(_startDate)} to ${DateFormat('dd-MMM-yyyy').format(_endDate)}';
     }
+  }
+
+  // NEW: Fixed SnackBar helper method
+  void _showFixedSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : null,
+        behavior: SnackBarBehavior
+            .fixed, // Use fixed behavior to prevent off-screen issues
+        margin: null, // Remove margin for fixed behavior
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
@@ -912,9 +1059,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFAFA),
         appBar: _buildAppBar(sldController),
-        body: _buildBodyWithRepaintBoundary(
-          sldController,
-        ), // NEW: Dedicated method
+        body: _buildBodyWithRepaintBoundary(sldController),
         bottomNavigationBar: _buildBottomNavigationBar(sldController),
       ),
     );
@@ -958,7 +1103,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     ),
                   ),
                 ),
-                // Tables OUTSIDE RepaintBoundary to avoid capture issues
               ],
             ),
           ),
@@ -1164,6 +1308,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
+  // UPDATED: Changed to use showPrintPreview instead of generateAndSharePdf
   Widget _buildFloatingActionButton(SldController sldController) {
     return EnergySpeedDialWidget(
       isViewingSavedSld: _isViewingSavedSld,
@@ -1179,7 +1324,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         sldController,
         _energyDataService.allAssessmentsForDisplay,
       ),
-      onSharePdf: generateAndSharePdf,
+      onSharePdf: showPrintPreview, // CHANGED: Use print preview instead
       onConfigureBusbar: () =>
           _energyDataService.showBusbarSelectionDialog(context, sldController),
       onAddAssessment: () => _energyDataService.showBaySelectionForAssessment(

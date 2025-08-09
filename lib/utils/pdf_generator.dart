@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'dart:io';
-import 'package:flutter/material.dart' show TextDirection;
+import 'package:flutter/material.dart' show TextDirection, Offset;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -27,6 +27,10 @@ class PdfGeneratorData {
   final Map<String, Bay> baysMap;
   final List<String> uniqueDistributionSubdivisionNames;
 
+  // NEW: Layout parameters for print preview
+  final double? sldZoom;
+  final Offset? sldPosition;
+
   PdfGeneratorData({
     required this.substationName,
     required this.dateRange,
@@ -39,10 +43,22 @@ class PdfGeneratorData {
     required this.allBaysInSubstation,
     required this.baysMap,
     required this.uniqueDistributionSubdivisionNames,
+    // NEW: Layout parameters
+    this.sldZoom,
+    this.sldPosition,
   });
 }
 
 class PdfGenerator {
+  // Paper dimensions (A4 in points: 595 x 842)
+  static const double _paperWidth = 595.0;
+  static const double _paperHeight = 842.0;
+  static const double _headerHeight = 100.0;
+  static const double _footerHeight = 50.0;
+  static const double _printableWidth = _paperWidth - 40; // 20pt margins
+  static const double _printableHeight =
+      _paperHeight - _headerHeight - _footerHeight - 40;
+
   static double _getVoltageLevelValue(String voltageLevel) {
     final regex = RegExp(r'(\d+(\.\d+)?)');
     final match = regex.firstMatch(voltageLevel);
@@ -73,6 +89,7 @@ class PdfGenerator {
         sldPdfImage = pw.MemoryImage(data.sldImageBytes);
       } catch (e) {
         // Handle image creation error
+        print('ERROR: Failed to create PDF image from bytes: $e');
       }
     }
 
@@ -182,7 +199,7 @@ class PdfGenerator {
       abstractTableData.add(row);
     }
 
-    // Build PDF page with restored multi-page handling
+    // Build PDF page with restored multi-page handling and layout control
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.copyWith(
@@ -211,6 +228,16 @@ class PdfGenerator {
                 'Period: ${data.dateRange}',
                 style: pw.TextStyle(font: regularFont, fontSize: 12),
               ),
+              // NEW: Add layout info if available
+              if (data.sldZoom != null && data.sldPosition != null)
+                pw.Text(
+                  'SLD Layout: ${(data.sldZoom! * 100).toInt()}% zoom, positioned at (${data.sldPosition!.dx.toInt()}, ${data.sldPosition!.dy.toInt()})',
+                  style: pw.TextStyle(
+                    font: regularFont,
+                    fontSize: 8,
+                    color: PdfColors.grey600,
+                  ),
+                ),
               pw.Divider(),
             ],
           );
@@ -218,7 +245,7 @@ class PdfGenerator {
         build: (pw.Context context) {
           List<pw.Widget> widgets = [];
 
-          // Add SLD Image - restored centering and scaling
+          // Add SLD Image with enhanced layout control
           if (sldPdfImage != null) {
             widgets.addAll([
               pw.Center(
@@ -233,17 +260,8 @@ class PdfGenerator {
                       ),
                     ),
                     pw.SizedBox(height: 10),
-                    pw.Container(
-                      width: double.infinity,
-                      height: 400,
-                      child: pw.Center(
-                        child: pw.Image(
-                          sldPdfImage,
-                          fit: pw.BoxFit.contain,
-                          alignment: pw.Alignment.center,
-                        ),
-                      ),
-                    ),
+                    // NEW: Enhanced SLD container with layout parameters
+                    _buildSldImageContainer(sldPdfImage, data),
                     pw.SizedBox(height: 30),
                   ],
                 ),
@@ -437,6 +455,103 @@ class PdfGenerator {
     return await pdf.save();
   }
 
+  // NEW: Enhanced SLD image container with layout parameters
+  static pw.Widget _buildSldImageContainer(
+    pw.MemoryImage sldPdfImage,
+    PdfGeneratorData data,
+  ) {
+    // Calculate dimensions based on layout parameters
+    double containerWidth = _printableWidth;
+    double containerHeight = 400.0; // Default height
+
+    // Apply zoom if provided
+    if (data.sldZoom != null) {
+      containerHeight = 400.0 * data.sldZoom!;
+      // Ensure it doesn't exceed reasonable bounds
+      containerHeight = containerHeight.clamp(200.0, 600.0);
+    }
+
+    return pw.Container(
+      width: containerWidth,
+      height: containerHeight,
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+        // FIXED: Use radius instead of borderRadius for PDF
+        // radius: pw.Radius.circular(4),
+      ),
+      child: pw.ClipRRect(
+        // FIXED: Use horizontalRadius and verticalRadius instead of borderRadius
+        horizontalRadius: 4,
+        verticalRadius: 4,
+        child: _buildPositionedSldImage(sldPdfImage, data),
+      ),
+    );
+  }
+
+  // NEW: Build positioned SLD image based on layout parameters
+  static pw.Widget _buildPositionedSldImage(
+    pw.MemoryImage sldPdfImage,
+    PdfGeneratorData data,
+  ) {
+    // Default positioning
+    pw.Alignment alignment = pw.Alignment.center;
+    pw.BoxFit fit = pw.BoxFit.contain;
+
+    // Apply position adjustments if provided
+    if (data.sldPosition != null) {
+      // Convert position offset to alignment
+      // This is a simplified conversion - you might need to adjust based on your specific needs
+      double alignmentX = (data.sldPosition!.dx / _printableWidth) * 2 - 1;
+      double alignmentY = (data.sldPosition!.dy / _printableHeight) * 2 - 1;
+
+      // Clamp alignment values
+      alignmentX = alignmentX.clamp(-1.0, 1.0);
+      alignmentY = alignmentY.clamp(-1.0, 1.0);
+
+      alignment = pw.Alignment(alignmentX, alignmentY);
+    }
+
+    // Apply zoom to fit if provided
+    if (data.sldZoom != null) {
+      // Adjust fit based on zoom level
+      if (data.sldZoom! > 1.0) {
+        fit = pw.BoxFit.cover; // Zoom in
+      } else if (data.sldZoom! < 0.8) {
+        fit = pw.BoxFit.contain; // Zoom out
+      }
+    }
+
+    return pw.Stack(
+      children: [
+        // Background
+        pw.Container(color: PdfColors.white),
+        // SLD Image
+        pw.Positioned.fill(
+          child: pw.Image(sldPdfImage, fit: fit, alignment: alignment),
+        ),
+        // Optional: Add position indicator in debug mode
+        if (data.sldPosition != null)
+          pw.Positioned(
+            right: 5,
+            bottom: 5,
+            child: pw.Container(
+              padding: pw.EdgeInsets.all(2),
+              decoration: pw.BoxDecoration(
+                // FIXED: Create a semi-transparent color manually
+                color: PdfColor.fromInt(0x80000000), // 50% opacity black
+                // FIXED: Use radius instead of borderRadius
+                // radius: pw.Radius.circular(2),
+              ),
+              child: pw.Text(
+                'Pos: ${data.sldPosition!.dx.toInt()},${data.sldPosition!.dy.toInt()}',
+                style: pw.TextStyle(color: PdfColors.white, fontSize: 6),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   static Future<void> sharePdf(
     Uint8List pdfBytes,
     String filename,
@@ -457,4 +572,73 @@ class PdfGenerator {
       throw e;
     }
   }
+
+  static Map<String, double> calculateOptimalSldLayout({
+    required double imageWidth,
+    required double imageHeight,
+    double? zoom,
+    Offset? position,
+  }) {
+    // Paper dimensions (A4 in points: 595 x 842)
+    const double _printableWidth = 555.0; // 595 - 20 (margins)
+    const double _printableHeight = 782.0; // 842 - 60 (margins)
+
+    // Use the provided zoom and position directly from the print preview
+    double sldWidth = imageWidth;
+    double sldHeight = imageHeight;
+
+    if (zoom != null) {
+      sldWidth *= zoom;
+      sldHeight *= zoom;
+    }
+
+    // NEW: Use the provided offset directly for the position
+    double xPosition = position?.dx ?? 0.0;
+    double yPosition = position?.dy ?? 0.0;
+
+    // The image size should not exceed the printable area
+    // This part ensures the image fits within the PDF, while maintaining the zoom level
+    if (sldWidth > _printableWidth || sldHeight > _printableHeight) {
+      double scaleFactor = 1.0;
+      if (sldWidth / _printableWidth > sldHeight / _printableHeight) {
+        scaleFactor = _printableWidth / sldWidth;
+      } else {
+        scaleFactor = _printableHeight / sldHeight;
+      }
+      sldWidth *= scaleFactor;
+      sldHeight *= scaleFactor;
+    }
+
+    return {
+      'width': sldWidth,
+      'height': sldHeight,
+      'x': xPosition,
+      'y': yPosition,
+    };
+  }
+
+  // NEW: Alternative opacity colors for different transparency levels
+  static PdfColor getOpacityColor(PdfColor baseColor, double opacity) {
+    // Convert opacity (0.0-1.0) to alpha value (0-255)
+    int alpha = (opacity * 255).round().clamp(0, 255);
+
+    // Extract RGB components from base color
+    final red = (baseColor.red * 255).round();
+    final green = (baseColor.green * 255).round();
+    final blue = (baseColor.blue * 255).round();
+
+    // Combine ARGB into a single integer
+    final argb = (alpha << 24) | (red << 16) | (green << 8) | blue;
+
+    return PdfColor.fromInt(argb);
+  }
+
+  // NEW: Pre-defined opacity colors for common use cases
+  static const Map<String, PdfColor> opacityColors = {
+    'blackLow': PdfColor.fromInt(0x1A000000), // ~10% opacity black
+    'blackMedium': PdfColor.fromInt(0x4D000000), // ~30% opacity black
+    'blackHalf': PdfColor.fromInt(0x80000000), // ~50% opacity black
+    'blackHigh': PdfColor.fromInt(0xB3000000), // ~70% opacity black
+    'blackVeryHigh': PdfColor.fromInt(0xE6000000), // ~90% opacity black
+  };
 }
