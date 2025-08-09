@@ -695,47 +695,89 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          title: Row(
-            children: [
-              Icon(
-                Icons.save_outlined,
-                color: Theme.of(context).colorScheme.primary,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              const Text('Save Changes?'),
-            ],
-          ),
+          // Remove the default title and create custom header with X button
+          title: null,
+          titlePadding: EdgeInsets.zero,
+          contentPadding: EdgeInsets.zero,
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'You have unsaved layout changes. What would you like to do?',
-              ),
-              const SizedBox(height: 12),
+              // Custom header with title and X button
               Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                padding: const EdgeInsets.fromLTRB(24, 24, 16, 16),
                 child: Row(
                   children: [
                     Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade700,
-                      size: 16,
+                      Icons.save_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 24,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
+                    const SizedBox(width: 12),
+                    const Expanded(
                       child: Text(
-                        'Saving will update the layout for all users',
+                        'Save Changes?',
                         style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blue.shade700,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
                         ),
+                      ),
+                    ),
+                    // X button in top-right corner
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () => Navigator.of(context).pop('cancel'),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(
+                            Icons.close,
+                            color: Colors.grey.shade600,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Content section
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'You have unsaved layout changes. What would you like to do?',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.blue.shade700,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Saving will update the layout for all users',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -743,6 +785,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               ),
             ],
           ),
+          // Updated actions without Cancel button
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop('discard'),
@@ -754,16 +797,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 ),
               ),
             ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop('cancel'),
-              child: Text(
-                'Cancel',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
+            const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop('save'),
               style: ElevatedButton.styleFrom(
@@ -772,13 +806,19 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               child: const Text('Save & Exit'),
             ),
           ],
+          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
         ),
       );
 
+      // Rest of the method remains the same
       if (result == 'save') {
         showDialog(
           context: context,
@@ -930,7 +970,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             right: 0,
             bottom: 0,
             child: Container(
-              height: 200,
+              height: 300,
               child: EnergyTablesWidget(
                 isViewingSavedSld: _isViewingSavedSld,
                 loadedAssessmentsSummary:

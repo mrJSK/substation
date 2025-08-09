@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:substation_manager/screens/busbar_configuration_screen.dart';
 
+import '../models/bay_connection_model.dart';
 import '../models/user_model.dart';
 import '../models/saved_sld_model.dart';
 import '../models/bay_model.dart';
@@ -465,38 +467,73 @@ class EnergyDataService {
     SldController sldController,
   ) {
     final Map<String, Map<String, double>> busEnergySummary = {};
-    final Map<String, List<Bay>> baysByVoltage = {};
 
-    for (var bay in sldController.allBays) {
-      baysByVoltage.putIfAbsent(bay.voltageLevel, () => []).add(bay);
-    }
+    // Get all busbar bays from the SLD
+    final List<Bay> busbarBays = sldController.allBays
+        .where((bay) => bay.bayType == 'Busbar')
+        .toList();
 
-    for (var entry in baysByVoltage.entries) {
-      final voltageLevel = entry.key;
-      final bays = entry.value;
-
+    for (var busbar in busbarBays) {
       double totalImp = 0.0;
       double totalExp = 0.0;
-      int bayCount = 0;
+      int connectedBayCount = 0;
 
-      for (var bay in bays) {
-        final energyData = bayEnergyData[bay.id];
-        if (energyData != null) {
-          totalImp += energyData.impConsumed ?? 0.0;
-          totalExp += energyData.expConsumed ?? 0.0;
-          bayCount++;
+      // Find all bays connected to this busbar
+      final List<Bay> connectedBays = _getConnectedBays(busbar, sldController);
+
+      // Sum up energy consumption from all connected bays
+      for (var connectedBay in connectedBays) {
+        // Skip the busbar itself and only include non-busbar bays
+        if (connectedBay.bayType != 'Busbar') {
+          final energyData = bayEnergyData[connectedBay.id];
+          if (energyData != null) {
+            // Use impConsumed and expConsumed for the connected bays
+            totalImp += energyData.impConsumed ?? 0.0;
+            totalExp += energyData.expConsumed ?? 0.0;
+            connectedBayCount++;
+          }
         }
       }
 
-      busEnergySummary[voltageLevel] = {
-        'totalImport': totalImp,
-        'totalExport': totalExp,
+      // Use busbar bay ID as the key (this is what the painter expects)
+      busEnergySummary[busbar.id] = {
+        'totalImp': totalImp,
+        'totalExp': totalExp,
         'netConsumption': totalImp - totalExp,
-        'bayCount': bayCount.toDouble(),
+        'connectedBayCount': connectedBayCount.toDouble(),
       };
     }
 
     return busEnergySummary;
+  }
+
+  // Updated helper method with correct property access
+  List<Bay> _getConnectedBays(Bay busbar, SldController sldController) {
+    final List<Bay> connectedBays = [];
+
+    // Use the correct property name from SldController
+    List<BayConnection> connections = sldController.allConnections;
+
+    // Check all bay connections to find bays connected to this busbar
+    for (var connection in connections) {
+      Bay? connectedBay;
+
+      // If busbar is the source, add the target bay
+      if (connection.sourceBayId == busbar.id) {
+        connectedBay = sldController.baysMap[connection.targetBayId];
+      }
+      // If busbar is the target, add the source bay
+      else if (connection.targetBayId == busbar.id) {
+        connectedBay = sldController.baysMap[connection.sourceBayId];
+      }
+
+      // Add the connected bay if it exists and isn't already in the list
+      if (connectedBay != null && !connectedBays.contains(connectedBay)) {
+        connectedBays.add(connectedBay);
+      }
+    }
+
+    return connectedBays;
   }
 
   Map<String, double> _calculateAbstractEnergyData(
@@ -605,7 +642,6 @@ class EnergyDataService {
     return aggregatedData;
   }
 
-  // Dialog methods
   void showBusbarSelectionDialog(
     BuildContext context,
     SldController sldController,
@@ -614,7 +650,66 @@ class EnergyDataService {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Select Busbar Configuration'),
-        content: const Text('Choose busbar energy mapping configuration.'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: Builder(
+            builder: (context) {
+              // Find busbars using the passed sldController directly
+              List<Bay> busbars = sldController.allBays
+                  .where((bay) => bay.bayType.toLowerCase() == 'busbar')
+                  .toList();
+
+              // If empty, use bays that have energy summaries
+              if (busbars.isEmpty) {
+                final busEnergyKeys = sldController.busEnergySummary.keys
+                    .toSet();
+                busbars = sldController.allBays
+                    .where((bay) => busEnergyKeys.contains(bay.id))
+                    .toList();
+              }
+
+              if (busbars.isEmpty) {
+                return const Center(child: Text('No busbars found'));
+              }
+
+              return ListView.builder(
+                itemCount: busbars.length,
+                itemBuilder: (context, index) {
+                  final busbar = busbars[index];
+                  return ListTile(
+                    title: Text('${busbar.voltageLevel} ${busbar.name}'),
+                    subtitle: Text('ID: ${busbar.id}'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      // Get connected bays for this busbar
+                      final connectedBays = _getConnectedBays(
+                        busbar,
+                        sldController,
+                      );
+
+                      // Show busbar configuration dialog
+                      showDialog(
+                        context: context,
+                        builder: (context) => BusbarConfigurationScreen(
+                          busbar: busbar,
+                          connectedBays: connectedBays,
+                          onSaveConfiguration: (inclusionMap) {
+                            // Handle the configuration save
+                            print(
+                              'Busbar ${busbar.id} configuration: $inclusionMap',
+                            );
+                            // Update your energy calculation logic based on inclusionMap
+                          },
+                        ),
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -631,6 +726,9 @@ class EnergyDataService {
       ),
     );
   }
+
+  // Helper method to get connected bays (you'll need to implement this based on your connection logic)
+  // (Removed duplicate and unused _getConnectedBays method to fix naming conflict)
 
   void showBaySelectionForAssessment(
     BuildContext context,

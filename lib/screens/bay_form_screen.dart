@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:substation_manager/equipment_icons/busbar_icon.dart';
@@ -230,7 +231,7 @@ class _BayFormScreenState extends State<BayFormScreen>
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 500),
     );
     _loadInitialDataForForm();
   }
@@ -840,6 +841,11 @@ class _BayFormScreenState extends State<BayFormScreen>
               onSurface: theme.colorScheme.onSurface,
             ),
             dialogBackgroundColor: theme.colorScheme.surface,
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.primary,
+              ),
+            ),
           ),
           child: child!,
         );
@@ -932,17 +938,29 @@ class _BayFormScreenState extends State<BayFormScreen>
         dropdownDecoratorProps: DropDownDecoratorProps(
           dropdownSearchDecoration: InputDecoration(
             labelText: label,
-            prefixIcon: Icon(
-              Icons.location_on,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            prefixIcon: Icon(Icons.location_on, color: Colors.blue),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.blue, width: 2),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.red, width: 2),
+            ),
             filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
-            errorStyle: const TextStyle(fontFamily: 'Roboto'),
+            fillColor: Colors.grey.shade50,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 12,
+            ),
+            labelStyle: const TextStyle(
+              fontFamily: 'Roboto',
+              color: Colors.black87,
             ),
           ),
         ),
@@ -951,20 +969,25 @@ class _BayFormScreenState extends State<BayFormScreen>
           menuProps: MenuProps(
             borderRadius: BorderRadius.circular(12),
             elevation: 4,
-            backgroundColor: Theme.of(context).colorScheme.surface,
+            backgroundColor: Colors.white,
           ),
           searchFieldProps: TextFieldProps(
             decoration: InputDecoration(
               labelText: 'Search $label',
-              prefixIcon: Icon(
-                Icons.search,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              prefixIcon: const Icon(Icons.search, color: Colors.blue),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.blue, width: 2),
+              ),
               filled: true,
-              fillColor: Theme.of(context).colorScheme.surface,
+              fillColor: Colors.white,
             ),
           ),
           showSelectedItems: true,
@@ -977,9 +1000,9 @@ class _BayFormScreenState extends State<BayFormScreen>
                   children: [
                     Text(
                       'No $label found.',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontFamily: 'Roboto',
-                        color: Theme.of(context).colorScheme.onSurface,
+                        color: Colors.black87,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -1010,19 +1033,17 @@ class _BayFormScreenState extends State<BayFormScreen>
                           if (mounted) Navigator.pop(context);
                         }
                       },
-                      icon: Icon(
-                        Icons.add,
-                        color: Theme.of(context).colorScheme.onPrimary,
-                      ),
+                      icon: const Icon(Icons.add, color: Colors.white),
                       label: const Text(
                         'Create New',
-                        style: TextStyle(fontFamily: 'Roboto'),
+                        style: TextStyle(
+                          fontFamily: 'Roboto',
+                          color: Colors.white,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onPrimary,
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -1040,30 +1061,47 @@ class _BayFormScreenState extends State<BayFormScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
+    // Set system status bar to white to match the theme
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.white,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+    );
 
     if (_isLoadingConnections) {
       return Scaffold(
+        backgroundColor: const Color(0xFFFAFAFA),
         appBar: AppBar(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+          elevation: 0,
           title: const Text(
-            'Loading...',
-            style: TextStyle(fontFamily: 'Roboto'),
+            'Loading Bay Data',
+            style: TextStyle(
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
           ),
-          backgroundColor: theme.colorScheme.primary,
-          foregroundColor: theme.colorScheme.onPrimary,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black87),
+            onPressed: widget.onCancel,
+          ),
         ),
-        body: Center(
+        body: const Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: theme.colorScheme.primary),
-              const SizedBox(height: 16),
+              CircularProgressIndicator(color: Colors.blue),
+              SizedBox(height: 16),
               Text(
                 'Loading bay data...',
                 style: TextStyle(
                   fontFamily: 'Roboto',
-                  color: theme.colorScheme.onSurface,
+                  fontSize: 16,
+                  color: Colors.black87,
                 ),
               ),
             ],
@@ -1073,596 +1111,538 @@ class _BayFormScreenState extends State<BayFormScreen>
     }
 
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onPrimary),
-          onPressed: widget.onCancel,
-        ),
-        title: Row(
-          children: [
-            _EquipmentIcon(
-              bayType: _selectedBayType ?? 'default',
-              color: theme.colorScheme.onPrimary,
-              size: 24,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              widget.bayToEdit == null ? 'Add New Bay' : 'Edit Bay',
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onPrimary,
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: theme.colorScheme.primary,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.save, color: theme.colorScheme.onPrimary),
-            onPressed: _isSavingBay ? null : _saveBay,
-            tooltip: 'Save Bay',
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSection(
-                title: 'Basic Information',
-                icon: Icons.info,
-                children: [
-                  _buildTextField(
-                    controller: _bayNameController,
-                    label: 'Bay Name*',
-                    icon: Icon(Icons.grid_on, color: theme.colorScheme.primary),
-                    validator: (v) => v!.isEmpty ? 'Required' : null,
-                    theme: theme,
-                    isDarkMode: isDarkMode,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildDropdownField(
-                    value: _selectedBayType,
-                    label: 'Bay Type*',
-                    icon: _EquipmentIcon(
-                      bayType: _selectedBayType ?? 'default',
-                      color: theme.colorScheme.primary,
-                    ),
-                    items: _bayTypes,
-                    onChanged: (v) {
-                      setState(() {
-                        _selectedBayType = v;
-                        _selectedVoltageLevel = null;
-                        _selectedBusbarId = null;
-                        _selectedHvVoltage = null;
-                        _selectedLvVoltage = null;
-                        _selectedHvBusId = null;
-                        _selectedLvBusId = null;
-                        _makeController.clear();
-                        _capacityController.clear();
-                        _manufacturingDateController.clear();
-                        _manufacturingDate = null;
-                        _lineLengthController.clear();
-                        _selectedCircuit = null;
-                        _selectedConductor = null;
-                        _otherConductorController.clear();
-                        _erectionDateController.clear();
-                        _erectionDate = null;
-                        _commissioningDateController.clear();
-                        _commissioningDate = null;
-                        _isGovernmentFeeder = false;
-                        _selectedFeederType = null;
-                        _selectedDistributionZoneId = null;
-                        _selectedDistributionCircleId = null;
-                        _selectedDistributionDivisionId = null;
-                        _selectedDistributionSubdivisionId = null;
-                        _animationController.forward();
-                      });
-                    },
-                    validator: (v) => v == null ? 'Required' : null,
-                    theme: theme,
-                    isDarkMode: isDarkMode,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              AnimatedCrossFade(
-                firstChild: const SizedBox.shrink(),
-                secondChild: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: const Color(0xFFFAFAFA),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSection(
+                  title: 'Basic Information',
+                  icon: Icons.info,
                   children: [
-                    if (_selectedBayType != 'Transformer' &&
-                        _selectedBayType != 'Battery') ...[
-                      _buildSection(
-                        title: 'Voltage Details',
-                        icon: Icons.flash_on,
-                        children: [
-                          _buildDropdownField(
-                            value: _selectedVoltageLevel,
-                            label: 'Voltage Level*',
-                            icon: Icon(
-                              Icons.flash_on,
-                              color: theme.colorScheme.primary,
-                            ),
-                            items: _voltageLevels,
-                            onChanged: (v) =>
-                                setState(() => _selectedVoltageLevel = v),
-                            validator: (v) => v == null ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                        ],
+                    _buildTextField(
+                      controller: _bayNameController,
+                      label: 'Bay Name*',
+                      icon: const Icon(Icons.grid_on, color: Colors.blue),
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildDropdownField(
+                      value: _selectedBayType,
+                      label: 'Bay Type*',
+                      icon: _EquipmentIcon(
+                        bayType: _selectedBayType ?? 'default',
+                        color: Colors.blue,
                       ),
-                      const SizedBox(height: 24),
-                    ],
-                    if (_selectedBayType != 'Busbar' &&
-                        _selectedBayType != 'Transformer' &&
-                        _selectedBayType != 'Battery') ...[
-                      _buildSection(
-                        title: 'Busbar Connection',
-                        icon: Icons.electrical_services_sharp,
-                        children: [
-                          _buildDropdownField(
-                            value: _selectedBusbarId,
-                            label: 'Connect to Busbar*',
-                            icon: Icon(
-                              Icons.electrical_services_sharp,
-                              color: theme.colorScheme.primary,
-                            ),
-                            items: widget.availableBusbars
-                                .map((b) => '${b.name} (${b.voltageLevel})')
-                                .toList(),
-                            itemValues: widget.availableBusbars
-                                .map((b) => b.id)
-                                .toList(),
-                            onChanged: (v) =>
-                                setState(() => _selectedBusbarId = v),
-                            validator: (v) =>
-                                v == null && widget.availableBusbars.isNotEmpty
-                                ? 'Required'
-                                : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    if (_selectedBayType == 'Transformer') ...[
-                      _buildSection(
-                        title: 'Transformer Details',
-                        icon: Icons.transform,
-                        children: [
-                          _buildDropdownField(
-                            value: _selectedHvVoltage,
-                            label: 'HV Voltage*',
-                            icon: Icon(
-                              Icons.electric_bolt,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            items: _voltageLevels,
-                            onChanged: (v) {
-                              setState(() {
-                                _selectedHvVoltage = v;
-                                _selectedHvBusId = null;
-                              });
-                            },
-                            validator: (v) => v == null ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildDropdownField(
-                            value: _selectedHvBusId,
-                            label: 'Connect HV to Bus*',
-                            icon: Icon(
-                              Icons.power,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            items: widget.availableBusbars
-                                .where(
-                                  (b) => b.voltageLevel == _selectedHvVoltage,
-                                )
-                                .map((b) => '${b.name} (${b.voltageLevel})')
-                                .toList(),
-                            itemValues: widget.availableBusbars
-                                .where(
-                                  (b) => b.voltageLevel == _selectedHvVoltage,
-                                )
-                                .map((b) => b.id)
-                                .toList(),
-                            onChanged: (v) =>
-                                setState(() => _selectedHvBusId = v),
-                            validator: (v) => v == null ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildDropdownField(
-                            value: _selectedLvVoltage,
-                            label: 'LV Voltage*',
-                            icon: Icon(
-                              Icons.electric_bolt_outlined,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            items: _voltageLevels,
-                            onChanged: (v) {
-                              setState(() {
-                                _selectedLvVoltage = v;
-                                _selectedLvBusId = null;
-                              });
-                            },
-                            validator: (v) => v == null ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildDropdownField(
-                            value: _selectedLvBusId,
-                            label: 'Connect LV to Bus*',
-                            icon: Icon(
-                              Icons.power_off,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            items: widget.availableBusbars
-                                .where(
-                                  (b) => b.voltageLevel == _selectedLvVoltage,
-                                )
-                                .map((b) => '${b.name} (${b.voltageLevel})')
-                                .toList(),
-                            itemValues: widget.availableBusbars
-                                .where(
-                                  (b) => b.voltageLevel == _selectedLvVoltage,
-                                )
-                                .map((b) => b.id)
-                                .toList(),
-                            onChanged: (v) =>
-                                setState(() => _selectedLvBusId = v),
-                            validator: (v) => v == null ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            controller: _makeController,
-                            label: 'Make*',
-                            icon: Icon(
-                              Icons.factory,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            controller: _capacityController,
-                            label: 'Capacity*',
-                            suffixText: 'MVA',
-                            icon: Icon(
-                              Icons.storage,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            keyboardType: TextInputType.number,
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            controller: _manufacturingDateController,
-                            label: 'Date of Manufacturing*',
-                            icon: Icon(
-                              Icons.calendar_today,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            readOnly: true,
-                            onTap: () =>
-                                _selectDate(context, DateType.manufacturing),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                Icons.clear,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              onPressed: () => setState(() {
-                                _manufacturingDateController.clear();
-                                _manufacturingDate = null;
-                              }),
-                            ),
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    if (_selectedBayType == 'Line') ...[
-                      _buildSection(
-                        title: 'Line Details',
-                        icon: Icons.straighten,
-                        children: [
-                          _buildTextField(
-                            controller: _lineLengthController,
-                            label: 'Line Length (km)*',
-                            icon: Icon(
-                              Icons.straighten,
-                              color: theme.colorScheme.primary,
-                            ),
-                            keyboardType: TextInputType.number,
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildDropdownField(
-                            value: _selectedCircuit,
-                            label: 'Circuit*',
-                            icon: Icon(
-                              Icons.electrical_services,
-                              color: theme.colorScheme.primary,
-                            ),
-                            items: _circuitTypes,
-                            onChanged: (v) =>
-                                setState(() => _selectedCircuit = v),
-                            validator: (v) => v == null ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildDropdownField(
-                            value: _selectedConductor,
-                            label: 'Conductor*',
-                            icon: Icon(
-                              Icons.waves,
-                              color: theme.colorScheme.primary,
-                            ),
-                            items: _conductorTypes,
-                            onChanged: (v) =>
-                                setState(() => _selectedConductor = v),
-                            validator: (v) => v == null ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                          if (_selectedConductor == 'Other') ...[
-                            const SizedBox(height: 12),
-                            _buildTextField(
-                              controller: _otherConductorController,
-                              label: 'Specify Conductor Type*',
-                              icon: Icon(
-                                Icons.edit,
-                                color: theme.colorScheme.primary,
-                              ),
-                              validator: (v) => v!.isEmpty ? 'Required' : null,
-                              theme: theme,
-                              isDarkMode: isDarkMode,
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            controller: _erectionDateController,
-                            label: 'Date of Erection*',
-                            icon: Icon(
-                              Icons.calendar_today,
-                              color: theme.colorScheme.primary,
-                            ),
-                            readOnly: true,
-                            onTap: () =>
-                                _selectDate(context, DateType.erection),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                Icons.clear,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              onPressed: () => setState(() {
-                                _erectionDateController.clear();
-                                _erectionDate = null;
-                              }),
-                            ),
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    if (_selectedBayType == 'Line' ||
-                        _selectedBayType == 'Transformer') ...[
-                      _buildSection(
-                        title: 'Commissioning Details',
-                        icon: Icons.calendar_today,
-                        children: [
-                          _buildTextField(
-                            controller: _commissioningDateController,
-                            label: 'Date of Commissioning*',
-                            icon: Icon(
-                              Icons.calendar_today,
-                              color: theme.colorScheme.primary,
-                            ),
-                            readOnly: true,
-                            onTap: () =>
-                                _selectDate(context, DateType.commissioning),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                Icons.clear,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              onPressed: () => setState(() {
-                                _commissioningDateController.clear();
-                                _commissioningDate = null;
-                              }),
-                            ),
-                            validator: (v) => v!.isEmpty ? 'Required' : null,
-                            theme: theme,
-                            isDarkMode: isDarkMode,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    if (_selectedBayType == 'Feeder') ...[
-                      _buildSection(
-                        title: 'Feeder Details',
-                        icon: Icons.location_city,
-                        iconColor: Colors.purple[700]!,
-                        children: _buildFeederDistributionHierarchyFields(),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    _buildSection(
-                      title: 'Additional Details (Optional)',
-                      icon: Icons.info_outline,
-                      children: [
-                        _buildTextField(
-                          controller: _descriptionController,
-                          label: 'Description',
-                          icon: Icon(
-                            Icons.description,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          maxLines: 3,
-                          theme: theme,
-                          isDarkMode: isDarkMode,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildTextField(
-                          controller: _landmarkController,
-                          label: 'Landmark',
-                          icon: Icon(
-                            Icons.flag,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          theme: theme,
-                          isDarkMode: isDarkMode,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildTextField(
-                          controller: _contactNumberController,
-                          label: 'Contact Number',
-                          icon: Icon(
-                            Icons.phone,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          keyboardType: TextInputType.phone,
-                          theme: theme,
-                          isDarkMode: isDarkMode,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildTextField(
-                          controller: _contactPersonController,
-                          label: 'Contact Person',
-                          icon: Icon(
-                            Icons.person,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          theme: theme,
-                          isDarkMode: isDarkMode,
-                        ),
-                      ],
+                      items: _bayTypes,
+                      onChanged: (v) {
+                        setState(() {
+                          _selectedBayType = v;
+                          _selectedVoltageLevel = null;
+                          _selectedBusbarId = null;
+                          _selectedHvVoltage = null;
+                          _selectedLvVoltage = null;
+                          _selectedHvBusId = null;
+                          _selectedLvBusId = null;
+                          _makeController.clear();
+                          _capacityController.clear();
+                          _manufacturingDateController.clear();
+                          _manufacturingDate = null;
+                          _lineLengthController.clear();
+                          _selectedCircuit = null;
+                          _selectedConductor = null;
+                          _otherConductorController.clear();
+                          _erectionDateController.clear();
+                          _erectionDate = null;
+                          _commissioningDateController.clear();
+                          _commissioningDate = null;
+                          _isGovernmentFeeder = false;
+                          _selectedFeederType = null;
+                          _selectedDistributionZoneId = null;
+                          _selectedDistributionCircleId = null;
+                          _selectedDistributionDivisionId = null;
+                          _selectedDistributionSubdivisionId = null;
+                          _animationController.forward();
+                        });
+                      },
+                      validator: (v) => v == null ? 'Required' : null,
                     ),
                   ],
                 ),
-                crossFadeState: _selectedBayType != null
-                    ? CrossFadeState.showSecond
-                    : CrossFadeState.showFirst,
-                duration: const Duration(milliseconds: 300),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: _isSavingBay
-                        ? Center(
-                            child: CircularProgressIndicator(
-                              color: theme.colorScheme.primary,
-                            ),
-                          )
-                        : ElevatedButton.icon(
-                            onPressed: _saveBay,
-                            icon: Icon(
-                              widget.bayToEdit != null ? Icons.save : Icons.add,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                            label: Text(
-                              widget.bayToEdit != null
-                                  ? 'Update Bay'
-                                  : 'Create Bay',
-                              style: const TextStyle(fontFamily: 'Roboto'),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.primary,
-                              foregroundColor: theme.colorScheme.onPrimary,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 24),
+                AnimatedCrossFade(
+                  firstChild: const SizedBox.shrink(),
+                  secondChild: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_selectedBayType != 'Transformer' &&
+                          _selectedBayType != 'Battery') ...[
+                        _buildSection(
+                          title: 'Voltage Details',
+                          icon: Icons.flash_on,
+                          children: [
+                            _buildDropdownField(
+                              value: _selectedVoltageLevel,
+                              label: 'Voltage Level*',
+                              icon: const Icon(
+                                Icons.flash_on,
+                                color: Colors.blue,
                               ),
-                              textStyle: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              items: _voltageLevels,
+                              onChanged: (v) =>
+                                  setState(() => _selectedVoltageLevel = v),
+                              validator: (v) => v == null ? 'Required' : null,
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      if (_selectedBayType != 'Busbar' &&
+                          _selectedBayType != 'Transformer' &&
+                          _selectedBayType != 'Battery') ...[
+                        _buildSection(
+                          title: 'Busbar Connection',
+                          icon: Icons.electrical_services_sharp,
+                          children: [
+                            _buildDropdownField(
+                              value: _selectedBusbarId,
+                              label: 'Connect to Busbar*',
+                              icon: const Icon(
+                                Icons.electrical_services_sharp,
+                                color: Colors.blue,
+                              ),
+                              items: widget.availableBusbars
+                                  .map((b) => '${b.name} (${b.voltageLevel})')
+                                  .toList(),
+                              itemValues: widget.availableBusbars
+                                  .map((b) => b.id)
+                                  .toList(),
+                              onChanged: (v) =>
+                                  setState(() => _selectedBusbarId = v),
+                              validator: (v) =>
+                                  v == null &&
+                                      widget.availableBusbars.isNotEmpty
+                                  ? 'Required'
+                                  : null,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      if (_selectedBayType == 'Transformer') ...[
+                        _buildSection(
+                          title: 'Transformer Details',
+                          icon: Icons.transform,
+                          children: [
+                            _buildDropdownField(
+                              value: _selectedHvVoltage,
+                              label: 'HV Voltage*',
+                              icon: const Icon(
+                                Icons.electric_bolt,
+                                color: Colors.orange,
+                              ),
+                              items: _voltageLevels,
+                              onChanged: (v) {
+                                setState(() {
+                                  _selectedHvVoltage = v;
+                                  _selectedHvBusId = null;
+                                });
+                              },
+                              validator: (v) => v == null ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDropdownField(
+                              value: _selectedHvBusId,
+                              label: 'Connect HV to Bus*',
+                              icon: const Icon(
+                                Icons.power,
+                                color: Colors.orange,
+                              ),
+                              items: widget.availableBusbars
+                                  .where(
+                                    (b) => b.voltageLevel == _selectedHvVoltage,
+                                  )
+                                  .map((b) => '${b.name} (${b.voltageLevel})')
+                                  .toList(),
+                              itemValues: widget.availableBusbars
+                                  .where(
+                                    (b) => b.voltageLevel == _selectedHvVoltage,
+                                  )
+                                  .map((b) => b.id)
+                                  .toList(),
+                              onChanged: (v) =>
+                                  setState(() => _selectedHvBusId = v),
+                              validator: (v) => v == null ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDropdownField(
+                              value: _selectedLvVoltage,
+                              label: 'LV Voltage*',
+                              icon: const Icon(
+                                Icons.electric_bolt_outlined,
+                                color: Colors.orange,
+                              ),
+                              items: _voltageLevels,
+                              onChanged: (v) {
+                                setState(() {
+                                  _selectedLvVoltage = v;
+                                  _selectedLvBusId = null;
+                                });
+                              },
+                              validator: (v) => v == null ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDropdownField(
+                              value: _selectedLvBusId,
+                              label: 'Connect LV to Bus*',
+                              icon: const Icon(
+                                Icons.power_off,
+                                color: Colors.orange,
+                              ),
+                              items: widget.availableBusbars
+                                  .where(
+                                    (b) => b.voltageLevel == _selectedLvVoltage,
+                                  )
+                                  .map((b) => '${b.name} (${b.voltageLevel})')
+                                  .toList(),
+                              itemValues: widget.availableBusbars
+                                  .where(
+                                    (b) => b.voltageLevel == _selectedLvVoltage,
+                                  )
+                                  .map((b) => b.id)
+                                  .toList(),
+                              onChanged: (v) =>
+                                  setState(() => _selectedLvBusId = v),
+                              validator: (v) => v == null ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              controller: _makeController,
+                              label: 'Make*',
+                              icon: const Icon(
+                                Icons.factory,
+                                color: Colors.orange,
+                              ),
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              controller: _capacityController,
+                              label: 'Capacity*',
+                              suffixText: 'MVA',
+                              icon: const Icon(
+                                Icons.storage,
+                                color: Colors.orange,
+                              ),
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              controller: _manufacturingDateController,
+                              label: 'Date of Manufacturing*',
+                              icon: const Icon(
+                                Icons.calendar_today,
+                                color: Colors.orange,
+                              ),
+                              readOnly: true,
+                              onTap: () =>
+                                  _selectDate(context, DateType.manufacturing),
+                              suffixIcon: IconButton(
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () => setState(() {
+                                  _manufacturingDateController.clear();
+                                  _manufacturingDate = null;
+                                }),
+                              ),
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      if (_selectedBayType == 'Line') ...[
+                        _buildSection(
+                          title: 'Line Details',
+                          icon: Icons.straighten,
+                          children: [
+                            _buildTextField(
+                              controller: _lineLengthController,
+                              label: 'Line Length (km)*',
+                              icon: const Icon(
+                                Icons.straighten,
+                                color: Colors.blue,
+                              ),
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDropdownField(
+                              value: _selectedCircuit,
+                              label: 'Circuit*',
+                              icon: const Icon(
+                                Icons.electrical_services,
+                                color: Colors.blue,
+                              ),
+                              items: _circuitTypes,
+                              onChanged: (v) =>
+                                  setState(() => _selectedCircuit = v),
+                              validator: (v) => v == null ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDropdownField(
+                              value: _selectedConductor,
+                              label: 'Conductor*',
+                              icon: const Icon(Icons.waves, color: Colors.blue),
+                              items: _conductorTypes,
+                              onChanged: (v) =>
+                                  setState(() => _selectedConductor = v),
+                              validator: (v) => v == null ? 'Required' : null,
+                            ),
+                            if (_selectedConductor == 'Other') ...[
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                controller: _otherConductorController,
+                                label: 'Specify Conductor Type*',
+                                icon: const Icon(
+                                  Icons.edit,
+                                  color: Colors.blue,
+                                ),
+                                validator: (v) =>
+                                    v!.isEmpty ? 'Required' : null,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              controller: _erectionDateController,
+                              label: 'Date of Erection*',
+                              icon: const Icon(
+                                Icons.calendar_today,
+                                color: Colors.blue,
+                              ),
+                              readOnly: true,
+                              onTap: () =>
+                                  _selectDate(context, DateType.erection),
+                              suffixIcon: IconButton(
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () => setState(() {
+                                  _erectionDateController.clear();
+                                  _erectionDate = null;
+                                }),
+                              ),
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      if (_selectedBayType == 'Line' ||
+                          _selectedBayType == 'Transformer') ...[
+                        _buildSection(
+                          title: 'Commissioning Details',
+                          icon: Icons.calendar_today,
+                          children: [
+                            _buildTextField(
+                              controller: _commissioningDateController,
+                              label: 'Date of Commissioning*',
+                              icon: const Icon(
+                                Icons.calendar_today,
+                                color: Colors.blue,
+                              ),
+                              readOnly: true,
+                              onTap: () =>
+                                  _selectDate(context, DateType.commissioning),
+                              suffixIcon: IconButton(
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () => setState(() {
+                                  _commissioningDateController.clear();
+                                  _commissioningDate = null;
+                                }),
+                              ),
+                              validator: (v) => v!.isEmpty ? 'Required' : null,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      if (_selectedBayType == 'Feeder') ...[
+                        _buildSection(
+                          title: 'Feeder Details',
+                          icon: Icons.location_city,
+                          iconColor: Colors.blue,
+                          children: _buildFeederDistributionHierarchyFields(),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      _buildSection(
+                        title: 'Additional Details (Optional)',
+                        icon: Icons.info_outline,
+                        children: [
+                          _buildTextField(
+                            controller: _descriptionController,
+                            label: 'Description',
+                            icon: const Icon(
+                              Icons.description,
+                              color: Colors.grey,
+                            ),
+                            maxLines: 3,
                           ),
-                  ),
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: widget.onCancel,
-                    style: TextButton.styleFrom(
-                      foregroundColor: theme.colorScheme.onSurface,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 16,
-                        horizontal: 16,
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                            controller: _landmarkController,
+                            label: 'Landmark',
+                            icon: const Icon(Icons.flag, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                            controller: _contactNumberController,
+                            label: 'Contact Number',
+                            icon: const Icon(Icons.phone, color: Colors.grey),
+                            keyboardType: TextInputType.phone,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                            controller: _contactPersonController,
+                            label: 'Contact Person',
+                            icon: const Icon(Icons.person, color: Colors.grey),
+                          ),
+                        ],
                       ),
-                      textStyle: const TextStyle(
-                        fontFamily: 'Roboto',
-                        fontSize: 16,
-                      ),
-                    ),
-                    child: const Text('Cancel'),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                  crossFadeState: _selectedBayType != null
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  duration: const Duration(milliseconds: 500),
+                ),
+                const SizedBox(height: 24),
+                _buildActionButtons(),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
+  Widget _buildActionButtons() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: widget.onCancel,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.grey[700],
+                side: BorderSide(color: Colors.grey.shade300),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: const TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: const Text('Cancel'),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _isSavingBay ? null : _saveBay,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+                textStyle: const TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: _isSavingBay
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Saving...'),
+                      ],
+                    )
+                  : Text(
+                      widget.bayToEdit != null ? 'Update Bay' : 'Create Bay',
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildFeederDistributionHierarchyFields() {
-    final theme = Theme.of(context);
     return [
       SwitchListTile(
         title: const Text(
           'Government Feeder',
-          style: TextStyle(fontFamily: 'Roboto'),
+          style: TextStyle(fontFamily: 'Roboto', color: Colors.black87),
         ),
         value: _isGovernmentFeeder,
-        activeColor: Colors.purple[700],
+        activeColor: Colors.blue[700],
         onChanged: (v) => setState(() {
           _isGovernmentFeeder = v;
           _selectedFeederType = null;
         }),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       ),
       const SizedBox(height: 12),
       _buildDropdownField(
         value: _selectedFeederType,
         label: 'Feeder Type*',
-        icon: Icon(Icons.location_city, color: Colors.purple[700]),
+        icon: Icon(Icons.location_city, color: Colors.blue),
         items: _isGovernmentFeeder
             ? _governmentFeederTypes
             : _nonGovernmentFeederTypes,
         onChanged: (v) => setState(() => _selectedFeederType = v),
         validator: (v) => v == null ? 'Required' : null,
-        theme: theme,
-        isDarkMode: Theme.of(context).brightness == Brightness.dark,
-        fillColor: Colors.purple[50],
+        // fillColor: Colors.blue[50],
       ),
       const SizedBox(height: 16),
       Text(
@@ -1670,7 +1650,8 @@ class _BayFormScreenState extends State<BayFormScreen>
         style: TextStyle(
           fontFamily: 'Roboto',
           fontWeight: FontWeight.w600,
-          color: Colors.purple[700],
+          fontSize: 16,
+          color: Colors.blue[700],
         ),
       ),
       const SizedBox(height: 12),
@@ -1738,39 +1719,45 @@ class _BayFormScreenState extends State<BayFormScreen>
     Color? iconColor,
     required List<Widget> children,
   }) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: iconColor ?? theme.colorScheme.primary, size: 24),
-            const SizedBox(width: 12),
-            Text(
-              title,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: iconColor ?? Colors.blue, size: 24),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainer,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: theme.colorScheme.outlineVariant,
-              width: 1,
-            ),
+            ],
           ),
-          child: Column(children: children),
-        ),
-      ],
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(children: children),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1785,49 +1772,50 @@ class _BayFormScreenState extends State<BayFormScreen>
     bool readOnly = false,
     VoidCallback? onTap,
     Widget? suffixIcon,
-    required ThemeData theme,
-    required bool isDarkMode,
   }) {
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      validator: validator,
-      keyboardType: keyboardType,
-      readOnly: readOnly,
-      onTap: onTap,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: icon,
-        suffixText: suffixText,
-        suffixIcon: suffixIcon,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: TextFormField(
+        controller: controller,
+        maxLines: maxLines,
+        validator: validator,
+        keyboardType: keyboardType,
+        readOnly: readOnly,
+        onTap: onTap,
+        style: const TextStyle(
+          fontFamily: 'Roboto',
+          color: Colors.black87,
+          fontSize: 16,
+        ),
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: icon,
+          suffixText: suffixText,
+          suffixIcon: suffixIcon,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
           ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
-        ),
-        filled: true,
-        fillColor: theme.colorScheme.surfaceContainerLow,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        labelStyle: TextStyle(
-          fontFamily: 'Roboto',
-          color: theme.colorScheme.onSurface,
-        ),
-        errorStyle: TextStyle(
-          fontFamily: 'Roboto',
-          color: theme.colorScheme.error,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.blue, width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red, width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+          labelStyle: const TextStyle(
+            fontFamily: 'Roboto',
+            color: Colors.black87,
+          ),
+          errorStyle: const TextStyle(fontFamily: 'Roboto', color: Colors.red),
         ),
       ),
     );
@@ -1841,61 +1829,61 @@ class _BayFormScreenState extends State<BayFormScreen>
     List<String>? itemValues,
     required Function(String?) onChanged,
     String? Function(String?)? validator,
-    required ThemeData theme,
-    required bool isDarkMode,
     Color? fillColor,
   }) {
-    return DropdownButtonFormField<String>(
-      value: value,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: icon,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: DropdownButtonFormField<String>(
+        value: value,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: icon,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
           ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.blue, width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red, width: 2),
+          ),
+          filled: true,
+          fillColor: fillColor ?? Colors.grey.shade50,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+          labelStyle: const TextStyle(
+            fontFamily: 'Roboto',
+            color: Colors.black87,
+          ),
+          errorStyle: const TextStyle(fontFamily: 'Roboto', color: Colors.red),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.colorScheme.error, width: 2),
-        ),
-        filled: true,
-        fillColor: fillColor ?? theme.colorScheme.surfaceContainerLow,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        labelStyle: TextStyle(
-          fontFamily: 'Roboto',
-          color: theme.colorScheme.onSurface,
-        ),
-        errorStyle: TextStyle(
-          fontFamily: 'Roboto',
-          color: theme.colorScheme.error,
-        ),
-      ),
-      items: items
-          .asMap()
-          .entries
-          .map(
-            (entry) => DropdownMenuItem(
-              value: itemValues != null ? itemValues[entry.key] : entry.value,
-              child: Text(
-                entry.value,
-                style: const TextStyle(fontFamily: 'Roboto'),
+        items: items
+            .asMap()
+            .entries
+            .map(
+              (entry) => DropdownMenuItem(
+                value: itemValues != null ? itemValues[entry.key] : entry.value,
+                child: Text(
+                  entry.value,
+                  style: const TextStyle(
+                    fontFamily: 'Roboto',
+                    color: Colors.black87,
+                  ),
+                ),
               ),
-            ),
-          )
-          .toList(),
-      onChanged: _isSavingBay ? null : onChanged,
-      validator: validator,
-      dropdownColor: isDarkMode ? theme.colorScheme.surface : Colors.white,
+            )
+            .toList(),
+        onChanged: _isSavingBay ? null : onChanged,
+        validator: validator,
+        dropdownColor: Colors.white,
+        style: const TextStyle(fontFamily: 'Roboto', color: Colors.black87),
+      ),
     );
   }
 }

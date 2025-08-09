@@ -126,7 +126,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.defaultLineFeederColor,
     required this.transformerColor,
     required this.connectionLineColor,
-    required bool isCapturing,
+    required bool isCapturing, // Retained but not used; remove if unnecessary
   });
 
   Color _getBusbarColor(String voltageLevel) {
@@ -287,7 +287,7 @@ class SingleLineDiagramPainter extends CustomPainter {
       ..color = connectionLineColor
       ..style = PaintingStyle.fill;
 
-    // Draw busbars first
+    // Draw busbars first, including their energy summaries
     for (var renderData in bayRenderDataList) {
       if (renderData.bay.bayType == 'Busbar') {
         final busbarRect = renderData.rect;
@@ -306,6 +306,47 @@ class SingleLineDiagramPainter extends CustomPainter {
           textAlign: TextAlign.right,
           textColor: defaultBayColor,
         );
+
+        // Draw Busbar Energy Summary (restored and placed here for correct rendering)
+        final Map? busSummary = busEnergySummary[renderData.bay.id];
+        if (busSummary != null) {
+          final double? totalImp = busSummary['totalImp'];
+          final double? totalExp = busSummary['totalExp'];
+          final String importText = totalImp != null
+              ? 'Imp: ${totalImp.toStringAsFixed(2)} MWH'
+              : 'Imp: N/A MWH';
+          final String exportText = totalExp != null
+              ? 'Exp: ${totalExp.toStringAsFixed(2)} MWH'
+              : 'Exp: N/A MWH';
+          final Offset readingOffset = renderData.energyReadingOffset;
+          final double readingFontSize = renderData.energyReadingFontSize;
+          final bool readingIsBold = renderData.energyReadingIsBold;
+          final double textHeight = readingFontSize + 2;
+          Offset energyTextTopLeft =
+              Offset(
+                busbarRect.right - 80,
+                busbarRect.center.dy - (textHeight * 2.5),
+              ) +
+              readingOffset;
+          _drawText(
+            canvas,
+            importText,
+            energyTextTopLeft,
+            textAlign: TextAlign.left,
+            fontSize: readingFontSize,
+            isBold: readingIsBold,
+            textColor: Colors.blue.shade900,
+          );
+          _drawText(
+            canvas,
+            exportText,
+            Offset(energyTextTopLeft.dx, energyTextTopLeft.dy + textHeight),
+            textAlign: TextAlign.left,
+            fontSize: readingFontSize,
+            isBold: readingIsBold,
+            textColor: Colors.blue.shade900,
+          );
+        }
       }
     }
 
@@ -383,7 +424,7 @@ class SingleLineDiagramPainter extends CustomPainter {
       );
     }
 
-    // Draw Bay Symbols and Names for non-busbar bays
+    // Draw Bay Symbols, Names, and Energy for non-busbar bays
     for (var renderData in bayRenderDataList) {
       final bay = renderData.bay;
       final rect = renderData.rect;
@@ -400,139 +441,104 @@ class SingleLineDiagramPainter extends CustomPainter {
         );
       }
 
-      if (bay.bayType == 'Transformer') {
-        final painter = TransformerIconPainter(
-          color: isSelectedForMovement ? Colors.green : transformerColor,
-          equipmentSize: rect.size,
-          symbolSize: rect.size,
-        );
-        canvas.save();
-        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
-        painter.paint(canvas, rect.size);
-        canvas.restore();
+      if (bay.bayType != 'Busbar') {
+        if (bay.bayType == 'Transformer') {
+          final painter = TransformerIconPainter(
+            color: isSelectedForMovement ? Colors.green : transformerColor,
+            equipmentSize: rect.size,
+            symbolSize: rect.size,
+          );
+          canvas.save();
+          canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
+          painter.paint(canvas, rect.size);
+          canvas.restore();
 
-        final String transformerName = '${bay.name} T/F, \n${bay.make ?? ''}';
+          final String transformerName = '${bay.name} T/F, \n${bay.make ?? ''}';
 
-        _drawText(
-          canvas,
-          transformerName,
-          rect.centerLeft + renderData.textOffset,
-          offsetY:
-              -_measureText(transformerName, fontSize: 9, isBold: true).height /
-                  2 -
-              20,
-          isBold: true,
-          textAlign: TextAlign.right,
-          textColor: defaultBayColor,
-        );
-      } else if (bay.bayType == 'Line') {
-        final painter = LineIconPainter(
-          color: isSelectedForMovement ? Colors.green : defaultLineFeederColor,
-          equipmentSize: rect.size,
-          symbolSize: rect.size,
-        );
-        canvas.save();
-        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
-        painter.paint(canvas, rect.size);
-        canvas.restore();
-        final String lineName = '${bay.voltageLevel} ${bay.name} Line';
-        _drawText(
-          canvas,
-          lineName,
-          rect.topCenter + renderData.textOffset,
-          offsetY: -12,
-          isBold: true,
-          textColor: defaultBayColor,
-        );
-      } else if (bay.bayType == 'Feeder') {
-        final painter = FeederIconPainter(
-          color: isSelectedForMovement ? Colors.green : defaultLineFeederColor,
-          equipmentSize: rect.size,
-          symbolSize: rect.size,
-        );
-        canvas.save();
-        canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
-        painter.paint(canvas, rect.size);
-        canvas.restore();
-        _drawText(
-          canvas,
-          bay.name,
-          rect.bottomCenter + renderData.textOffset,
-          offsetY: 4,
-          isBold: true,
-          textColor: defaultBayColor,
-        );
-      } else if (bay.bayType != 'Busbar') {
-        canvas.drawRect(
-          rect,
-          Paint()
-            ..color = isSelectedForMovement
-                ? Colors.lightGreen.shade100
-                : defaultBayColor.withOpacity(0.1),
-        );
-        canvas.drawRect(
-          rect,
-          Paint()
-            ..color = isSelectedForMovement ? Colors.green : defaultBayColor
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = isSelectedForMovement ? 2.0 : 1.0,
-        );
-        _drawText(
-          canvas,
-          bay.name,
-          rect.center + renderData.textOffset,
-          isBold: true,
-          textColor: defaultBayColor,
-        );
-      }
-
-      // Draw Energy Reading Text
-      if (bayEnergyData.isNotEmpty) {
-        // Only draw if energy data is provided
-        if (bay.bayType == 'Busbar') {
-          final Map<String, double>? busSummary = busEnergySummary[bay.id];
-          if (busSummary != null) {
-            final double? totalImp = busSummary['totalImp'];
-            final double? totalExp = busSummary['totalExp'];
-
-            final String importText = totalImp != null
-                ? 'Imp: ${totalImp.toStringAsFixed(2)} MWH'
-                : 'Imp: N/A MWH';
-            final String exportText = totalExp != null
-                ? 'Exp: ${totalExp.toStringAsFixed(2)} MWH'
-                : 'Exp: N/A MWH';
-
-            final Offset readingOffset = renderData.energyReadingOffset;
-            final double readingFontSize = renderData.energyReadingFontSize;
-            final bool readingIsBold = renderData.energyReadingIsBold;
-
-            final double textHeight = readingFontSize + 2;
-
-            Offset energyTextTopLeft =
-                Offset(rect.right - 80, rect.center.dy - (textHeight * 2.5)) +
-                readingOffset;
-
-            _drawText(
-              canvas,
-              importText,
-              energyTextTopLeft,
-              textAlign: TextAlign.left,
-              fontSize: readingFontSize,
-              isBold: readingIsBold,
-              textColor: Colors.blue.shade900,
-            );
-            _drawText(
-              canvas,
-              exportText,
-              Offset(energyTextTopLeft.dx, energyTextTopLeft.dy + textHeight),
-              textAlign: TextAlign.left,
-              fontSize: readingFontSize,
-              isBold: readingIsBold,
-              textColor: Colors.blue.shade900,
-            );
-          }
+          _drawText(
+            canvas,
+            transformerName,
+            rect.centerLeft + renderData.textOffset,
+            offsetY:
+                -_measureText(
+                      transformerName,
+                      fontSize: 9,
+                      isBold: true,
+                    ).height /
+                    2 -
+                20,
+            isBold: true,
+            textAlign: TextAlign.right,
+            textColor: defaultBayColor,
+          );
+        } else if (bay.bayType == 'Line') {
+          final painter = LineIconPainter(
+            color: isSelectedForMovement
+                ? Colors.green
+                : defaultLineFeederColor,
+            equipmentSize: rect.size,
+            symbolSize: rect.size,
+          );
+          canvas.save();
+          canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
+          painter.paint(canvas, rect.size);
+          canvas.restore();
+          final String lineName = '${bay.voltageLevel} ${bay.name} Line';
+          _drawText(
+            canvas,
+            lineName,
+            rect.topCenter + renderData.textOffset,
+            offsetY: -12,
+            isBold: true,
+            textColor: defaultBayColor,
+          );
+        } else if (bay.bayType == 'Feeder') {
+          final painter = FeederIconPainter(
+            color: isSelectedForMovement
+                ? Colors.green
+                : defaultLineFeederColor,
+            equipmentSize: rect.size,
+            symbolSize: rect.size,
+          );
+          canvas.save();
+          canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
+          painter.paint(canvas, rect.size);
+          canvas.restore();
+          _drawText(
+            canvas,
+            bay.name,
+            rect.bottomCenter + renderData.textOffset,
+            offsetY: 4,
+            isBold: true,
+            textColor: defaultBayColor,
+          );
         } else {
-          // Energy reading for non-busbar bays
+          canvas.drawRect(
+            rect,
+            Paint()
+              ..color = isSelectedForMovement
+                  ? Colors.lightGreen.shade100
+                  : defaultBayColor.withOpacity(0.1),
+          );
+          canvas.drawRect(
+            rect,
+            Paint()
+              ..color = isSelectedForMovement ? Colors.green : defaultBayColor
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = isSelectedForMovement ? 2.0 : 1.0,
+          );
+          _drawText(
+            canvas,
+            bay.name,
+            rect.center + renderData.textOffset,
+            isBold: true,
+            textColor: defaultBayColor,
+          );
+        }
+
+        // Draw Energy Reading Text for non-busbar bays
+        if (bayEnergyData.isNotEmpty) {
+          // Only draw if energy data is provided
           final BayEnergyData? energyData = bayEnergyData[bay.id];
           if (energyData != null) {
             final Offset readingOffset = renderData.energyReadingOffset;

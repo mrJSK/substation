@@ -131,12 +131,14 @@ class _SldViewWidgetState extends State<SldViewWidget> {
           potentialTextTopLeft.dy + textPainter.height,
         );
 
-        // Account for energy reading text bounds if in energy mode
+        // Account for energy reading text bounds if in energy mode (improved estimation for IMP/EXP)
         if (widget.isEnergySld) {
           if (sldController.bayEnergyData.containsKey(renderData.bay.id)) {
             final Offset readingOffset = renderData.energyReadingOffset;
-            const double estimatedMaxEnergyTextWidth = 100;
-            const double estimatedTotalEnergyTextHeight = 12 * 7;
+            const double estimatedMaxEnergyTextWidth =
+                120; // Increased for MWH labels
+            const double estimatedTotalEnergyTextHeight =
+                12 * 8; // Account for more lines
 
             Offset energyTextBasePosition;
             if (renderData.bay.bayType == 'Busbar') {
@@ -226,7 +228,7 @@ class _SldViewWidgetState extends State<SldViewWidget> {
       -contentBounds.top + contentPaddingForCanvas,
     );
 
-    // For capture mode, use exact content dimensions
+    // For capture mode, use exact content dimensions without InteractiveViewer
     if (widget.isCapturingPdf) {
       return Container(
         width: effectiveContentWidth,

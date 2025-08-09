@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-
 import '../controllers/sld_controller.dart';
 import '../models/assessment_model.dart';
 import '../data/energy_data_models.dart';
@@ -29,12 +28,15 @@ class EnergyTablesWidget extends StatelessWidget {
         color: Colors.white,
         border: Border(top: BorderSide(color: Colors.grey.shade200)),
       ),
-      child: Column(
-        children: [
-          _buildConsolidatedEnergyTable(context, sldController),
-          const SizedBox(height: 16),
-          _buildAssessmentsTable(context, sldController),
-        ],
+      child: SingleChildScrollView(
+        // ← FIX: Make the entire content scrollable
+        child: Column(
+          children: [
+            _buildConsolidatedEnergyTable(context, sldController),
+            const SizedBox(height: 16),
+            _buildAssessmentsTable(context, sldController),
+          ],
+        ),
       ),
     );
   }
@@ -44,7 +46,7 @@ class EnergyTablesWidget extends StatelessWidget {
     SldController sldController,
   ) {
     return Container(
-      height: 250,
+      // ← FIX: Remove fixed height to prevent overflow
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -58,19 +60,18 @@ class EnergyTablesWidget extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: MaterialStateColor.resolveWith(
-                  (states) =>
-                      Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                ),
-                columns: _buildAbstractTableHeaders(sldController),
-                rows: _buildConsolidatedEnergyTableRows(sldController),
-                columnSpacing: 24,
-                horizontalMargin: 16,
+          // ← FIX: Wrap in SingleChildScrollView with intrinsic height
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: MaterialStateColor.resolveWith(
+                (states) =>
+                    Theme.of(context).colorScheme.primary.withOpacity(0.1),
               ),
+              columns: _buildAbstractTableHeaders(sldController),
+              rows: _buildConsolidatedEnergyTableRows(sldController),
+              columnSpacing: 24,
+              horizontalMargin: 16,
             ),
           ),
         ],
@@ -102,7 +103,7 @@ class EnergyTablesWidget extends StatelessWidget {
     }
 
     return Container(
-      height: 200,
+      // ← FIX: Remove fixed height, let content determine height
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,7 +119,11 @@ class EnergyTablesWidget extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Expanded(
+          // ← FIX: Constrain height but allow scrolling
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxHeight: 150, // Reasonable max height
+            ),
             child: isViewingSavedSld
                 ? _buildSavedAssessmentsTable(context, sldController)
                 : _buildRecentAssessmentsList(context, sldController),
@@ -133,44 +138,51 @@ class EnergyTablesWidget extends StatelessWidget {
     SldController sldController,
   ) {
     return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowColor: MaterialStateColor.resolveWith(
-          (states) => Colors.orange.shade50,
-        ),
-        columns: const [
-          DataColumn(label: Text('Bay Name')),
-          DataColumn(label: Text('Import Adj.')),
-          DataColumn(label: Text('Export Adj.')),
-          DataColumn(label: Text('Reason')),
-          DataColumn(label: Text('Timestamp')),
-        ],
-        rows: loadedAssessmentsSummary.map((assessmentMap) {
-          final assessment = Assessment.fromMap(assessmentMap);
-          final assessedBayName = assessmentMap['bayName'] ?? 'N/A';
+      scrollDirection: Axis.vertical, // ← FIX: Allow vertical scrolling
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal, // ← FIX: Allow horizontal scrolling
+        child: DataTable(
+          headingRowColor: MaterialStateColor.resolveWith(
+            (states) => Colors.orange.shade50,
+          ),
+          columns: const [
+            DataColumn(label: Text('Bay Name')),
+            DataColumn(label: Text('Import Adj.')),
+            DataColumn(label: Text('Export Adj.')),
+            DataColumn(label: Text('Reason')),
+            DataColumn(label: Text('Timestamp')),
+          ],
+          rows: loadedAssessmentsSummary.map((assessmentMap) {
+            final assessment = Assessment.fromMap(assessmentMap);
+            final assessedBayName = assessmentMap['bayName'] ?? 'N/A';
 
-          return DataRow(
-            cells: [
-              DataCell(Text(assessedBayName)),
-              DataCell(
-                Text(assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A'),
-              ),
-              DataCell(
-                Text(assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A'),
-              ),
-              DataCell(Text(assessment.reason)),
-              DataCell(
-                Text(
-                  DateFormat(
-                    'dd-MMM-yyyy HH:mm',
-                  ).format(assessment.assessmentTimestamp.toDate()),
+            return DataRow(
+              cells: [
+                DataCell(Text(assessedBayName)),
+                DataCell(
+                  Text(
+                    assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A',
+                  ),
                 ),
-              ),
-            ],
-          );
-        }).toList(),
-        columnSpacing: 24,
-        horizontalMargin: 16,
+                DataCell(
+                  Text(
+                    assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A',
+                  ),
+                ),
+                DataCell(Text(assessment.reason)),
+                DataCell(
+                  Text(
+                    DateFormat(
+                      'dd-MMM-yyyy HH:mm',
+                    ).format(assessment.assessmentTimestamp.toDate()),
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+          columnSpacing: 24,
+          horizontalMargin: 16,
+        ),
       ),
     );
   }
@@ -180,6 +192,8 @@ class EnergyTablesWidget extends StatelessWidget {
     SldController sldController,
   ) {
     return ListView.separated(
+      shrinkWrap: true, // ← FIX: Allow ListView to take only needed space
+      physics: const ClampingScrollPhysics(), // ← FIX: Better scroll physics
       itemCount: allAssessmentsForDisplay.length,
       separatorBuilder: (context, index) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
@@ -201,6 +215,7 @@ class EnergyTablesWidget extends StatelessWidget {
     );
   }
 
+  // ... rest of your existing methods remain the same
   List<DataColumn> _buildAbstractTableHeaders(SldController sldController) {
     List<String> headers = [''];
 
@@ -218,6 +233,7 @@ class EnergyTablesWidget extends StatelessWidget {
     for (String voltage in uniqueBusVoltages) {
       headers.add('$voltage BUS');
     }
+
     headers.addAll(['ABSTRACT OF S/S', 'TOTAL']);
 
     return headers
