@@ -230,7 +230,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   Rect _calculateSldContentBounds(SldController sldController) {
     if (sldController.bayRenderDataList.isEmpty) {
-      return const Rect.fromLTWH(0, 0, 800, 600);
+      return const Rect.fromLTWH(0, 0, 1200, 600);
     }
 
     double minX = double.infinity;
@@ -865,8 +865,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     child: RepaintBoundary(
                       key: _sldRepaintBoundaryKey,
                       child: Container(
-                        width: _sldContentSize.width,
-                        height: _sldContentSize.height,
+                        width: math.max(
+                          800,
+                          _sldContentSize.width,
+                        ), // Ensure minimum size
+                        height: math.max(600, _sldContentSize.height),
                         color: Colors.white,
                         child: Center(
                           child: SldViewWidget(

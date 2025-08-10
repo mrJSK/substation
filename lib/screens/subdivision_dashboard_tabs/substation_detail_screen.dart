@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -801,6 +803,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               children: bays.map((bay) {
                 final isAssigned = assignedBays.contains(bay.id);
 
+                // MODIFIED: Updated the ListTile with delete icon beside menu_book icon
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
@@ -838,6 +841,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // MODIFIED: Updated reading assignment and delete icons container
                         Container(
                           decoration: BoxDecoration(
                             color: isAssigned
@@ -845,30 +849,48 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                                 : Colors.red.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: IconButton(
-                            icon: Icon(
-                              Icons.menu_book,
-                              color: isAssigned ? Colors.green : Colors.red,
-                              size: 20,
-                            ),
-                            tooltip: isAssigned
-                                ? 'Reading Assigned'
-                                : 'Reading Unassigned',
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      BayReadingAssignmentScreen(
-                                        bayId: bay.id,
-                                        bayName: bay.name,
-                                        currentUser: widget.currentUser,
-                                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Reading assignment icon
+                              IconButton(
+                                icon: Icon(
+                                  Icons.menu_book,
+                                  color: isAssigned ? Colors.green : Colors.red,
+                                  size: 20,
                                 ),
-                              );
-                            },
+                                tooltip: isAssigned
+                                    ? 'Reading Assigned'
+                                    : 'Reading Unassigned',
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          BayReadingAssignmentScreen(
+                                            bayId: bay.id,
+                                            bayName: bay.name,
+                                            currentUser: widget.currentUser,
+                                          ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              // ADDED: Delete icon beside menu_book
+                              IconButton(
+                                icon: Icon(
+                                  Icons.delete,
+                                  color: theme.colorScheme.error,
+                                  size: 20,
+                                ),
+                                tooltip: 'Delete Bay',
+                                onPressed: () =>
+                                    _confirmDeleteBay(context, bay),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 4),
+                        // Edit icon (remains unchanged)
                         Container(
                           decoration: BoxDecoration(
                             color: theme.colorScheme.primary.withOpacity(0.1),
@@ -894,7 +916,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           );
         }).toList(),
 
-        // Standalone Equipment Section
+        // Standalone Equipment Section (remains unchanged)
         if (standaloneEquipment.isNotEmpty)
           Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -1508,97 +1530,391 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   Future<void> _confirmDeleteBay(BuildContext context, Bay bay) async {
     final theme = Theme.of(context);
 
-    final bool confirm =
-        await showDialog(
-          context: context,
-          builder: (BuildContext context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Row(
-              children: [
-                Icon(Icons.warning, color: theme.colorScheme.error, size: 24),
-                const SizedBox(width: 8),
-                const Text(
-                  'Confirm Deletion',
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.warning_amber_rounded,
+                  color: theme.colorScheme.error,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Delete Bay?',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
-              ],
-            ),
-            content: Text(
-              'Are you sure you want to delete bay "${bay.name}"?\n\nThis will also remove all associated equipment and connections. This action cannot be undone.',
-              style: TextStyle(
-                fontSize: 14,
-                color: theme.colorScheme.onSurface.withOpacity(0.7),
-              ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.error,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text('Delete'),
               ),
             ],
           ),
-        ) ??
-        false;
-
-    if (confirm) {
-      try {
-        debugPrint('Attempting to delete bay: ${bay.id}');
-        await FirebaseFirestore.instance
-            .collection('bays')
-            .doc(bay.id)
-            .delete();
-        debugPrint('Bay deleted: ${bay.id}. Now deleting connections...');
-
-        final batch = FirebaseFirestore.instance.batch();
-        final connectionsSnapshot = await FirebaseFirestore.instance
-            .collection('bay_connections')
-            .where('substationId', isEqualTo: widget.substationId)
-            .where(
-              Filter.or(
-                Filter('sourceBayId', isEqualTo: bay.id),
-                Filter('targetBayId', isEqualTo: bay.id),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to delete "${bay.name}"?',
+                style: const TextStyle(fontSize: 16),
               ),
-            )
-            .get();
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: theme.colorScheme.error.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: theme.colorScheme.error,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'This will also remove all associated equipment and connections. This action cannot be undone.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
 
-        for (var doc in connectionsSnapshot.docs) {
-          batch.delete(doc.reference);
-        }
-        await batch.commit();
+    if (confirmed == true) {
+      // Show animated deletion process
+      await _performAnimatedDeletion(context, bay);
+    }
+  }
 
-        debugPrint('Connections deleted for bay: ${bay.id}');
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Bay "${bay.name}" deleted successfully!',
-          );
-        }
-      } catch (e) {
-        debugPrint('Error deleting bay: $e');
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Failed to delete bay: $e',
-            isError: true,
-          );
-        }
+  // NEW: Animated deletion method
+  Future<void> _performAnimatedDeletion(BuildContext context, Bay bay) async {
+    final theme = Theme.of(context);
+
+    // Show loading overlay with animation
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Animated loading indicator
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 500),
+                  builder: (context, value, child) {
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 60,
+                          height: 60,
+                          child: CircularProgressIndicator(
+                            value: value,
+                            strokeWidth: 4,
+                            backgroundColor: theme.colorScheme.error
+                                .withOpacity(0.2),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              theme.colorScheme.error,
+                            ),
+                          ),
+                        ),
+                        AnimatedScale(
+                          scale: value,
+                          duration: const Duration(milliseconds: 200),
+                          child: Icon(
+                            Icons.delete,
+                            color: theme.colorScheme.error,
+                            size: 24,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Deleting ${bay.name}...',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Please wait while we remove the bay',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      // Simulate network delay for better UX (minimum 1.5 seconds)
+      final deletionFuture = _deleteBay(bay);
+      final delayFuture = Future.delayed(const Duration(milliseconds: 1500));
+
+      // Wait for both the actual deletion and the minimum delay
+      await Future.wait([deletionFuture, delayFuture]);
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
       }
+
+      // Show success animation
+      if (context.mounted) {
+        await _showSuccessAnimation(context, bay);
+      }
+
+      // Refresh the data - use your existing method name
+      if (mounted) {
+        // Replace this with your actual method name:
+        // _loadSubstationDetails();
+        // OR _fetchSubstationData();
+        // OR _loadBaysData();
+        // OR _refreshSubstationData();
+        setState(() {}); // Fallback to trigger rebuild
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Show error message
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Failed to delete ${bay.name}: $e')),
+              ],
+            ),
+            backgroundColor: theme.colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _confirmDeleteBay(context, bay),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  // NEW: Success animation method with auto-dismiss
+  Future<void> _showSuccessAnimation(BuildContext context, Bay bay) async {
+    final theme = Theme.of(context);
+
+    // Show success dialog with animation and auto-dismiss
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        // Auto-dismiss after animation completes
+        Timer(const Duration(milliseconds: 1000), () {
+          if (context.mounted && Navigator.canPop(context)) {
+            Navigator.of(context).pop();
+          }
+        });
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            builder: (context, value, child) {
+              return Transform.scale(
+                scale: value,
+                child: Opacity(
+                  opacity: value,
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Success icon with animation
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.0, end: 1.0),
+                          duration: const Duration(milliseconds: 300),
+                          builder: (context, iconValue, child) {
+                            return Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Transform.scale(
+                                scale: iconValue,
+                                child: const Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                  size: 48,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Bay Deleted Successfully!',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${bay.name} has been permanently removed',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: theme.colorScheme.onSurface.withOpacity(0.6),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        // Auto-dismiss indicator
+                        SizedBox(
+                          width: 60,
+                          child: LinearProgressIndicator(
+                            backgroundColor: Colors.green.withOpacity(0.2),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Colors.green,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  // Actual deletion method with your existing logic
+  Future<void> _deleteBay(Bay bay) async {
+    try {
+      debugPrint('Attempting to delete bay: ${bay.id}');
+
+      // Delete the bay document
+      await FirebaseFirestore.instance.collection('bays').doc(bay.id).delete();
+
+      debugPrint('Bay deleted: ${bay.id}. Now deleting connections...');
+
+      // Delete related connections using batch
+      final batch = FirebaseFirestore.instance.batch();
+      final connectionsSnapshot = await FirebaseFirestore.instance
+          .collection('bay_connections')
+          .where('substationId', isEqualTo: widget.substationId)
+          .where(
+            Filter.or(
+              Filter('sourceBayId', isEqualTo: bay.id),
+              Filter('targetBayId', isEqualTo: bay.id),
+            ),
+          )
+          .get();
+
+      for (var doc in connectionsSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      debugPrint('Connections deleted for bay: ${bay.id}');
+    } catch (e) {
+      debugPrint('Error deleting bay: $e');
+      throw Exception('Failed to delete bay: $e');
     }
   }
 }

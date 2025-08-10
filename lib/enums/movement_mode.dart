@@ -1,2 +1,2 @@
 // lib/enums/movement_mode.dart
-enum MovementMode { bay, text, energyText }
+enum MovementMode { bay, text, energyText, busbarLength }

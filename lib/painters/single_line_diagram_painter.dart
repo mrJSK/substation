@@ -4,7 +4,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import '../models/bay_connection_model.dart';
 import '../models/bay_model.dart';
-import '../models/energy_readings_data.dart'; // Now uses the unified model
+import '../models/energy_readings_data.dart';
 import '../models/equipment_model.dart';
 
 // Equipment Icons
@@ -70,7 +70,7 @@ class _GenericIconPainter extends CustomPainter {
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0
-      ..isAntiAlias = true; // Performance: enable anti-aliasing
+      ..isAntiAlias = true;
 
     final double centerX = size.width / 2;
     final double centerY = size.height / 2;
@@ -113,18 +113,26 @@ class SingleLineDiagramPainter extends CustomPainter {
   final Map<String, Map<String, Offset>> busbarConnectionPoints;
   final bool debugDrawHitboxes;
   final String? selectedBayForMovementId;
-  final Map<String, BayEnergyData> bayEnergyData; // Now uses unified model
+  final Map<String, BayEnergyData> bayEnergyData;
   final Map<String, Map<String, double>> busEnergySummary;
   final Size? contentBounds;
   final Offset? originOffsetForPdf;
-
-  final bool showEnergyReadings; // Add this property
+  final bool showEnergyReadings;
 
   // Theme colors
   final Color defaultBayColor;
   final Color defaultLineFeederColor;
   final Color transformerColor;
   final Color connectionLineColor;
+
+  // Updated spacing constants to match controller
+  static const double symbolWidth = 40;
+  static const double symbolHeight = 40;
+  static const double horizontalSpacing = 120;
+  static const double verticalBusbarSpacing = 250;
+  static const double lineFeederHeight = 100.0;
+  static const double equipmentSpacing =
+      15.0; // New constant for equipment spacing
 
   // Performance optimization: Pre-computed paint objects
   static final Paint _linePaint = Paint()
@@ -145,7 +153,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.bayRenderDataList,
     required this.bayConnections,
     required this.baysMap,
-    this.showEnergyReadings = true, // Add this parameter
+    this.showEnergyReadings = true,
     required this.createDummyBayRenderData,
     required this.busbarRects,
     required this.busbarConnectionPoints,
@@ -165,7 +173,6 @@ class SingleLineDiagramPainter extends CustomPainter {
   static final Map<String, Color> _voltageColorCache = <String, Color>{};
 
   Color _getBusbarColor(String voltageLevel) {
-    // Cache voltage colors for performance
     if (_voltageColorCache.containsKey(voltageLevel)) {
       return _voltageColorCache[voltageLevel]!;
     }
@@ -265,7 +272,6 @@ class SingleLineDiagramPainter extends CustomPainter {
           return _GenericIconPainter(color: color, iconSize: size);
       }
     } catch (e) {
-      // Fallback to generic icon if specific icon fails
       print('Warning: Failed to create icon for $symbolKey, using generic: $e');
       return _GenericIconPainter(color: color, iconSize: size);
     }
@@ -277,6 +283,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     print('DEBUG: showEnergyReadings = $showEnergyReadings');
     print('DEBUG: bayEnergyData.length = ${bayEnergyData.length}');
     print('DEBUG: bayRenderDataList.length = ${bayRenderDataList.length}');
+
     // Save the canvas state before any transformations
     canvas.save();
 
@@ -296,15 +303,16 @@ class SingleLineDiagramPainter extends CustomPainter {
     _drawBusbars(canvas);
     _drawConnections(canvas);
     _drawBaySymbolsAndLabels(canvas);
-    _drawEnergyReadings(canvas); // Updated to use new model
+    _drawEquipmentInstances(canvas); // NEW: Draw equipment instances
+
+    // Draw energy readings conditionally (FIXED: removed duplicate)
+    if (showEnergyReadings) {
+      _drawEnergyReadings(canvas);
+    }
 
     // Draw debug hitboxes last (overlay)
     if (debugDrawHitboxes) {
       _drawDebugHitboxes(canvas);
-    }
-
-    if (showEnergyReadings) {
-      _drawEnergyReadings(canvas);
     }
 
     // Restore the canvas state
@@ -325,12 +333,9 @@ class SingleLineDiagramPainter extends CustomPainter {
       final double translateX = (size.width - scaledContentWidth) / 2;
       final double translateY = (size.height - scaledContentHeight) / 2;
 
-      // Apply centering translation first
       canvas.translate(translateX, translateY);
-      // Apply scaling based on fitScale
       canvas.scale(fitScale);
 
-      // Apply the origin offset for PDF, if provided
       if (originOffsetForPdf != null) {
         canvas.translate(originOffsetForPdf!.dx, originOffsetForPdf!.dy);
       }
@@ -340,7 +345,6 @@ class SingleLineDiagramPainter extends CustomPainter {
   void _drawDebugBounds(Canvas canvas, Size size) {
     if (contentBounds == null) return;
 
-    // Content bounds in blue
     final boundsPaint = Paint()
       ..color = Colors.blue.withOpacity(0.3)
       ..style = PaintingStyle.stroke
@@ -351,7 +355,6 @@ class SingleLineDiagramPainter extends CustomPainter {
       boundsPaint,
     );
 
-    // Widget bounds in orange
     final widgetBoundsPaint = Paint()
       ..color = Colors.orange.withOpacity(0.3)
       ..style = PaintingStyle.stroke
@@ -370,22 +373,123 @@ class SingleLineDiagramPainter extends CustomPainter {
       final busbarRect = renderData.rect;
       _busbarPaint.color = _getBusbarColor(renderData.voltageLevel);
 
-      // Draw busbar line
-      canvas.drawLine(
-        busbarRect.centerLeft,
-        busbarRect.centerRight,
-        _busbarPaint,
+      // Draw busbar line with proper length
+      final busbarLength = renderData.busbarLength > 0
+          ? renderData.busbarLength
+          : busbarRect.width;
+
+      final busbarStart = Offset(
+        busbarRect.center.dx - busbarLength / 2,
+        busbarRect.center.dy,
+      );
+      final busbarEnd = Offset(
+        busbarRect.center.dx + busbarLength / 2,
+        busbarRect.center.dy,
       );
 
-      // Draw busbar label
+      canvas.drawLine(busbarStart, busbarEnd, _busbarPaint);
+
+      // Draw busbar label with voltage-based positioning
       _drawText(
         canvas,
         '${renderData.voltageLevel} ${renderData.bayName}',
-        Offset(busbarRect.left - 8, busbarRect.center.dy) +
+        Offset(busbarStart.dx - 8, busbarRect.center.dy) +
             renderData.textOffset,
         textAlign: TextAlign.right,
-        textColor: defaultBayColor,
+        textColor: _getBusbarColor(renderData.voltageLevel),
+        isBold: true,
       );
+    }
+  }
+
+  // NEW: Draw equipment instances for each bay
+  void _drawEquipmentInstances(Canvas canvas) {
+    for (var renderData in bayRenderDataList) {
+      if (renderData.equipmentInstances.isEmpty) continue;
+
+      _drawBayEquipment(canvas, renderData);
+    }
+  }
+
+  // In single_line_diagram_painter.dart, update the _drawBayEquipment method:
+
+  void _drawBayEquipment(Canvas canvas, BayRenderData renderData) {
+    final equipmentList = renderData.equipmentInstances;
+    if (equipmentList.isEmpty) return;
+
+    final bayRect = renderData.rect;
+    final equipmentSize = Size(20, 20);
+
+    for (int i = 0; i < equipmentList.length; i++) {
+      final equipment = equipmentList[i];
+
+      Offset equipmentPosition = _calculateEquipmentPosition(
+        renderData,
+        i,
+        equipmentList.length,
+        equipmentSize,
+      );
+
+      canvas.save();
+      canvas.translate(equipmentPosition.dx, equipmentPosition.dy);
+
+      // FIX: Use symbolKey instead of equipmentTypeId
+      final equipmentPainter = _getSymbolPainter(
+        equipment.symbolKey, // ✅ Changed from equipment.equipmentTypeId
+        defaultBayColor.withOpacity(0.7),
+        equipmentSize,
+      );
+
+      equipmentPainter.paint(canvas, equipmentSize);
+      canvas.restore();
+
+      // FIX: Use equipmentTypeName instead of name
+      _drawText(
+        canvas,
+        equipment.equipmentTypeName, // ✅ Changed from equipment.name
+        equipmentPosition.translate(0, equipmentSize.height + 2),
+        fontSize: 7,
+        textAlign: TextAlign.center,
+        textColor: defaultBayColor.withOpacity(0.8),
+      );
+    }
+  }
+
+  Offset _calculateEquipmentPosition(
+    BayRenderData renderData,
+    int index,
+    int totalEquipment,
+    Size equipmentSize,
+  ) {
+    final bayRect = renderData.rect;
+
+    switch (renderData.bayType) {
+      case 'Transformer':
+        // Position equipment on the right side of transformer
+        return Offset(
+          bayRect.right + 10,
+          bayRect.top + (index * (equipmentSize.height + equipmentSpacing)),
+        );
+      case 'Line':
+        // Position equipment above the line symbol
+        return Offset(
+          bayRect.left + (index * (equipmentSize.width + equipmentSpacing)),
+          bayRect.top - equipmentSize.height - 5,
+        );
+      case 'Feeder':
+        // Position equipment below the feeder symbol
+        return Offset(
+          bayRect.left + (index * (equipmentSize.width + equipmentSpacing)),
+          bayRect.bottom + 5,
+        );
+      default:
+        // Position around the bay symbol
+        return Offset(
+          bayRect.right + 5,
+          bayRect.center.dy +
+              (index * equipmentSpacing) -
+              (totalEquipment * equipmentSpacing / 2),
+        );
     }
   }
 
@@ -420,7 +524,7 @@ class SingleLineDiagramPainter extends CustomPainter {
 
   void _drawBaySymbolsAndLabels(Canvas canvas) {
     for (var renderData in bayRenderDataList) {
-      if (renderData.bayType == 'Busbar') continue; // Already handled
+      if (renderData.bayType == 'Busbar') continue;
 
       final bool isSelectedForMovement =
           renderData.bayId == selectedBayForMovementId;
@@ -446,7 +550,6 @@ class SingleLineDiagramPainter extends CustomPainter {
       final painter = _getSymbolPainter(bayType, color, rect.size);
       painter.paint(canvas, rect.size);
     } catch (e) {
-      // Fallback drawing
       print('Error drawing symbol for ${renderData.bayName}: $e');
       _drawFallbackSymbol(canvas, rect.size, color);
     }
@@ -486,7 +589,6 @@ class SingleLineDiagramPainter extends CustomPainter {
       default:
         label = bayName;
         labelPosition = rect.center + renderData.textOffset;
-        // Draw background for generic bays
         _drawGenericBayBackground(canvas, rect, isSelected);
     }
 
@@ -502,7 +604,6 @@ class SingleLineDiagramPainter extends CustomPainter {
   }
 
   void _drawGenericBayBackground(Canvas canvas, Rect rect, bool isSelected) {
-    // Fill
     canvas.drawRect(
       rect,
       Paint()
@@ -511,7 +612,6 @@ class SingleLineDiagramPainter extends CustomPainter {
             : defaultBayColor.withOpacity(0.1),
     );
 
-    // Border
     canvas.drawRect(
       rect,
       Paint()
@@ -521,7 +621,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
   }
 
-  // Updated to use unified BayEnergyData model
+  // Rest of the methods remain the same...
   void _drawEnergyReadings(Canvas canvas) {
     if (bayEnergyData.isEmpty) return;
 
@@ -575,7 +675,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
   }
 
-  // Enhanced bay energy reading using unified model
   void _drawBayEnergyReading(Canvas canvas, BayRenderData renderData) {
     final energyData = bayEnergyData[renderData.bayId];
     if (energyData == null) return;
@@ -586,11 +685,9 @@ class SingleLineDiagramPainter extends CustomPainter {
     const lineHeight = 1.2;
     const valueOffsetFromLabel = 40.0;
 
-    // Calculate base position based on bay type
     Offset baseTextOffset = _calculateEnergyReadingPosition(renderData);
     baseTextOffset = baseTextOffset + readingOffset;
 
-    // Draw "Readings:" header
     _drawText(
       canvas,
       'Readings:',
@@ -600,11 +697,9 @@ class SingleLineDiagramPainter extends CustomPainter {
       textColor: defaultBayColor,
     );
 
-    // Prepare reading data using new unified model
     final readings = _prepareReadingData(energyData);
     final consumed = _prepareConsumedData(energyData);
 
-    // Draw readings
     _drawReadingEntries(
       canvas,
       readings,
@@ -613,10 +708,9 @@ class SingleLineDiagramPainter extends CustomPainter {
       lineHeight,
       valueOffsetFromLabel,
       isBold,
-      1, // Start from row 1 (after header)
+      1,
     );
 
-    // Draw consumed values
     _drawReadingEntries(
       canvas,
       consumed,
@@ -625,10 +719,9 @@ class SingleLineDiagramPainter extends CustomPainter {
       lineHeight,
       valueOffsetFromLabel,
       isBold,
-      readings.length + 1, // Start after readings
+      readings.length + 1,
     );
 
-    // Draw assessment indicator if present
     if (energyData.hasAssessment) {
       _drawAssessmentIndicator(canvas, baseTextOffset, fontSize);
     }
@@ -649,7 +742,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
   }
 
-  // Updated to use unified model properties
   List<Map<String, String?>> _prepareReadingData(BayEnergyData energyData) {
     return [
       {
@@ -666,20 +758,15 @@ class SingleLineDiagramPainter extends CustomPainter {
     ];
   }
 
-  // Updated to use unified model properties
   List<Map<String, String?>> _prepareConsumedData(BayEnergyData energyData) {
     return [
       {
         'label': 'Imp(C):',
-        'value': energyData.adjustedImportConsumed.toStringAsFixed(
-          2,
-        ), // Uses adjustment
+        'value': energyData.adjustedImportConsumed.toStringAsFixed(2),
       },
       {
         'label': 'Exp(C):',
-        'value': energyData.adjustedExportConsumed.toStringAsFixed(
-          2,
-        ), // Uses adjustment
+        'value': energyData.adjustedExportConsumed.toStringAsFixed(2),
       },
     ];
   }
@@ -698,7 +785,6 @@ class SingleLineDiagramPainter extends CustomPainter {
       final rowIndex = startRow + i;
       final yOffset = rowIndex * lineHeight * fontSize;
 
-      // Draw label
       _drawText(
         canvas,
         entries[i]['label']!,
@@ -709,7 +795,6 @@ class SingleLineDiagramPainter extends CustomPainter {
         textColor: defaultBayColor,
       );
 
-      // Draw value
       _drawText(
         canvas,
         entries[i]['value'] ?? 'N/A',
@@ -727,10 +812,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     Offset baseOffset,
     double fontSize,
   ) {
-    final indicatorPaint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
-
     final TextPainter assessmentIndicatorPainter = TextPainter(
       text: TextSpan(
         text: '*',
@@ -780,40 +861,57 @@ class SingleLineDiagramPainter extends CustomPainter {
     Offset startPoint;
     Offset endPoint;
 
-    // Enhanced connection logic
+    // Enhanced connection logic matching the controller
     if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Transformer') {
       startPoint =
           busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
-          sourceRenderData.rect.center;
+          Offset(
+            targetRenderData.rect.center.dx,
+            sourceRenderData.rect.center.dy,
+          );
       endPoint = targetRenderData.topCenter;
     } else if (sourceBay.bayType == 'Transformer' &&
         targetBay.bayType == 'Busbar') {
       startPoint = sourceRenderData.bottomCenter;
       endPoint =
           busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
-          targetRenderData.rect.center;
+          Offset(
+            sourceRenderData.rect.center.dx,
+            targetRenderData.rect.center.dy,
+          );
     } else if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Line') {
       startPoint =
           busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
-          sourceRenderData.rect.center;
+          Offset(
+            targetRenderData.rect.center.dx,
+            sourceRenderData.rect.center.dy,
+          );
       endPoint = targetRenderData.bottomCenter;
     } else if (sourceBay.bayType == 'Line' && targetBay.bayType == 'Busbar') {
       startPoint = sourceRenderData.bottomCenter;
       endPoint =
           busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
-          targetRenderData.rect.center;
+          Offset(
+            sourceRenderData.rect.center.dx,
+            targetRenderData.rect.center.dy,
+          );
     } else if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Feeder') {
       startPoint =
           busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??
-          sourceRenderData.rect.center;
+          Offset(
+            targetRenderData.rect.center.dx,
+            sourceRenderData.rect.center.dy,
+          );
       endPoint = targetRenderData.topCenter;
     } else if (sourceBay.bayType == 'Feeder' && targetBay.bayType == 'Busbar') {
       startPoint = sourceRenderData.topCenter;
       endPoint =
           busbarConnectionPoints[targetBay.id]?[sourceBay.id] ??
-          targetRenderData.rect.center;
+          Offset(
+            sourceRenderData.rect.center.dx,
+            targetRenderData.rect.center.dy,
+          );
     } else {
-      // Default connection points
       startPoint = sourceRenderData.bottomCenter;
       endPoint = targetRenderData.topCenter;
     }
@@ -946,10 +1044,8 @@ class SingleLineDiagramPainter extends CustomPainter {
     String sourceBayId,
     String targetBayId,
   ) {
-    // Draw the main connection line
     canvas.drawLine(startPoint, endPoint, _linePaint);
 
-    // Draw connection dots for busbar connections
     if (sourceBayType == 'Busbar' && targetBayType != 'Busbar') {
       final busConnectionPoint =
           busbarConnectionPoints[sourceBayId]?[targetBayId];
@@ -964,7 +1060,6 @@ class SingleLineDiagramPainter extends CustomPainter {
       }
     }
 
-    // Draw arrowheads for transformer connections
     if ((sourceBayType == 'Busbar' && targetBayType == 'Transformer') ||
         (sourceBayType == 'Transformer' && targetBayType == 'Busbar')) {
       _drawArrowhead(canvas, startPoint, endPoint, _linePaint);
@@ -973,7 +1068,6 @@ class SingleLineDiagramPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant SingleLineDiagramPainter oldDelegate) {
-    // Comprehensive repaint logic for performance optimization
     return oldDelegate.bayRenderDataList != bayRenderDataList ||
         oldDelegate.bayConnections != bayConnections ||
         oldDelegate.baysMap != baysMap ||
@@ -985,6 +1079,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         oldDelegate.busEnergySummary != busEnergySummary ||
         oldDelegate.contentBounds != contentBounds ||
         oldDelegate.originOffsetForPdf != originOffsetForPdf ||
+        oldDelegate.showEnergyReadings != showEnergyReadings ||
         oldDelegate.defaultBayColor != defaultBayColor ||
         oldDelegate.defaultLineFeederColor != defaultLineFeederColor ||
         oldDelegate.transformerColor != transformerColor ||

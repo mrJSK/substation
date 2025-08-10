@@ -2,31 +2,33 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui'
-    as ui; // Alias to avoid conflict with flutter/material.dart's TextDirection
+import 'dart:ui' as ui;
 
 import '../painters/single_line_diagram_painter.dart';
 import '../controllers/sld_controller.dart';
 import '../models/bay_model.dart';
-import '../utils/snackbar_utils.dart'; // For SnackBarUtils
+import '../utils/snackbar_utils.dart';
 import '../enums/movement_mode.dart';
 
 class SldViewWidget extends StatelessWidget {
-  final bool
-  isEnergySld; // To differentiate between normal SLD and energy SLD views
-  final bool isCapturingPdf; // NEW: Added to handle PDF capture mode
-  final Function(Bay, Offset)? onBayTapped; // Callback for bay interactions
+  final bool isEnergySld;
+  final bool isCapturingPdf;
+  final Function(Bay, Offset)? onBayTapped;
 
   const SldViewWidget({
     super.key,
     this.isEnergySld = false,
-    this.isCapturingPdf = false, // NEW: Default to false
+    this.isCapturingPdf = false,
     this.onBayTapped,
   });
 
+  // Constants that match the controller's spacing
+  static const double _contentPadding =
+      120.0; // Match sidePadding from controller
+  static const double _topPadding = 100.0; // Match topPadding from controller
+
   @override
   Widget build(BuildContext context) {
-    // Watch the SldController for changes
     final sldController = Provider.of<SldController>(context);
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
@@ -60,173 +62,38 @@ class SldViewWidget extends StatelessWidget {
       );
     }
 
-    // Calculate content bounds for canvas size
-    double minXForContent = double.infinity;
-    double minYForContent = double.infinity;
-    double maxXForContent = double.negativeInfinity;
-    double maxYForContent = double.negativeInfinity;
-
-    for (var renderData in sldController.bayRenderDataList) {
-      minXForContent = min(minXForContent, renderData.rect.left);
-      minYForContent = min(minYForContent, renderData.rect.top);
-      maxXForContent = max(maxXForContent, renderData.rect.right);
-      maxYForContent = max(maxYForContent, renderData.rect.bottom);
-
-      // Account for text bounds (simplified for brevity, actual measurement might be needed)
-      final TextPainter textPainter = TextPainter(
-        text: TextSpan(
-          text: renderData.bay.name,
-          style: const TextStyle(fontSize: 10),
-        ),
-        textDirection: ui.TextDirection.ltr,
-      )..layout();
-
-      Offset potentialTextTopLeft = Offset.zero;
-      if (renderData.bay.bayType == 'Busbar') {
-        potentialTextTopLeft =
-            renderData.rect.centerLeft + renderData.textOffset;
-        // Approximate adjustment for right-aligned busbar text
-        potentialTextTopLeft = Offset(
-          potentialTextTopLeft.dx - textPainter.width,
-          potentialTextTopLeft.dy,
-        );
-      } else if (renderData.bay.bayType == 'Transformer') {
-        potentialTextTopLeft =
-            renderData.rect.centerLeft + renderData.textOffset;
-        // Adjusted for multi-line transformer text (assuming default width for multi-line is 150)
-        potentialTextTopLeft = Offset(
-          potentialTextTopLeft.dx - 150,
-          potentialTextTopLeft.dy - textPainter.height / 2 - 20,
-        );
-      } else {
-        potentialTextTopLeft = renderData.rect.center + renderData.textOffset;
-        potentialTextTopLeft = Offset(
-          potentialTextTopLeft.dx - textPainter.width / 2,
-          potentialTextTopLeft.dy - textPainter.height / 2,
-        );
-      }
-      minXForContent = min(minXForContent, potentialTextTopLeft.dx);
-      minYForContent = min(minYForContent, potentialTextTopLeft.dy);
-      maxXForContent = max(
-        maxXForContent,
-        potentialTextTopLeft.dx + textPainter.width,
-      );
-      maxYForContent = max(
-        maxYForContent,
-        potentialTextTopLeft.dy + textPainter.height,
-      );
-
-      // UPDATED: Account for energy reading text bounds if in energy mode and readings are visible
-      if (isEnergySld && sldController.showEnergyReadings) {
-        if (sldController.bayEnergyData.containsKey(renderData.bay.id)) {
-          final Offset readingOffset = renderData.energyReadingOffset;
-          const double estimatedMaxEnergyTextWidth = 100;
-          const double estimatedTotalEnergyTextHeight =
-              12 * 7; // Approx. lines * height
-
-          Offset energyTextBasePosition;
-          if (renderData.bay.bayType == 'Busbar') {
-            energyTextBasePosition = Offset(
-              renderData.rect.right - estimatedMaxEnergyTextWidth - 10,
-              renderData.rect.center.dy - (estimatedTotalEnergyTextHeight / 2),
-            );
-          } else if (renderData.bay.bayType == 'Transformer') {
-            energyTextBasePosition = Offset(
-              renderData.rect.centerLeft.dx - estimatedMaxEnergyTextWidth - 10,
-              renderData.rect.center.dy - (estimatedTotalEnergyTextHeight / 2),
-            );
-          } else {
-            energyTextBasePosition = Offset(
-              renderData.rect.right + 15,
-              renderData.rect.center.dy - (estimatedTotalEnergyTextHeight / 2),
-            );
-          }
-          energyTextBasePosition = energyTextBasePosition + readingOffset;
-
-          minXForContent = min(minXForContent, energyTextBasePosition.dx);
-          minYForContent = min(minYForContent, energyTextBasePosition.dy);
-          maxXForContent = max(
-            maxXForContent,
-            energyTextBasePosition.dx + estimatedMaxEnergyTextWidth,
-          );
-          maxYForContent = max(
-            maxYForContent,
-            energyTextBasePosition.dy + estimatedTotalEnergyTextHeight,
-          );
-        }
-      }
-    }
-
-    // Fallback bounds if calculations fail
-    if (!minXForContent.isFinite ||
-        !minYForContent.isFinite ||
-        !maxXForContent.isFinite ||
-        !maxYForContent.isFinite ||
-        (maxXForContent - minXForContent) <= 0 ||
-        (maxYForContent - minYForContent) <= 0) {
-      minXForContent = 0;
-      minYForContent = 0;
-      maxXForContent = 400;
-      maxYForContent = 300;
-    }
-
-    const double contentPaddingForCanvas = 50.0;
-    final double effectiveContentWidth =
-        (maxXForContent - minXForContent) + 2 * contentPaddingForCanvas;
-    final double effectiveContentHeight =
-        (maxYForContent - minYForContent) + 2 * contentPaddingForCanvas;
-    final Offset originOffsetForPainter = Offset(
-      -minXForContent + contentPaddingForCanvas,
-      -minYForContent + contentPaddingForCanvas,
-    );
+    // Enhanced content bounds calculation
+    final contentBounds = _calculateContentBounds(sldController);
 
     final double canvasWidth = max(
       MediaQuery.of(context).size.width,
-      effectiveContentWidth,
+      contentBounds.width,
     );
     final double canvasHeight = max(
       MediaQuery.of(context).size.height,
-      effectiveContentHeight,
+      contentBounds.height,
     );
 
-    // UPDATED: Conditional InteractiveViewer - disabled during PDF capture
+    // PDF capture mode
     if (isCapturingPdf) {
-      // For PDF capture, return the CustomPaint directly without InteractiveViewer
       return Container(
         width: canvasWidth,
         height: canvasHeight,
-        color: Colors.white,
+        decoration: const BoxDecoration(color: Colors.white),
         child: CustomPaint(
           size: Size(canvasWidth, canvasHeight),
-          painter: SingleLineDiagramPainter(
-            showEnergyReadings: sldController.showEnergyReadings,
-            bayRenderDataList: sldController.bayRenderDataList,
-            bayConnections: sldController.allConnections,
-            baysMap: sldController.baysMap,
-            createDummyBayRenderData: sldController.createDummyBayRenderData,
-            busbarRects: sldController.busbarRects,
-            busbarConnectionPoints: sldController.busbarConnectionPoints,
-            debugDrawHitboxes: false, // Disable debug for PDF
-            selectedBayForMovementId: null, // No selection during PDF capture
-            bayEnergyData: sldController.bayEnergyData,
-            busEnergySummary: sldController.busEnergySummary,
-            contentBounds: Size(
-              maxXForContent - minXForContent,
-              maxYForContent - minYForContent,
-            ),
-            originOffsetForPdf: originOffsetForPainter,
-            defaultBayColor: colorScheme.onSurface,
-            defaultLineFeederColor: colorScheme.onSurface,
-            transformerColor: colorScheme.primary,
-            connectionLineColor: colorScheme.onSurface,
+          painter: _createPainter(
+            sldController,
+            colorScheme,
+            isPdfMode: true,
+            contentBounds: contentBounds,
           ),
         ),
       );
     }
 
-    // UPDATED: Normal interactive view with gesture handling
+    // Interactive mode
     return InteractiveViewer(
-      // REMOVED: transformationController - handled by parent screen
       boundaryMargin: const EdgeInsets.all(double.infinity),
       minScale: 0.1,
       maxScale: 4.0,
@@ -244,27 +111,10 @@ class SldViewWidget extends StatelessWidget {
           color: Colors.white,
           child: CustomPaint(
             size: Size(canvasWidth, canvasHeight),
-            painter: SingleLineDiagramPainter(
-              showEnergyReadings: sldController.showEnergyReadings,
-              bayRenderDataList: sldController.bayRenderDataList,
-              bayConnections: sldController.allConnections,
-              baysMap: sldController.baysMap,
-              createDummyBayRenderData: sldController.createDummyBayRenderData,
-              busbarRects: sldController.busbarRects,
-              busbarConnectionPoints: sldController.busbarConnectionPoints,
-              debugDrawHitboxes:
-                  !isCapturingPdf, // Show hitboxes in normal mode
-              selectedBayForMovementId: sldController.selectedBayForMovementId,
-              bayEnergyData: sldController.bayEnergyData,
-              busEnergySummary: sldController.busEnergySummary,
-              contentBounds:
-                  null, // For interactive viewer, this should be null
-              originOffsetForPdf:
-                  null, // For interactive viewer, this should be null
-              defaultBayColor: colorScheme.onSurface,
-              defaultLineFeederColor: colorScheme.onSurface,
-              transformerColor: colorScheme.primary,
-              connectionLineColor: colorScheme.onSurface,
+            painter: _createPainter(
+              sldController,
+              colorScheme,
+              isPdfMode: false,
             ),
           ),
         ),
@@ -272,7 +122,234 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  // UPDATED: Improved tap handling with proper coordinate transformation
+  // Enhanced content bounds calculation
+  ContentBounds _calculateContentBounds(SldController sldController) {
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = double.negativeInfinity;
+    double maxY = double.negativeInfinity;
+
+    // Calculate bounds for all bay symbols
+    for (var renderData in sldController.bayRenderDataList) {
+      minX = min(minX, renderData.rect.left);
+      minY = min(minY, renderData.rect.top);
+      maxX = max(maxX, renderData.rect.right);
+      maxY = max(maxY, renderData.rect.bottom);
+
+      // Account for text bounds
+      final textBounds = _calculateTextBounds(renderData);
+      minX = min(minX, textBounds.left);
+      minY = min(minY, textBounds.top);
+      maxX = max(maxX, textBounds.right);
+      maxY = max(maxY, textBounds.bottom);
+
+      // Account for energy reading bounds if applicable
+      if (isEnergySld &&
+          sldController.showEnergyReadings &&
+          sldController.bayEnergyData.containsKey(renderData.bay.id)) {
+        final energyBounds = _calculateEnergyReadingBounds(renderData);
+        minX = min(minX, energyBounds.left);
+        minY = min(minY, energyBounds.top);
+        maxX = max(maxX, energyBounds.right);
+        maxY = max(maxY, energyBounds.bottom);
+      }
+    }
+
+    // Fallback bounds if calculations fail
+    if (!minX.isFinite ||
+        !minY.isFinite ||
+        !maxX.isFinite ||
+        !maxY.isFinite ||
+        (maxX - minX) <= 0 ||
+        (maxY - minY) <= 0) {
+      return ContentBounds(
+        minX: 0,
+        minY: 0,
+        maxX: 800,
+        maxY: 600,
+        width: 800 + 2 * _contentPadding,
+        height: 600 + 2 * _contentPadding,
+        originOffset: Offset(_contentPadding, _contentPadding),
+      );
+    }
+
+    final width = (maxX - minX) + 2 * _contentPadding;
+    final height = (maxY - minY) + 2 * _contentPadding;
+    final originOffset = Offset(
+      -minX + _contentPadding,
+      -minY + _contentPadding,
+    );
+
+    return ContentBounds(
+      minX: minX,
+      minY: minY,
+      maxX: maxX,
+      maxY: maxY,
+      width: width,
+      height: height,
+      originOffset: originOffset,
+    );
+  }
+
+  // Enhanced text bounds calculation
+  Rect _calculateTextBounds(BayRenderData renderData) {
+    final TextPainter textPainter = TextPainter(
+      text: TextSpan(
+        text: _getBayDisplayText(renderData),
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+      textDirection: ui.TextDirection.ltr,
+    )..layout();
+
+    Offset textPosition;
+    switch (renderData.bay.bayType) {
+      case 'Busbar':
+        textPosition = renderData.rect.centerLeft + renderData.textOffset;
+        textPosition = Offset(
+          textPosition.dx - textPainter.width,
+          textPosition.dy - textPainter.height / 2,
+        );
+        break;
+      case 'Transformer':
+        textPosition = renderData.rect.centerLeft + renderData.textOffset;
+        textPosition = Offset(
+          textPosition.dx - 150, // Account for multi-line transformer text
+          textPosition.dy - textPainter.height / 2 - 20,
+        );
+        break;
+      case 'Line':
+        textPosition = renderData.rect.topCenter + renderData.textOffset;
+        textPosition = Offset(
+          textPosition.dx - textPainter.width / 2,
+          textPosition.dy - 12,
+        );
+        break;
+      case 'Feeder':
+        textPosition = renderData.rect.bottomCenter + renderData.textOffset;
+        textPosition = Offset(
+          textPosition.dx - textPainter.width / 2,
+          textPosition.dy + 4,
+        );
+        break;
+      default:
+        textPosition = renderData.rect.center + renderData.textOffset;
+        textPosition = Offset(
+          textPosition.dx - textPainter.width / 2,
+          textPosition.dy - textPainter.height / 2,
+        );
+    }
+
+    return Rect.fromLTWH(
+      textPosition.dx,
+      textPosition.dy,
+      textPainter.width,
+      textPainter.height,
+    );
+  }
+
+  // Enhanced energy reading bounds calculation
+  Rect _calculateEnergyReadingBounds(BayRenderData renderData) {
+    const double estimatedMaxEnergyTextWidth = 120.0;
+    const double estimatedTotalEnergyTextHeight =
+        12 * 8; // More lines for new format
+
+    Offset energyTextBasePosition;
+    switch (renderData.bay.bayType) {
+      case 'Busbar':
+        energyTextBasePosition = Offset(
+          renderData.rect.right - 80,
+          renderData.rect.center.dy - (estimatedTotalEnergyTextHeight / 2),
+        );
+        break;
+      case 'Transformer':
+        energyTextBasePosition = Offset(
+          renderData.rect.centerLeft.dx - 70,
+          renderData.rect.center.dy - 10,
+        );
+        break;
+      case 'Line':
+        energyTextBasePosition = Offset(
+          renderData.rect.center.dx - 75,
+          renderData.rect.top + 10,
+        );
+        break;
+      case 'Feeder':
+        energyTextBasePosition = Offset(
+          renderData.rect.center.dx - 70,
+          renderData.rect.bottom - 40,
+        );
+        break;
+      default:
+        energyTextBasePosition = Offset(
+          renderData.rect.right + 15,
+          renderData.rect.center.dy - 20,
+        );
+    }
+
+    energyTextBasePosition =
+        energyTextBasePosition + renderData.energyReadingOffset;
+
+    return Rect.fromLTWH(
+      energyTextBasePosition.dx,
+      energyTextBasePosition.dy,
+      estimatedMaxEnergyTextWidth,
+      estimatedTotalEnergyTextHeight,
+    );
+  }
+
+  String _getBayDisplayText(BayRenderData renderData) {
+    switch (renderData.bay.bayType) {
+      case 'Busbar':
+        return '${renderData.voltageLevel} ${renderData.bayName}';
+      case 'Transformer':
+        return '${renderData.bayName} T/F\n${renderData.bay.make ?? ''}';
+      case 'Line':
+        return '${renderData.voltageLevel} ${renderData.bayName} Line';
+      case 'Feeder':
+        return renderData.bayName;
+      default:
+        return renderData.bayName;
+    }
+  }
+
+  // Create painter with proper configuration
+  SingleLineDiagramPainter _createPainter(
+    SldController sldController,
+    ColorScheme colorScheme, {
+    required bool isPdfMode,
+    ContentBounds? contentBounds,
+  }) {
+    return SingleLineDiagramPainter(
+      showEnergyReadings: sldController.showEnergyReadings,
+      bayRenderDataList: sldController.bayRenderDataList,
+      bayConnections: sldController.allConnections,
+      baysMap: sldController.baysMap,
+      createDummyBayRenderData: sldController.createDummyBayRenderData,
+      busbarRects: sldController.busbarRects,
+      busbarConnectionPoints: sldController.busbarConnectionPoints,
+      debugDrawHitboxes: !isPdfMode,
+      selectedBayForMovementId: isPdfMode
+          ? null
+          : sldController.selectedBayForMovementId,
+      bayEnergyData: sldController.bayEnergyData,
+      busEnergySummary: sldController.busEnergySummary,
+      contentBounds: isPdfMode && contentBounds != null
+          ? Size(
+              contentBounds.maxX - contentBounds.minX,
+              contentBounds.maxY - contentBounds.minY,
+            )
+          : null,
+      originOffsetForPdf: isPdfMode && contentBounds != null
+          ? contentBounds.originOffset
+          : null,
+      defaultBayColor: colorScheme.onSurface,
+      defaultLineFeederColor: colorScheme.onSurface,
+      transformerColor: colorScheme.primary,
+      connectionLineColor: colorScheme.onSurface,
+    );
+  }
+
+  // Enhanced tap handling with proper coordinate transformation
   void _handleTapUp(
     BuildContext context,
     TapUpDetails details,
@@ -285,29 +362,17 @@ class SldViewWidget extends StatelessWidget {
       final Offset localPosition = renderBox.globalToLocal(
         details.globalPosition,
       );
+      final Bay? tappedBay = _findBayAtPosition(localPosition, sldController);
 
-      // For SldViewWidget without its own transformation controller,
-      // we use the local position directly
-      final Offset scenePosition = localPosition;
-
-      final tappedBay = sldController.bayRenderDataList.firstWhere((data) {
-        // Adjust the rect position based on the origin offset
-        final adjustedRect = data.rect.translate(
-          50.0,
-          50.0,
-        ); // Account for padding
-        return adjustedRect.contains(scenePosition);
-      }, orElse: sldController.createDummyBayRenderData);
-
-      if (tappedBay.bay.id != 'dummy' && onBayTapped != null) {
-        onBayTapped!(tappedBay.bay, details.globalPosition);
+      if (tappedBay != null && tappedBay.id != 'dummy' && onBayTapped != null) {
+        onBayTapped!(tappedBay, details.globalPosition);
       }
     } catch (e) {
       print('DEBUG: Error handling tap: $e');
     }
   }
 
-  // UPDATED: Improved long press handling
+  // Enhanced long press handling
   void _handleLongPress(
     BuildContext context,
     LongPressStartDetails details,
@@ -320,25 +385,45 @@ class SldViewWidget extends StatelessWidget {
       final Offset localPosition = renderBox.globalToLocal(
         details.globalPosition,
       );
+      final Bay? tappedBay = _findBayAtPosition(localPosition, sldController);
 
-      // For SldViewWidget without its own transformation controller,
-      // we use the local position directly
-      final Offset scenePosition = localPosition;
-
-      final tappedBay = sldController.bayRenderDataList.firstWhere((data) {
-        // Adjust the rect position based on the origin offset
-        final adjustedRect = data.rect.translate(
-          50.0,
-          50.0,
-        ); // Account for padding
-        return adjustedRect.contains(scenePosition);
-      }, orElse: sldController.createDummyBayRenderData);
-
-      if (tappedBay.bay.id != 'dummy' && onBayTapped != null) {
-        onBayTapped!(tappedBay.bay, details.globalPosition);
+      if (tappedBay != null && tappedBay.id != 'dummy' && onBayTapped != null) {
+        onBayTapped!(tappedBay, details.globalPosition);
       }
     } catch (e) {
       print('DEBUG: Error handling long press: $e');
     }
   }
+
+  // Enhanced bay finding logic
+  Bay? _findBayAtPosition(Offset position, SldController sldController) {
+    for (var renderData in sldController.bayRenderDataList) {
+      // Use actual rect without hardcoded padding adjustments
+      if (renderData.rect.contains(position)) {
+        return renderData.bay;
+      }
+    }
+    return null;
+  }
+}
+
+// Helper class for content bounds
+class ContentBounds {
+  final double minX;
+  final double minY;
+  final double maxX;
+  final double maxY;
+  final double width;
+  final double height;
+  final Offset originOffset;
+
+  ContentBounds({
+    required this.minX,
+    required this.minY,
+    required this.maxX,
+    required this.maxY,
+    required this.width,
+    required this.height,
+    required this.originOffset,
+  });
 }
