@@ -16,6 +16,8 @@ import '../../models/energy_readings_data.dart';
 import '../../models/saved_sld_model.dart';
 import '../../models/user_model.dart';
 import '../../models/assessment_model.dart';
+import '../../models/bay_model.dart';
+import '../../services/energy_data_service.dart'; // Added import
 import '../../utils/snackbar_utils.dart';
 import '../../utils/pdf_generator.dart';
 import '../../widgets/energy_movement_controls_widget.dart';
@@ -82,13 +84,20 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Size _sldContentSize = const Size(1200, 800);
   final GlobalKey _sldRepaintBoundaryKey = GlobalKey();
 
-  List<Assessment> _allAssessmentsForDisplay = [];
-  List<dynamic> _loadedAssessmentsSummary = [];
+  // Energy Data Service instance
+  late EnergyDataService _energyDataService;
 
   @override
   void initState() {
     super.initState();
     _isViewingSavedSld = widget.savedSld != null;
+
+    // Initialize the energy data service
+    _energyDataService = EnergyDataService(
+      substationId: widget.substationId,
+      currentUser: widget.currentUser,
+    );
+
     _initializeControllers();
 
     if (_isViewingSavedSld) {
@@ -160,8 +169,24 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         return;
       }
 
-      await _loadBayEnergyReadings(sldController);
-      await _loadAssessments();
+      if (fromSaved && widget.savedSld != null) {
+        // Use service to load from saved SLD
+        await _energyDataService.loadFromSavedSld(
+          widget.savedSld!,
+          sldController,
+        );
+      } else {
+        // Use service to load live energy data
+        await _energyDataService.loadLiveEnergyData(
+          _startDate,
+          _endDate,
+          sldController,
+        );
+      }
+
+      // Set energy readings visibility
+      sldController.setShowEnergyReadings(_showEnergyReadings);
+
       _calculateAndSetSldBounds(sldController);
 
       print('DEBUG: Energy data loaded successfully');
@@ -178,61 +203,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadBayEnergyReadings(SldController sldController) async {
-    print(
-      'DEBUG: Starting to load energy readings for ${sldController.allBays.length} bays',
-    );
-
-    sldController.clearEnergyData();
-
-    int energyDataCount = 0;
-
-    for (var bay in sldController.allBays) {
-      if (bay.bayType != 'Busbar') {
-        // Create energy data with 0.0 values when no real readings are available
-        final energyData = BayEnergyData.fromReadings(
-          bay: bay,
-          currentImportReading: 0.0, // No reading available
-          currentExportReading: 0.0, // No reading available
-          previousImportReading: 0.0, // No reading available
-          previousExportReading: 0.0, // No reading available
-          multiplierFactor: bay.multiplyingFactor ?? 1.0,
-          sourceLogsheetId:
-              'no_data_${bay.id}', // Indicates no real data source
-          readingTimestamp: Timestamp.now(),
-          previousReadingTimestamp: Timestamp.fromDate(
-            DateTime.now().subtract(const Duration(days: 1)),
-          ),
-        );
-
-        sldController.setBayEnergyData(bay.id, energyData);
-        energyDataCount++;
-        print(
-          'DEBUG: Created zero energy data for bay: ${bay.name} (${bay.bayType})',
-        );
-      }
-    }
-
-    sldController.calculateBusEnergySummaries();
-    sldController.setShowEnergyReadings(_showEnergyReadings);
-
-    print(
-      'DEBUG: Loaded energy data for $energyDataCount bays (all showing 0.0 values)',
-    );
-    print(
-      'DEBUG: Energy readings visible: ${sldController.showEnergyReadings}',
-    );
-  }
-
-  Future<void> _loadAssessments() async {
-    try {
-      _allAssessmentsForDisplay = [];
-      _loadedAssessmentsSummary = [];
-    } catch (e) {
-      print('Error loading assessments: $e');
     }
   }
 
@@ -455,7 +425,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       tapPosition,
       sldController,
       _isViewingSavedSld,
-      null,
+      _energyDataService,
     );
   }
 
@@ -541,7 +511,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 },
           busEnergySummaryData: sldController.busEnergySummary,
           aggregatedFeederData: sldController.aggregatedFeederEnergyData,
-          assessmentsForPdf: _allAssessmentsForDisplay
+          assessmentsForPdf: _energyDataService.allAssessmentsForDisplay
               .map((a) => a.toFirestore())
               .toList(),
           uniqueBusVoltages: _getUniqueBusVoltages(sldController),
@@ -597,145 +567,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
+  // Using Energy Data Service for busbar configuration
   void _showBusbarConfiguration() {
     final sldController = Provider.of<SldController>(context, listen: false);
-    final busbars = sldController.allBays
-        .where((bay) => bay.bayType == 'Busbar')
-        .toList();
-
-    if (busbars.isEmpty) {
-      _showFixedSnackBar('No busbars found in this substation', isError: true);
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(
-              Icons.settings_input_antenna,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 12),
-            const Text('Configure Busbar'),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 300,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Select a busbar to configure:'),
-              const SizedBox(height: 16),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: busbars.length,
-                  itemBuilder: (context, index) {
-                    final busbar = busbars[index];
-                    return ListTile(
-                      leading: Icon(Icons.horizontal_rule, color: Colors.blue),
-                      title: Text(busbar.name),
-                      subtitle: Text(busbar.voltageLevel),
-                      onTap: () {
-                        Navigator.pop(context);
-                        sldController.setSelectedBayForMovement(busbar.id);
-                        _showFixedSnackBar(
-                          'Selected ${busbar.name} for configuration',
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
+    _energyDataService.showBusbarSelectionDialog(context, sldController);
   }
 
+  // Using Energy Data Service for assessment dialog
   void _showAssessmentDialog() {
     final sldController = Provider.of<SldController>(context, listen: false);
-    final baysWithEnergy = sldController.allBays
-        .where(
-          (bay) =>
-              bay.bayType != 'Busbar' &&
-              sldController.bayEnergyData.containsKey(bay.id),
-        )
-        .toList();
-
-    if (baysWithEnergy.isEmpty) {
-      _showFixedSnackBar('No bays with energy data found', isError: true);
-      return;
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: true,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Icon(
-                Icons.assessment,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 12),
-              const Text('Add Assessment'),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: ListView.builder(
-              itemCount: baysWithEnergy.length,
-              itemBuilder: (context, index) {
-                final bay = baysWithEnergy[index];
-                return ListTile(
-                  leading: Icon(_getBayIcon(bay.bayType), color: Colors.red),
-                  title: Text(bay.name),
-                  subtitle: Text('${bay.bayType} • ${bay.voltageLevel}'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    showDialog(
-                      context: context,
-                      builder: (context) => EnergyAssessmentDialog(
-                        bay: bay,
-                        currentUser: widget.currentUser,
-                        currentEnergyData: sldController.bayEnergyData[bay.id],
-                        onSaveAssessment: () => _loadEnergyData(),
-                        latestExistingAssessment:
-                            sldController.latestAssessmentsPerBay[bay.id],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
-      );
-    });
+    _energyDataService.showBaySelectionForAssessment(context, sldController);
   }
 
   List<String> _getUniqueBusVoltages(SldController sldController) {
@@ -1060,9 +901,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   height: 300,
                   child: EnergyTablesWidget(
                     isViewingSavedSld: _isViewingSavedSld,
-                    loadedAssessmentsSummary: _loadedAssessmentsSummary
+                    loadedAssessmentsSummary: _energyDataService
+                        .loadedAssessmentsSummary
                         .cast<Map<String, dynamic>>(),
-                    allAssessmentsForDisplay: _allAssessmentsForDisplay,
+                    allAssessmentsForDisplay: _energyDataService
+                        .allAssessmentsForDisplay
+                        .cast<Assessment>(),
                   ),
                 ),
             ],

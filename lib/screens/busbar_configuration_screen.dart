@@ -7,12 +7,13 @@ import '../models/bay_model.dart';
 class BusbarConfigurationScreen extends StatefulWidget {
   final Bay busbar;
   final List<Bay> connectedBays;
+  final Function(Map<String, dynamic>) onSaveConfiguration; // Fixed type
 
   const BusbarConfigurationScreen({
     super.key,
     required this.busbar,
     required this.connectedBays,
-    required Null Function(dynamic inclusionMap) onSaveConfiguration,
+    required this.onSaveConfiguration, // Fixed - removed incorrect type
   });
 
   @override
@@ -33,7 +34,7 @@ class _BusbarConfigurationScreenState extends State<BusbarConfigurationScreen> {
     _bayExpSelectionMap = {};
     for (var bay in widget.connectedBays) {
       _bayImpSelectionMap[bay.id] = 'add_to_busbar_imp';
-      _bayExpSelectionMap[bay.id] = 'add_to_busbar_imp';
+      _bayExpSelectionMap[bay.id] = 'add_to_busbar_exp'; // Fixed default value
     }
   }
 
@@ -60,7 +61,10 @@ class _BusbarConfigurationScreenState extends State<BusbarConfigurationScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Discard'),
+            child: Text(
+              'Discard',
+              style: TextStyle(color: Colors.red.shade600),
+            ),
           ),
         ],
       ),
@@ -72,20 +76,48 @@ class _BusbarConfigurationScreenState extends State<BusbarConfigurationScreen> {
     setState(() => _isSaving = true);
 
     try {
-      await Future.delayed(const Duration(seconds: 1));
+      await Future.delayed(const Duration(milliseconds: 800)); // Reduced delay
 
       final configMap = {
         'imp': _bayImpSelectionMap,
         'exp': _bayExpSelectionMap,
       };
 
+      // Call the callback function passed from parent
+      widget.onSaveConfiguration(configMap);
+
       if (mounted) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Configuration saved successfully!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Close the dialog and return the config
         Navigator.pop(context, configMap);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving configuration: $e')),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error saving configuration: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -109,8 +141,17 @@ class _BusbarConfigurationScreenState extends State<BusbarConfigurationScreen> {
       ),
     );
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      // Updated for modern Flutter
+      canPop: !_hasUnsavedChanges,
+      onPopInvoked: (didPop) async {
+        if (!didPop && _hasUnsavedChanges) {
+          final shouldPop = await _onWillPop();
+          if (shouldPop && mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFAFA),
         appBar: AppBar(
@@ -120,7 +161,16 @@ class _BusbarConfigurationScreenState extends State<BusbarConfigurationScreen> {
           shadowColor: Colors.black26,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () async {
+              if (_hasUnsavedChanges) {
+                final shouldPop = await _onWillPop();
+                if (shouldPop && mounted) {
+                  Navigator.pop(context);
+                }
+              } else {
+                Navigator.pop(context);
+              }
+            },
           ),
           title: Text(
             'Busbar Configuration',
@@ -290,7 +340,16 @@ class _BusbarConfigurationScreenState extends State<BusbarConfigurationScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () async {
+                      if (_hasUnsavedChanges) {
+                        final shouldPop = await _onWillPop();
+                        if (shouldPop && mounted) {
+                          Navigator.pop(context);
+                        }
+                      } else {
+                        Navigator.pop(context);
+                      }
+                    },
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       side: BorderSide(
@@ -418,7 +477,7 @@ class _BusbarConfigurationScreenState extends State<BusbarConfigurationScreen> {
 
   Widget _buildConnectedBayCard(Bay bay, ThemeData theme, bool isDarkMode) {
     final impSelection = _bayImpSelectionMap[bay.id] ?? 'add_to_busbar_imp';
-    final expSelection = _bayExpSelectionMap[bay.id] ?? 'add_to_busbar_imp';
+    final expSelection = _bayExpSelectionMap[bay.id] ?? 'add_to_busbar_exp';
 
     return Card(
       elevation: 2,
