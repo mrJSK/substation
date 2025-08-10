@@ -1220,24 +1220,51 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             ),
           ],
           const SizedBox(height: 16),
+          // CORRECTED: Updated to use saveAllPendingChanges() instead of saveSelectedBayLayoutChanges()
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () async {
-                final bool success = await sldController
-                    .saveSelectedBayLayoutChanges();
-                if (mounted) {
-                  if (success) {
-                    SnackBarUtils.showSnackBar(
-                      context,
-                      'Changes saved successfully!',
-                    );
-                  } else {
-                    SnackBarUtils.showSnackBar(
-                      context,
-                      'Failed to save changes.',
-                      isError: true,
-                    );
+                // Show confirmation dialog since this saves ALL changes
+                final bool confirm =
+                    await showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Save All Changes?'),
+                        content: const Text(
+                          'This will save all layout changes made in this session. '
+                          'Do you want to continue?',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            child: const Text('Save All'),
+                          ),
+                        ],
+                      ),
+                    ) ??
+                    false;
+
+                if (confirm) {
+                  final bool success = await sldController
+                      .saveAllPendingChanges();
+                  if (mounted) {
+                    if (success) {
+                      SnackBarUtils.showSnackBar(
+                        context,
+                        'All changes saved successfully!',
+                      );
+                    } else {
+                      SnackBarUtils.showSnackBar(
+                        context,
+                        'Failed to save changes.',
+                        isError: true,
+                      );
+                    }
                   }
                 }
               },
@@ -1251,7 +1278,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               ),
               icon: const Icon(Icons.save),
               label: const Text(
-                'Done & Save',
+                'Save All Changes',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),

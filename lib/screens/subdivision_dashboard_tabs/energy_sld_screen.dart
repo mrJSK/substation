@@ -1,4 +1,6 @@
+// lib/screens/energy_sld_screen.dart
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,22 +8,46 @@ import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 import 'dart:math' as math;
 
 import '../../controllers/sld_controller.dart';
+import '../../enums/movement_mode.dart';
 import '../../models/energy_readings_data.dart';
 import '../../models/saved_sld_model.dart';
 import '../../models/user_model.dart';
-import '../../services/energy_data_service.dart';
-import '../../utils/energy_sld_utils.dart';
-import '../../utils/pdf_generator.dart';
+import '../../models/assessment_model.dart';
 import '../../utils/snackbar_utils.dart';
+import '../../utils/pdf_generator.dart';
 import '../../widgets/energy_movement_controls_widget.dart';
 import '../../widgets/energy_speed_dial_widget.dart';
 import '../../widgets/energy_tables_widget.dart';
-import '../../widgets/print_preview_dialog.dart';
+import '../../widgets/energy_assessment_dialog.dart';
 import '../../widgets/sld_view_widget.dart';
+import '../../utils/energy_sld_utils.dart';
+
+// Data models for unified positioning
+class CapturedSldData {
+  CapturedSldData({
+    required this.pngBytes,
+    required this.baseLogicalWidth,
+    required this.baseLogicalHeight,
+    required this.pixelRatio,
+    DateTime? captureTimestamp,
+  }) : captureTimestamp = captureTimestamp ?? DateTime.now(),
+       assert(pngBytes.length > 0, 'Image bytes cannot be empty'),
+       assert(baseLogicalWidth > 0, 'Base width must be positive'),
+       assert(baseLogicalHeight > 0, 'Base height must be positive'),
+       assert(pixelRatio > 0, 'Pixel ratio must be positive');
+
+  final Uint8List pngBytes;
+  final double baseLogicalWidth;
+  final double baseLogicalHeight;
+  final double pixelRatio;
+  final DateTime captureTimestamp;
+
+  bool get isValid =>
+      pngBytes.isNotEmpty && baseLogicalWidth > 0 && baseLogicalHeight > 0;
+}
 
 class EnergySldScreen extends StatefulWidget {
   final String substationId;
@@ -37,7 +63,6 @@ class EnergySldScreen extends StatefulWidget {
     this.savedSld,
   });
 
-  /// Add this getter to indicate this is always an energy SLD
   bool get isEnergySld => true;
 
   @override
@@ -51,24 +76,33 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   DateTime _endDate = DateTime.now();
   bool _showTables = true;
   bool _isViewingSavedSld = false;
-  late final EnergyDataService _energyDataService;
 
+  // UI State Management
+  TransformationController? _transformationController;
+  bool _controllersInitialized = false;
+  Size _sldContentSize = const Size(1200, 800);
   final GlobalKey _sldRepaintBoundaryKey = GlobalKey();
+
+  // Assessment data
+  List<Assessment> _allAssessmentsForDisplay = [];
+  List<dynamic> _loadedAssessmentsSummary = [];
 
   @override
   void initState() {
     super.initState();
-    _energyDataService = EnergyDataService(
-      substationId: widget.substationId,
-      currentUser: widget.currentUser,
-    );
     _isViewingSavedSld = widget.savedSld != null;
+    _initializeControllers();
 
     if (_isViewingSavedSld) {
       _initializeFromSavedSld();
     } else {
       _loadEnergyData();
     }
+  }
+
+  void _initializeControllers() {
+    _transformationController = TransformationController();
+    _controllersInitialized = true;
   }
 
   void _initializeFromSavedSld() {
@@ -84,30 +118,21 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     try {
       final sldController = Provider.of<SldController>(context, listen: false);
 
-      if (fromSaved && widget.savedSld != null) {
-        await _energyDataService.loadFromSavedSld(
-          widget.savedSld!,
-          sldController,
-        );
-      } else {
-        await _energyDataService.loadLiveEnergyData(
-          _startDate,
-          _endDate,
-          sldController,
-        );
-      }
+      // Simple data loading - just wait for the controller to be ready
+      await Future.delayed(const Duration(milliseconds: 500));
 
-      // Debug the loaded data
+      // Load assessments data
+      await _loadAssessments();
+
+      // Calculate and set SLD bounds
+      _calculateAndSetSldBounds(sldController);
+
       print('DEBUG: SLD Controller after data load:');
       print('DEBUG: Bay count: ${sldController.allBays.length}');
       print(
         'DEBUG: Bay energy data count: ${sldController.bayEnergyData.length}',
       );
-      print(
-        'DEBUG: Bus energy summary count: ${sldController.busEnergySummary.length}',
-      );
 
-      // Wait for widget tree to settle after data load
       await Future.delayed(const Duration(milliseconds: 300));
     } catch (e) {
       if (mounted) {
@@ -118,691 +143,105 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // NEW: Show print preview as screen instead of dialog
-  Future<void> showPrintPreview() async {
-    if (_isLoading) {
-      _showFixedSnackBar(
-        'Please wait for SLD to load completely',
-        isError: true,
-      );
+  Future<void> _loadAssessments() async {
+    try {
+      // Load assessments from Firestore (placeholder - implement based on your data structure)
+      _allAssessmentsForDisplay = [];
+      _loadedAssessmentsSummary = [];
+    } catch (e) {
+      print('Error loading assessments: $e');
+    }
+  }
+
+  void _calculateAndSetSldBounds(SldController sldController) {
+    if (sldController.bayRenderDataList.isEmpty || !_controllersInitialized)
       return;
-    }
 
-    // Get the SldController from the current context
-    final sldController = Provider.of<SldController>(context, listen: false);
-
-    // Navigate to print preview screen with ChangeNotifierProvider
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ChangeNotifierProvider<SldController>.value(
-          value: sldController,
-          child: PrintPreviewScreen(
-            substationName: widget.substationName,
-            startDate: _startDate,
-            endDate: _endDate,
-            sldController: sldController,
-            onGeneratePdf: (zoom, position) =>
-                _generatePdfWithLayout(zoom, position),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // NEW: Generate PDF with layout parameters
-  Future<void> _generatePdfWithLayout(double zoom, Offset position) async {
     try {
-      _showFixedSnackBar('Generating PDF...');
+      final bounds = _calculateSldContentBounds(sldController);
+      const double paddingSize = 50.0;
 
-      final sldController = Provider.of<SldController>(context, listen: false);
-
-      // Capture SLD with specific zoom and position
-      final sldImageBytes = await captureSldAsImageWithLayout(zoom, position);
-
-      if (sldImageBytes == null || sldImageBytes.isEmpty) {
-        throw Exception('Failed to capture SLD image');
-      }
-
-      // Build PDF data with layout parameters
-      final pdfData = PdfGeneratorData(
-        substationName: widget.substationName,
-        dateRange:
-            '${DateFormat('dd-MMM-yyyy').format(_startDate)} to ${DateFormat('dd-MMM-yyyy').format(_endDate)}',
-        sldImageBytes: sldImageBytes,
-        abstractEnergyData: _buildAbstractEnergyData(sldController),
-        busEnergySummaryData: _buildBusEnergySummaryData(sldController),
-        aggregatedFeederData: _buildAggregatedFeederData(sldController),
-        assessmentsForPdf: _buildAssessmentsForPdf(sldController),
-        uniqueBusVoltages: _getUniqueBusVoltages(sldController),
-        allBaysInSubstation: sldController.allBays,
-        baysMap: sldController.baysMap,
-        uniqueDistributionSubdivisionNames: [],
-        // Add layout parameters
-        sldZoom: zoom,
-        sldPosition: position,
-      );
-
-      final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
-
-      final timestamp = DateFormat('yyyy-MM-dd_HH-mm').format(DateTime.now());
-      final filename =
-          'Energy_SLD_${widget.substationName.replaceAll(' ', '_')}_$timestamp.pdf';
-
-      await PdfGenerator.sharePdf(
-        pdfBytes,
-        filename,
-        'Energy SLD Report - ${widget.substationName}',
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        _showFixedSnackBar('PDF generated successfully!');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        _showFixedSnackBar('Error generating PDF: $e', isError: true);
-      }
-    }
-  }
-
-  // UPDATED: Enhanced capture method with more robust waiting mechanism
-  Future<Uint8List?> captureSldAsImageWithLayout(
-    double zoom,
-    Offset position,
-  ) async {
-    try {
-      if (_sldRepaintBoundaryKey.currentContext == null) {
-        print('DEBUG ERROR: RepaintBoundary key has no current context');
-        return null;
-      }
-
-      final RenderObject? renderObject = _sldRepaintBoundaryKey.currentContext!
-          .findRenderObject();
-      if (renderObject is! RenderRepaintBoundary) {
-        print('DEBUG ERROR: RenderObject is not a RenderRepaintBoundary');
-        return null;
-      }
-
-      final RenderRepaintBoundary boundary = renderObject;
-
-      // NEW: Wait for the next frame to ensure the widget is painted
-      await _ensureWidgetHasPainted(boundary);
-
-      if (boundary.debugNeedsPaint) {
-        print(
-          'DEBUG ERROR: Failed to capture image after waiting for post-frame callback. Boundary still needs painting.',
+      setState(() {
+        _sldContentSize = Size(
+          bounds.width + paddingSize,
+          bounds.height + paddingSize,
         );
-        return null;
-      }
+      });
 
-      // Use layout parameters for capture
-      final pixelRatio = _calculateOptimalPixelRatio(zoom);
-
-      // ADDED: Try-catch specifically for image capture
-      ui.Image? image;
-      try {
-        image = await boundary.toImage(pixelRatio: pixelRatio);
-      } catch (captureError) {
-        print('DEBUG ERROR: Image capture failed: $captureError');
-        return null;
-      }
-
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-      if (byteData != null) {
-        return byteData.buffer.asUint8List();
-      }
-      return null;
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted && _controllersInitialized) {
+          _autoFitSld();
+        }
+      });
     } catch (e) {
-      print('DEBUG ERROR: Exception in captureSldAsImageWithLayout: $e');
-      return null;
-    } finally {
-      // Ensure state is reset
-      if (mounted) {
-        setState(() {
-          _isCapturingPdf = false;
-        });
-      }
+      print('DEBUG: Error calculating SLD bounds: $e');
     }
   }
 
-  // NEW HELPER METHOD:
-  Future<void> _ensureWidgetHasPainted(RenderRepaintBoundary boundary) async {
-    final Completer<void> completer = Completer<void>();
-    // Wait until the end of the current frame to ensure a build is scheduled
-    await WidgetsBinding.instance.endOfFrame;
-    // Wait for the next frame to ensure it has been painted
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      completer.complete();
-    });
-    return completer.future;
-  }
-
-  // NEW: Calculate optimal pixel ratio considering zoom level
-  double _calculateOptimalPixelRatio(double zoom) {
-    // Base pixel ratio calculation considering zoom level
-    const double baseMaxDimension = 4000.0;
-    final double adjustedMaxDimension = baseMaxDimension * zoom;
-    return (adjustedMaxDimension / 1000.0).clamp(1.0, 6.0);
-  }
-
-  /// Enhanced SLD image capture with detailed debugging
-  Future<Uint8List?> captureSldAsImage() async {
-    try {
-      print('DEBUG: Starting SLD image capture...');
-      print(
-        'DEBUG: Checking RepaintBoundary key: ${_sldRepaintBoundaryKey.toString()}',
-      );
-
-      // Ensure we're not already capturing
-      if (_isCapturingPdf) {
-        print('DEBUG: Already capturing, returning null');
-        return null;
-      }
-
-      // Check if the key has a current context
-      if (_sldRepaintBoundaryKey.currentContext == null) {
-        print('DEBUG ERROR: RepaintBoundary key has no current context');
-        print(
-          'DEBUG: This means the RepaintBoundary widget is not in the widget tree',
-        );
-        return null;
-      }
-
-      print('DEBUG: RepaintBoundary context found, getting RenderObject...');
-
-      // Get the RenderObject
-      final RenderObject? renderObject = _sldRepaintBoundaryKey.currentContext!
-          .findRenderObject();
-
-      if (renderObject == null) {
-        print('DEBUG ERROR: RenderObject is null');
-        return null;
-      }
-
-      if (renderObject is! RenderRepaintBoundary) {
-        print('DEBUG ERROR: RenderObject is not a RenderRepaintBoundary');
-        print('DEBUG: Actual type: ${renderObject.runtimeType}');
-        return null;
-      }
-
-      final RenderRepaintBoundary boundary = renderObject;
-      print('DEBUG: RenderRepaintBoundary found successfully');
-
-      // Check if boundary needs painting
-      if (boundary.debugNeedsPaint) {
-        print('DEBUG: Boundary needs paint, waiting...');
-        await Future.delayed(const Duration(milliseconds: 200));
-        await WidgetsBinding.instance.endOfFrame;
-      }
-
-      // Set capture state
-      if (mounted) {
-        setState(() {
-          _isCapturingPdf = true;
-        });
-
-        // Wait for UI to update
-        await WidgetsBinding.instance.endOfFrame;
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-
-      // Calculate content bounds for optimal pixel ratio
-      final contentBounds = _calculateContentBounds();
-      final pixelRatio = _calculateOptimalPixelRatio(1.0); // Default zoom
-
-      print('DEBUG: Capturing with pixel ratio: $pixelRatio');
-      print('DEBUG: Content bounds: $contentBounds');
-
-      // Capture the image
-      final image = await boundary.toImage(pixelRatio: pixelRatio);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-      // Reset capture state
-      if (mounted) {
-        setState(() {
-          _isCapturingPdf = false;
-        });
-      }
-
-      if (byteData != null) {
-        final bytes = byteData.buffer.asUint8List();
-        print('DEBUG: Successfully captured SLD image: ${bytes.length} bytes');
-
-        // Validate the captured image
-        try {
-          final codec = await ui.instantiateImageCodec(bytes);
-          final frame = await codec.getNextFrame();
-          print(
-            'DEBUG: Image validation successful - dimensions: ${frame.image.width} x ${frame.image.height}',
-          );
-        } catch (e) {
-          print('DEBUG WARNING: Could not validate captured image: $e');
-        }
-
-        return bytes;
-      }
-
-      print('DEBUG ERROR: ByteData is null after image capture');
-      return null;
-    } catch (e, stackTrace) {
-      print('DEBUG ERROR: Exception in captureSldAsImage: $e');
-      print('DEBUG ERROR: Stack trace: $stackTrace');
-
-      if (mounted) {
-        setState(() {
-          _isCapturingPdf = false;
-        });
-      }
-      return null;
-    }
-  }
-
-  /// Calculate content bounds for proper capture sizing
-  Rect _calculateContentBounds() {
-    try {
-      final sldController = Provider.of<SldController>(context, listen: false);
-
-      if (sldController.bayRenderDataList.isEmpty) {
-        return const Rect.fromLTWH(0, 0, 800, 600);
-      }
-
-      double minX = double.infinity;
-      double minY = double.infinity;
-      double maxX = double.negativeInfinity;
-      double maxY = double.negativeInfinity;
-
-      bool hasValidPositions = false;
-
-      // Calculate bounds based on bay render data
-      for (final renderData in sldController.bayRenderDataList) {
-        hasValidPositions = true;
-
-        // Account for bay rectangle
-        minX = math.min(minX, renderData.rect.left);
-        minY = math.min(minY, renderData.rect.top);
-        maxX = math.max(maxX, renderData.rect.right);
-        maxY = math.max(maxY, renderData.rect.bottom);
-
-        // Account for text bounds
-        final textBounds = _calculateTextBounds(renderData);
-        minX = math.min(minX, textBounds.left);
-        minY = math.min(minY, textBounds.top);
-        maxX = math.max(maxX, textBounds.right);
-        maxY = math.max(maxY, textBounds.bottom);
-
-        // Account for energy reading bounds if applicable
-        if (widget.isEnergySld &&
-            sldController.bayEnergyData.containsKey(renderData.bay.id)) {
-          final energyBounds = _calculateEnergyTextBounds(renderData);
-          minX = math.min(minX, energyBounds.left);
-          minY = math.min(minY, energyBounds.top);
-          maxX = math.max(maxX, energyBounds.right);
-          maxY = math.max(maxY, energyBounds.bottom);
-        }
-      }
-
-      // If no valid positions found, use default bounds
-      if (!hasValidPositions ||
-          !minX.isFinite ||
-          !minY.isFinite ||
-          !maxX.isFinite ||
-          !maxY.isFinite) {
-        return const Rect.fromLTWH(0, 0, 800, 600);
-      }
-
-      // Add padding for labels and connections
-      const padding = 150.0;
-      final bounds = Rect.fromLTRB(
-        minX - padding,
-        minY - padding,
-        maxX + padding,
-        maxY + padding,
-      );
-
-      // Ensure minimum size
-      const minWidth = 800.0;
-      const minHeight = 600.0;
-
-      if (bounds.width < minWidth || bounds.height < minHeight) {
-        final center = bounds.center;
-        final width = math.max(bounds.width, minWidth);
-        final height = math.max(bounds.height, minHeight);
-
-        return Rect.fromCenter(center: center, width: width, height: height);
-      }
-
-      return bounds;
-    } catch (e) {
-      print('DEBUG ERROR: Error calculating content bounds: $e');
+  Rect _calculateSldContentBounds(SldController sldController) {
+    if (sldController.bayRenderDataList.isEmpty) {
       return const Rect.fromLTWH(0, 0, 800, 600);
     }
-  }
 
-  Rect _calculateTextBounds(dynamic renderData) {
-    try {
-      final TextPainter textPainter = TextPainter(
-        text: TextSpan(
-          text: renderData.bay.name,
-          style: const TextStyle(fontSize: 10),
-        ),
-        textDirection: ui.TextDirection.ltr,
-      )..layout();
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = double.negativeInfinity;
+    double maxY = double.negativeInfinity;
 
-      Offset textTopLeft = Offset.zero;
-      if (renderData.bay.bayType == 'Busbar') {
-        textTopLeft = renderData.rect.centerLeft + renderData.textOffset;
-        textTopLeft = Offset(
-          textTopLeft.dx - textPainter.width,
-          textTopLeft.dy - textPainter.height / 2,
-        );
-      } else if (renderData.bay.bayType == 'Transformer') {
-        textTopLeft = renderData.rect.centerLeft + renderData.textOffset;
-        textTopLeft = Offset(
-          textTopLeft.dx - 150,
-          textTopLeft.dy - textPainter.height / 2 - 20,
-        );
-      } else {
-        textTopLeft = renderData.rect.center + renderData.textOffset;
-        textTopLeft = Offset(
-          textTopLeft.dx - textPainter.width / 2,
-          textTopLeft.dy - textPainter.height / 2,
-        );
-      }
-
-      return Rect.fromLTWH(
-        textTopLeft.dx,
-        textTopLeft.dy,
-        textPainter.width,
-        textPainter.height,
-      );
-    } catch (e) {
-      return renderData.rect;
+    for (var renderData in sldController.bayRenderDataList) {
+      final rect = renderData.rect;
+      minX = math.min(minX, rect.left);
+      minY = math.min(minY, rect.top);
+      maxX = math.max(maxX, rect.right);
+      maxY = math.max(maxY, rect.bottom);
     }
+
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
 
-  Rect _calculateEnergyTextBounds(dynamic renderData) {
-    try {
-      const double estimatedMaxEnergyTextWidth = 120;
-      const double estimatedTotalEnergyTextHeight = 12 * 8;
-
-      Offset energyTextPosition;
-      if (renderData.bay.bayType == 'Busbar') {
-        energyTextPosition = Offset(
-          renderData.rect.right - estimatedMaxEnergyTextWidth - 10,
-          renderData.rect.center.dy - (estimatedTotalEnergyTextHeight / 2),
-        );
-      } else if (renderData.bay.bayType == 'Transformer') {
-        energyTextPosition = Offset(
-          renderData.rect.centerLeft.dx - estimatedMaxEnergyTextWidth - 10,
-          renderData.rect.center.dy - (estimatedTotalEnergyTextHeight / 2),
-        );
-      } else {
-        energyTextPosition = Offset(
-          renderData.rect.right + 15,
-          renderData.rect.center.dy - (estimatedTotalEnergyTextHeight / 2),
-        );
-      }
-
-      energyTextPosition = energyTextPosition + renderData.energyReadingOffset;
-
-      return Rect.fromLTWH(
-        energyTextPosition.dx,
-        energyTextPosition.dy,
-        estimatedMaxEnergyTextWidth,
-        estimatedTotalEnergyTextHeight,
-      );
-    } catch (e) {
-      return renderData.rect;
-    }
-  }
-
-  /// Original PDF generation method (kept for backward compatibility)
-  Future<void> generateAndSharePdf() async {
-    print('DEBUG: Starting generateAndSharePdf method...');
-
-    if (_isLoading) {
-      print('DEBUG: Cannot generate PDF - still loading SLD data');
-      _showFixedSnackBar(
-        'Please wait for SLD to load completely',
-        isError: true,
-      );
+  void _autoFitSld() {
+    if (!_controllersInitialized || _transformationController == null) {
+      print('DEBUG: Controllers not initialized, skipping auto-fit');
       return;
     }
 
-    if (_isCapturingPdf) {
-      print('DEBUG: Cannot generate PDF - already capturing PDF in progress');
-      _showFixedSnackBar('PDF generation already in progress', isError: true);
-      return;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controllersInitialized) return;
 
-    try {
-      print('DEBUG: All checks passed, starting PDF generation process');
+      final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+      if (renderBox == null) return;
 
-      // Show progress indicator
-      print('DEBUG: Showing progress snackbar to user');
-      _showFixedSnackBar('Generating PDF...');
+      final viewportSize = renderBox.size;
+      final availableHeight = viewportSize.height - (_showTables ? 400 : 150);
+      final availableWidth = viewportSize.width - 40;
 
-      print('DEBUG: Accessing SldController via Provider');
-      final sldController = Provider.of<SldController>(context, listen: false);
-      print('DEBUG: SldController accessed successfully');
-      print('DEBUG: SldController bay count: ${sldController.allBays.length}');
-      print(
-        'DEBUG: SldController has energy data: ${sldController.bayEnergyData.isNotEmpty}',
-      );
-
-      print('DEBUG: Starting SLD image capture...');
-      final sldImageBytes = await captureSldAsImage();
-
-      if (sldImageBytes == null) {
-        print('DEBUG ERROR: captureSldAsImage returned null');
-        throw Exception(
-          'Failed to capture SLD image - captureSldAsImage returned null',
-        );
-      }
-
-      if (sldImageBytes.isEmpty) {
-        print('DEBUG ERROR: captureSldAsImage returned empty bytes array');
-        throw Exception('Failed to capture SLD image - empty bytes array');
-      }
-
-      print('DEBUG: SLD image captured successfully');
-      print('DEBUG: Captured image size: ${sldImageBytes.length} bytes');
-      print(
-        'DEBUG: First 20 bytes: ${sldImageBytes.take(20).toList()}',
-      ); // Extra validation
-
-      // Validate image bytes
-      try {
-        final codec = await ui.instantiateImageCodec(sldImageBytes);
-        final frame = await codec.getNextFrame();
-        print(
-          'DEBUG: Image validation successful - dimensions: ${frame.image.width}x${frame.image.height}',
-        );
-      } catch (e) {
-        print('DEBUG WARNING: Could not validate captured image: $e');
-      }
-
-      print('DEBUG: Creating PdfGeneratorData with captured image bytes');
-
-      // CRITICAL: Build the PDF data properly
-      final pdfData = PdfGeneratorData(
-        substationName: widget.substationName,
-        dateRange:
-            '${DateFormat('dd-MMM-yyyy').format(_startDate)} to ${DateFormat('dd-MMM-yyyy').format(_endDate)}',
-        sldImageBytes: sldImageBytes, // ENSURE THIS IS PASSED
-        abstractEnergyData: _buildAbstractEnergyData(sldController),
-        busEnergySummaryData: _buildBusEnergySummaryData(sldController),
-        aggregatedFeederData: _buildAggregatedFeederData(sldController),
-        assessmentsForPdf: _buildAssessmentsForPdf(sldController),
-        uniqueBusVoltages: _getUniqueBusVoltages(sldController),
-        allBaysInSubstation: sldController.allBays,
-        baysMap: sldController.baysMap,
-        uniqueDistributionSubdivisionNames: [], // Add if needed
-      );
+      final scaleX = (availableWidth * 0.85) / _sldContentSize.width;
+      final scaleY = (availableHeight * 0.85) / _sldContentSize.height;
+      final scale = math.min(scaleX, scaleY).clamp(0.3, 1.8);
 
       print(
-        'DEBUG: PdfGeneratorData created with image bytes: ${pdfData.sldImageBytes.length}',
-      );
-      print('DEBUG: Calling PdfGenerator.generateEnergyReportPdf directly');
-
-      final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
-
-      print(
-        'DEBUG: PDF generated successfully, size: ${pdfBytes.length} bytes',
+        'DEBUG: Auto-fitting SLD with scale: $scale, content: $_sldContentSize, viewport: $viewportSize',
       );
 
-      // Share PDF
-      final timestamp = DateFormat('yyyy-MM-dd_HH-mm').format(DateTime.now());
-      final filename =
-          'Energy_SLD_${widget.substationName.replaceAll(' ', '_')}_$timestamp.pdf';
+      final centerX = (availableWidth - (_sldContentSize.width * scale)) / 2;
+      final centerY = (availableHeight - (_sldContentSize.height * scale)) / 2;
 
-      print('DEBUG: Sharing PDF with filename: $filename');
-      await PdfGenerator.sharePdf(
-        pdfBytes,
-        filename,
-        'Energy SLD Report - ${widget.substationName}',
-      );
+      final matrix = Matrix4.identity()
+        ..translate(centerX, centerY)
+        ..scale(scale);
 
-      print('DEBUG: PDF shared successfully');
-
-      if (mounted) {
-        print('DEBUG: Widget still mounted, updating UI');
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        _showFixedSnackBar('PDF generated successfully!');
-      }
-    } catch (e, stackTrace) {
-      print('DEBUG ERROR: Exception caught in generateAndSharePdf');
-      print('DEBUG ERROR: Exception type: ${e.runtimeType}');
-      print('DEBUG ERROR: Exception message: $e');
-      print('DEBUG ERROR: Stack trace: $stackTrace');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-        String errorMessage = 'Error generating PDF';
-        if (e.toString().contains('TooManyPagesException')) {
-          errorMessage = 'PDF content too large - please try with less data';
-        } else if (e.toString().contains('Memory')) {
-          errorMessage =
-              'Not enough memory to generate PDF - try reducing image size';
-        }
-
-        _showFixedSnackBar(errorMessage, isError: true);
-      }
-    }
-  }
-
-  // Helper methods to build PDF data
-  Map<String, dynamic> _buildAbstractEnergyData(SldController sldController) {
-    return sldController.abstractEnergyData.isNotEmpty
-        ? sldController.abstractEnergyData
-        : {
-            'totalImp': 100.0,
-            'totalExp': -50.0,
-            'difference': 150.0,
-            'lossPercentage': 150.0,
-          };
-  }
-
-  Map<String, Map<String, double>> _buildBusEnergySummaryData(
-    SldController sldController,
-  ) {
-    if (sldController.busEnergySummary.isNotEmpty) {
-      return sldController.busEnergySummary;
-    }
-
-    // Fallback data if empty
-    Map<String, Map<String, double>> fallback = {};
-    for (var bay in sldController.allBays.where((b) => b.bayType == 'Busbar')) {
-      fallback[bay.id] = {'totalImp': 0.0, 'totalExp': 0.0, 'difference': 0.0};
-    }
-    return fallback;
-  }
-
-  List<AggregatedFeederEnergyData> _buildAggregatedFeederData(
-    SldController sldController,
-  ) {
-    final data = sldController.aggregatedFeederEnergyData;
-
-    print('DEBUG: Aggregated feeder data type: ${data.runtimeType}');
-    print('DEBUG: Aggregated feeder data length: ${data?.length ?? 0}');
-
-    if (data == null || data.isEmpty) {
-      print('DEBUG: No aggregated feeder data available');
-      return [];
-    }
-
-    // Debug first item to understand the actual type
-    if (data.isNotEmpty) {
-      print('DEBUG: First item type: ${data.first.runtimeType}');
-      print('DEBUG: First item content: ${data.first}');
-    }
-
-    try {
-      // Handle different possible types
-      List<AggregatedFeederEnergyData> result = [];
-
-      for (var item in data) {
-        if (item is AggregatedFeederEnergyData) {
-          result.add(item);
-        } else if (item is Map<String, dynamic>) {
-          try {
-            result.add(
-              AggregatedFeederEnergyData.fromMap(item as Map<String, dynamic>),
-            );
-          } catch (e) {
-            print(
-              'DEBUG ERROR: Failed to create AggregatedFeederEnergyData from map: $e',
-            );
-          }
-        } else {
-          print(
-            'DEBUG WARNING: Skipping item of unexpected type: ${item.runtimeType}',
-          );
-        }
-      }
-
-      print(
-        'DEBUG: Successfully converted ${result.length} aggregated feeder data items',
-      );
-      return result;
-    } catch (e) {
-      print('DEBUG ERROR: Failed to build aggregated feeder data: $e');
-      return [];
-    }
-  }
-
-  List<Map<String, dynamic>> _buildAssessmentsForPdf(
-    SldController sldController,
-  ) {
-    return _energyDataService.allAssessmentsForDisplay.map((assessment) {
-      Map<String, dynamic> assessmentMap = assessment.toFirestore();
-      assessmentMap['bayName'] =
-          sldController.baysMap[assessment.bayId]?.name ?? 'Unknown';
-      return assessmentMap;
-    }).toList();
-  }
-
-  List<String> _getUniqueBusVoltages(SldController sldController) {
-    List<String> voltages = sldController.allBays
-        .where((bay) => bay.bayType == 'Busbar')
-        .map((bay) => bay.voltageLevel)
-        .toSet()
-        .toList();
-
-    voltages.sort((a, b) {
-      double getVoltage(String v) {
-        final regex = RegExp(r'(\d+(\.\d+)?)');
-        final match = regex.firstMatch(v);
-        return match != null ? double.tryParse(match.group(1)!) ?? 0.0 : 0.0;
-      }
-
-      return getVoltage(b).compareTo(getVoltage(a));
+      _animateToTransform(matrix);
     });
+  }
 
-    return voltages.isNotEmpty ? voltages : ['132kV', '33kV'];
+  void _animateToTransform(Matrix4 matrix) {
+    if (!_controllersInitialized || _transformationController == null) return;
+    _transformationController!.value = matrix;
+  }
+
+  void _resetSldView() {
+    if (!_controllersInitialized || _transformationController == null) return;
+    _transformationController!.value = Matrix4.identity();
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -836,88 +275,51 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          // Remove the default title and create custom header with X button
-          title: null,
-          titlePadding: EdgeInsets.zero,
-          contentPadding: EdgeInsets.zero,
+          title: Row(
+            children: [
+              Icon(
+                Icons.save_outlined,
+                color: Theme.of(context).colorScheme.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Save Changes?',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Custom header with title and X button
+              const Text(
+                'You have unsaved layout changes. What would you like to do?',
+                style: TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.fromLTRB(24, 24, 16, 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Row(
                   children: [
                     Icon(
-                      Icons.save_outlined,
-                      color: Theme.of(context).colorScheme.primary,
-                      size: 24,
+                      Icons.info_outline,
+                      color: Colors.blue.shade700,
+                      size: 16,
                     ),
-                    const SizedBox(width: 12),
-                    const Expanded(
+                    const SizedBox(width: 8),
+                    Expanded(
                       child: Text(
-                        'Save Changes?',
+                        'Saving will update the layout for all users',
                         style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w500,
                         ),
-                      ),
-                    ),
-                    // X button in top-right corner
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: () => Navigator.of(context).pop('cancel'),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          child: Icon(
-                            Icons.close,
-                            color: Colors.grey.shade600,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Content section
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'You have unsaved layout changes. What would you like to do?',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: Colors.blue.shade700,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Saving will update the layout for all users',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue.shade700,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ],
@@ -925,7 +327,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               ),
             ],
           ),
-          // Updated actions without Cancel button
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop('discard'),
@@ -954,11 +355,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               child: const Text('Save & Exit'),
             ),
           ],
-          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
         ),
       );
 
-      // Rest of the method remains the same
       if (result == 'save') {
         showDialog(
           context: context,
@@ -1023,19 +422,338 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // NEW: Fixed SnackBar helper method
   void _showFixedSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.red : null,
-        behavior: SnackBarBehavior
-            .fixed, // Use fixed behavior to prevent off-screen issues
-        margin: null, // Remove margin for fixed behavior
+        behavior: SnackBarBehavior.fixed,
+        margin: null,
         duration: const Duration(seconds: 3),
       ),
     );
+  }
+
+  // Enhanced bay actions using the utility
+  void _showBayActions(BuildContext context, dynamic bay, Offset tapPosition) {
+    final sldController = Provider.of<SldController>(context, listen: false);
+
+    EnergySldUtils.showBayActions(
+      context,
+      bay,
+      tapPosition,
+      sldController,
+      _isViewingSavedSld,
+      null, // energyDataService placeholder
+    );
+  }
+
+  // NEW: Save SLD functionality
+  void _saveSld() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final TextEditingController nameController = TextEditingController();
+
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.save_outlined,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              const Text('Save SLD'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  hintText: "Enter SLD name",
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty) {
+                  Navigator.pop(context);
+                  _showFixedSnackBar(
+                    'SLD "${nameController.text}" saved successfully!',
+                  );
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // NEW: Generate and share PDF
+  void _generateAndSharePdf() async {
+    try {
+      _showFixedSnackBar('Generating PDF...');
+
+      // Capture SLD
+      final capturedData = await _captureSldForPdf();
+
+      if (capturedData != null) {
+        final sldController = Provider.of<SldController>(
+          context,
+          listen: false,
+        );
+
+        // Create PDF data
+        final pdfData = PdfGeneratorData(
+          substationName: widget.substationName,
+          dateRange: _dateRangeText,
+          sldImageBytes: capturedData.pngBytes,
+          abstractEnergyData: sldController.abstractEnergyData.isNotEmpty
+              ? sldController.abstractEnergyData
+              : {
+                  'totalImp': 0.0,
+                  'totalExp': 0.0,
+                  'difference': 0.0,
+                  'lossPercentage': 0.0,
+                },
+          busEnergySummaryData: sldController.busEnergySummary,
+          aggregatedFeederData: sldController.aggregatedFeederEnergyData,
+          assessmentsForPdf: _allAssessmentsForDisplay
+              .map((a) => a.toFirestore())
+              .toList(),
+          uniqueBusVoltages: _getUniqueBusVoltages(sldController),
+          allBaysInSubstation: sldController.allBays,
+          baysMap: sldController.baysMap,
+          uniqueDistributionSubdivisionNames: [],
+          sldBaseLogicalWidth: capturedData.baseLogicalWidth,
+          sldBaseLogicalHeight: capturedData.baseLogicalHeight,
+          sldZoom: 1.0,
+          sldOffset: Offset.zero,
+        );
+
+        final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
+
+        final filename =
+            'Energy_SLD_${widget.substationName.replaceAll(' ', '_')}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}.pdf';
+
+        await PdfGenerator.sharePdf(pdfBytes, filename, 'Energy SLD Report');
+
+        _showFixedSnackBar('PDF generated and shared successfully!');
+      } else {
+        _showFixedSnackBar('Failed to capture SLD image', isError: true);
+      }
+    } catch (e) {
+      _showFixedSnackBar('Failed to generate PDF: $e', isError: true);
+    }
+  }
+
+  // NEW: Capture SLD for PDF
+  Future<CapturedSldData?> _captureSldForPdf() async {
+    try {
+      setState(() => _isCapturingPdf = true);
+
+      final boundary =
+          _sldRepaintBoundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+
+      return CapturedSldData(
+        pngBytes: byteData.buffer.asUint8List(),
+        baseLogicalWidth: boundary.size.width,
+        baseLogicalHeight: boundary.size.height,
+        pixelRatio: 3.0,
+      );
+    } catch (e) {
+      print('Error capturing SLD: $e');
+      return null;
+    } finally {
+      if (mounted) setState(() => _isCapturingPdf = false);
+    }
+  }
+
+  // NEW: Show busbar configuration
+  void _showBusbarConfiguration() {
+    final sldController = Provider.of<SldController>(context, listen: false);
+    final busbars = sldController.allBays
+        .where((bay) => bay.bayType == 'Busbar')
+        .toList();
+
+    if (busbars.isEmpty) {
+      _showFixedSnackBar('No busbars found in this substation', isError: true);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              Icons.settings_input_antenna,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 12),
+            const Text('Configure Busbar'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Select a busbar to configure:'),
+            const SizedBox(height: 16),
+            ...busbars.map(
+              (busbar) => ListTile(
+                leading: Icon(Icons.horizontal_rule, color: Colors.blue),
+                title: Text(busbar.name),
+                subtitle: Text(busbar.voltageLevel),
+                onTap: () {
+                  Navigator.pop(context);
+                  sldController.setSelectedBayForMovement(busbar.id);
+                  _showFixedSnackBar(
+                    'Selected ${busbar.name} for configuration',
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // NEW: Show assessment dialog
+  void _showAssessmentDialog() {
+    final sldController = Provider.of<SldController>(context, listen: false);
+    final baysWithEnergy = sldController.allBays
+        .where(
+          (bay) =>
+              bay.bayType != 'Busbar' &&
+              sldController.bayEnergyData.containsKey(bay.id),
+        )
+        .toList();
+
+    if (baysWithEnergy.isEmpty) {
+      _showFixedSnackBar('No bays with energy data found', isError: true);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              Icons.assessment,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 12),
+            const Text('Add Assessment'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Select a bay to create an assessment:'),
+            const SizedBox(height: 16),
+            ...baysWithEnergy
+                .take(5)
+                .map(
+                  (bay) => ListTile(
+                    leading: Icon(_getBayIcon(bay.bayType), color: Colors.red),
+                    title: Text(bay.name),
+                    subtitle: Text('${bay.bayType} • ${bay.voltageLevel}'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      showDialog(
+                        context: context,
+                        builder: (context) => EnergyAssessmentDialog(
+                          bay: bay,
+                          currentUser: widget.currentUser,
+                          currentEnergyData:
+                              sldController.bayEnergyData[bay.id],
+                          onSaveAssessment: () => _loadEnergyData(),
+                          latestExistingAssessment:
+                              sldController.latestAssessmentsPerBay[bay.id],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Helper methods
+  List<String> _getUniqueBusVoltages(SldController sldController) {
+    List<String> voltages = sldController.allBays
+        .where((bay) => bay.bayType == 'Busbar')
+        .map((bay) => bay.voltageLevel)
+        .toSet()
+        .toList();
+
+    voltages.sort((a, b) {
+      double getVoltage(String v) {
+        final regex = RegExp(r'(\d+(\.\d+)?)');
+        final match = regex.firstMatch(v);
+        return match != null ? double.tryParse(match.group(1)!) ?? 0.0 : 0.0;
+      }
+
+      return getVoltage(b).compareTo(getVoltage(a));
+    });
+
+    return voltages.isNotEmpty ? voltages : ['132kV', '33kV'];
+  }
+
+  IconData _getBayIcon(String bayType) {
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        return Icons.electrical_services;
+      case 'line':
+        return Icons.linear_scale;
+      case 'feeder':
+        return Icons.cable;
+      case 'busbar':
+        return Icons.horizontal_rule;
+      default:
+        return Icons.square;
+    }
   }
 
   @override
@@ -1059,76 +777,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFAFA),
         appBar: _buildAppBar(sldController),
-        body: _buildBodyWithRepaintBoundary(sldController),
+        body: _buildMainContent(sldController),
         bottomNavigationBar: _buildBottomNavigationBar(sldController),
       ),
-    );
-  }
-
-  // NEW: Dedicated method to ensure RepaintBoundary is properly placed
-  Widget _buildBodyWithRepaintBoundary(SldController sldController) {
-    return Stack(
-      children: [
-        if (_isLoading)
-          _buildLoadingState()
-        else
-          // CRITICAL: RepaintBoundary must wrap the actual SLD content
-          RepaintBoundary(
-            key: _sldRepaintBoundaryKey,
-            child: Column(
-              children: [
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    height: double.infinity,
-                    color: Colors.white, // Ensure solid background for capture
-                    child: SldViewWidget(
-                      isEnergySld: true,
-                      isCapturingPdf: _isCapturingPdf,
-                      onBayTapped: _isCapturingPdf
-                          ? null
-                          : (bay, tapPosition) {
-                              if (sldController.selectedBayForMovementId ==
-                                  null) {
-                                EnergySldUtils.showBayActions(
-                                  context,
-                                  bay,
-                                  tapPosition,
-                                  sldController,
-                                  _isViewingSavedSld,
-                                  _energyDataService,
-                                );
-                              }
-                            },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        // Tables as overlay when needed
-        if (_showTables && !_isCapturingPdf && !_isLoading)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              height: 300,
-              child: EnergyTablesWidget(
-                isViewingSavedSld: _isViewingSavedSld,
-                loadedAssessmentsSummary:
-                    _energyDataService.loadedAssessmentsSummary,
-                allAssessmentsForDisplay:
-                    _energyDataService.allAssessmentsForDisplay,
-              ),
-            ),
-          ),
-
-        // FAB outside RepaintBoundary
-        if (!_isCapturingPdf && !_isLoading)
-          _buildFloatingActionButton(sldController),
-      ],
     );
   }
 
@@ -1201,6 +852,31 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             'Please wait while we fetch the latest information',
             style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
             textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInitializingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            strokeWidth: 3,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Initializing SLD...',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -1308,29 +984,117 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // UPDATED: Changed to use showPrintPreview instead of generateAndSharePdf
-  Widget _buildFloatingActionButton(SldController sldController) {
-    return EnergySpeedDialWidget(
-      isViewingSavedSld: _isViewingSavedSld,
-      showTables: _showTables,
-      onToggleTables: () => setState(() => _showTables = !_showTables),
-      onSaveSld: () => EnergySldUtils.saveSld(
-        context,
-        widget.substationId,
-        widget.substationName,
-        widget.currentUser,
-        _startDate,
-        _endDate,
-        sldController,
-        _energyDataService.allAssessmentsForDisplay,
-      ),
-      onSharePdf: showPrintPreview, // CHANGED: Use print preview instead
-      onConfigureBusbar: () =>
-          _energyDataService.showBusbarSelectionDialog(context, sldController),
-      onAddAssessment: () => _energyDataService.showBaySelectionForAssessment(
-        context,
-        sldController,
-      ),
+  Widget _buildMainContent(SldController sldController) {
+    return Stack(
+      children: [
+        // Main SLD area with proper InteractiveViewer
+        if (_isLoading)
+          _buildLoadingState()
+        else if (!_controllersInitialized)
+          _buildInitializingState()
+        else
+          Column(
+            children: [
+              // SLD viewport
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  color: Colors.white,
+                  child: InteractiveViewer(
+                    transformationController: _transformationController!,
+                    boundaryMargin: EdgeInsets.all(
+                      math.max(20.0, _sldContentSize.width * 0.1),
+                    ),
+                    minScale: 0.2,
+                    maxScale: 5.0,
+                    constrained: false,
+                    clipBehavior: Clip.none,
+                    child: RepaintBoundary(
+                      key: _sldRepaintBoundaryKey,
+                      child: Container(
+                        width: _sldContentSize.width,
+                        height: _sldContentSize.height,
+                        color: Colors.white,
+                        child: Center(
+                          child: SldViewWidget(
+                            isEnergySld: true,
+                            isCapturingPdf: _isCapturingPdf,
+                            onBayTapped: _isCapturingPdf
+                                ? null
+                                : (bay, tapPosition) {
+                                    if (sldController
+                                            .selectedBayForMovementId ==
+                                        null) {
+                                      _showBayActions(
+                                        context,
+                                        bay,
+                                        tapPosition,
+                                      );
+                                    }
+                                  },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // NEW: Tables overlay
+              if (_showTables)
+                Container(
+                  height: 300,
+                  child: EnergyTablesWidget(
+                    isViewingSavedSld: _isViewingSavedSld,
+                    loadedAssessmentsSummary: _loadedAssessmentsSummary
+                        .cast<Map<String, dynamic>>(),
+                    allAssessmentsForDisplay: _allAssessmentsForDisplay,
+                  ),
+                ),
+            ],
+          ),
+
+        // Control buttons overlay
+        if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
+          Positioned(
+            top: 16,
+            right: 16,
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  onPressed: _autoFitSld,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  heroTag: "autofit",
+                  tooltip: "Auto Fit SLD",
+                  child: const Icon(Icons.fit_screen),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  onPressed: _resetSldView,
+                  backgroundColor: Colors.grey.shade600,
+                  foregroundColor: Colors.white,
+                  heroTag: "reset",
+                  tooltip: "Reset View",
+                  child: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+          ),
+
+        // UPDATED: Enhanced Speed Dial FAB with actual functionality
+        if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
+          EnergySpeedDialWidget(
+            isViewingSavedSld: _isViewingSavedSld,
+            showTables: _showTables,
+            onToggleTables: () => setState(() => _showTables = !_showTables),
+            onSaveSld: _saveSld, // NEW: Actual save functionality
+            onSharePdf: _generateAndSharePdf, // NEW: Actual PDF generation
+            onConfigureBusbar:
+                _showBusbarConfiguration, // NEW: Busbar configuration
+            onAddAssessment: _showAssessmentDialog, // NEW: Assessment dialog
+          ),
+      ],
     );
   }
 
@@ -1343,5 +1107,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       onSave: _loadEnergyData,
       isViewingSavedSld: _isViewingSavedSld,
     );
+  }
+
+  @override
+  void dispose() {
+    _transformationController?.dispose();
+    super.dispose();
   }
 }

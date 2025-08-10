@@ -15,7 +15,7 @@ import '../../models/hierarchy_models.dart';
 import '../../models/user_readings_config_model.dart';
 import '../../utils/snackbar_utils.dart';
 import '../../models/app_state_data.dart';
-import '../../models/energy_readings_data.dart';
+import '../../models/energy_readings_data.dart'; // Now uses unified model
 import '../../models/busbar_energy_map.dart';
 import '../../models/assessment_model.dart';
 import '../../models/substation_sld_layout_model.dart';
@@ -29,7 +29,7 @@ class _EquipmentIcon extends StatelessWidget {
   const _EquipmentIcon({
     required this.type,
     required this.color,
-    this.size = 20.0, // Reduced default size
+    this.size = 20.0,
   });
 
   @override
@@ -87,8 +87,8 @@ class TransformerReadingsChart extends StatelessWidget {
 
     if (spots.isEmpty) {
       return Container(
-        height: 200, // Reduced height
-        padding: const EdgeInsets.all(20), // Reduced padding
+        height: 200,
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.grey.shade50,
           borderRadius: BorderRadius.circular(12),
@@ -98,26 +98,19 @@ class TransformerReadingsChart extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.info_outline,
-                size: 40,
-                color: Colors.grey.shade400,
-              ), // Reduced icon size
-              const SizedBox(height: 8), // Reduced spacing
+              Icon(Icons.info_outline, size: 40, color: Colors.grey.shade400),
+              const SizedBox(height: 8),
               Text(
                 'No $fieldName data available',
                 style: TextStyle(
-                  fontSize: 14, // Reduced font size
+                  fontSize: 14,
                   color: Colors.grey.shade600,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               Text(
                 'for the selected period',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade500,
-                ), // Reduced font size
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
             ],
           ),
@@ -134,7 +127,7 @@ class TransformerReadingsChart extends StatelessWidget {
     maxY = maxY * 1.1;
 
     return Container(
-      height: 220, // Reduced height
+      height: 220,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -154,12 +147,12 @@ class TransformerReadingsChart extends StatelessWidget {
               spots: spots,
               isCurved: true,
               color: theme.colorScheme.primary,
-              barWidth: 2, // Reduced line width
+              barWidth: 2,
               dotData: FlDotData(
                 show: true,
                 getDotPainter: (spot, percent, barData, index) {
                   return FlDotCirclePainter(
-                    radius: 3, // Reduced dot size
+                    radius: 3,
                     color: theme.colorScheme.primary,
                     strokeWidth: 1,
                     strokeColor: Colors.white,
@@ -184,25 +177,25 @@ class TransformerReadingsChart extends StatelessWidget {
                     child: Text(
                       DateFormat('HH:mm').format(date),
                       style: TextStyle(
-                        fontSize: 9, // Reduced font size
+                        fontSize: 9,
                         color: theme.colorScheme.onSurface.withOpacity(0.6),
                       ),
                     ),
                   );
                 },
                 interval: (maxX - minX) / 4,
-                reservedSize: 25, // Reduced reserved space
+                reservedSize: 25,
               ),
             ),
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 40, // Reduced reserved space
+                reservedSize: 40,
                 getTitlesWidget: (value, meta) {
                   return Text(
                     '${value.toStringAsFixed(0)} $unit',
                     style: TextStyle(
-                      fontSize: 9, // Reduced font size
+                      fontSize: 9,
                       color: theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                   );
@@ -224,11 +217,8 @@ class TransformerReadingsChart extends StatelessWidget {
                 return touchedSpots.map((spot) {
                   final date = timeMap[spot.x];
                   return LineTooltipItem(
-                    '${fieldName}: ${spot.y.toStringAsFixed(2)} $unit\n${date != null ? DateFormat('yyyy-MM-dd HH:mm').format(date) : ''}',
-                    TextStyle(
-                      color: theme.colorScheme.onSurface,
-                      fontSize: 12, // Reduced font size
-                    ),
+                    '$fieldName: ${spot.y.toStringAsFixed(2)} $unit\n${date != null ? DateFormat('yyyy-MM-dd HH:mm').format(date) : ''}',
+                    TextStyle(color: theme.colorScheme.onSurface, fontSize: 12),
                   );
                 }).toList();
               },
@@ -285,7 +275,10 @@ class _EnergyTabState extends State<EnergyTab> {
   Substation? _selectedSubstation;
   List<Substation> _allSubstations = [];
   List<LogsheetEntry> _allLogsheetEntries = [];
-  List<BayEnergyData> _computedBayEnergyData = [];
+
+  // Updated to use unified BayEnergyData model
+  Map<String, BayEnergyData> _computedBayEnergyData =
+      {}; // Changed from List to Map
   Map<String, Bay> _baysMap = {};
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
   DateTime _endDate = DateTime.now();
@@ -351,7 +344,6 @@ class _EnergyTabState extends State<EnergyTab> {
         throw Exception('Subdivision ID not found for current user.');
       }
 
-      // Use the substation from the dashboard (app state)
       _selectedSubstation = appState.selectedSubstation;
 
       if (_selectedSubstation == null) {
@@ -641,6 +633,7 @@ class _EnergyTabState extends State<EnergyTab> {
     }
   }
 
+  // Updated to use unified BayEnergyData model
   void _computeBayEnergyData(List<Bay> baysToCompute) {
     _computedBayEnergyData.clear();
 
@@ -665,55 +658,40 @@ class _EnergyTabState extends State<EnergyTab> {
             entry.values.containsKey('Energy_Export_Present'),
       );
 
-      double? currentImp = double.tryParse(
-        lastEntry?.values['Energy_Import_Present']?.toString() ?? '',
-      );
-      double? previousImp = double.tryParse(
-        firstEntry?.values['Energy_Import_Present']?.toString() ?? '',
-      );
-      double? currentExp = double.tryParse(
-        lastEntry?.values['Energy_Export_Present']?.toString() ?? '',
-      );
-      double? previousExp = double.tryParse(
-        firstEntry?.values['Energy_Export_Present']?.toString() ?? '',
-      );
-      double? mfEnergy = bay.multiplyingFactor;
+      double currentImp =
+          double.tryParse(
+            lastEntry?.values['Energy_Import_Present']?.toString() ?? '',
+          ) ??
+          0.0;
+      double previousImp =
+          double.tryParse(
+            firstEntry?.values['Energy_Import_Present']?.toString() ?? '',
+          ) ??
+          0.0;
+      double currentExp =
+          double.tryParse(
+            lastEntry?.values['Energy_Export_Present']?.toString() ?? '',
+          ) ??
+          0.0;
+      double previousExp =
+          double.tryParse(
+            firstEntry?.values['Energy_Export_Present']?.toString() ?? '',
+          ) ??
+          0.0;
+      double mfEnergy = bay.multiplyingFactor ?? 1.0;
 
-      double? computedImport;
-      if (currentImp != null && previousImp != null && mfEnergy != null) {
-        computedImport = max(0.0, (currentImp - previousImp) * mfEnergy);
-      }
-
-      double? computedExport;
-      if (currentExp != null && previousExp != null && mfEnergy != null) {
-        computedExport = max(0.0, (currentExp - previousExp) * mfEnergy);
-      }
-
-      final latestAssessment = _latestAssessmentsPerBay[bay.id];
-      bool hasAssessment = latestAssessment != null;
-
-      BayEnergyData bayEnergy = BayEnergyData(
-        bayName: bay.name,
-        bayId: bay.id,
-        prevImp: previousImp,
-        currImp: currentImp,
-        prevExp: previousExp,
-        currExp: currentExp,
-        mf: mfEnergy,
-        impConsumed: computedImport,
-        expConsumed: computedExport,
-        hasAssessment: hasAssessment,
+      // Use unified BayEnergyData model
+      final bayEnergy = BayEnergyData.fromReadings(
         bay: bay,
+        currentImportReading: currentImp,
+        currentExportReading: currentExp,
+        previousImportReading: previousImp,
+        previousExportReading: previousExp,
+        multiplierFactor: mfEnergy,
+        assessment: _latestAssessmentsPerBay[bay.id],
       );
 
-      if (latestAssessment != null) {
-        bayEnergy = bayEnergy.applyAssessment(
-          importAdjustment: latestAssessment.importAdjustment,
-          exportAdjustment: latestAssessment.exportAdjustment,
-        );
-      }
-
-      _computedBayEnergyData.add(bayEnergy);
+      _computedBayEnergyData[bay.id] = bayEnergy;
     }
   }
 
@@ -728,32 +706,33 @@ class _EnergyTabState extends State<EnergyTab> {
 
     for (var entry in _busbarEnergyMaps.values) {
       final Bay? connectedBay = _baysMap[entry.connectedBayId];
-      final BayEnergyData? connectedBayEnergy = _computedBayEnergyData
-          .firstWhereOrNull((data) => data.bayId == entry.connectedBayId);
+      final BayEnergyData? connectedBayEnergy =
+          _computedBayEnergyData[entry.connectedBayId];
 
       if (connectedBay != null &&
           connectedBayEnergy != null &&
           temporaryBusFlows.containsKey(entry.busbarId)) {
+        // Use unified model properties
         if (entry.importContribution == EnergyContributionType.busImport) {
           temporaryBusFlows[entry.busbarId]!['import'] =
               (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
-              (connectedBayEnergy.impConsumed ?? 0.0);
+              connectedBayEnergy.adjustedImportConsumed;
         } else if (entry.importContribution ==
             EnergyContributionType.busExport) {
           temporaryBusFlows[entry.busbarId]!['export'] =
               (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
-              (connectedBayEnergy.impConsumed ?? 0.0);
+              connectedBayEnergy.adjustedImportConsumed;
         }
 
         if (entry.exportContribution == EnergyContributionType.busImport) {
           temporaryBusFlows[entry.busbarId]!['import'] =
               (temporaryBusFlows[entry.busbarId]!['import'] ?? 0.0) +
-              (connectedBayEnergy.expConsumed ?? 0.0);
+              connectedBayEnergy.adjustedExportConsumed;
         } else if (entry.exportContribution ==
             EnergyContributionType.busExport) {
           temporaryBusFlows[entry.busbarId]!['export'] =
               (temporaryBusFlows[entry.busbarId]!['export'] ?? 0.0) +
-              (connectedBayEnergy.expConsumed ?? 0.0);
+              connectedBayEnergy.adjustedExportConsumed;
         }
       }
     }
@@ -868,7 +847,7 @@ class _EnergyTabState extends State<EnergyTab> {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(32),
-        padding: const EdgeInsets.all(24), // Reduced padding
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -885,25 +864,22 @@ class _EnergyTabState extends State<EnergyTab> {
           children: [
             Icon(
               Icons.location_searching,
-              size: 48, // Reduced icon size
+              size: 48,
               color: Colors.grey.shade400,
             ),
-            const SizedBox(height: 12), // Reduced spacing
+            const SizedBox(height: 12),
             Text(
               'Select a Substation',
               style: TextStyle(
-                fontSize: 18, // Reduced font size
+                fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: theme.colorScheme.onSurface,
               ),
             ),
-            const SizedBox(height: 6), // Reduced spacing
+            const SizedBox(height: 6),
             Text(
               'Please select a substation from the dashboard to view energy consumption data.',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade600,
-              ), // Reduced font size
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
           ],
@@ -916,7 +892,7 @@ class _EnergyTabState extends State<EnergyTab> {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(32),
-        padding: const EdgeInsets.all(24), // Reduced padding
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -933,25 +909,22 @@ class _EnergyTabState extends State<EnergyTab> {
           children: [
             Icon(
               Icons.dashboard_customize,
-              size: 48, // Reduced icon size
+              size: 48,
               color: Colors.orange.shade400,
             ),
-            const SizedBox(height: 12), // Reduced spacing
+            const SizedBox(height: 12),
             Text(
               'SLD Configuration Required',
               style: TextStyle(
-                fontSize: 18, // Reduced font size
+                fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: theme.colorScheme.onSurface,
               ),
             ),
-            const SizedBox(height: 6), // Reduced spacing
+            const SizedBox(height: 6),
             Text(
               'Create Substation SLD to view the energy consumption here.\n\nPlease ensure an SLD layout is saved and busbar energy maps are configured for this substation.',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade600,
-              ), // Reduced font size
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
           ],
@@ -968,7 +941,7 @@ class _EnergyTabState extends State<EnergyTab> {
         children: [
           // Energy Readings Per Bay Section
           _buildSectionHeader(theme, 'Energy Readings Per Bay', 'energy'),
-          const SizedBox(height: 12), // Reduced spacing
+          const SizedBox(height: 12),
           if (_computedBayEnergyData.isEmpty)
             _buildNoDataCard(
               'No energy readings available for the selected period or substation.',
@@ -976,15 +949,17 @@ class _EnergyTabState extends State<EnergyTab> {
             )
           else
             _buildEnergyReadingsTable(),
-          const SizedBox(height: 24), // Reduced spacing
+          const SizedBox(height: 24),
+
           // Transformer Readings Charts Section
           _buildSectionHeader(theme, 'Transformer Readings (Charts)', 'charts'),
-          const SizedBox(height: 12), // Reduced spacing
+          const SizedBox(height: 12),
           ..._buildTransformerCharts(),
-          const SizedBox(height: 24), // Reduced spacing
+          const SizedBox(height: 24),
+
           // Substation Abstract Section
           _buildSectionHeader(theme, 'Substation Energy Abstract', 'abstract'),
-          const SizedBox(height: 12), // Reduced spacing
+          const SizedBox(height: 12),
           _buildEnergyAbstractTable(),
         ],
       ),
@@ -993,7 +968,7 @@ class _EnergyTabState extends State<EnergyTab> {
 
   Widget _buildSectionHeader(ThemeData theme, String title, String iconType) {
     return Container(
-      padding: const EdgeInsets.all(14), // Reduced padding
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -1008,7 +983,7 @@ class _EnergyTabState extends State<EnergyTab> {
       child: Row(
         children: [
           Container(
-            width: 36, // Reduced size
+            width: 36,
             height: 36,
             decoration: BoxDecoration(
               color: theme.colorScheme.primary.withOpacity(0.1),
@@ -1017,14 +992,14 @@ class _EnergyTabState extends State<EnergyTab> {
             child: _EquipmentIcon(
               type: iconType,
               color: theme.colorScheme.primary,
-              size: 18, // Reduced icon size
+              size: 18,
             ),
           ),
           const SizedBox(width: 12),
           Text(
             title,
             style: TextStyle(
-              fontSize: 16, // Reduced font size
+              fontSize: 16,
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
@@ -1036,7 +1011,7 @@ class _EnergyTabState extends State<EnergyTab> {
 
   Widget _buildNoDataCard(String message, IconData icon) {
     return Container(
-      padding: const EdgeInsets.all(24), // Reduced padding
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -1051,18 +1026,11 @@ class _EnergyTabState extends State<EnergyTab> {
       child: Center(
         child: Column(
           children: [
-            Icon(
-              icon,
-              size: 40,
-              color: Colors.grey.shade400,
-            ), // Reduced icon size
-            const SizedBox(height: 12), // Reduced spacing
+            Icon(icon, size: 40, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
             Text(
               message,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ), // Reduced font size
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1071,6 +1039,7 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
+  // Updated to work with unified BayEnergyData model
   Widget _buildEnergyReadingsTable() {
     final theme = Theme.of(context);
     return Container(
@@ -1093,10 +1062,7 @@ class _EnergyTabState extends State<EnergyTab> {
             DataColumn(
               label: Text(
                 'Bay (kV)',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ), // Reduced font size
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
               ),
             ),
             DataColumn(
@@ -1119,7 +1085,13 @@ class _EnergyTabState extends State<EnergyTab> {
             ),
             DataColumn(
               label: Text(
-                'IMP (Comp.)',
+                'IMP (Calc.)',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+            DataColumn(
+              label: Text(
+                'IMP (Adj.)',
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
               ),
             ),
@@ -1137,14 +1109,26 @@ class _EnergyTabState extends State<EnergyTab> {
             ),
             DataColumn(
               label: Text(
-                'EXP (Comp.)',
+                'EXP (Calc.)',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+            DataColumn(
+              label: Text(
+                'EXP (Adj.)',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+            DataColumn(
+              label: Text(
+                'Assessment',
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
               ),
             ),
           ],
-          rows: _computedBayEnergyData.map((data) {
+          rows: _computedBayEnergyData.values.map((data) {
             final String bayNameWithVoltage =
-                '${data.bay.name} (${data.bay.voltageLevel})';
+                '${data.computedBayName} (${data.bay.voltageLevel})';
             return DataRow(
               cells: [
                 DataCell(
@@ -1152,55 +1136,131 @@ class _EnergyTabState extends State<EnergyTab> {
                     bayNameWithVoltage,
                     style: const TextStyle(fontSize: 12),
                   ),
-                ), // Reduced font size
+                ),
                 DataCell(
                   Text(
-                    data.currImp?.toStringAsFixed(2) ?? '-',
+                    data.importReading.toStringAsFixed(2),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
                 DataCell(
                   Text(
-                    data.prevImp?.toStringAsFixed(2) ?? '-',
+                    data.previousImportReading.toStringAsFixed(2),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
                 DataCell(
                   Text(
-                    data.bay.multiplyingFactor?.toStringAsFixed(2) ?? '-',
+                    data.multiplierFactor.toStringAsFixed(2),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
                 DataCell(
                   Text(
-                    data.impConsumed?.toStringAsFixed(2) ?? '-',
+                    data.importConsumed.toStringAsFixed(2),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                DataCell(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        data.adjustedImportConsumed.toStringAsFixed(2),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: data.hasAssessment
+                              ? Colors.orange.shade700
+                              : null,
+                          fontWeight: data.hasAssessment
+                              ? FontWeight.w600
+                              : null,
+                        ),
+                      ),
+                      if (data.hasAssessment) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.star,
+                          size: 12,
+                          color: Colors.orange.shade700,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                DataCell(
+                  Text(
+                    data.exportReading.toStringAsFixed(2),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
                 DataCell(
                   Text(
-                    data.currExp?.toStringAsFixed(2) ?? '-',
+                    data.previousExportReading.toStringAsFixed(2),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
                 DataCell(
                   Text(
-                    data.prevExp?.toStringAsFixed(2) ?? '-',
+                    data.exportConsumed.toStringAsFixed(2),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
                 DataCell(
-                  Text(
-                    data.expConsumed?.toStringAsFixed(2) ?? '-',
-                    style: const TextStyle(fontSize: 12),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        data.adjustedExportConsumed.toStringAsFixed(2),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: data.hasAssessment
+                              ? Colors.orange.shade700
+                              : null,
+                          fontWeight: data.hasAssessment
+                              ? FontWeight.w600
+                              : null,
+                        ),
+                      ),
+                      if (data.hasAssessment) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.star,
+                          size: 12,
+                          color: Colors.orange.shade700,
+                        ),
+                      ],
+                    ],
                   ),
+                ),
+                DataCell(
+                  data.hasAssessment
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Applied',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.orange.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      : const Text('-', style: TextStyle(fontSize: 12)),
                 ),
               ],
             );
           }).toList(),
-          dataRowMinHeight: 40, // Reduced row height
+          dataRowMinHeight: 40,
           dataRowMaxHeight: 50,
-          columnSpacing: 12, // Reduced spacing
+          columnSpacing: 12,
           horizontalMargin: 0,
           headingRowColor: MaterialStateProperty.all(
             theme.colorScheme.primary.withOpacity(0.1),
@@ -1240,7 +1300,7 @@ class _EnergyTabState extends State<EnergyTab> {
           .toList();
 
       return Container(
-        margin: const EdgeInsets.only(bottom: 16), // Reduced spacing
+        margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -1262,31 +1322,31 @@ class _EnergyTabState extends State<EnergyTab> {
                   _EquipmentIcon(
                     type: 'transformer',
                     color: Colors.orange,
-                    size: 18, // Reduced icon size
+                    size: 18,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     'Bay: ${bay.name}',
                     style: const TextStyle(
-                      fontSize: 14, // Reduced font size
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12), // Reduced spacing
+              const SizedBox(height: 12),
               TransformerReadingsChart(
                 readings: transformerReadings,
                 fieldName: 'Current',
                 unit: 'A',
               ),
-              const SizedBox(height: 16), // Reduced spacing
+              const SizedBox(height: 16),
               TransformerReadingsChart(
                 readings: transformerReadings,
                 fieldName: 'Voltage',
                 unit: 'V',
               ),
-              const SizedBox(height: 16), // Reduced spacing
+              const SizedBox(height: 16),
               TransformerReadingsChart(
                 readings: transformerReadings,
                 fieldName: 'Power Factor',
@@ -1330,7 +1390,7 @@ class _EnergyTabState extends State<EnergyTab> {
     for (int i = 0; i < rowLabels.length; i++) {
       List<DataCell> rowCells = [
         DataCell(Text(rowLabels[i], style: const TextStyle(fontSize: 12))),
-      ]; // Reduced font size
+      ];
       double rowTotalSummable = 0.0;
       double overallTotalImpForLossCalc = 0.0;
       double overallTotalDiffForLossCalc = 0.0;
@@ -1497,15 +1557,15 @@ class _EnergyTabState extends State<EnergyTab> {
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
-                    ), // Reduced font size
+                    ),
                   ),
                 ),
               )
               .toList(),
           rows: abstractTableDataRows,
-          dataRowMinHeight: 40, // Reduced row height
+          dataRowMinHeight: 40,
           dataRowMaxHeight: 50,
-          columnSpacing: 12, // Reduced spacing
+          columnSpacing: 12,
           horizontalMargin: 0,
           headingRowColor: MaterialStateProperty.all(
             theme.colorScheme.primary.withOpacity(0.1),

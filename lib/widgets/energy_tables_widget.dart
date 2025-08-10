@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../controllers/sld_controller.dart';
 import '../models/assessment_model.dart';
-import '../data/energy_data_models.dart';
 
 class EnergyTablesWidget extends StatelessWidget {
   final bool isViewingSavedSld;

@@ -1,19 +1,14 @@
+// lib/utils/pdf_generator.dart
 import 'dart:typed_data';
-import 'dart:io';
-import 'package:flutter/material.dart' show TextDirection, Offset;
-import 'package:intl/intl.dart';
+import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
-import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
-
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import '../models/bay_model.dart';
-import '../models/assessment_model.dart';
 import '../models/energy_readings_data.dart';
-import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart';
 
-/// A data class to hold all necessary information for PDF generation
 class PdfGeneratorData {
   final String substationName;
   final String dateRange;
@@ -26,10 +21,10 @@ class PdfGeneratorData {
   final List<Bay> allBaysInSubstation;
   final Map<String, Bay> baysMap;
   final List<String> uniqueDistributionSubdivisionNames;
-
-  // NEW: Layout parameters for print preview
-  final double? sldZoom;
-  final Offset? sldPosition;
+  final double sldBaseLogicalWidth;
+  final double sldBaseLogicalHeight;
+  final double sldZoom;
+  final Offset sldOffset;
 
   PdfGeneratorData({
     required this.substationName,
@@ -43,512 +38,305 @@ class PdfGeneratorData {
     required this.allBaysInSubstation,
     required this.baysMap,
     required this.uniqueDistributionSubdivisionNames,
-    // NEW: Layout parameters
-    this.sldZoom,
-    this.sldPosition,
+    required this.sldBaseLogicalWidth,
+    required this.sldBaseLogicalHeight,
+    required this.sldZoom,
+    required this.sldOffset,
   });
 }
 
 class PdfGenerator {
-  // Paper dimensions (A4 in points: 595 x 842)
-  static const double _paperWidth = 595.0;
-  static const double _paperHeight = 842.0;
-  static const double _headerHeight = 100.0;
-  static const double _footerHeight = 50.0;
-  static const double _printableWidth = _paperWidth - 40; // 20pt margins
-  static const double _printableHeight =
-      _paperHeight - _headerHeight - _footerHeight - 40;
-
-  static double _getVoltageLevelValue(String voltageLevel) {
-    final regex = RegExp(r'(\d+(\.\d+)?)');
-    final match = regex.firstMatch(voltageLevel);
-    if (match != null) {
-      return double.tryParse(match.group(1)!) ?? 0.0;
-    }
-    return 0.0;
-  }
-
   static Future<Uint8List> generateEnergyReportPdf(
     PdfGeneratorData data,
   ) async {
     final pdf = pw.Document();
 
-    // Load fonts to prevent Unicode issues
-    pw.Font? regularFont;
-    pw.Font? boldFont;
-    try {
-      regularFont = await PdfGoogleFonts.notoSansRegular();
-      boldFont = await PdfGoogleFonts.notoSansBold();
-    } catch (e) {
-      // Fallback to defaults if font loading fails
-    }
+    // Convert Flutter image to PDF image
+    final sldImage = pw.MemoryImage(data.sldImageBytes);
 
-    pw.MemoryImage? sldPdfImage;
-    if (data.sldImageBytes.isNotEmpty) {
-      try {
-        sldPdfImage = pw.MemoryImage(data.sldImageBytes);
-      } catch (e) {
-        // Handle image creation error
-        print('ERROR: Failed to create PDF image from bytes: $e');
-      }
-    }
-
-    // Build abstract table headers
-    List<String> abstractTableHeaders = [''];
-    for (String voltage in data.uniqueBusVoltages) {
-      abstractTableHeaders.add('$voltage BUS');
-    }
-    abstractTableHeaders.add('ABSTRACT OF S/S');
-    abstractTableHeaders.add('TOTAL');
-
-    List<List<String>> abstractTableData = [];
-
-    final List<String> rowLabels = [
-      'Imp. (MWH)',
-      'Exp. (MWH)',
-      'Diff. (MWH)',
-      '% Loss',
-    ];
-
-    // Generate abstract table data (restored exact loop from previous working version)
-    for (int i = 0; i < rowLabels.length; i++) {
-      List<String> row = [rowLabels[i]];
-      double rowTotalSummable = 0.0;
-      double overallTotalImpForLossCalc = 0.0;
-      double overallTotalDiffForLossCalc = 0.0;
-
-      for (String voltage in data.uniqueBusVoltages) {
-        final busbarsOfThisVoltage = data.allBaysInSubstation.where(
-          (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
-        );
-
-        double totalForThisBusVoltageImp = 0.0;
-        double totalForThisBusVoltageExp = 0.0;
-        double totalForThisBusVoltageDiff = 0.0;
-
-        for (var busbar in busbarsOfThisVoltage) {
-          final busSummary = data.busEnergySummaryData[busbar.id];
-          if (busSummary != null) {
-            final imp = busSummary['totalImp'] ?? 0.0;
-            final exp = busSummary['totalExp'] ?? 0.0;
-            final diff = busSummary['difference'] ?? 0.0;
-
-            totalForThisBusVoltageImp += imp;
-            totalForThisBusVoltageExp += exp;
-            totalForThisBusVoltageDiff += diff;
-          }
-        }
-
-        if (rowLabels[i].contains('Imp.')) {
-          row.add(totalForThisBusVoltageImp.toStringAsFixed(2));
-          rowTotalSummable += totalForThisBusVoltageImp;
-          overallTotalImpForLossCalc += totalForThisBusVoltageImp;
-        } else if (rowLabels[i].contains('Exp.')) {
-          row.add(totalForThisBusVoltageExp.toStringAsFixed(2));
-          rowTotalSummable += totalForThisBusVoltageExp;
-        } else if (rowLabels[i].contains('Diff.')) {
-          row.add(totalForThisBusVoltageDiff.toStringAsFixed(2));
-          rowTotalSummable += totalForThisBusVoltageDiff;
-          overallTotalDiffForLossCalc += totalForThisBusVoltageDiff;
-        } else if (rowLabels[i].contains('Loss')) {
-          String lossValue = 'N/A';
-          if (totalForThisBusVoltageImp > 0) {
-            final lossPercentage =
-                ((totalForThisBusVoltageDiff / totalForThisBusVoltageImp) *
-                100);
-            lossValue = lossPercentage.toStringAsFixed(2);
-          }
-          row.add(lossValue);
-        }
-      }
-
-      // Add Abstract of S/S data
-      if (rowLabels[i].contains('Imp.')) {
-        final abstractImp = data.abstractEnergyData['totalImp'] ?? 0.0;
-        row.add(abstractImp.toStringAsFixed(2));
-        rowTotalSummable += abstractImp;
-        overallTotalImpForLossCalc += abstractImp;
-      } else if (rowLabels[i].contains('Exp.')) {
-        final abstractExp = data.abstractEnergyData['totalExp'] ?? 0.0;
-        row.add(abstractExp.toStringAsFixed(2));
-        rowTotalSummable += abstractExp;
-      } else if (rowLabels[i].contains('Diff.')) {
-        final abstractDiff = data.abstractEnergyData['difference'] ?? 0.0;
-        row.add(abstractDiff.toStringAsFixed(2));
-        rowTotalSummable += abstractDiff;
-        overallTotalDiffForLossCalc += abstractDiff;
-      } else if (rowLabels[i].contains('Loss')) {
-        final abstractLoss = data.abstractEnergyData['lossPercentage'] ?? 0.0;
-        row.add(abstractLoss.toStringAsFixed(2));
-      }
-
-      // Add TOTAL column
-      if (rowLabels[i].contains('Loss')) {
-        String overallTotalLossPercentage = 'N/A';
-        if (overallTotalImpForLossCalc > 0) {
-          final totalLossPercentage =
-              ((overallTotalDiffForLossCalc / overallTotalImpForLossCalc) *
-              100);
-          overallTotalLossPercentage = totalLossPercentage.toStringAsFixed(2);
-        }
-        row.add(overallTotalLossPercentage);
-      } else {
-        row.add(rowTotalSummable.toStringAsFixed(2));
-      }
-
-      abstractTableData.add(row);
-    }
-
-    // Build PDF page with restored multi-page handling and layout control
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.copyWith(
-          marginBottom: 1.5 * PdfPageFormat.cm,
-          marginTop: 1.5 * PdfPageFormat.cm,
-          marginLeft: 1.5 * PdfPageFormat.cm,
-          marginRight: 1.5 * PdfPageFormat.cm,
-        ),
-        header: (pw.Context context) {
-          return pw.Column(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(20),
+        build: (pw.Context context) {
+          return [
+            // Header
+            _buildHeader(data),
+            pw.SizedBox(height: 20),
+
+            // SLD Image
+            _buildSldSection(sldImage, data),
+            pw.SizedBox(height: 20),
+
+            // Energy Summary
+            _buildEnergySummary(data),
+            pw.SizedBox(height: 20),
+
+            // Bus Energy Details
+            _buildBusEnergyDetails(data),
+            pw.SizedBox(height: 20),
+
+            // Assessments
+            if (data.assessmentsForPdf.isNotEmpty) ...[
+              _buildAssessmentsSection(data),
+              pw.SizedBox(height: 20),
+            ],
+
+            // Footer
+            _buildFooter(),
+          ];
+        },
+        footer: (pw.Context context) {
+          return pw.Container(
+            alignment: pw.Alignment.centerRight,
+            margin: const pw.EdgeInsets.only(top: 10),
+            child: pw.Text(
+              'Page ${context.pageNumber} of ${context.pagesCount}',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+          );
+        },
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  static pw.Widget _buildHeader(PdfGeneratorData data) {
+    return pw.Header(
+      level: 0,
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                'Substation Energy Account Report',
+                'Energy SLD Report',
                 style: pw.TextStyle(
-                  font: boldFont,
-                  fontSize: 18,
+                  fontSize: 24,
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
+              pw.SizedBox(height: 5),
               pw.Text(
-                data.substationName,
-                style: pw.TextStyle(font: regularFont, fontSize: 14),
+                'Substation: ${data.substationName}',
+                style: const pw.TextStyle(fontSize: 16),
               ),
               pw.Text(
                 'Period: ${data.dateRange}',
-                style: pw.TextStyle(font: regularFont, fontSize: 12),
+                style: const pw.TextStyle(fontSize: 12),
               ),
-              // NEW: Add layout info if available
-              if (data.sldZoom != null && data.sldPosition != null)
-                pw.Text(
-                  'SLD Layout: ${(data.sldZoom! * 100).toInt()}% zoom, positioned at (${data.sldPosition!.dx.toInt()}, ${data.sldPosition!.dy.toInt()})',
-                  style: pw.TextStyle(
-                    font: regularFont,
-                    fontSize: 8,
-                    color: PdfColors.grey600,
-                  ),
-                ),
-              pw.Divider(),
             ],
-          );
-        },
-        build: (pw.Context context) {
-          List<pw.Widget> widgets = [];
-
-          // Add SLD Image with enhanced layout control
-          if (sldPdfImage != null) {
-            widgets.addAll([
-              pw.Center(
-                child: pw.Column(
-                  children: [
-                    pw.Text(
-                      'Single Line Diagram',
-                      style: pw.TextStyle(
-                        font: boldFont,
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 10),
-                    // NEW: Enhanced SLD container with layout parameters
-                    _buildSldImageContainer(sldPdfImage, data),
-                    pw.SizedBox(height: 30),
-                  ],
-                ),
-              ),
-            ]);
-          } else {
-            widgets.add(
-              pw.Container(
-                height: 400,
-                child: pw.Center(
-                  child: pw.Text(
-                    'SLD Diagram could not be captured.',
-                    style: pw.TextStyle(
-                      font: regularFont,
-                      color: PdfColors.red,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }
-
-          // Add Consolidated Energy Abstract Table (restored full structure)
-          widgets.addAll([
-            pw.Header(
-              level: 0,
-              text: 'Consolidated Energy Abstract',
-              decoration: pw.BoxDecoration(
-                border: pw.Border(bottom: pw.BorderSide()),
-              ),
-            ),
-            pw.Table.fromTextArray(
-              context: context,
-              headers: abstractTableHeaders,
-              data: abstractTableData,
-              border: pw.TableBorder.all(width: 0.5),
-              headerStyle: pw.TextStyle(
-                font: boldFont,
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 8,
-              ),
-              cellStyle: pw.TextStyle(font: regularFont, fontSize: 8),
-              cellAlignment: pw.Alignment.center,
-              cellPadding: pw.EdgeInsets.all(3),
-              columnWidths: {
-                0: pw.FlexColumnWidth(1.2),
-                for (int i = 0; i < data.uniqueBusVoltages.length; i++)
-                  (i + 1): pw.FlexColumnWidth(1.0),
-                (data.uniqueBusVoltages.length + 1): pw.FlexColumnWidth(1.2),
-                (data.uniqueBusVoltages.length + 2): pw.FlexColumnWidth(1.2),
-              },
-            ),
-            pw.SizedBox(height: 20),
-          ]);
-
-          // Add Feeder Data Section (restored aggregation)
-          widgets.addAll([
-            pw.Header(
-              level: 0,
-              text: 'Feeder Energy Supplied by Distribution Hierarchy',
-              decoration: pw.BoxDecoration(
-                border: pw.Border(bottom: pw.BorderSide()),
-              ),
-            ),
-          ]);
-
-          if (data.aggregatedFeederData.isNotEmpty) {
-            widgets.add(
-              pw.Table.fromTextArray(
-                context: context,
-                headers: <String>[
-                  'D-Zone',
-                  'D-Circle',
-                  'D-Division',
-                  'D-Subdivision',
-                  'Import (MWH)',
-                  'Export (MWH)',
-                ],
-                data: data.aggregatedFeederData.map((d) {
-                  return <String>[
-                    d.zoneName,
-                    d.circleName,
-                    d.divisionName,
-                    d.distributionSubdivisionName,
-                    d.importedEnergy.toStringAsFixed(2),
-                    d.exportedEnergy.toStringAsFixed(2),
-                  ];
-                }).toList(),
-                border: pw.TableBorder.all(width: 0.5),
-                headerStyle: pw.TextStyle(
-                  font: boldFont,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-                cellStyle: pw.TextStyle(font: regularFont, fontSize: 8),
-                cellAlignment: pw.Alignment.centerLeft,
-                cellPadding: pw.EdgeInsets.all(4),
-              ),
-            );
-          } else {
-            widgets.add(pw.Text('No aggregated feeder energy data available.'));
-          }
-
-          widgets.add(pw.SizedBox(height: 20));
-
-          // Add Assessments Section (restored full table)
-          widgets.addAll([
-            pw.Header(
-              level: 0,
-              text: 'Assessments for this Period',
-              decoration: pw.BoxDecoration(
-                border: pw.Border(bottom: pw.BorderSide()),
-              ),
-            ),
-          ]);
-
-          if (data.assessmentsForPdf.isNotEmpty) {
-            try {
-              widgets.add(
-                pw.Table.fromTextArray(
-                  context: context,
-                  headers: <String>[
-                    'Bay Name',
-                    'Import Adj.',
-                    'Export Adj.',
-                    'Reason',
-                    'Timestamp',
-                  ],
-                  data: data.assessmentsForPdf.map((assessmentMap) {
-                    try {
-                      final Assessment assessment = Assessment.fromMap(
-                        assessmentMap,
-                      );
-                      final bayName = assessmentMap['bayName'] ?? 'N/A';
-                      final importAdj =
-                          assessment.importAdjustment?.toStringAsFixed(2) ??
-                          'N/A';
-                      final exportAdj =
-                          assessment.exportAdjustment?.toStringAsFixed(2) ??
-                          'N/A';
-                      final reason = assessment.reason;
-                      final timestamp = DateFormat(
-                        'dd-MMM-yyyy HH:mm',
-                      ).format(assessment.assessmentTimestamp.toDate());
-
-                      return <String>[
-                        bayName,
-                        importAdj,
-                        exportAdj,
-                        reason,
-                        timestamp,
-                      ];
-                    } catch (e) {
-                      return <String>[
-                        'Error',
-                        'Error',
-                        'Error',
-                        'Error',
-                        'Error',
-                      ];
-                    }
-                  }).toList(),
-                  border: pw.TableBorder.all(width: 0.5),
-                  headerStyle: pw.TextStyle(
-                    font: boldFont,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                  cellStyle: pw.TextStyle(font: regularFont, fontSize: 8),
-                  cellAlignment: pw.Alignment.centerLeft,
-                  cellPadding: pw.EdgeInsets.all(4),
-                  columnWidths: {
-                    0: pw.FlexColumnWidth(2),
-                    1: pw.FlexColumnWidth(1.2),
-                    2: pw.FlexColumnWidth(1.2),
-                    3: pw.FlexColumnWidth(3),
-                    4: pw.FlexColumnWidth(2),
-                  },
-                ),
-              );
-            } catch (e) {
-              widgets.add(pw.Text('Error generating assessments table.'));
-            }
-          } else {
-            widgets.add(pw.Text('No assessments were made for this period.'));
-          }
-
-          return widgets;
-        },
-      ),
-    );
-
-    return await pdf.save();
-  }
-
-  // NEW: Enhanced SLD image container with layout parameters
-  static pw.Widget _buildSldImageContainer(
-    pw.MemoryImage sldPdfImage,
-    PdfGeneratorData data,
-  ) {
-    // Calculate dimensions based on layout parameters
-    double containerWidth = _printableWidth;
-    double containerHeight = 400.0; // Default height
-
-    // Apply zoom if provided
-    if (data.sldZoom != null) {
-      containerHeight = 400.0 * data.sldZoom!;
-      // Ensure it doesn't exceed reasonable bounds
-      containerHeight = containerHeight.clamp(200.0, 600.0);
-    }
-
-    return pw.Container(
-      width: containerWidth,
-      height: containerHeight,
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey300, width: 1),
-        // FIXED: Use radius instead of borderRadius for PDF
-        // radius: pw.Radius.circular(4),
-      ),
-      child: pw.ClipRRect(
-        // FIXED: Use horizontalRadius and verticalRadius instead of borderRadius
-        horizontalRadius: 4,
-        verticalRadius: 4,
-        child: _buildPositionedSldImage(sldPdfImage, data),
-      ),
-    );
-  }
-
-  // NEW: Build positioned SLD image based on layout parameters
-  static pw.Widget _buildPositionedSldImage(
-    pw.MemoryImage sldPdfImage,
-    PdfGeneratorData data,
-  ) {
-    // Default positioning
-    pw.Alignment alignment = pw.Alignment.center;
-    pw.BoxFit fit = pw.BoxFit.contain;
-
-    // Apply position adjustments if provided
-    if (data.sldPosition != null) {
-      // Convert position offset to alignment
-      // This is a simplified conversion - you might need to adjust based on your specific needs
-      double alignmentX = (data.sldPosition!.dx / _printableWidth) * 2 - 1;
-      double alignmentY = (data.sldPosition!.dy / _printableHeight) * 2 - 1;
-
-      // Clamp alignment values
-      alignmentX = alignmentX.clamp(-1.0, 1.0);
-      alignmentY = alignmentY.clamp(-1.0, 1.0);
-
-      alignment = pw.Alignment(alignmentX, alignmentY);
-    }
-
-    // Apply zoom to fit if provided
-    if (data.sldZoom != null) {
-      // Adjust fit based on zoom level
-      if (data.sldZoom! > 1.0) {
-        fit = pw.BoxFit.cover; // Zoom in
-      } else if (data.sldZoom! < 0.8) {
-        fit = pw.BoxFit.contain; // Zoom out
-      }
-    }
-
-    return pw.Stack(
-      children: [
-        // Background
-        pw.Container(color: PdfColors.white),
-        // SLD Image
-        pw.Positioned.fill(
-          child: pw.Image(sldPdfImage, fit: fit, alignment: alignment),
-        ),
-        // Optional: Add position indicator in debug mode
-        if (data.sldPosition != null)
-          pw.Positioned(
-            right: 5,
-            bottom: 5,
-            child: pw.Container(
-              padding: pw.EdgeInsets.all(2),
-              decoration: pw.BoxDecoration(
-                // FIXED: Create a semi-transparent color manually
-                color: PdfColor.fromInt(0x80000000), // 50% opacity black
-                // FIXED: Use radius instead of borderRadius
-                // radius: pw.Radius.circular(2),
-              ),
-              child: pw.Text(
-                'Pos: ${data.sldPosition!.dx.toInt()},${data.sldPosition!.dy.toInt()}',
-                style: pw.TextStyle(color: PdfColors.white, fontSize: 6),
-              ),
-            ),
           ),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text('Generated on:', style: const pw.TextStyle(fontSize: 10)),
+              pw.Text(
+                DateTime.now().toString().split('.')[0],
+                style: const pw.TextStyle(fontSize: 10),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildSldSection(
+    pw.ImageProvider sldImage,
+    PdfGeneratorData data,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Single Line Diagram',
+          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Container(
+          width: double.infinity,
+          height: 300,
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColors.grey300),
+          ),
+          child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
+        ),
       ],
+    );
+  }
+
+  static pw.Widget _buildEnergySummary(PdfGeneratorData data) {
+    final abstract = data.abstractEnergyData;
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Energy Summary',
+          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey300),
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+              children: [
+                _buildTableCell('Metric', isHeader: true),
+                _buildTableCell('Value', isHeader: true),
+                _buildTableCell('Unit', isHeader: true),
+              ],
+            ),
+            pw.TableRow(
+              children: [
+                _buildTableCell('Total Import'),
+                _buildTableCell(
+                  '${abstract['totalImp']?.toStringAsFixed(2) ?? '0.00'}',
+                ),
+                _buildTableCell('kWh'),
+              ],
+            ),
+            pw.TableRow(
+              children: [
+                _buildTableCell('Total Export'),
+                _buildTableCell(
+                  '${abstract['totalExp']?.toStringAsFixed(2) ?? '0.00'}',
+                ),
+                _buildTableCell('kWh'),
+              ],
+            ),
+            pw.TableRow(
+              children: [
+                _buildTableCell('Net Difference'),
+                _buildTableCell(
+                  '${abstract['difference']?.toStringAsFixed(2) ?? '0.00'}',
+                ),
+                _buildTableCell('kWh'),
+              ],
+            ),
+            pw.TableRow(
+              children: [
+                _buildTableCell('Loss Percentage'),
+                _buildTableCell(
+                  '${abstract['lossPercentage']?.toStringAsFixed(2) ?? '0.00'}',
+                ),
+                _buildTableCell('%'),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildBusEnergyDetails(PdfGeneratorData data) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Bus Energy Breakdown',
+          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey300),
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+              children: [
+                _buildTableCell('Bus Name', isHeader: true),
+                _buildTableCell('Voltage Level', isHeader: true),
+                _buildTableCell('Import (kWh)', isHeader: true),
+                _buildTableCell('Export (kWh)', isHeader: true),
+              ],
+            ),
+            ...data.busEnergySummaryData.entries.map((entry) {
+              final busId = entry.key;
+              final energyData = entry.value;
+              final bay = data.baysMap[busId];
+
+              return pw.TableRow(
+                children: [
+                  _buildTableCell(bay?.name ?? 'Unknown'),
+                  _buildTableCell(bay?.voltageLevel ?? 'N/A'),
+                  _buildTableCell(
+                    '${energyData['totalImp']?.toStringAsFixed(2) ?? '0.00'}',
+                  ),
+                  _buildTableCell(
+                    '${energyData['totalExp']?.toStringAsFixed(2) ?? '0.00'}',
+                  ),
+                ],
+              );
+            }).toList(),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildAssessmentsSection(PdfGeneratorData data) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Energy Assessments',
+          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 10),
+        ...data.assessmentsForPdf.map((assessment) {
+          return pw.Container(
+            margin: const pw.EdgeInsets.only(bottom: 10),
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey300),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  '${assessment['assessmentType']} - ${assessment['bayName']}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 5),
+                pw.Text(
+                  assessment['comments'] ?? 'No comments',
+                  style: const pw.TextStyle(fontSize: 10),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  static pw.Widget _buildTableCell(String text, {bool isHeader = false}) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(8),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: isHeader ? 12 : 10,
+          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _buildFooter() {
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(top: 20),
+      padding: const pw.EdgeInsets.all(10),
+      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+      child: pw.Text(
+        'This report was automatically generated by the Energy Management System.',
+        style: const pw.TextStyle(fontSize: 8),
+        textAlign: pw.TextAlign.center,
+      ),
     );
   }
 
@@ -558,87 +346,21 @@ class PdfGenerator {
     String subject,
   ) async {
     try {
-      final output = await getTemporaryDirectory();
-      final file = File('${output.path}/$filename');
+      // Get temporary directory
+      final directory = await getTemporaryDirectory();
+      final file = File('${directory.path}/$filename');
+
+      // Write PDF bytes to file
       await file.writeAsBytes(pdfBytes);
 
-      final fileExists = await file.exists();
-      if (fileExists) {
-        await Share.shareXFiles([XFile(file.path)], subject: subject);
-      } else {
-        throw Exception('Failed to create temporary PDF file');
-      }
+      // Share the file
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: subject,
+        text: 'Energy SLD Report',
+      );
     } catch (e) {
-      throw e;
+      throw Exception('Failed to share PDF: $e');
     }
   }
-
-  static Map<String, double> calculateOptimalSldLayout({
-    required double imageWidth,
-    required double imageHeight,
-    double? zoom,
-    Offset? position,
-  }) {
-    // Paper dimensions (A4 in points: 595 x 842)
-    const double _printableWidth = 555.0; // 595 - 20 (margins)
-    const double _printableHeight = 782.0; // 842 - 60 (margins)
-
-    // Use the provided zoom and position directly from the print preview
-    double sldWidth = imageWidth;
-    double sldHeight = imageHeight;
-
-    if (zoom != null) {
-      sldWidth *= zoom;
-      sldHeight *= zoom;
-    }
-
-    // NEW: Use the provided offset directly for the position
-    double xPosition = position?.dx ?? 0.0;
-    double yPosition = position?.dy ?? 0.0;
-
-    // The image size should not exceed the printable area
-    // This part ensures the image fits within the PDF, while maintaining the zoom level
-    if (sldWidth > _printableWidth || sldHeight > _printableHeight) {
-      double scaleFactor = 1.0;
-      if (sldWidth / _printableWidth > sldHeight / _printableHeight) {
-        scaleFactor = _printableWidth / sldWidth;
-      } else {
-        scaleFactor = _printableHeight / sldHeight;
-      }
-      sldWidth *= scaleFactor;
-      sldHeight *= scaleFactor;
-    }
-
-    return {
-      'width': sldWidth,
-      'height': sldHeight,
-      'x': xPosition,
-      'y': yPosition,
-    };
-  }
-
-  // NEW: Alternative opacity colors for different transparency levels
-  static PdfColor getOpacityColor(PdfColor baseColor, double opacity) {
-    // Convert opacity (0.0-1.0) to alpha value (0-255)
-    int alpha = (opacity * 255).round().clamp(0, 255);
-
-    // Extract RGB components from base color
-    final red = (baseColor.red * 255).round();
-    final green = (baseColor.green * 255).round();
-    final blue = (baseColor.blue * 255).round();
-
-    // Combine ARGB into a single integer
-    final argb = (alpha << 24) | (red << 16) | (green << 8) | blue;
-
-    return PdfColor.fromInt(argb);
-  }
-
-  // NEW: Pre-defined opacity colors for common use cases
-  static const Map<String, PdfColor> opacityColors = {
-    'blackLow': PdfColor.fromInt(0x1A000000), // ~10% opacity black
-    'blackMedium': PdfColor.fromInt(0x4D000000), // ~30% opacity black
-    'blackHalf': PdfColor.fromInt(0x80000000), // ~50% opacity black
-    'blackHigh': PdfColor.fromInt(0xB3000000), // ~70% opacity black
-    'blackVeryHigh': PdfColor.fromInt(0xE6000000), // ~90% opacity black
-  };
 }

@@ -1,17 +1,14 @@
 // lib/controllers/sld_controller.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart';
 import 'dart:math';
-
 import '../models/assessment_model.dart';
 import '../models/bay_model.dart';
 import '../models/bay_connection_model.dart';
 import '../models/energy_readings_data.dart';
 import '../models/equipment_model.dart';
 import '../painters/single_line_diagram_painter.dart';
-import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart';
 import '../enums/movement_mode.dart';
 
 class SldController extends ChangeNotifier {
@@ -27,6 +24,9 @@ class SldController extends ChangeNotifier {
   // UI State for SLD Layout
   String? _selectedBayForMovementId;
   MovementMode _movementMode = MovementMode.bay;
+
+  // Local adjustments that are NOT yet saved to Firestore
+  // These accumulate ALL changes until explicitly saved
   Map<String, Offset> _localBayPositions = {};
   Map<String, Offset> _localTextOffsets = {};
   Map<String, double> _localBusbarLengths = {};
@@ -34,7 +34,15 @@ class SldController extends ChangeNotifier {
   Map<String, double> _localEnergyReadingFontSizes = {};
   Map<String, bool> _localEnergyReadingIsBold = {};
 
-  // Energy Data (for Energy SLD screen) - CRITICAL FIX
+  // Track original values for potential rollback
+  Map<String, Offset> _originalBayPositions = {};
+  Map<String, Offset> _originalTextOffsets = {};
+  Map<String, double> _originalBusbarLengths = {};
+  Map<String, Offset> _originalEnergyReadingOffsets = {};
+  Map<String, double> _originalEnergyReadingFontSizes = {};
+  Map<String, bool> _originalEnergyReadingIsBold = {};
+
+  // Energy Data (for Energy SLD screen)
   Map<String, BayEnergyData> _bayEnergyData = {};
   Map<String, Map<String, double>> _busEnergySummary = {};
   Map<String, dynamic> _abstractEnergyData = {};
@@ -47,16 +55,17 @@ class SldController extends ChangeNotifier {
   Map<String, Rect> _busbarRects = {};
   Map<String, Map<String, Offset>> _busbarConnectionPoints = {};
 
-  // Layout Constants - RESTORED FROM OLD CODE
+  // Constants for rendering/layout
   static const double _symbolWidth = 40;
   static const double _symbolHeight = 40;
-  static const double _horizontalSpacing = 80; // Reduced for better spacing
-  static const double _verticalBusbarSpacing = 150; // Adjusted spacing
-  static const double _topPadding = 60;
-  static const double _sidePadding = 80;
+  static const double _horizontalSpacing = 100;
+  static const double _verticalBusbarSpacing = 200;
+  static const double _topPadding = 80;
+  static const double _sidePadding = 100;
   static const double _busbarHitboxHeight = 20.0;
   static const double _lineFeederHeight = 100.0;
 
+  // Constructor
   SldController({
     required this.substationId,
     required this.transformationController,
@@ -64,7 +73,7 @@ class SldController extends ChangeNotifier {
     _listenToSldData();
   }
 
-  // Getters
+  // Getters for UI to consume
   List<Bay> get allBays => _allBays;
   Map<String, Bay> get baysMap => _baysMap;
   List<BayConnection> get allConnections => _allConnections;
@@ -72,13 +81,14 @@ class SldController extends ChangeNotifier {
       _equipmentByBayId;
   String? get selectedBayForMovementId => _selectedBayForMovementId;
   MovementMode get movementMode => _movementMode;
+
   List<BayRenderData> get bayRenderDataList => _bayRenderDataList;
   Map<String, Rect> get finalBayRects => _finalBayRects;
   Map<String, Rect> get busbarRects => _busbarRects;
   Map<String, Map<String, Offset>> get busbarConnectionPoints =>
       _busbarConnectionPoints;
 
-  // Energy Data Getters - CRITICAL FIX
+  // Energy Data Getters
   Map<String, BayEnergyData> get bayEnergyData => _bayEnergyData;
   Map<String, Map<String, double>> get busEnergySummary => _busEnergySummary;
   Map<String, dynamic> get abstractEnergyData => _abstractEnergyData;
@@ -87,6 +97,146 @@ class SldController extends ChangeNotifier {
   Map<String, Assessment> get latestAssessmentsPerBay =>
       _latestAssessmentsPerBay;
 
+  /// Returns true if there are any unsaved layout changes.
+  bool hasUnsavedChanges() {
+    return _localBayPositions.isNotEmpty ||
+        _localTextOffsets.isNotEmpty ||
+        _localBusbarLengths.isNotEmpty ||
+        _localEnergyReadingOffsets.isNotEmpty ||
+        _localEnergyReadingFontSizes.isNotEmpty ||
+        _localEnergyReadingIsBold.isNotEmpty;
+  }
+
+  /// Saves all pending layout changes to Firestore in a single batch operation.
+  Future<bool> saveAllPendingChanges() async {
+    if (!hasUnsavedChanges()) return true;
+
+    try {
+      print('DEBUG: Saving all pending changes to Firestore...');
+
+      // Create a batch write for better performance
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+
+      // Collect all changes that need to be saved
+      Set<String> bayIdsToUpdate = {};
+      bayIdsToUpdate.addAll(_localBayPositions.keys);
+      bayIdsToUpdate.addAll(_localTextOffsets.keys);
+      bayIdsToUpdate.addAll(_localBusbarLengths.keys);
+      bayIdsToUpdate.addAll(_localEnergyReadingOffsets.keys);
+      bayIdsToUpdate.addAll(_localEnergyReadingFontSizes.keys);
+      bayIdsToUpdate.addAll(_localEnergyReadingIsBold.keys);
+
+      print(
+        'DEBUG: Updating ${bayIdsToUpdate.length} bays with layout changes',
+      );
+
+      // Update each bay with its pending changes
+      for (String bayId in bayIdsToUpdate) {
+        DocumentReference bayRef = FirebaseFirestore.instance
+            .collection('bays')
+            .doc(bayId);
+        Map<String, dynamic> updateData = {};
+
+        if (_localBayPositions.containsKey(bayId)) {
+          updateData['xPosition'] = _localBayPositions[bayId]!.dx;
+          updateData['yPosition'] = _localBayPositions[bayId]!.dy;
+          print(
+            'DEBUG: Updating bay $bayId position: ${_localBayPositions[bayId]}',
+          );
+        }
+        if (_localTextOffsets.containsKey(bayId)) {
+          updateData['textOffset'] = {
+            'dx': _localTextOffsets[bayId]!.dx,
+            'dy': _localTextOffsets[bayId]!.dy,
+          };
+          print(
+            'DEBUG: Updating bay $bayId text offset: ${_localTextOffsets[bayId]}',
+          );
+        }
+        if (_localBusbarLengths.containsKey(bayId)) {
+          updateData['busbarLength'] = _localBusbarLengths[bayId];
+          print(
+            'DEBUG: Updating bay $bayId busbar length: ${_localBusbarLengths[bayId]}',
+          );
+        }
+        if (_localEnergyReadingOffsets.containsKey(bayId)) {
+          updateData['energyReadingOffset'] = {
+            'dx': _localEnergyReadingOffsets[bayId]!.dx,
+            'dy': _localEnergyReadingOffsets[bayId]!.dy,
+          };
+          print(
+            'DEBUG: Updating bay $bayId energy reading offset: ${_localEnergyReadingOffsets[bayId]}',
+          );
+        }
+        if (_localEnergyReadingFontSizes.containsKey(bayId)) {
+          updateData['energyReadingFontSize'] =
+              _localEnergyReadingFontSizes[bayId];
+          print(
+            'DEBUG: Updating bay $bayId energy reading font size: ${_localEnergyReadingFontSizes[bayId]}',
+          );
+        }
+        if (_localEnergyReadingIsBold.containsKey(bayId)) {
+          updateData['energyReadingIsBold'] = _localEnergyReadingIsBold[bayId];
+          print(
+            'DEBUG: Updating bay $bayId energy reading bold: ${_localEnergyReadingIsBold[bayId]}',
+          );
+        }
+
+        if (updateData.isNotEmpty) {
+          batch.update(bayRef, updateData);
+        }
+      }
+
+      // Commit the batch
+      await batch.commit();
+      print('DEBUG: Successfully saved all changes to Firestore');
+
+      // Clear all local changes after successful save
+      _clearAllLocalChanges();
+
+      return true;
+    } catch (e) {
+      print('ERROR: Failed to save all pending changes: $e');
+      return false;
+    }
+  }
+
+  /// Discards all local changes and reverts to original Firestore values
+  void cancelLayoutChanges() {
+    print(
+      'DEBUG: Canceling all layout changes and reverting to original values',
+    );
+
+    // Clear all local changes
+    _clearAllLocalChanges();
+
+    // Force rebuild from Firestore data
+    _updateLocalBayPropertiesFromFirestore();
+    _rebuildSldRenderData();
+  }
+
+  /// Clear all local changes without saving
+  void _clearAllLocalChanges() {
+    _localBayPositions.clear();
+    _localTextOffsets.clear();
+    _localBusbarLengths.clear();
+    _localEnergyReadingOffsets.clear();
+    _localEnergyReadingFontSizes.clear();
+    _localEnergyReadingIsBold.clear();
+
+    // Clear originals as well
+    _originalBayPositions.clear();
+    _originalTextOffsets.clear();
+    _originalBusbarLengths.clear();
+    _originalEnergyReadingOffsets.clear();
+    _originalEnergyReadingFontSizes.clear();
+    _originalEnergyReadingIsBold.clear();
+
+    _selectedBayForMovementId = null;
+    notifyListeners();
+  }
+
+  // Data Loading and Listener Setup
   void _listenToSldData() {
     FirebaseFirestore.instance
         .collection('bays')
@@ -97,7 +247,11 @@ class SldController extends ChangeNotifier {
               .map((doc) => Bay.fromFirestore(doc))
               .toList();
           _baysMap = {for (var bay in _allBays) bay.id: bay};
-          _updateLocalBayPropertiesFromFirestore();
+
+          // ONLY update from Firestore if no local changes exist
+          if (!hasUnsavedChanges()) {
+            _updateLocalBayPropertiesFromFirestore();
+          }
           _rebuildSldRenderData();
         });
 
@@ -127,7 +281,86 @@ class SldController extends ChangeNotifier {
         });
   }
 
-  // RESTORED: Proper automatic busbar placement by voltage level
+  /// Sync local properties from Firestore ONLY when no unsaved changes exist
+  void _updateLocalBayPropertiesFromFirestore() {
+    // Store original values for potential rollback
+    _originalBayPositions.clear();
+    _originalTextOffsets.clear();
+    _originalBusbarLengths.clear();
+    _originalEnergyReadingOffsets.clear();
+    _originalEnergyReadingFontSizes.clear();
+    _originalEnergyReadingIsBold.clear();
+
+    for (var bay in _allBays) {
+      // Store original values
+      if (bay.xPosition != null && bay.yPosition != null) {
+        _originalBayPositions[bay.id] = Offset(bay.xPosition!, bay.yPosition!);
+      }
+      if (bay.textOffset != null) {
+        _originalTextOffsets[bay.id] = bay.textOffset!;
+      }
+      if (bay.busbarLength != null) {
+        _originalBusbarLengths[bay.id] = bay.busbarLength!;
+      }
+      if (bay.energyReadingOffset != null) {
+        _originalEnergyReadingOffsets[bay.id] = bay.energyReadingOffset!;
+      }
+      if (bay.energyReadingFontSize != null) {
+        _originalEnergyReadingFontSizes[bay.id] = bay.energyReadingFontSize!;
+      }
+      if (bay.energyReadingIsBold != null) {
+        _originalEnergyReadingIsBold[bay.id] = bay.energyReadingIsBold!;
+      }
+
+      // Only populate local values if they don't already exist (to preserve unsaved changes)
+      if (!_localBayPositions.containsKey(bay.id)) {
+        if (bay.xPosition != null &&
+            bay.xPosition! != 0.0 &&
+            bay.yPosition != null &&
+            bay.yPosition! != 0.0) {
+          _localBayPositions[bay.id] = Offset(bay.xPosition!, bay.yPosition!);
+        }
+      }
+
+      if (!_localTextOffsets.containsKey(bay.id)) {
+        if (bay.textOffset != null &&
+            (bay.textOffset!.dx != 0.0 || bay.textOffset!.dy != 0.0)) {
+          _localTextOffsets[bay.id] = bay.textOffset!;
+        }
+      }
+
+      if (!_localBusbarLengths.containsKey(bay.id)) {
+        if (bay.bayType == 'Busbar' &&
+            bay.busbarLength != null &&
+            bay.busbarLength! > (_symbolWidth * 2 - 1)) {
+          _localBusbarLengths[bay.id] = bay.busbarLength!;
+        }
+      }
+
+      if (!_localEnergyReadingOffsets.containsKey(bay.id)) {
+        if (bay.energyReadingOffset != null &&
+            (bay.energyReadingOffset!.dx != 0.0 ||
+                bay.energyReadingOffset!.dy != 0.0)) {
+          _localEnergyReadingOffsets[bay.id] = bay.energyReadingOffset!;
+        }
+      }
+
+      if (!_localEnergyReadingFontSizes.containsKey(bay.id)) {
+        if (bay.energyReadingFontSize != null &&
+            bay.energyReadingFontSize! != 9.0) {
+          _localEnergyReadingFontSizes[bay.id] = bay.energyReadingFontSize!;
+        }
+      }
+
+      if (!_localEnergyReadingIsBold.containsKey(bay.id)) {
+        if (bay.energyReadingIsBold != null) {
+          _localEnergyReadingIsBold[bay.id] = bay.energyReadingIsBold!;
+        }
+      }
+    }
+  }
+
+  // SLD Layout and Rendering Logic
   void _rebuildSldRenderData() {
     List<BayRenderData> newBayRenderDataList = [];
 
@@ -135,301 +368,407 @@ class SldController extends ChangeNotifier {
     _busbarRects.clear();
     _busbarConnectionPoints.clear();
 
-    // CRITICAL FIX: Sort busbars by voltage level (highest to lowest)
     final List<Bay> busbars = _allBays
         .where((b) => b.bayType == 'Busbar')
         .toList();
 
+    // Sort busbars by voltage level
     busbars.sort((a, b) {
-      double getVoltage(String v) => _getVoltageLevelValue(v);
-      return getVoltage(
-        b.voltageLevel,
-      ).compareTo(getVoltage(a.voltageLevel)); // Descending order
+      double getV(String v) => _getVoltageLevelValue(v);
+      return getV(b.voltageLevel).compareTo(getV(a.voltageLevel));
     });
 
-    // AUTOMATIC BUSBAR PLACEMENT: Fixed vertical positioning
+    // Determine Y positions for busbars
     final Map<String, double> busYPositions = {};
-    double currentAutoY = _topPadding;
-
+    double currentYForAutoLayout = _topPadding;
     for (int i = 0; i < busbars.length; i++) {
-      final Bay busbar = busbars[i];
-      double yPos;
+      final String busbarId = busbars[i].id;
+      final Bay currentBusbar = busbars[i];
 
-      // Only use saved position if it's valid (not 0.0 and not null)
-      if (_selectedBayForMovementId == busbar.id &&
-          _localBayPositions.containsKey(busbar.id)) {
-        yPos = _localBayPositions[busbar.id]!.dy;
-      } else if (busbar.yPosition != null && busbar.yPosition! > 0.0) {
-        yPos = busbar.yPosition!;
-      } else {
-        yPos = currentAutoY; // Use auto-calculated position
+      double yPos;
+      // 1. Prioritize local changes (unsaved)
+      if (_localBayPositions.containsKey(busbarId)) {
+        yPos = _localBayPositions[busbarId]!.dy;
+      }
+      // 2. Then, use saved Firestore yPosition, ONLY IF it's not null AND not 0.0
+      else if (currentBusbar.yPosition != null &&
+          currentBusbar.yPosition! != 0.0) {
+        yPos = currentBusbar.yPosition!;
+      }
+      // 3. Otherwise, use auto-calculated position
+      else {
+        yPos = currentYForAutoLayout;
       }
 
-      busYPositions[busbar.id] = yPos;
-      currentAutoY +=
-          _verticalBusbarSpacing; // Always increment for next busbar
+      busYPositions[busbarId] = yPos;
+      currentYForAutoLayout += _verticalBusbarSpacing;
     }
 
-    // Calculate connections and positions for other bays
+    // Calculate connected bays for auto-layout
     final Map<String, List<Bay>> busbarToConnectedBaysAbove = {};
     final Map<String, List<Bay>> busbarToConnectedBaysBelow = {};
-    final Map<String, List<Bay>> busbarToTransformers = {};
+    final Map<String, Map<String, List<Bay>>> transformersByBusPair = {};
 
     for (var bay in _allBays) {
+      if (!['Busbar', 'Transformer', 'Line', 'Feeder'].contains(bay.bayType)) {
+        continue;
+      }
+
       if (bay.bayType == 'Transformer') {
-        // Find connected busbars for transformers
-        final connections = _allConnections
-            .where((c) => c.sourceBayId == bay.id || c.targetBayId == bay.id)
-            .toList();
+        if (bay.hvBusId != null && bay.lvBusId != null) {
+          final hvBus = _baysMap[bay.hvBusId];
+          final lvBus = _baysMap[bay.lvBusId];
+          if (hvBus != null &&
+              lvBus != null &&
+              hvBus.bayType == 'Busbar' &&
+              lvBus.bayType == 'Busbar') {
+            final double hvVoltage = _getVoltageLevelValue(hvBus.voltageLevel);
+            final double lvVoltage = _getVoltageLevelValue(lvBus.voltageLevel);
 
-        for (var conn in connections) {
-          final connectedBayId = conn.sourceBayId == bay.id
-              ? conn.targetBayId
-              : conn.sourceBayId;
-          final connectedBay = _baysMap[connectedBayId];
-
-          if (connectedBay?.bayType == 'Busbar') {
-            busbarToTransformers.putIfAbsent(connectedBayId, () => []).add(bay);
+            String key = "";
+            if (hvVoltage > lvVoltage) {
+              key = "${hvBus.id}-${lvBus.id}";
+            } else {
+              key = "${lvBus.id}-${hvBus.id}";
+            }
+            transformersByBusPair
+                .putIfAbsent(key, () => {})
+                .putIfAbsent(hvBus.id, () => [])
+                .add(bay);
           }
         }
-      } else if (bay.bayType == 'Line' || bay.bayType == 'Feeder') {
-        // Find connected busbars for lines/feeders
-        final connections = _allConnections
-            .where((c) => c.sourceBayId == bay.id || c.targetBayId == bay.id)
-            .toList();
+      } else if (bay.bayType != 'Busbar') {
+        final connectionToBus = _allConnections.firstWhereOrNull((c) {
+          final bool sourceIsBay = c.sourceBayId == bay.id;
+          final bool targetIsBay = c.targetBayId == bay.id;
+          final bool sourceIsBus = _baysMap[c.sourceBayId]?.bayType == 'Busbar';
+          final bool targetIsBus = _baysMap[c.targetBayId]?.bayType == 'Busbar';
+          return (sourceIsBay && targetIsBus) || (targetIsBay && sourceIsBus);
+        });
 
-        for (var conn in connections) {
-          final connectedBayId = conn.sourceBayId == bay.id
-              ? conn.targetBayId
-              : conn.sourceBayId;
-          final connectedBay = _baysMap[connectedBayId];
+        if (connectionToBus != null) {
+          final String connectedBusId =
+              _baysMap[connectionToBus.sourceBayId]?.bayType == 'Busbar'
+              ? connectionToBus.sourceBayId
+              : connectionToBus.targetBayId;
 
-          if (connectedBay?.bayType == 'Busbar') {
-            if (bay.bayType == 'Line') {
-              busbarToConnectedBaysAbove
-                  .putIfAbsent(connectedBayId, () => [])
-                  .add(bay);
-            } else {
-              busbarToConnectedBaysBelow
-                  .putIfAbsent(connectedBayId, () => [])
-                  .add(bay);
-            }
+          if (bay.bayType == 'Line') {
+            busbarToConnectedBaysAbove
+                .putIfAbsent(connectedBusId, () => [])
+                .add(bay);
+          } else {
+            busbarToConnectedBaysBelow
+                .putIfAbsent(connectedBusId, () => [])
+                .add(bay);
           }
         }
       }
     }
 
-    // Sort connected bays for consistent layout
-    busbarToConnectedBaysAbove.values.forEach(
-      (list) => list.sort((a, b) => a.name.compareTo(b.name)),
+    // Sort connected bays alphabetically
+    busbarToConnectedBaysAbove.forEach(
+      (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
     );
-    busbarToConnectedBaysBelow.values.forEach(
-      (list) => list.sort((a, b) => a.name.compareTo(b.name)),
+    busbarToConnectedBaysBelow.forEach(
+      (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
     );
-    busbarToTransformers.values.forEach(
-      (list) => list.sort((a, b) => a.name.compareTo(b.name)),
-    );
+    transformersByBusPair.forEach((pairKey, transformersMap) {
+      transformersMap.forEach((busId, transformers) {
+        transformers.sort((a, b) => a.name.compareTo(b.name));
+      });
+    });
 
-    double maxOverallX = _sidePadding;
+    double maxOverallXForCanvas = _sidePadding;
+    double nextTransformerX = _sidePadding;
+    final List<Bay> placedTransformers = [];
 
-    // Place transformers first (between busbars)
-    double transformerX = _sidePadding;
-    for (var busbarEntry in busbarToTransformers.entries) {
-      final busbarId = busbarEntry.key;
-      final transformers = busbarEntry.value;
-      final busbarY = busYPositions[busbarId] ?? _topPadding;
+    // First pass: Calculate positions for Transformers
+    for (var busPairEntry in transformersByBusPair.entries) {
+      final String pairKey = busPairEntry.key;
+      final Map<String, List<Bay>> transformersForPair = busPairEntry.value;
 
-      for (var transformer in transformers) {
-        Offset position;
-        if (_selectedBayForMovementId == transformer.id &&
-            _localBayPositions.containsKey(transformer.id)) {
-          position = _localBayPositions[transformer.id]!;
-        } else if (transformer.xPosition != null &&
-            transformer.yPosition != null &&
-            transformer.xPosition! > 0 &&
-            transformer.yPosition! > 0) {
-          position = Offset(transformer.xPosition!, transformer.yPosition!);
+      List<String> busIdsInPair = pairKey.split('-');
+      String hvBusId = busIdsInPair[0];
+      String lvBusId = busIdsInPair[1];
+
+      if (!busYPositions.containsKey(hvBusId) ||
+          !busYPositions.containsKey(lvBusId)) {
+        continue;
+      }
+
+      final Bay? currentHvBus = _baysMap[hvBusId];
+      final Bay? currentLvBus = _baysMap[lvBusId];
+
+      if (currentHvBus == null || currentLvBus == null) {
+        continue;
+      }
+
+      final double hvVoltageValue = _getVoltageLevelValue(
+        currentHvBus.voltageLevel,
+      );
+      final double lvVoltageValue = _getVoltageLevelValue(
+        currentLvBus.voltageLevel,
+      );
+
+      if (hvVoltageValue < lvVoltageValue) {
+        String temp = hvBusId;
+        hvBusId = lvBusId;
+        lvBusId = temp;
+      }
+
+      final double hvBusY = busYPositions[hvBusId]!;
+      final double lvBusY = busYPositions[lvBusId]!;
+
+      final List<Bay> transformers =
+          transformersForPair[hvBusId] ?? transformersForPair[lvBusId] ?? [];
+      for (var tf in transformers) {
+        if (!placedTransformers.contains(tf)) {
+          Offset bayPosition;
+          // Use local position if available, otherwise use saved position, otherwise auto-calculate
+          if (_localBayPositions.containsKey(tf.id)) {
+            bayPosition = _localBayPositions[tf.id]!;
+          } else if (tf.xPosition != null &&
+              tf.yPosition != null &&
+              tf.xPosition! != 0.0 &&
+              tf.yPosition! != 0.0) {
+            bayPosition = Offset(tf.xPosition!, tf.yPosition!);
+          } else {
+            bayPosition = Offset(
+              nextTransformerX + _symbolWidth / 2,
+              (hvBusY + lvBusY) / 2,
+            );
+          }
+
+          // Store in local map for consistency
+          _localBayPositions[tf.id] = bayPosition;
+
+          final tfRect = Rect.fromCenter(
+            center: bayPosition,
+            width: _symbolWidth,
+            height: _symbolHeight,
+          );
+          _finalBayRects[tf.id] = tfRect;
+          nextTransformerX += _horizontalSpacing;
+          placedTransformers.add(tf);
+          maxOverallXForCanvas = max(maxOverallXForCanvas, tfRect.right);
+        }
+      }
+    }
+
+    // Second pass: Process busbars
+    for (var busbar in busbars) {
+      final double busY = busYPositions[busbar.id]!;
+      double maxConnectedBayX = _sidePadding;
+
+      for (var bay in _allBays) {
+        if (bay.id == busbar.id) continue;
+
+        bool isConnected = false;
+        if (bay.bayType == 'Transformer') {
+          if (bay.hvBusId == busbar.id || bay.lvBusId == busbar.id) {
+            isConnected = true;
+          }
         } else {
-          position = Offset(
-            transformerX + _symbolWidth / 2,
-            busbarY + _verticalBusbarSpacing / 2,
+          if (_allConnections.any(
+            (c) =>
+                (c.sourceBayId == bay.id && c.targetBayId == busbar.id) ||
+                (c.targetBayId == bay.id && c.sourceBayId == busbar.id),
+          )) {
+            isConnected = true;
+          }
+        }
+
+        if (isConnected && _finalBayRects.containsKey(bay.id)) {
+          maxConnectedBayX = max(
+            maxConnectedBayX,
+            _finalBayRects[bay.id]!.right,
           );
         }
-
-        _localBayPositions[transformer.id] = position;
-        final rect = Rect.fromCenter(
-          center: position,
-          width: _symbolWidth,
-          height: _symbolHeight,
-        );
-        _finalBayRects[transformer.id] = rect;
-
-        transformerX += _horizontalSpacing;
-        maxOverallX = max(maxOverallX, rect.right);
-      }
-    }
-
-    // Place busbars with proper length calculation
-    for (var busbar in busbars) {
-      final busbarY = busYPositions[busbar.id]!;
-
-      // Calculate busbar length based on connected elements
-      double busbarLength = _symbolWidth * 2; // Minimum length
-      double maxConnectedX = _sidePadding;
-
-      // Check all connected elements to determine busbar length
-      for (var rectEntry in _finalBayRects.entries) {
-        final bayId = rectEntry.key;
-        final rect = rectEntry.value;
-        final bay = _baysMap[bayId];
-
-        if (bay != null && _isConnectedToBusbar(bay.id, busbar.id)) {
-          maxConnectedX = max(maxConnectedX, rect.right);
-        }
       }
 
-      if (maxConnectedX > _sidePadding) {
-        busbarLength = max(
-          busbarLength,
-          maxConnectedX - _sidePadding + _horizontalSpacing,
-        );
-      }
+      final double calculatedBusbarWidth = max(
+        maxConnectedBayX - _sidePadding + _horizontalSpacing,
+        _symbolWidth * 2,
+      );
 
-      // Use local length if manually adjusted
+      // Use local busbar length if available, otherwise use saved or calculated
+      final double currentBusbarLength;
       if (_localBusbarLengths.containsKey(busbar.id)) {
-        busbarLength = _localBusbarLengths[busbar.id]!;
+        currentBusbarLength = _localBusbarLengths[busbar.id]!;
       } else if (busbar.busbarLength != null &&
-          busbar.busbarLength! > _symbolWidth * 2) {
-        busbarLength = busbar.busbarLength!;
+          busbar.busbarLength! > (_symbolWidth * 2 - 1)) {
+        currentBusbarLength = busbar.busbarLength!;
+      } else {
+        currentBusbarLength = calculatedBusbarWidth;
       }
 
-      _localBusbarLengths[busbar.id] = busbarLength;
+      // Store in local map
+      _localBusbarLengths[busbar.id] = currentBusbarLength;
 
-      double busbarX;
-      if (_selectedBayForMovementId == busbar.id &&
-          _localBayPositions.containsKey(busbar.id)) {
+      // Use local position if available
+      final double busbarX;
+      if (_localBayPositions.containsKey(busbar.id)) {
         busbarX = _localBayPositions[busbar.id]!.dx;
-      } else if (busbar.xPosition != null && busbar.xPosition! > 0) {
+      } else if (busbar.xPosition != null && busbar.xPosition! != 0.0) {
         busbarX = busbar.xPosition!;
       } else {
-        busbarX = _sidePadding + busbarLength / 2;
+        busbarX = _sidePadding + currentBusbarLength / 2;
       }
 
-      _localBayPositions[busbar.id] = Offset(busbarX, busbarY);
+      // Store in local map
+      _localBayPositions[busbar.id] = Offset(busbarX, busY);
 
-      final busbarRect = Rect.fromCenter(
-        center: Offset(busbarX, busbarY),
-        width: busbarLength,
+      final Offset busbarCenter = Offset(busbarX, busY);
+      final Rect unifiedBusbarRect = Rect.fromCenter(
+        center: busbarCenter,
+        width: currentBusbarLength,
         height: _busbarHitboxHeight,
       );
 
-      _finalBayRects[busbar.id] = busbarRect;
-      _busbarRects[busbar.id] = busbarRect;
-      maxOverallX = max(maxOverallX, busbarRect.right);
+      _finalBayRects[busbar.id] = unifiedBusbarRect;
+      _busbarRects[busbar.id] = unifiedBusbarRect;
+      maxOverallXForCanvas = max(maxOverallXForCanvas, unifiedBusbarRect.right);
     }
 
-    // Place lines and feeders with automatic positioning
-    for (var busbarEntry in busbarToConnectedBaysAbove.entries) {
-      final busbarId = busbarEntry.key;
-      final lines = busbarEntry.value;
-      final busbarRect = _finalBayRects[busbarId];
+    // Third pass: Position Lines and Feeders
+    for (var bay in _allBays) {
+      if (bay.bayType == 'Line' || bay.bayType == 'Feeder') {
+        if (_finalBayRects.containsKey(bay.id)) continue;
 
-      if (busbarRect != null) {
-        double lineX = busbarRect.left + _symbolWidth / 2;
+        final connectionToBus = _allConnections.firstWhereOrNull((c) {
+          return (c.sourceBayId == bay.id &&
+                  _baysMap[c.targetBayId]?.bayType == 'Busbar') ||
+              (c.targetBayId == bay.id &&
+                  _baysMap[c.sourceBayId]?.bayType == 'Busbar');
+        });
 
-        for (var line in lines) {
-          Offset position;
-          if (_selectedBayForMovementId == line.id &&
-              _localBayPositions.containsKey(line.id)) {
-            position = _localBayPositions[line.id]!;
-          } else if (line.xPosition != null &&
-              line.yPosition != null &&
-              line.xPosition! > 0 &&
-              line.yPosition! > 0) {
-            position = Offset(line.xPosition!, line.yPosition!);
-          } else {
-            position = Offset(
-              lineX,
-              busbarRect.center.dy - _lineFeederHeight - 30,
+        if (connectionToBus != null) {
+          String connectedBusId =
+              _baysMap[connectionToBus.sourceBayId]?.bayType == 'Busbar'
+              ? connectionToBus.sourceBayId
+              : connectionToBus.targetBayId;
+
+          final busbarTappableRect = _finalBayRects[connectedBusId];
+          if (busbarTappableRect != null) {
+            final List<Bay> baysConnectedToThisBus = [
+              ...(busbarToConnectedBaysAbove[connectedBusId] ?? []),
+              ...(busbarToConnectedBaysBelow[connectedBusId] ?? []),
+            ];
+
+            baysConnectedToThisBus.sort((a, b) => a.name.compareTo(b.name));
+
+            Map<String, double> currentBayXPositionsInLane = {};
+            for (var b in baysConnectedToThisBus) {
+              if (_finalBayRects.containsKey(b.id)) {
+                currentBayXPositionsInLane[b.id] =
+                    _finalBayRects[b.id]!.center.dx;
+              }
+            }
+
+            double nextX = busbarTappableRect.left + _symbolWidth / 2;
+            Offset bayPosition;
+
+            // Use local position if available
+            if (_localBayPositions.containsKey(bay.id)) {
+              bayPosition = _localBayPositions[bay.id]!;
+            } else if (bay.xPosition != null &&
+                bay.yPosition != null &&
+                bay.xPosition! != 0.0 &&
+                bay.yPosition! != 0.0) {
+              bayPosition = Offset(bay.xPosition!, bay.yPosition!);
+            } else {
+              // Auto-layout logic
+              double bayY;
+              if (bay.bayType == 'Line') {
+                bayY =
+                    busbarTappableRect.center.dy - _lineFeederHeight / 2 - 50;
+              } else {
+                bayY =
+                    busbarTappableRect.center.dy + _lineFeederHeight / 2 + 50;
+              }
+
+              double foundX = nextX;
+              bool slotFound = false;
+              while (!slotFound) {
+                bool overlaps = false;
+                for (var placedX in currentBayXPositionsInLane.values) {
+                  if ((foundX - placedX).abs() <
+                      (_symbolWidth + _horizontalSpacing) / 2) {
+                    overlaps = true;
+                    break;
+                  }
+                }
+                if (!overlaps) {
+                  slotFound = true;
+                } else {
+                  foundX += _horizontalSpacing;
+                }
+              }
+              bayPosition = Offset(foundX, bayY);
+            }
+
+            // Store in local map
+            _localBayPositions[bay.id] = bayPosition;
+
+            final newRect = Rect.fromCenter(
+              center: bayPosition,
+              width: _symbolWidth,
+              height: _lineFeederHeight,
             );
+            _finalBayRects[bay.id] = newRect;
+            maxOverallXForCanvas = max(maxOverallXForCanvas, newRect.right);
           }
-
-          _localBayPositions[line.id] = position;
-          final rect = Rect.fromCenter(
-            center: position,
-            width: _symbolWidth,
-            height: _lineFeederHeight,
-          );
-          _finalBayRects[line.id] = rect;
-
-          lineX += _horizontalSpacing;
-          maxOverallX = max(maxOverallX, rect.right);
         }
+      } else if (!['Busbar', 'Transformer'].contains(bay.bayType)) {
+        if (_finalBayRects.containsKey(bay.id)) continue;
+
+        Offset bayPosition;
+        if (_localBayPositions.containsKey(bay.id)) {
+          bayPosition = _localBayPositions[bay.id]!;
+        } else if (bay.xPosition != null &&
+            bay.yPosition != null &&
+            bay.xPosition! != 0.0 &&
+            bay.yPosition! != 0.0) {
+          bayPosition = Offset(bay.xPosition!, bay.yPosition!);
+        } else {
+          bayPosition = Offset(
+            maxOverallXForCanvas + _horizontalSpacing,
+            _topPadding + 500,
+          );
+        }
+
+        // Store in local map
+        _localBayPositions[bay.id] = bayPosition;
+
+        final newRect = Rect.fromCenter(
+          center: bayPosition,
+          width: _symbolWidth,
+          height: _symbolHeight,
+        );
+        _finalBayRects[bay.id] = newRect;
+        maxOverallXForCanvas = max(maxOverallXForCanvas, newRect.right);
       }
     }
 
-    for (var busbarEntry in busbarToConnectedBaysBelow.entries) {
-      final busbarId = busbarEntry.key;
-      final feeders = busbarEntry.value;
-      final busbarRect = _finalBayRects[busbarId];
-
-      if (busbarRect != null) {
-        double feederX = busbarRect.left + _symbolWidth / 2;
-
-        for (var feeder in feeders) {
-          Offset position;
-          if (_selectedBayForMovementId == feeder.id &&
-              _localBayPositions.containsKey(feeder.id)) {
-            position = _localBayPositions[feeder.id]!;
-          } else if (feeder.xPosition != null &&
-              feeder.yPosition != null &&
-              feeder.xPosition! > 0 &&
-              feeder.yPosition! > 0) {
-            position = Offset(feeder.xPosition!, feeder.yPosition!);
-          } else {
-            position = Offset(
-              feederX,
-              busbarRect.center.dy + _lineFeederHeight + 30,
-            );
-          }
-
-          _localBayPositions[feeder.id] = position;
-          final rect = Rect.fromCenter(
-            center: position,
-            width: _symbolWidth,
-            height: _lineFeederHeight,
-          );
-          _finalBayRects[feeder.id] = rect;
-
-          feederX += _horizontalSpacing;
-          maxOverallX = max(maxOverallX, rect.right);
-        }
-      }
-    }
-
-    // Build render data with energy integration
+    // Create render data with local adjustments
     for (var bay in _allBays) {
       final Rect? rect = _finalBayRects[bay.id];
       if (rect != null) {
-        Offset textOffset =
+        // Use local values (which may include unsaved changes)
+        Offset currentTextOffset =
             _localTextOffsets[bay.id] ?? bay.textOffset ?? Offset.zero;
-        Offset energyOffset =
+        Offset currentEnergyReadingOffset =
             _localEnergyReadingOffsets[bay.id] ??
             bay.energyReadingOffset ??
             Offset.zero;
-        double energyFontSize =
+        double currentEnergyReadingFontSize =
             _localEnergyReadingFontSizes[bay.id] ??
             bay.energyReadingFontSize ??
             9.0;
-        bool energyBold =
+        bool currentEnergyReadingIsBold =
             _localEnergyReadingIsBold[bay.id] ??
             bay.energyReadingIsBold ??
             false;
-
-        _localTextOffsets.putIfAbsent(bay.id, () => textOffset);
-        _localEnergyReadingOffsets.putIfAbsent(bay.id, () => energyOffset);
-        _localEnergyReadingFontSizes.putIfAbsent(bay.id, () => energyFontSize);
-        _localEnergyReadingIsBold.putIfAbsent(bay.id, () => energyBold);
 
         newBayRenderDataList.add(
           BayRenderData(
@@ -441,46 +780,35 @@ class SldController extends ChangeNotifier {
             leftCenter: rect.centerLeft,
             rightCenter: rect.centerRight,
             equipmentInstances: _equipmentByBayId[bay.id] ?? [],
-            textOffset: textOffset,
+            textOffset: currentTextOffset,
             busbarLength: _localBusbarLengths[bay.id] ?? 0.0,
-            energyReadingOffset: energyOffset,
-            energyReadingFontSize: energyFontSize,
-            energyReadingIsBold: energyBold,
+            energyReadingOffset: currentEnergyReadingOffset,
+            energyReadingFontSize: currentEnergyReadingFontSize,
+            energyReadingIsBold: currentEnergyReadingIsBold,
           ),
         );
       }
     }
 
-    // Calculate connection points
-    _calculateConnectionPoints();
-
-    _bayRenderDataList = newBayRenderDataList;
-    notifyListeners();
-  }
-
-  // Helper methods
-  double _getVoltageLevelValue(String voltageLevel) {
-    final regex = RegExp(r'(\d+(\.\d+)?)');
-    final match = regex.firstMatch(voltageLevel);
-    return match != null ? double.tryParse(match.group(1)!) ?? 0.0 : 0.0;
-  }
-
-  bool _isConnectedToBusbar(String bayId, String busbarId) {
-    return _allConnections.any(
-      (c) =>
-          (c.sourceBayId == bayId && c.targetBayId == busbarId) ||
-          (c.targetBayId == bayId && c.sourceBayId == busbarId),
-    );
-  }
-
-  void _calculateConnectionPoints() {
+    // Calculate busbar connection points
     for (var connection in _allConnections) {
       final sourceBay = _baysMap[connection.sourceBayId];
       final targetBay = _baysMap[connection.targetBayId];
       if (sourceBay == null || targetBay == null) continue;
 
-      final sourceRect = _finalBayRects[sourceBay.id];
-      final targetRect = _finalBayRects[targetBay.id];
+      final List<String> allowedConnectionTypes = [
+        'Busbar',
+        'Transformer',
+        'Line',
+        'Feeder',
+      ];
+      if (!allowedConnectionTypes.contains(sourceBay.bayType) ||
+          !allowedConnectionTypes.contains(targetBay.bayType)) {
+        continue;
+      }
+
+      final Rect? sourceRect = _finalBayRects[sourceBay.id];
+      final Rect? targetRect = _finalBayRects[targetBay.id];
       if (sourceRect == null || targetRect == null) continue;
 
       Offset startPoint;
@@ -521,99 +849,101 @@ class SldController extends ChangeNotifier {
         () => {},
       )[sourceBay.id] = endPoint;
     }
-  }
 
-  // CRITICAL FIX: Energy data update method
-  void updateEnergyData({
-    required Map<String, BayEnergyData> bayEnergyData,
-    required Map<String, Map<String, double>> busEnergySummary,
-    required Map<String, dynamic> abstractEnergyData,
-    required List<AggregatedFeederEnergyData> aggregatedFeederEnergyData,
-    required Map<String, Assessment> latestAssessmentsPerBay,
-  }) {
-    _bayEnergyData = bayEnergyData;
-    _busEnergySummary = busEnergySummary;
-    _abstractEnergyData = abstractEnergyData;
-    _aggregatedFeederEnergyData = aggregatedFeederEnergyData;
-    _latestAssessmentsPerBay = latestAssessmentsPerBay;
-
-    // Rebuild to integrate energy data
-    _rebuildSldRenderData();
+    _bayRenderDataList = newBayRenderDataList;
     notifyListeners();
   }
 
-  // Other helper methods...
-  void _updateLocalBayPropertiesFromFirestore() {
-    if (_selectedBayForMovementId == null) {
-      _localBayPositions.clear();
-      _localTextOffsets.clear();
-      _localBusbarLengths.clear();
-      _localEnergyReadingOffsets.clear();
-      _localEnergyReadingFontSizes.clear();
-      _localEnergyReadingIsBold.clear();
-
-      for (var bay in _allBays) {
-        if (bay.xPosition != null &&
-            bay.xPosition! > 0.0 &&
-            bay.yPosition != null &&
-            bay.yPosition! > 0.0) {
-          _localBayPositions[bay.id] = Offset(bay.xPosition!, bay.yPosition!);
-        }
-
-        if (bay.textOffset != null &&
-            (bay.textOffset!.dx != 0.0 || bay.textOffset!.dy != 0.0)) {
-          _localTextOffsets[bay.id] = bay.textOffset!;
-        }
-
-        if (bay.bayType == 'Busbar' &&
-            bay.busbarLength != null &&
-            bay.busbarLength! > (_symbolWidth * 2 - 1)) {
-          _localBusbarLengths[bay.id] = bay.busbarLength!;
-        }
-
-        if (bay.energyReadingOffset != null &&
-            (bay.energyReadingOffset!.dx != 0.0 ||
-                bay.energyReadingOffset!.dy != 0.0)) {
-          _localEnergyReadingOffsets[bay.id] = bay.energyReadingOffset!;
-        }
-
-        if (bay.energyReadingFontSize != null &&
-            bay.energyReadingFontSize! != 9.0) {
-          _localEnergyReadingFontSizes[bay.id] = bay.energyReadingFontSize!;
-        }
-
-        if (bay.energyReadingIsBold != null) {
-          _localEnergyReadingIsBold[bay.id] = bay.energyReadingIsBold!;
-        }
-      }
-    }
+  // Helper method for creating dummy render data
+  BayRenderData createDummyBayRenderData() {
+    return BayRenderData(
+      bay: Bay(
+        id: 'dummy',
+        name: '',
+        substationId: '',
+        voltageLevel: '',
+        bayType: '',
+        createdBy: '',
+        createdAt: Timestamp.now(),
+      ),
+      rect: Rect.zero,
+      center: Offset.zero,
+      topCenter: Offset.zero,
+      bottomCenter: Offset.zero,
+      leftCenter: Offset.zero,
+      rightCenter: Offset.zero,
+      equipmentInstances: const [],
+      textOffset: Offset.zero,
+      busbarLength: 0.0,
+      energyReadingOffset: Offset.zero,
+      energyReadingFontSize: 9.0,
+      energyReadingIsBold: false,
+    );
   }
 
-  // Movement and interaction methods
+  // Helper for voltage level parsing
+  double _getVoltageLevelValue(String voltageLevel) {
+    final regex = RegExp(r'(\d+(\.\d+)?)');
+    final match = regex.firstMatch(voltageLevel);
+    if (match != null) {
+      return double.tryParse(match.group(1)!) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  // Interaction / Movement Logic
   void setSelectedBayForMovement(
     String? bayId, {
     MovementMode mode = MovementMode.bay,
   }) {
-    _selectedBayForMovementId = bayId;
-    _movementMode = mode;
-    if (bayId != null) {
-      final Bay? bay = _baysMap[bayId];
-      if (bay != null) {
-        final BayRenderData? renderData = _bayRenderDataList.firstWhereOrNull(
-          (data) => data.bay.id == bayId,
-        );
-        Offset initialPosition = renderData?.rect.center ?? Offset.zero;
+    if (_selectedBayForMovementId == bayId) {
+      setMovementMode(mode);
+    } else {
+      _selectedBayForMovementId = bayId;
+      _movementMode = mode;
 
-        _localBayPositions[bay.id] = initialPosition;
-        _localTextOffsets[bay.id] = bay.textOffset ?? Offset.zero;
-        _localBusbarLengths[bay.id] = bay.busbarLength ?? 100.0;
-        _localEnergyReadingOffsets[bay.id] =
-            bay.energyReadingOffset ?? Offset.zero;
-        _localEnergyReadingFontSizes[bay.id] = bay.energyReadingFontSize ?? 9.0;
-        _localEnergyReadingIsBold[bay.id] = bay.energyReadingIsBold ?? false;
+      if (bayId != null) {
+        // Initialize local values from current bay data if not already present
+        final Bay? bay = _baysMap[bayId];
+        if (bay != null) {
+          // Only set initial values if they don't already exist in local maps
+          if (!_localBayPositions.containsKey(bayId)) {
+            final BayRenderData? renderData = _bayRenderDataList
+                .firstWhereOrNull((data) => data.bay.id == bayId);
+            if (renderData != null) {
+              _localBayPositions[bay.id] = renderData.rect.center;
+            } else if (bay.xPosition != null && bay.yPosition != null) {
+              _localBayPositions[bay.id] = Offset(
+                bay.xPosition!,
+                bay.yPosition!,
+              );
+            }
+          }
+
+          if (!_localTextOffsets.containsKey(bayId)) {
+            _localTextOffsets[bay.id] = bay.textOffset ?? Offset.zero;
+          }
+          if (!_localBusbarLengths.containsKey(bayId)) {
+            _localBusbarLengths[bay.id] = bay.busbarLength ?? 100.0;
+          }
+          if (!_localEnergyReadingOffsets.containsKey(bayId)) {
+            _localEnergyReadingOffsets[bay.id] =
+                bay.energyReadingOffset ?? Offset.zero;
+          }
+          if (!_localEnergyReadingFontSizes.containsKey(bayId)) {
+            _localEnergyReadingFontSizes[bay.id] =
+                bay.energyReadingFontSize ?? 9.0;
+          }
+          if (!_localEnergyReadingIsBold.containsKey(bayId)) {
+            _localEnergyReadingIsBold[bay.id] =
+                bay.energyReadingIsBold ?? false;
+          }
+        }
       }
+
+      _rebuildSldRenderData();
     }
-    _rebuildSldRenderData();
+    notifyListeners();
   }
 
   void setMovementMode(MovementMode mode) {
@@ -647,7 +977,6 @@ class SldController extends ChangeNotifier {
       );
     }
     _rebuildSldRenderData();
-    notifyListeners();
   }
 
   void adjustBusbarLength(double change) {
@@ -655,11 +984,10 @@ class SldController extends ChangeNotifier {
     final currentLength =
         _localBusbarLengths[_selectedBayForMovementId!] ?? 200.0;
     _localBusbarLengths[_selectedBayForMovementId!] = max(
-      50.0,
+      20.0,
       currentLength + change,
     );
     _rebuildSldRenderData();
-    notifyListeners();
   }
 
   void adjustEnergyReadingFontSize(double change) {
@@ -671,7 +999,6 @@ class SldController extends ChangeNotifier {
       min(20.0, currentFontSize + change),
     );
     _rebuildSldRenderData();
-    notifyListeners();
   }
 
   void toggleEnergyReadingBold() {
@@ -679,190 +1006,24 @@ class SldController extends ChangeNotifier {
     _localEnergyReadingIsBold[_selectedBayForMovementId!] =
         !(_localEnergyReadingIsBold[_selectedBayForMovementId!] ?? false);
     _rebuildSldRenderData();
+  }
+
+  /// REMOVED: saveSelectedBayLayoutChanges() - No longer saves individual bay changes
+  /// All changes are now saved together via saveAllPendingChanges()
+
+  // Energy Data Specific Logic
+  void updateEnergyData({
+    required Map<String, BayEnergyData> bayEnergyData,
+    required Map<String, Map<String, double>> busEnergySummary,
+    required Map<String, dynamic> abstractEnergyData,
+    required List<AggregatedFeederEnergyData> aggregatedFeederEnergyData,
+    required Map<String, Assessment> latestAssessmentsPerBay,
+  }) {
+    _bayEnergyData = bayEnergyData;
+    _busEnergySummary = busEnergySummary;
+    _abstractEnergyData = abstractEnergyData;
+    _aggregatedFeederEnergyData = aggregatedFeederEnergyData;
+    _latestAssessmentsPerBay = latestAssessmentsPerBay;
     notifyListeners();
-  }
-
-  Future<bool> saveSelectedBayLayoutChanges() async {
-    if (_selectedBayForMovementId == null) return false;
-
-    final bayId = _selectedBayForMovementId!;
-    try {
-      final updateData = <String, dynamic>{};
-
-      if (_localBayPositions.containsKey(bayId)) {
-        updateData['xPosition'] = _localBayPositions[bayId]!.dx;
-        updateData['yPosition'] = _localBayPositions[bayId]!.dy;
-      }
-      if (_localTextOffsets.containsKey(bayId)) {
-        updateData['textOffset'] = {
-          'dx': _localTextOffsets[bayId]!.dx,
-          'dy': _localTextOffsets[bayId]!.dy,
-        };
-      }
-      if (_localBusbarLengths.containsKey(bayId)) {
-        updateData['busbarLength'] = _localBusbarLengths[bayId];
-      }
-      if (_localEnergyReadingOffsets.containsKey(bayId)) {
-        updateData['energyReadingOffset'] = {
-          'dx': _localEnergyReadingOffsets[bayId]!.dx,
-          'dy': _localEnergyReadingOffsets[bayId]!.dy,
-        };
-      }
-      if (_localEnergyReadingFontSizes.containsKey(bayId)) {
-        updateData['energyReadingFontSize'] =
-            _localEnergyReadingFontSizes[bayId];
-      }
-      if (_localEnergyReadingIsBold.containsKey(bayId)) {
-        updateData['energyReadingIsBold'] = _localEnergyReadingIsBold[bayId];
-      }
-
-      if (updateData.isNotEmpty) {
-        await FirebaseFirestore.instance
-            .collection('bays')
-            .doc(bayId)
-            .update(updateData);
-
-        _localBayPositions.remove(bayId);
-        _localTextOffsets.remove(bayId);
-        _localBusbarLengths.remove(bayId);
-        _localEnergyReadingOffsets.remove(bayId);
-        _localEnergyReadingFontSizes.remove(bayId);
-        _localEnergyReadingIsBold.remove(bayId);
-
-        _rebuildSldRenderData();
-        notifyListeners();
-        return true;
-      }
-    } catch (e) {
-      print('Error saving layout changes: $e');
-      return false;
-    }
-    return false;
-  }
-
-  Future<bool> saveAllPendingChanges() async {
-    try {
-      Set<String> affectedBayIds = {
-        ..._localBayPositions.keys,
-        ..._localTextOffsets.keys,
-        ..._localBusbarLengths.keys,
-        ..._localEnergyReadingOffsets.keys,
-        ..._localEnergyReadingFontSizes.keys,
-        ..._localEnergyReadingIsBold.keys,
-      };
-
-      if (affectedBayIds.isEmpty) return true;
-
-      final batch = FirebaseFirestore.instance.batch();
-
-      for (String bayId in affectedBayIds) {
-        final updateData = <String, dynamic>{};
-
-        if (_localBayPositions.containsKey(bayId)) {
-          updateData['xPosition'] = _localBayPositions[bayId]!.dx;
-          updateData['yPosition'] = _localBayPositions[bayId]!.dy;
-        }
-
-        if (_localTextOffsets.containsKey(bayId)) {
-          updateData['textOffset'] = {
-            'dx': _localTextOffsets[bayId]!.dx,
-            'dy': _localTextOffsets[bayId]!.dy,
-          };
-        }
-
-        if (_localBusbarLengths.containsKey(bayId)) {
-          updateData['busbarLength'] = _localBusbarLengths[bayId];
-        }
-
-        if (_localEnergyReadingOffsets.containsKey(bayId)) {
-          updateData['energyReadingOffset'] = {
-            'dx': _localEnergyReadingOffsets[bayId]!.dx,
-            'dy': _localEnergyReadingOffsets[bayId]!.dy,
-          };
-        }
-
-        if (_localEnergyReadingFontSizes.containsKey(bayId)) {
-          updateData['energyReadingFontSize'] =
-              _localEnergyReadingFontSizes[bayId];
-        }
-
-        if (_localEnergyReadingIsBold.containsKey(bayId)) {
-          updateData['energyReadingIsBold'] = _localEnergyReadingIsBold[bayId];
-        }
-
-        if (updateData.isNotEmpty) {
-          final bayRef = FirebaseFirestore.instance
-              .collection('bays')
-              .doc(bayId);
-          batch.update(bayRef, updateData);
-        }
-      }
-
-      await batch.commit();
-      _clearAllLocalAdjustments();
-      _rebuildSldRenderData();
-      notifyListeners();
-      return true;
-    } catch (e) {
-      print('Error saving all pending changes: $e');
-      return false;
-    }
-  }
-
-  void _clearAllLocalAdjustments() {
-    _localBayPositions.clear();
-    _localTextOffsets.clear();
-    _localBusbarLengths.clear();
-    _localEnergyReadingOffsets.clear();
-    _localEnergyReadingFontSizes.clear();
-    _localEnergyReadingIsBold.clear();
-    _selectedBayForMovementId = null;
-    _movementMode = MovementMode.bay;
-    _updateLocalBayPropertiesFromFirestore();
-    _rebuildSldRenderData();
-  }
-
-  void cancelLayoutChanges() {
-    _clearAllLocalAdjustments();
-  }
-
-  bool hasUnsavedChanges() {
-    return _localBayPositions.isNotEmpty ||
-        _localTextOffsets.isNotEmpty ||
-        _localBusbarLengths.isNotEmpty ||
-        _localEnergyReadingOffsets.isNotEmpty ||
-        _localEnergyReadingFontSizes.isNotEmpty ||
-        _localEnergyReadingIsBold.isNotEmpty;
-  }
-
-  BayRenderData createDummyBayRenderData() {
-    return BayRenderData(
-      bay: Bay(
-        id: 'dummy',
-        name: '',
-        substationId: '',
-        voltageLevel: '',
-        bayType: '',
-        createdBy: '',
-        createdAt: Timestamp.now(),
-      ),
-      rect: Rect.zero,
-      center: Offset.zero,
-      topCenter: Offset.zero,
-      bottomCenter: Offset.zero,
-      leftCenter: Offset.zero,
-      rightCenter: Offset.zero,
-      equipmentInstances: const [],
-      textOffset: Offset.zero,
-      busbarLength: 0.0,
-      energyReadingOffset: Offset.zero,
-      energyReadingFontSize: 9.0,
-      energyReadingIsBold: false,
-    );
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 }
