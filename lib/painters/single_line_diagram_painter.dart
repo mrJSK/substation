@@ -118,6 +118,8 @@ class SingleLineDiagramPainter extends CustomPainter {
   final Size? contentBounds;
   final Offset? originOffsetForPdf;
 
+  final bool showEnergyReadings; // Add this property
+
   // Theme colors
   final Color defaultBayColor;
   final Color defaultLineFeederColor;
@@ -143,6 +145,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.bayRenderDataList,
     required this.bayConnections,
     required this.baysMap,
+    this.showEnergyReadings = true, // Add this parameter
     required this.createDummyBayRenderData,
     required this.busbarRects,
     required this.busbarConnectionPoints,
@@ -270,6 +273,10 @@ class SingleLineDiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    print('DEBUG: Painter paint method called');
+    print('DEBUG: showEnergyReadings = $showEnergyReadings');
+    print('DEBUG: bayEnergyData.length = ${bayEnergyData.length}');
+    print('DEBUG: bayRenderDataList.length = ${bayRenderDataList.length}');
     // Save the canvas state before any transformations
     canvas.save();
 
@@ -294,6 +301,10 @@ class SingleLineDiagramPainter extends CustomPainter {
     // Draw debug hitboxes last (overlay)
     if (debugDrawHitboxes) {
       _drawDebugHitboxes(canvas);
+    }
+
+    if (showEnergyReadings) {
+      _drawEnergyReadings(canvas);
     }
 
     // Restore the canvas state

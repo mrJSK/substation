@@ -15,18 +15,27 @@ class SldController extends ChangeNotifier {
   final String substationId;
   final TransformationController transformationController;
 
-  // Core SLD Data
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
+
+  bool _showEnergyReadings = true;
+  bool get showEnergyReadings => _showEnergyReadings;
+
+  void setShowEnergyReadings(bool show) {
+    _showEnergyReadings = show;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
+  }
+
   List<Bay> _allBays = [];
   Map<String, Bay> _baysMap = {};
   List<BayConnection> _allConnections = [];
   Map<String, List<EquipmentInstance>> _equipmentByBayId = {};
 
-  // UI State for SLD Layout
   String? _selectedBayForMovementId;
   MovementMode _movementMode = MovementMode.bay;
 
-  // Local adjustments that are NOT yet saved to Firestore
-  // These accumulate ALL changes until explicitly saved
   Map<String, Offset> _localBayPositions = {};
   Map<String, Offset> _localTextOffsets = {};
   Map<String, double> _localBusbarLengths = {};
@@ -34,7 +43,6 @@ class SldController extends ChangeNotifier {
   Map<String, double> _localEnergyReadingFontSizes = {};
   Map<String, bool> _localEnergyReadingIsBold = {};
 
-  // Track original values for potential rollback
   Map<String, Offset> _originalBayPositions = {};
   Map<String, Offset> _originalTextOffsets = {};
   Map<String, double> _originalBusbarLengths = {};
@@ -42,20 +50,17 @@ class SldController extends ChangeNotifier {
   Map<String, double> _originalEnergyReadingFontSizes = {};
   Map<String, bool> _originalEnergyReadingIsBold = {};
 
-  // Energy Data (for Energy SLD screen)
   Map<String, BayEnergyData> _bayEnergyData = {};
   Map<String, Map<String, double>> _busEnergySummary = {};
   Map<String, dynamic> _abstractEnergyData = {};
   List<AggregatedFeederEnergyData> _aggregatedFeederEnergyData = [];
   Map<String, Assessment> _latestAssessmentsPerBay = {};
 
-  // Computed Render Data
   List<BayRenderData> _bayRenderDataList = [];
   Map<String, Rect> _finalBayRects = {};
   Map<String, Rect> _busbarRects = {};
   Map<String, Map<String, Offset>> _busbarConnectionPoints = {};
 
-  // Constants for rendering/layout
   static const double _symbolWidth = 40;
   static const double _symbolHeight = 40;
   static const double _horizontalSpacing = 100;
@@ -65,15 +70,23 @@ class SldController extends ChangeNotifier {
   static const double _busbarHitboxHeight = 20.0;
   static const double _lineFeederHeight = 100.0;
 
-  // Constructor
   SldController({
     required this.substationId,
     required this.transformationController,
   }) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isInitialized) {
+        _initializeController();
+      }
+    });
+  }
+
+  void _initializeController() {
+    print('DEBUG: Initializing SLD Controller for substation: $substationId');
+    _isInitialized = true;
     _listenToSldData();
   }
 
-  // Getters for UI to consume
   List<Bay> get allBays => _allBays;
   Map<String, Bay> get baysMap => _baysMap;
   List<BayConnection> get allConnections => _allConnections;
@@ -88,7 +101,6 @@ class SldController extends ChangeNotifier {
   Map<String, Map<String, Offset>> get busbarConnectionPoints =>
       _busbarConnectionPoints;
 
-  // Energy Data Getters
   Map<String, BayEnergyData> get bayEnergyData => _bayEnergyData;
   Map<String, Map<String, double>> get busEnergySummary => _busEnergySummary;
   Map<String, dynamic> get abstractEnergyData => _abstractEnergyData;
@@ -97,7 +109,6 @@ class SldController extends ChangeNotifier {
   Map<String, Assessment> get latestAssessmentsPerBay =>
       _latestAssessmentsPerBay;
 
-  /// Returns true if there are any unsaved layout changes.
   bool hasUnsavedChanges() {
     return _localBayPositions.isNotEmpty ||
         _localTextOffsets.isNotEmpty ||
@@ -107,17 +118,14 @@ class SldController extends ChangeNotifier {
         _localEnergyReadingIsBold.isNotEmpty;
   }
 
-  /// Saves all pending layout changes to Firestore in a single batch operation.
   Future<bool> saveAllPendingChanges() async {
     if (!hasUnsavedChanges()) return true;
 
     try {
       print('DEBUG: Saving all pending changes to Firestore...');
 
-      // Create a batch write for better performance
       WriteBatch batch = FirebaseFirestore.instance.batch();
 
-      // Collect all changes that need to be saved
       Set<String> bayIdsToUpdate = {};
       bayIdsToUpdate.addAll(_localBayPositions.keys);
       bayIdsToUpdate.addAll(_localTextOffsets.keys);
@@ -130,7 +138,6 @@ class SldController extends ChangeNotifier {
         'DEBUG: Updating ${bayIdsToUpdate.length} bays with layout changes',
       );
 
-      // Update each bay with its pending changes
       for (String bayId in bayIdsToUpdate) {
         DocumentReference bayRef = FirebaseFirestore.instance
             .collection('bays')
@@ -140,46 +147,28 @@ class SldController extends ChangeNotifier {
         if (_localBayPositions.containsKey(bayId)) {
           updateData['xPosition'] = _localBayPositions[bayId]!.dx;
           updateData['yPosition'] = _localBayPositions[bayId]!.dy;
-          print(
-            'DEBUG: Updating bay $bayId position: ${_localBayPositions[bayId]}',
-          );
         }
         if (_localTextOffsets.containsKey(bayId)) {
           updateData['textOffset'] = {
             'dx': _localTextOffsets[bayId]!.dx,
             'dy': _localTextOffsets[bayId]!.dy,
           };
-          print(
-            'DEBUG: Updating bay $bayId text offset: ${_localTextOffsets[bayId]}',
-          );
         }
         if (_localBusbarLengths.containsKey(bayId)) {
           updateData['busbarLength'] = _localBusbarLengths[bayId];
-          print(
-            'DEBUG: Updating bay $bayId busbar length: ${_localBusbarLengths[bayId]}',
-          );
         }
         if (_localEnergyReadingOffsets.containsKey(bayId)) {
           updateData['energyReadingOffset'] = {
             'dx': _localEnergyReadingOffsets[bayId]!.dx,
             'dy': _localEnergyReadingOffsets[bayId]!.dy,
           };
-          print(
-            'DEBUG: Updating bay $bayId energy reading offset: ${_localEnergyReadingOffsets[bayId]}',
-          );
         }
         if (_localEnergyReadingFontSizes.containsKey(bayId)) {
           updateData['energyReadingFontSize'] =
               _localEnergyReadingFontSizes[bayId];
-          print(
-            'DEBUG: Updating bay $bayId energy reading font size: ${_localEnergyReadingFontSizes[bayId]}',
-          );
         }
         if (_localEnergyReadingIsBold.containsKey(bayId)) {
           updateData['energyReadingIsBold'] = _localEnergyReadingIsBold[bayId];
-          print(
-            'DEBUG: Updating bay $bayId energy reading bold: ${_localEnergyReadingIsBold[bayId]}',
-          );
         }
 
         if (updateData.isNotEmpty) {
@@ -187,11 +176,9 @@ class SldController extends ChangeNotifier {
         }
       }
 
-      // Commit the batch
       await batch.commit();
       print('DEBUG: Successfully saved all changes to Firestore');
 
-      // Clear all local changes after successful save
       _clearAllLocalChanges();
 
       return true;
@@ -201,21 +188,17 @@ class SldController extends ChangeNotifier {
     }
   }
 
-  /// Discards all local changes and reverts to original Firestore values
   void cancelLayoutChanges() {
     print(
       'DEBUG: Canceling all layout changes and reverting to original values',
     );
 
-    // Clear all local changes
     _clearAllLocalChanges();
 
-    // Force rebuild from Firestore data
     _updateLocalBayPropertiesFromFirestore();
-    _rebuildSldRenderData();
+    _safeRebuildSldRenderData();
   }
 
-  /// Clear all local changes without saving
   void _clearAllLocalChanges() {
     _localBayPositions.clear();
     _localTextOffsets.clear();
@@ -224,7 +207,6 @@ class SldController extends ChangeNotifier {
     _localEnergyReadingFontSizes.clear();
     _localEnergyReadingIsBold.clear();
 
-    // Clear originals as well
     _originalBayPositions.clear();
     _originalTextOffsets.clear();
     _originalBusbarLengths.clear();
@@ -233,57 +215,240 @@ class SldController extends ChangeNotifier {
     _originalEnergyReadingIsBold.clear();
 
     _selectedBayForMovementId = null;
-    notifyListeners();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 
-  // Data Loading and Listener Setup
+  void setBayEnergyData(String bayId, BayEnergyData energyData) {
+    _bayEnergyData[bayId] = energyData;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
+  }
+
+  void clearEnergyData() {
+    _bayEnergyData.clear();
+    _busEnergySummary.clear();
+    _abstractEnergyData.clear();
+    _aggregatedFeederEnergyData.clear();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
+  }
+
+  void calculateBusEnergySummaries() {
+    _busEnergySummary.clear();
+
+    final List<Bay> busbarBays = _allBays
+        .where((bay) => bay.bayType == 'Busbar')
+        .toList();
+
+    for (var busbar in busbarBays) {
+      double totalImp = 0.0;
+      double totalExp = 0.0;
+      int connectedBayCount = 0;
+
+      final List<Bay> connectedBays = _getConnectedBays(busbar);
+
+      for (var connectedBay in connectedBays) {
+        if (connectedBay.bayType != 'Busbar') {
+          final energyData = _bayEnergyData[connectedBay.id];
+          if (energyData != null) {
+            totalImp += energyData.adjustedImportConsumed;
+            totalExp += energyData.adjustedExportConsumed;
+            connectedBayCount++;
+          }
+        }
+      }
+
+      _busEnergySummary[busbar.id] = {
+        'totalImp': totalImp,
+        'totalExp': totalExp,
+        'netConsumption': totalImp - totalExp,
+        'connectedBayCount': connectedBayCount.toDouble(),
+      };
+    }
+
+    _calculateAbstractEnergyData();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
+  }
+
+  List<Bay> _getConnectedBays(Bay busbar) {
+    final List<Bay> connectedBays = [];
+
+    for (var connection in _allConnections) {
+      Bay? connectedBay;
+
+      if (connection.sourceBayId == busbar.id) {
+        connectedBay = _baysMap[connection.targetBayId];
+      } else if (connection.targetBayId == busbar.id) {
+        connectedBay = _baysMap[connection.sourceBayId];
+      }
+
+      if (connectedBay != null && !connectedBays.contains(connectedBay)) {
+        connectedBays.add(connectedBay);
+      }
+    }
+
+    return connectedBays;
+  }
+
+  void _calculateAbstractEnergyData() {
+    double totalImp = 0.0;
+    double totalExp = 0.0;
+
+    for (var voltageData in _busEnergySummary.values) {
+      totalImp += voltageData['totalImp'] ?? 0.0;
+      totalExp += voltageData['totalExp'] ?? 0.0;
+    }
+
+    final double difference = totalImp - totalExp;
+    final double lossPercentage = totalImp > 0
+        ? (difference / totalImp) * 100
+        : 0.0;
+
+    _abstractEnergyData = {
+      'totalImp': totalImp,
+      'totalExp': totalExp,
+      'difference': difference,
+      'lossPercentage': lossPercentage,
+    };
+  }
+
   void _listenToSldData() {
+    print(
+      'DEBUG: Starting to listen to SLD data for substation: $substationId',
+    );
+
     FirebaseFirestore.instance
         .collection('bays')
         .where('substationId', isEqualTo: substationId)
         .snapshots()
-        .listen((snapshot) {
-          _allBays = snapshot.docs
-              .map((doc) => Bay.fromFirestore(doc))
-              .toList();
-          _baysMap = {for (var bay in _allBays) bay.id: bay};
+        .listen(
+          (snapshot) {
+            print(
+              'DEBUG: Received ${snapshot.docs.length} bays from Firestore',
+            );
 
-          // ONLY update from Firestore if no local changes exist
-          if (!hasUnsavedChanges()) {
-            _updateLocalBayPropertiesFromFirestore();
-          }
-          _rebuildSldRenderData();
-        });
+            _allBays = snapshot.docs
+                .map((doc) => Bay.fromFirestore(doc))
+                .toList();
+            _baysMap = {for (var bay in _allBays) bay.id: bay};
+
+            print('DEBUG: Processed ${_allBays.length} bays');
+
+            if (!hasUnsavedChanges()) {
+              _updateLocalBayPropertiesFromFirestore();
+            }
+
+            _safeRebuildSldRenderData();
+          },
+          onError: (error) {
+            print('ERROR: Failed to load bays: $error');
+          },
+        );
 
     FirebaseFirestore.instance
         .collection('bay_connections')
         .where('substationId', isEqualTo: substationId)
         .snapshots()
-        .listen((snapshot) {
-          _allConnections = snapshot.docs
-              .map((doc) => BayConnection.fromFirestore(doc))
-              .toList();
-          _rebuildSldRenderData();
-        });
+        .listen(
+          (snapshot) {
+            print(
+              'DEBUG: Received ${snapshot.docs.length} connections from Firestore',
+            );
+
+            _allConnections = snapshot.docs
+                .map((doc) => BayConnection.fromFirestore(doc))
+                .toList();
+
+            _safeRebuildSldRenderData();
+          },
+          onError: (error) {
+            print('ERROR: Failed to load connections: $error');
+          },
+        );
 
     FirebaseFirestore.instance
         .collection('equipmentInstances')
         .where('substationId', isEqualTo: substationId)
         .snapshots()
-        .listen((snapshot) {
-          _equipmentByBayId.clear();
-          for (var eq in snapshot.docs.map(
-            (doc) => EquipmentInstance.fromFirestore(doc),
-          )) {
-            _equipmentByBayId.putIfAbsent(eq.bayId, () => []).add(eq);
-          }
-          _rebuildSldRenderData();
-        });
+        .listen(
+          (snapshot) {
+            print(
+              'DEBUG: Received ${snapshot.docs.length} equipment instances from Firestore',
+            );
+
+            _equipmentByBayId.clear();
+            for (var eq in snapshot.docs.map(
+              (doc) => EquipmentInstance.fromFirestore(doc),
+            )) {
+              _equipmentByBayId.putIfAbsent(eq.bayId, () => []).add(eq);
+            }
+
+            _safeRebuildSldRenderData();
+          },
+          onError: (error) {
+            print('ERROR: Failed to load equipment: $error');
+          },
+        );
   }
 
-  /// Sync local properties from Firestore ONLY when no unsaved changes exist
+  void _safeRebuildSldRenderData() {
+    if (!_isInitialized) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _rebuildSldRenderData();
+    });
+  }
+
+  Future<void> debugFirestoreData() async {
+    try {
+      print('DEBUG: Checking Firestore data for substationId: $substationId');
+
+      final baysSnapshot = await FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: substationId)
+          .get();
+
+      print('DEBUG: Firestore query found ${baysSnapshot.docs.length} bays');
+
+      if (baysSnapshot.docs.isEmpty) {
+        print(
+          'DEBUG: No bays found in Firestore for substationId: $substationId',
+        );
+
+        final allBaysSnapshot = await FirebaseFirestore.instance
+            .collection('bays')
+            .limit(5)
+            .get();
+
+        print('DEBUG: Total bays in database: ${allBaysSnapshot.docs.length}');
+        for (var doc in allBaysSnapshot.docs) {
+          final data = doc.data();
+          print(
+            'DEBUG: Bay substationId: ${data['substationId']}, name: ${data['name']}',
+          );
+        }
+      } else {
+        print('DEBUG: Found bays for substation:');
+        for (var doc in baysSnapshot.docs.take(3)) {
+          final data = doc.data();
+          print('  - ${data['name']} (${data['bayType']})');
+        }
+      }
+    } catch (e) {
+      print('ERROR: Debug Firestore query failed: $e');
+    }
+  }
+
   void _updateLocalBayPropertiesFromFirestore() {
-    // Store original values for potential rollback
     _originalBayPositions.clear();
     _originalTextOffsets.clear();
     _originalBusbarLengths.clear();
@@ -292,7 +457,6 @@ class SldController extends ChangeNotifier {
     _originalEnergyReadingIsBold.clear();
 
     for (var bay in _allBays) {
-      // Store original values
       if (bay.xPosition != null && bay.yPosition != null) {
         _originalBayPositions[bay.id] = Offset(bay.xPosition!, bay.yPosition!);
       }
@@ -312,7 +476,6 @@ class SldController extends ChangeNotifier {
         _originalEnergyReadingIsBold[bay.id] = bay.energyReadingIsBold!;
       }
 
-      // Only populate local values if they don't already exist (to preserve unsaved changes)
       if (!_localBayPositions.containsKey(bay.id)) {
         if (bay.xPosition != null &&
             bay.xPosition! != 0.0 &&
@@ -360,7 +523,6 @@ class SldController extends ChangeNotifier {
     }
   }
 
-  // SLD Layout and Rendering Logic
   void _rebuildSldRenderData() {
     List<BayRenderData> newBayRenderDataList = [];
 
@@ -372,13 +534,11 @@ class SldController extends ChangeNotifier {
         .where((b) => b.bayType == 'Busbar')
         .toList();
 
-    // Sort busbars by voltage level
     busbars.sort((a, b) {
       double getV(String v) => _getVoltageLevelValue(v);
       return getV(b.voltageLevel).compareTo(getV(a.voltageLevel));
     });
 
-    // Determine Y positions for busbars
     final Map<String, double> busYPositions = {};
     double currentYForAutoLayout = _topPadding;
     for (int i = 0; i < busbars.length; i++) {
@@ -386,17 +546,12 @@ class SldController extends ChangeNotifier {
       final Bay currentBusbar = busbars[i];
 
       double yPos;
-      // 1. Prioritize local changes (unsaved)
       if (_localBayPositions.containsKey(busbarId)) {
         yPos = _localBayPositions[busbarId]!.dy;
-      }
-      // 2. Then, use saved Firestore yPosition, ONLY IF it's not null AND not 0.0
-      else if (currentBusbar.yPosition != null &&
+      } else if (currentBusbar.yPosition != null &&
           currentBusbar.yPosition! != 0.0) {
         yPos = currentBusbar.yPosition!;
-      }
-      // 3. Otherwise, use auto-calculated position
-      else {
+      } else {
         yPos = currentYForAutoLayout;
       }
 
@@ -404,7 +559,6 @@ class SldController extends ChangeNotifier {
       currentYForAutoLayout += _verticalBusbarSpacing;
     }
 
-    // Calculate connected bays for auto-layout
     final Map<String, List<Bay>> busbarToConnectedBaysAbove = {};
     final Map<String, List<Bay>> busbarToConnectedBaysBelow = {};
     final Map<String, Map<String, List<Bay>>> transformersByBusPair = {};
@@ -465,7 +619,6 @@ class SldController extends ChangeNotifier {
       }
     }
 
-    // Sort connected bays alphabetically
     busbarToConnectedBaysAbove.forEach(
       (key, value) => value.sort((a, b) => a.name.compareTo(b.name)),
     );
@@ -482,7 +635,6 @@ class SldController extends ChangeNotifier {
     double nextTransformerX = _sidePadding;
     final List<Bay> placedTransformers = [];
 
-    // First pass: Calculate positions for Transformers
     for (var busPairEntry in transformersByBusPair.entries) {
       final String pairKey = busPairEntry.key;
       final Map<String, List<Bay>> transformersForPair = busPairEntry.value;
@@ -524,7 +676,6 @@ class SldController extends ChangeNotifier {
       for (var tf in transformers) {
         if (!placedTransformers.contains(tf)) {
           Offset bayPosition;
-          // Use local position if available, otherwise use saved position, otherwise auto-calculate
           if (_localBayPositions.containsKey(tf.id)) {
             bayPosition = _localBayPositions[tf.id]!;
           } else if (tf.xPosition != null &&
@@ -539,7 +690,6 @@ class SldController extends ChangeNotifier {
             );
           }
 
-          // Store in local map for consistency
           _localBayPositions[tf.id] = bayPosition;
 
           final tfRect = Rect.fromCenter(
@@ -555,7 +705,6 @@ class SldController extends ChangeNotifier {
       }
     }
 
-    // Second pass: Process busbars
     for (var busbar in busbars) {
       final double busY = busYPositions[busbar.id]!;
       double maxConnectedBayX = _sidePadding;
@@ -591,7 +740,6 @@ class SldController extends ChangeNotifier {
         _symbolWidth * 2,
       );
 
-      // Use local busbar length if available, otherwise use saved or calculated
       final double currentBusbarLength;
       if (_localBusbarLengths.containsKey(busbar.id)) {
         currentBusbarLength = _localBusbarLengths[busbar.id]!;
@@ -602,10 +750,8 @@ class SldController extends ChangeNotifier {
         currentBusbarLength = calculatedBusbarWidth;
       }
 
-      // Store in local map
       _localBusbarLengths[busbar.id] = currentBusbarLength;
 
-      // Use local position if available
       final double busbarX;
       if (_localBayPositions.containsKey(busbar.id)) {
         busbarX = _localBayPositions[busbar.id]!.dx;
@@ -615,7 +761,6 @@ class SldController extends ChangeNotifier {
         busbarX = _sidePadding + currentBusbarLength / 2;
       }
 
-      // Store in local map
       _localBayPositions[busbar.id] = Offset(busbarX, busY);
 
       final Offset busbarCenter = Offset(busbarX, busY);
@@ -630,7 +775,6 @@ class SldController extends ChangeNotifier {
       maxOverallXForCanvas = max(maxOverallXForCanvas, unifiedBusbarRect.right);
     }
 
-    // Third pass: Position Lines and Feeders
     for (var bay in _allBays) {
       if (bay.bayType == 'Line' || bay.bayType == 'Feeder') {
         if (_finalBayRects.containsKey(bay.id)) continue;
@@ -668,7 +812,6 @@ class SldController extends ChangeNotifier {
             double nextX = busbarTappableRect.left + _symbolWidth / 2;
             Offset bayPosition;
 
-            // Use local position if available
             if (_localBayPositions.containsKey(bay.id)) {
               bayPosition = _localBayPositions[bay.id]!;
             } else if (bay.xPosition != null &&
@@ -677,7 +820,6 @@ class SldController extends ChangeNotifier {
                 bay.yPosition! != 0.0) {
               bayPosition = Offset(bay.xPosition!, bay.yPosition!);
             } else {
-              // Auto-layout logic
               double bayY;
               if (bay.bayType == 'Line') {
                 bayY =
@@ -707,7 +849,6 @@ class SldController extends ChangeNotifier {
               bayPosition = Offset(foundX, bayY);
             }
 
-            // Store in local map
             _localBayPositions[bay.id] = bayPosition;
 
             final newRect = Rect.fromCenter(
@@ -737,7 +878,6 @@ class SldController extends ChangeNotifier {
           );
         }
 
-        // Store in local map
         _localBayPositions[bay.id] = bayPosition;
 
         final newRect = Rect.fromCenter(
@@ -750,11 +890,9 @@ class SldController extends ChangeNotifier {
       }
     }
 
-    // Create render data with local adjustments
     for (var bay in _allBays) {
       final Rect? rect = _finalBayRects[bay.id];
       if (rect != null) {
-        // Use local values (which may include unsaved changes)
         Offset currentTextOffset =
             _localTextOffsets[bay.id] ?? bay.textOffset ?? Offset.zero;
         Offset currentEnergyReadingOffset =
@@ -790,7 +928,6 @@ class SldController extends ChangeNotifier {
       }
     }
 
-    // Calculate busbar connection points
     for (var connection in _allConnections) {
       final sourceBay = _baysMap[connection.sourceBayId];
       final targetBay = _baysMap[connection.targetBayId];
@@ -851,10 +988,14 @@ class SldController extends ChangeNotifier {
     }
 
     _bayRenderDataList = newBayRenderDataList;
-    notifyListeners();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isInitialized) {
+        notifyListeners();
+      }
+    });
   }
 
-  // Helper method for creating dummy render data
   BayRenderData createDummyBayRenderData() {
     return BayRenderData(
       bay: Bay(
@@ -881,7 +1022,6 @@ class SldController extends ChangeNotifier {
     );
   }
 
-  // Helper for voltage level parsing
   double _getVoltageLevelValue(String voltageLevel) {
     final regex = RegExp(r'(\d+(\.\d+)?)');
     final match = regex.firstMatch(voltageLevel);
@@ -891,7 +1031,6 @@ class SldController extends ChangeNotifier {
     return 0.0;
   }
 
-  // Interaction / Movement Logic
   void setSelectedBayForMovement(
     String? bayId, {
     MovementMode mode = MovementMode.bay,
@@ -903,10 +1042,8 @@ class SldController extends ChangeNotifier {
       _movementMode = mode;
 
       if (bayId != null) {
-        // Initialize local values from current bay data if not already present
         final Bay? bay = _baysMap[bayId];
         if (bay != null) {
-          // Only set initial values if they don't already exist in local maps
           if (!_localBayPositions.containsKey(bayId)) {
             final BayRenderData? renderData = _bayRenderDataList
                 .firstWhereOrNull((data) => data.bay.id == bayId);
@@ -941,14 +1078,18 @@ class SldController extends ChangeNotifier {
         }
       }
 
-      _rebuildSldRenderData();
+      _safeRebuildSldRenderData();
     }
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 
   void setMovementMode(MovementMode mode) {
     _movementMode = mode;
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 
   void moveSelectedItem(double dx, double dy) {
@@ -976,7 +1117,7 @@ class SldController extends ChangeNotifier {
         currentOffset.dy + dy,
       );
     }
-    _rebuildSldRenderData();
+    _safeRebuildSldRenderData();
   }
 
   void adjustBusbarLength(double change) {
@@ -987,7 +1128,7 @@ class SldController extends ChangeNotifier {
       20.0,
       currentLength + change,
     );
-    _rebuildSldRenderData();
+    _safeRebuildSldRenderData();
   }
 
   void adjustEnergyReadingFontSize(double change) {
@@ -998,20 +1139,16 @@ class SldController extends ChangeNotifier {
       5.0,
       min(20.0, currentFontSize + change),
     );
-    _rebuildSldRenderData();
+    _safeRebuildSldRenderData();
   }
 
   void toggleEnergyReadingBold() {
     if (_selectedBayForMovementId == null) return;
     _localEnergyReadingIsBold[_selectedBayForMovementId!] =
         !(_localEnergyReadingIsBold[_selectedBayForMovementId!] ?? false);
-    _rebuildSldRenderData();
+    _safeRebuildSldRenderData();
   }
 
-  /// REMOVED: saveSelectedBayLayoutChanges() - No longer saves individual bay changes
-  /// All changes are now saved together via saveAllPendingChanges()
-
-  // Energy Data Specific Logic
   void updateEnergyData({
     required Map<String, BayEnergyData> bayEnergyData,
     required Map<String, Map<String, double>> busEnergySummary,
@@ -1019,11 +1156,20 @@ class SldController extends ChangeNotifier {
     required List<AggregatedFeederEnergyData> aggregatedFeederEnergyData,
     required Map<String, Assessment> latestAssessmentsPerBay,
   }) {
-    _bayEnergyData = bayEnergyData;
-    _busEnergySummary = busEnergySummary;
-    _abstractEnergyData = abstractEnergyData;
-    _aggregatedFeederEnergyData = aggregatedFeederEnergyData;
-    _latestAssessmentsPerBay = latestAssessmentsPerBay;
-    notifyListeners();
+    _bayEnergyData = Map.from(bayEnergyData);
+    _busEnergySummary = Map.from(busEnergySummary);
+    _abstractEnergyData = Map.from(abstractEnergyData);
+    _aggregatedFeederEnergyData = List.from(aggregatedFeederEnergyData);
+    _latestAssessmentsPerBay = Map.from(latestAssessmentsPerBay);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    print('DEBUG: Disposing SLD Controller for substation: $substationId');
+    _isInitialized = false;
+    super.dispose();
   }
 }

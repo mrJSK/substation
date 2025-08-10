@@ -1,7 +1,6 @@
 // lib/screens/energy_sld_screen.dart
 import 'dart:async';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
@@ -9,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../controllers/sld_controller.dart';
 import '../../enums/movement_mode.dart';
@@ -25,7 +25,6 @@ import '../../widgets/energy_assessment_dialog.dart';
 import '../../widgets/sld_view_widget.dart';
 import '../../utils/energy_sld_utils.dart';
 
-// Data models for unified positioning
 class CapturedSldData {
   CapturedSldData({
     required this.pngBytes,
@@ -76,14 +75,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   DateTime _endDate = DateTime.now();
   bool _showTables = true;
   bool _isViewingSavedSld = false;
+  bool _showEnergyReadings = true;
 
-  // UI State Management
   TransformationController? _transformationController;
   bool _controllersInitialized = false;
   Size _sldContentSize = const Size(1200, 800);
   final GlobalKey _sldRepaintBoundaryKey = GlobalKey();
 
-  // Assessment data
   List<Assessment> _allAssessmentsForDisplay = [];
   List<dynamic> _loadedAssessmentsSummary = [];
 
@@ -96,7 +94,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     if (_isViewingSavedSld) {
       _initializeFromSavedSld();
     } else {
-      _loadEnergyData();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _waitForControllerAndLoadData();
+      });
     }
   }
 
@@ -111,6 +111,37 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     _loadEnergyData(fromSaved: true);
   }
 
+  Future<void> _waitForControllerAndLoadData() async {
+    if (!mounted) return;
+
+    final sldController = Provider.of<SldController>(context, listen: false);
+
+    int attempts = 0;
+    const maxAttempts = 20;
+
+    while (attempts < maxAttempts && mounted) {
+      if (sldController.isInitialized && sldController.allBays.isNotEmpty) {
+        print(
+          'DEBUG: Controller ready with ${sldController.allBays.length} bays',
+        );
+        await _loadEnergyData();
+        break;
+      }
+
+      attempts++;
+      print(
+        'DEBUG: Waiting for controller... attempt $attempts/${maxAttempts}',
+      );
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    if (attempts >= maxAttempts && mounted) {
+      print('ERROR: Controller initialization timeout');
+      setState(() => _isLoading = false);
+      _showFixedSnackBar('Failed to initialize SLD data', isError: true);
+    }
+  }
+
   Future<void> _loadEnergyData({bool fromSaved = false}) async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -118,16 +149,22 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     try {
       final sldController = Provider.of<SldController>(context, listen: false);
 
-      // Simple data loading - just wait for the controller to be ready
-      await Future.delayed(const Duration(milliseconds: 500));
+      if (sldController.allBays.isEmpty) {
+        print('ERROR: No bays available for energy data loading');
+        if (mounted) {
+          _showFixedSnackBar(
+            'No bay data found for this substation',
+            isError: true,
+          );
+        }
+        return;
+      }
 
-      // Load assessments data
+      await _loadBayEnergyReadings(sldController);
       await _loadAssessments();
-
-      // Calculate and set SLD bounds
       _calculateAndSetSldBounds(sldController);
 
-      print('DEBUG: SLD Controller after data load:');
+      print('DEBUG: Energy data loaded successfully');
       print('DEBUG: Bay count: ${sldController.allBays.length}');
       print(
         'DEBUG: Bay energy data count: ${sldController.bayEnergyData.length}',
@@ -135,6 +172,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       await Future.delayed(const Duration(milliseconds: 300));
     } catch (e) {
+      print('ERROR: Failed to load energy data: $e');
       if (mounted) {
         _showFixedSnackBar('Failed to load energy data: $e', isError: true);
       }
@@ -143,9 +181,54 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
+  Future<void> _loadBayEnergyReadings(SldController sldController) async {
+    print(
+      'DEBUG: Starting to load energy readings for ${sldController.allBays.length} bays',
+    );
+
+    sldController.clearEnergyData();
+
+    int energyDataCount = 0;
+
+    for (var bay in sldController.allBays) {
+      if (bay.bayType != 'Busbar') {
+        // Create energy data with 0.0 values when no real readings are available
+        final energyData = BayEnergyData.fromReadings(
+          bay: bay,
+          currentImportReading: 0.0, // No reading available
+          currentExportReading: 0.0, // No reading available
+          previousImportReading: 0.0, // No reading available
+          previousExportReading: 0.0, // No reading available
+          multiplierFactor: bay.multiplyingFactor ?? 1.0,
+          sourceLogsheetId:
+              'no_data_${bay.id}', // Indicates no real data source
+          readingTimestamp: Timestamp.now(),
+          previousReadingTimestamp: Timestamp.fromDate(
+            DateTime.now().subtract(const Duration(days: 1)),
+          ),
+        );
+
+        sldController.setBayEnergyData(bay.id, energyData);
+        energyDataCount++;
+        print(
+          'DEBUG: Created zero energy data for bay: ${bay.name} (${bay.bayType})',
+        );
+      }
+    }
+
+    sldController.calculateBusEnergySummaries();
+    sldController.setShowEnergyReadings(_showEnergyReadings);
+
+    print(
+      'DEBUG: Loaded energy data for $energyDataCount bays (all showing 0.0 values)',
+    );
+    print(
+      'DEBUG: Energy readings visible: ${sldController.showEnergyReadings}',
+    );
+  }
+
   Future<void> _loadAssessments() async {
     try {
-      // Load assessments from Firestore (placeholder - implement based on your data structure)
       _allAssessmentsForDisplay = [];
       _loadedAssessmentsSummary = [];
     } catch (e) {
@@ -219,10 +302,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       final scaleY = (availableHeight * 0.85) / _sldContentSize.height;
       final scale = math.min(scaleX, scaleY).clamp(0.3, 1.8);
 
-      print(
-        'DEBUG: Auto-fitting SLD with scale: $scale, content: $_sldContentSize, viewport: $viewportSize',
-      );
-
       final centerX = (availableWidth - (_sldContentSize.width * scale)) / 2;
       final centerY = (availableHeight - (_sldContentSize.height * scale)) / 2;
 
@@ -242,6 +321,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   void _resetSldView() {
     if (!_controllersInitialized || _transformationController == null) return;
     _transformationController!.value = Matrix4.identity();
+  }
+
+  void _toggleEnergyReadings() {
+    setState(() => _showEnergyReadings = !_showEnergyReadings);
+    final sldController = Provider.of<SldController>(context, listen: false);
+    sldController.setShowEnergyReadings(_showEnergyReadings);
+    _showFixedSnackBar(
+      _showEnergyReadings ? 'Energy readings shown' : 'Energy readings hidden',
+    );
+    print('DEBUG: Energy readings toggled to: $_showEnergyReadings');
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -289,43 +378,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'You have unsaved layout changes. What would you like to do?',
-                style: TextStyle(fontSize: 16),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade700,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Saving will update the layout for all users',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blue.shade700,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          content: const Text(
+            'You have unsaved layout changes. What would you like to do?',
+            style: TextStyle(fontSize: 16),
           ),
           actions: [
             TextButton(
@@ -341,17 +396,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop('save'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
               child: const Text('Save & Exit'),
             ),
           ],
@@ -359,49 +403,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       );
 
       if (result == 'save') {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => Dialog(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(
-                    strokeWidth: 3,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  const Text('Saving changes...'),
-                ],
-              ),
-            ),
-          ),
-        );
-
-        try {
-          final success = await sldController.saveAllPendingChanges();
-
-          if (mounted) {
+        final success = await sldController.saveAllPendingChanges();
+        if (mounted) {
+          if (success) {
+            _showFixedSnackBar('Layout changes saved successfully!');
             Navigator.of(context).pop();
-
-            if (success) {
-              _showFixedSnackBar('Layout changes saved successfully!');
-              Navigator.of(context).pop();
-            } else {
-              _showFixedSnackBar(
-                'Failed to save changes. Please try again.',
-                isError: true,
-              );
-            }
-          }
-        } catch (e) {
-          if (mounted) {
-            Navigator.of(context).pop();
-            _showFixedSnackBar('Error saving changes: $e', isError: true);
+          } else {
+            _showFixedSnackBar(
+              'Failed to save changes. Please try again.',
+              isError: true,
+            );
           }
         }
       } else if (result == 'discard') {
@@ -435,7 +446,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // Enhanced bay actions using the utility
   void _showBayActions(BuildContext context, dynamic bay, Offset tapPosition) {
     final sldController = Provider.of<SldController>(context, listen: false);
 
@@ -445,11 +455,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       tapPosition,
       sldController,
       _isViewingSavedSld,
-      null, // energyDataService placeholder
+      null,
     );
   }
 
-  // NEW: Save SLD functionality
   void _saveSld() {
     showDialog(
       context: context,
@@ -506,12 +515,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // NEW: Generate and share PDF
   void _generateAndSharePdf() async {
     try {
       _showFixedSnackBar('Generating PDF...');
 
-      // Capture SLD
       final capturedData = await _captureSldForPdf();
 
       if (capturedData != null) {
@@ -520,7 +527,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           listen: false,
         );
 
-        // Create PDF data
         final pdfData = PdfGeneratorData(
           substationName: widget.substationName,
           dateRange: _dateRangeText,
@@ -564,7 +570,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // NEW: Capture SLD for PDF
   Future<CapturedSldData?> _captureSldForPdf() async {
     try {
       setState(() => _isCapturingPdf = true);
@@ -592,7 +597,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // NEW: Show busbar configuration
   void _showBusbarConfiguration() {
     final sldController = Provider.of<SldController>(context, listen: false);
     final busbars = sldController.allBays
@@ -618,26 +622,36 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             const Text('Configure Busbar'),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Select a busbar to configure:'),
-            const SizedBox(height: 16),
-            ...busbars.map(
-              (busbar) => ListTile(
-                leading: Icon(Icons.horizontal_rule, color: Colors.blue),
-                title: Text(busbar.name),
-                subtitle: Text(busbar.voltageLevel),
-                onTap: () {
-                  Navigator.pop(context);
-                  sldController.setSelectedBayForMovement(busbar.id);
-                  _showFixedSnackBar(
-                    'Selected ${busbar.name} for configuration',
-                  );
-                },
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Select a busbar to configure:'),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: busbars.length,
+                  itemBuilder: (context, index) {
+                    final busbar = busbars[index];
+                    return ListTile(
+                      leading: Icon(Icons.horizontal_rule, color: Colors.blue),
+                      title: Text(busbar.name),
+                      subtitle: Text(busbar.voltageLevel),
+                      onTap: () {
+                        Navigator.pop(context);
+                        sldController.setSelectedBayForMovement(busbar.id);
+                        _showFixedSnackBar(
+                          'Selected ${busbar.name} for configuration',
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -649,7 +663,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // NEW: Show assessment dialog
   void _showAssessmentDialog() {
     final sldController = Provider.of<SldController>(context, listen: false);
     final baysWithEnergy = sldController.allBays
@@ -665,62 +678,66 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       return;
     }
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(
-              Icons.assessment,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 12),
-            const Text('Add Assessment'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Select a bay to create an assessment:'),
-            const SizedBox(height: 16),
-            ...baysWithEnergy
-                .take(5)
-                .map(
-                  (bay) => ListTile(
-                    leading: Icon(_getBayIcon(bay.bayType), color: Colors.red),
-                    title: Text(bay.name),
-                    subtitle: Text('${bay.bayType} • ${bay.voltageLevel}'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      showDialog(
-                        context: context,
-                        builder: (context) => EnergyAssessmentDialog(
-                          bay: bay,
-                          currentUser: widget.currentUser,
-                          currentEnergyData:
-                              sldController.bayEnergyData[bay.id],
-                          onSaveAssessment: () => _loadEnergyData(),
-                          latestExistingAssessment:
-                              sldController.latestAssessmentsPerBay[bay.id],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        ],
-      ),
-    );
+          title: Row(
+            children: [
+              Icon(
+                Icons.assessment,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              const Text('Add Assessment'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: ListView.builder(
+              itemCount: baysWithEnergy.length,
+              itemBuilder: (context, index) {
+                final bay = baysWithEnergy[index];
+                return ListTile(
+                  leading: Icon(_getBayIcon(bay.bayType), color: Colors.red),
+                  title: Text(bay.name),
+                  subtitle: Text('${bay.bayType} • ${bay.voltageLevel}'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    showDialog(
+                      context: context,
+                      builder: (context) => EnergyAssessmentDialog(
+                        bay: bay,
+                        currentUser: widget.currentUser,
+                        currentEnergyData: sldController.bayEnergyData[bay.id],
+                        onSaveAssessment: () => _loadEnergyData(),
+                        latestExistingAssessment:
+                            sldController.latestAssessmentsPerBay[bay.id],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
-  // Helper methods
   List<String> _getUniqueBusVoltages(SldController sldController) {
     List<String> voltages = sldController.allBays
         .where((bay) => bay.bayType == 'Busbar')
@@ -987,7 +1004,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Widget _buildMainContent(SldController sldController) {
     return Stack(
       children: [
-        // Main SLD area with proper InteractiveViewer
         if (_isLoading)
           _buildLoadingState()
         else if (!_controllersInitialized)
@@ -995,7 +1011,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         else
           Column(
             children: [
-              // SLD viewport
               Expanded(
                 child: Container(
                   width: double.infinity,
@@ -1040,7 +1055,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 ),
               ),
 
-              // NEW: Tables overlay
               if (_showTables)
                 Container(
                   height: 300,
@@ -1054,7 +1068,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             ],
           ),
 
-        // Control buttons overlay
         if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
           Positioned(
             top: 16,
@@ -1078,21 +1091,36 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   tooltip: "Reset View",
                   child: const Icon(Icons.refresh),
                 ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  onPressed: _toggleEnergyReadings,
+                  backgroundColor: _showEnergyReadings
+                      ? Colors.green
+                      : Colors.grey.shade600,
+                  foregroundColor: Colors.white,
+                  heroTag: "toggle_readings",
+                  tooltip: _showEnergyReadings
+                      ? "Hide Energy Readings"
+                      : "Show Energy Readings",
+                  child: Icon(
+                    _showEnergyReadings
+                        ? Icons.visibility
+                        : Icons.visibility_off,
+                  ),
+                ),
               ],
             ),
           ),
 
-        // UPDATED: Enhanced Speed Dial FAB with actual functionality
         if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
           EnergySpeedDialWidget(
             isViewingSavedSld: _isViewingSavedSld,
             showTables: _showTables,
             onToggleTables: () => setState(() => _showTables = !_showTables),
-            onSaveSld: _saveSld, // NEW: Actual save functionality
-            onSharePdf: _generateAndSharePdf, // NEW: Actual PDF generation
-            onConfigureBusbar:
-                _showBusbarConfiguration, // NEW: Busbar configuration
-            onAddAssessment: _showAssessmentDialog, // NEW: Assessment dialog
+            onSaveSld: _saveSld,
+            onSharePdf: _generateAndSharePdf,
+            onConfigureBusbar: _showBusbarConfiguration,
+            onAddAssessment: _showAssessmentDialog,
           ),
       ],
     );
