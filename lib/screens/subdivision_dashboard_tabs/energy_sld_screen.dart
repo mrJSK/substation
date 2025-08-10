@@ -17,7 +17,7 @@ import '../../models/saved_sld_model.dart';
 import '../../models/user_model.dart';
 import '../../models/assessment_model.dart';
 import '../../models/bay_model.dart';
-import '../../services/energy_data_service.dart'; // Added import
+import '../../services/energy_data_service.dart';
 import '../../utils/snackbar_utils.dart';
 import '../../utils/pdf_generator.dart';
 import '../../widgets/energy_movement_controls_widget.dart';
@@ -35,7 +35,7 @@ class CapturedSldData {
     required this.pixelRatio,
     DateTime? captureTimestamp,
   }) : captureTimestamp = captureTimestamp ?? DateTime.now(),
-       assert(pngBytes.length > 0, 'Image bytes cannot be empty'),
+       assert(pngBytes.isNotEmpty, 'Image bytes cannot be empty'),
        assert(baseLogicalWidth > 0, 'Base width must be positive'),
        assert(baseLogicalHeight > 0, 'Base height must be positive'),
        assert(pixelRatio > 0, 'Pixel ratio must be positive');
@@ -115,6 +115,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _initializeFromSavedSld() {
+    if (widget.savedSld == null) return;
     _startDate = widget.savedSld!.startDate.toDate();
     _endDate = widget.savedSld!.endDate.toDate();
     _loadEnergyData(fromSaved: true);
@@ -124,7 +125,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     if (!mounted) return;
 
     final sldController = Provider.of<SldController>(context, listen: false);
-
     int attempts = 0;
     const maxAttempts = 20;
 
@@ -138,9 +138,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
 
       attempts++;
-      print(
-        'DEBUG: Waiting for controller... attempt $attempts/${maxAttempts}',
-      );
+      print('DEBUG: Waiting for controller... attempt $attempts/$maxAttempts');
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
@@ -186,7 +184,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       // Set energy readings visibility
       sldController.setShowEnergyReadings(_showEnergyReadings);
-
       _calculateAndSetSldBounds(sldController);
 
       print('DEBUG: Energy data loaded successfully');
@@ -416,9 +413,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
+  // CORRECTED: Use the floating context menu from EnergySldUtils
   void _showBayActions(BuildContext context, dynamic bay, Offset tapPosition) {
     final sldController = Provider.of<SldController>(context, listen: false);
 
+    // Call the floating context menu from EnergySldUtils
     EnergySldUtils.showBayActions(
       context,
       bay,
@@ -525,10 +524,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         );
 
         final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
-
         final filename =
             'Energy_SLD_${widget.substationName.replaceAll(' ', '_')}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}.pdf';
-
         await PdfGenerator.sharePdf(pdfBytes, filename, 'Energy SLD Report');
 
         _showFixedSnackBar('PDF generated and shared successfully!');
@@ -881,6 +878,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                                     if (sldController
                                             .selectedBayForMovementId ==
                                         null) {
+                                      // CORRECTED: Use the floating context menu
                                       _showBayActions(
                                         context,
                                         bay,
