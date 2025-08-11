@@ -157,6 +157,13 @@ class PdfGenerator {
           : (renderData.rect.bottom > maxY ? renderData.rect.bottom : maxY);
     }
 
+    if (!minX.isFinite || !minY.isFinite || !maxX.isFinite || !maxY.isFinite) {
+      minX = 0;
+      minY = 0;
+      maxX = 800;
+      maxY = 600;
+    }
+
     const padding = 100.0;
     final width = (maxX - minX) + 2 * padding;
     final height = (maxY - minY) + 2 * padding;
@@ -226,35 +233,59 @@ class PdfGenerator {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(20),
         build: (pw.Context context) {
+          final double pageContentWidth = PdfPageFormat.a4.width - 40;
           final double totalPageHeight = PdfPageFormat.a4.height - 40;
-          final double headerHeight =
-              totalPageHeight * 0.08; // Increased slightly
-          final double sldHeight =
-              totalPageHeight * 0.70; // Reduced to fit table
-          final double tableHeaderHeight =
-              totalPageHeight * 0.04; // Space for table header
-          final double tableHeight =
-              totalPageHeight * 0.18; // Increased for better visibility
+          final double headerHeight = totalPageHeight * 0.08;
+          final double sldAreaHeight = totalPageHeight * 0.65;
+          final double tableAreaHeight =
+              totalPageHeight - headerHeight - sldAreaHeight;
+
+          final double imageAspect =
+              (data.sldBaseLogicalWidth > 0 && data.sldBaseLogicalHeight > 0)
+              ? (data.sldBaseLogicalWidth / data.sldBaseLogicalHeight)
+              : (16 / 9);
+
+          double desiredWidth = pageContentWidth;
+          double desiredHeight = desiredWidth / imageAspect;
+
+          if (desiredHeight > sldAreaHeight) {
+            desiredHeight = sldAreaHeight;
+            desiredWidth = desiredHeight * imageAspect;
+          }
 
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Container(height: headerHeight, child: _buildHeader(data)),
-
+              pw.SizedBox(height: 12),
               pw.Container(
-                height: sldHeight,
-                child: _buildSldSection(sldImage, data),
+                height: sldAreaHeight,
+                width: pageContentWidth,
+                child: pw.Center(
+                  child: pw.Container(
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.white,
+                      border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                      borderRadius: pw.BorderRadius.circular(6),
+                    ),
+                    padding: const pw.EdgeInsets.all(8),
+                    child: pw.Center(
+                      child: pw.Image(
+                        sldImage,
+                        width: desiredWidth,
+                        height: desiredHeight,
+                        fit: pw.BoxFit.fill,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-
-              pw.Container(
-                // height: tableHeaderHeight,
-                child: _buildTableHeader(),
-              ),
-
-              pw.Container(
-                // height: tableHeight,
-                child: _buildConsolidatedEnergyTable(data),
-              ),
+              pw.SizedBox(height: 12),
+              _buildTableHeader(),
+              pw.SizedBox(height: 8),
+              _buildConsolidatedEnergyTable(data),
+              pw.SizedBox(height: 12),
+              _buildFooter(),
             ],
           );
         },
@@ -264,9 +295,47 @@ class PdfGenerator {
     return pdf.save();
   }
 
-  // Updated header with voltage levels and complete title
+  static pw.Widget _buildSldImageSection(
+    pw.ImageProvider sldImage,
+    String title,
+  ) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey50,
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
+              ),
+            ),
+            child: pw.Text(
+              'Single Line Diagram - $title',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey800,
+              ),
+            ),
+          ),
+          pw.Container(
+            height: 300,
+            padding: const pw.EdgeInsets.all(12),
+            child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
+          ),
+        ],
+      ),
+    );
+  }
+
   static pw.Widget _buildHeader(PdfGeneratorData data) {
-    // Get the highest voltage level from the busbars
     String highestVoltage = '';
     if (data.busEnergySummaryData.isNotEmpty) {
       final voltages =
@@ -278,7 +347,6 @@ class PdfGenerator {
               .where((voltage) => voltage > 0)
               .toList()
             ..sort((a, b) => b.compareTo(a));
-
       if (voltages.isNotEmpty) {
         highestVoltage = '${voltages.first.toInt()}kV';
       }
@@ -291,15 +359,11 @@ class PdfGenerator {
           bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
         ),
       ),
-      padding: const pw.EdgeInsets.symmetric(
-        vertical: 8,
-        horizontal: 12,
-      ), // Reduced padding
+      padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          // Left side: Main title with substation and voltage
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
@@ -322,7 +386,6 @@ class PdfGenerator {
               ),
             ],
           ),
-          // Right side: Period and generation date
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.end,
             children: [
@@ -368,7 +431,6 @@ class PdfGenerator {
     );
   }
 
-  // New table header section
   static pw.Widget _buildTableHeader() {
     return pw.Container(
       margin: const pw.EdgeInsets.only(bottom: 4),
@@ -384,19 +446,14 @@ class PdfGenerator {
     );
   }
 
-  // Updated table with better sizing for complete visibility
   static pw.Widget _buildConsolidatedEnergyTable(PdfGeneratorData data) {
     final abstract = data.abstractEnergyData;
-
-    // Sort busbars by voltage level (highest to lowest)
     final busbars = data.busEnergySummaryData.entries.toList()
       ..sort((a, b) {
         final bayA = data.baysMap[a.key];
         final bayB = data.baysMap[b.key];
-
         final voltageA = _extractVoltageValue(bayA?.voltageLevel ?? '0');
         final voltageB = _extractVoltageValue(bayB?.voltageLevel ?? '0');
-
         return voltageB.compareTo(voltageA);
       });
 
@@ -407,12 +464,11 @@ class PdfGenerator {
         borderRadius: pw.BorderRadius.circular(4),
       ),
       child: pw.Container(
-        padding: const pw.EdgeInsets.all(6), // Reduced padding
+        padding: const pw.EdgeInsets.all(6),
         child: pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
           columnWidths: _buildColumnWidths(busbars.length),
           children: [
-            // Header row with busbar names (sorted by voltage)
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
@@ -426,8 +482,6 @@ class PdfGenerator {
                 _buildTableHeaderCell('TOTAL'),
               ],
             ),
-
-            // Import (MWh) row
             pw.TableRow(
               children: [
                 _buildTableDataCell('Import (MWh)', isBold: true),
@@ -442,8 +496,6 @@ class PdfGenerator {
                 ),
               ],
             ),
-
-            // Export (MWh) row
             pw.TableRow(
               children: [
                 _buildTableDataCell('Export (MWh)', isBold: true),
@@ -458,8 +510,6 @@ class PdfGenerator {
                 ),
               ],
             ),
-
-            // Difference (MWh) row
             pw.TableRow(
               children: [
                 _buildTableDataCell('Difference (MWh)', isBold: true),
@@ -476,8 +526,6 @@ class PdfGenerator {
                 ),
               ],
             ),
-
-            // Loss (%) row
             pw.TableRow(
               children: [
                 _buildTableDataCell('Loss (%)', isBold: true),
@@ -505,14 +553,12 @@ class PdfGenerator {
     );
   }
 
-  // Helper method to extract numeric voltage value for sorting
   static double _extractVoltageValue(String voltageLevel) {
     final cleanVoltage = voltageLevel
         .toUpperCase()
         .replaceAll('KV', '')
         .replaceAll(' ', '')
         .trim();
-
     try {
       return double.parse(cleanVoltage);
     } catch (e) {
@@ -520,34 +566,24 @@ class PdfGenerator {
     }
   }
 
-  // Helper method to create dynamic column widths
   static Map<int, pw.TableColumnWidth> _buildColumnWidths(int busbarCount) {
     final Map<int, pw.TableColumnWidth> columnWidths = {
-      0: const pw.FlexColumnWidth(1.8), // Metric column - slightly smaller
+      0: const pw.FlexColumnWidth(1.8),
     };
-
     for (int i = 1; i <= busbarCount; i++) {
-      columnWidths[i] = const pw.FlexColumnWidth(1.2); // Bus columns - smaller
+      columnWidths[i] = const pw.FlexColumnWidth(1.2);
     }
-
-    columnWidths[busbarCount + 1] = const pw.FlexColumnWidth(
-      1.2,
-    ); // Total column - smaller
-
+    columnWidths[busbarCount + 1] = const pw.FlexColumnWidth(1.2);
     return columnWidths;
   }
 
-  // Professional table styling for headers
   static pw.Widget _buildTableHeaderCell(String text) {
     return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(
-        vertical: 8,
-        horizontal: 6,
-      ), // Reduced padding
+      padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       child: pw.Text(
         text,
         style: pw.TextStyle(
-          fontSize: 9, // Reduced font size
+          fontSize: 9,
           fontWeight: pw.FontWeight.bold,
           color: PdfColors.black,
         ),
@@ -556,17 +592,13 @@ class PdfGenerator {
     );
   }
 
-  // Professional table styling for data cells
   static pw.Widget _buildTableDataCell(String text, {bool isBold = false}) {
     return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(
-        vertical: 6,
-        horizontal: 4,
-      ), // Reduced padding
+      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       child: pw.Text(
         text,
         style: pw.TextStyle(
-          fontSize: 8, // Reduced font size
+          fontSize: 8,
           fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
           color: PdfColors.black,
         ),
@@ -574,21 +606,6 @@ class PdfGenerator {
       ),
     );
   }
-
-  // static pw.Widget _buildTableHeader(String text) {
-  //   return pw.Container(
-  //     padding: const pw.EdgeInsets.all(10),
-  //     child: pw.Text(
-  //       text,
-  //       style: pw.TextStyle(
-  //         fontSize: 10,
-  //         fontWeight: pw.FontWeight.bold,
-  //         color: PdfColors.black,
-  //       ),
-  //       textAlign: pw.TextAlign.center,
-  //     ),
-  //   );
-  // }
 
   static pw.Widget _buildTableCell(String text, {bool isBold = false}) {
     return pw.Container(
@@ -703,46 +720,6 @@ class PdfGenerator {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static pw.Widget _buildSldImageSection(
-    pw.ImageProvider sldImage,
-    String title,
-  ) {
-    return pw.Container(
-      decoration: pw.BoxDecoration(
-        color: PdfColors.white,
-        border: pw.Border.all(color: PdfColors.grey300, width: 1),
-        borderRadius: pw.BorderRadius.circular(8),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(16),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.grey50,
-              border: pw.Border(
-                bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
-              ),
-            ),
-            child: pw.Text(
-              'Single Line Diagram',
-              style: pw.TextStyle(
-                fontSize: 18,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.grey800,
-              ),
-            ),
-          ),
-          pw.Container(
-            height: 400,
-            padding: const pw.EdgeInsets.all(16),
-            child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
           ),
         ],
       ),
@@ -1189,7 +1166,6 @@ class PdfGenerator {
       final directory = await getTemporaryDirectory();
       final file = File('${directory.path}/$filename');
       await file.writeAsBytes(pdfBytes);
-
       await Share.shareXFiles(
         [XFile(file.path)],
         subject: subject,

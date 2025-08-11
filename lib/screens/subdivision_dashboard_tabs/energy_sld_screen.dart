@@ -479,6 +479,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     try {
       _showFixedSnackBar('Generating PDF...');
 
+      final matrix = _transformationController?.value ?? Matrix4.identity();
+      final double sldScale = matrix.storage[0];
+      final double sldDx = matrix.storage[12];
+      final double sldDy = matrix.storage[13];
+      final Offset sldOffsetFromController = Offset(sldDx, sldDy);
+
       final capturedData = await _captureSldForPdf();
 
       if (capturedData != null) {
@@ -510,8 +516,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           uniqueDistributionSubdivisionNames: [],
           sldBaseLogicalWidth: capturedData.baseLogicalWidth,
           sldBaseLogicalHeight: capturedData.baseLogicalHeight,
-          sldZoom: 1.0,
-          sldOffset: Offset.zero,
+          sldZoom: sldScale,
+          sldOffset: sldOffsetFromController,
         );
 
         final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);

@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui' as ui;
-
 import '../painters/single_line_diagram_painter.dart';
 import '../controllers/sld_controller.dart';
 import '../models/bay_model.dart';
@@ -60,14 +59,8 @@ class SldViewWidget extends StatelessWidget {
 
     final contentBounds = _calculateContentBounds(sldController);
 
-    final double canvasWidth = max(
-      MediaQuery.of(context).size.width,
-      contentBounds.width,
-    );
-    final double canvasHeight = max(
-      MediaQuery.of(context).size.height,
-      contentBounds.height,
-    );
+    final double canvasWidth = max(contentBounds.width, 800);
+    final double canvasHeight = max(contentBounds.height, 600);
 
     if (isCapturingPdf) {
       return Container(
@@ -87,33 +80,24 @@ class SldViewWidget extends StatelessWidget {
     }
 
     return Container(
-      width: double.infinity,
-      height: double.infinity,
+      width: canvasWidth,
+      height: canvasHeight,
       color: Colors.white,
-      child: InteractiveViewer(
-        boundaryMargin: const EdgeInsets.all(double.infinity),
-        minScale: 0.1,
-        maxScale: 4.0,
-        constrained: false,
-        child: GestureDetector(
-          onTapUp: onBayTapped != null
-              ? (details) => _handleTapUp(context, details, sldController)
-              : null,
-          onLongPressStart: onBayTapped != null
-              ? (details) => _handleLongPress(context, details, sldController)
-              : null,
-          child: Container(
-            width: canvasWidth,
-            height: canvasHeight,
-            color: Colors.white,
-            child: CustomPaint(
-              size: Size(canvasWidth, canvasHeight),
-              painter: _createPainter(
-                sldController,
-                colorScheme,
-                isPdfMode: false,
-              ),
-            ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: onBayTapped != null
+            ? (details) => _handleTapUp(context, details, sldController)
+            : null,
+        onLongPressStart: onBayTapped != null
+            ? (details) => _handleLongPress(context, details, sldController)
+            : null,
+        child: CustomPaint(
+          size: Size(canvasWidth, canvasHeight),
+          painter: _createPainter(
+            sldController,
+            colorScheme,
+            isPdfMode: false,
+            contentBounds: contentBounds,
           ),
         ),
       ),
@@ -127,10 +111,11 @@ class SldViewWidget extends StatelessWidget {
     double maxY = double.negativeInfinity;
 
     for (var renderData in sldController.bayRenderDataList) {
-      minX = min(minX, renderData.rect.left);
-      minY = min(minY, renderData.rect.top);
-      maxX = max(maxX, renderData.rect.right);
-      maxY = max(maxY, renderData.rect.bottom);
+      final rect = renderData.rect;
+      minX = min(minX, rect.left);
+      minY = min(minY, rect.top);
+      maxX = max(maxX, rect.right);
+      maxY = max(maxY, rect.bottom);
 
       final textBounds = _calculateTextBounds(renderData);
       minX = min(minX, textBounds.left);
@@ -184,7 +169,7 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  Rect _calculateTextBounds(BayRenderData renderData) {
+  Rect _calculateTextBounds(dynamic renderData) {
     final TextPainter textPainter = TextPainter(
       text: TextSpan(
         text: _getBayDisplayText(renderData),
@@ -239,7 +224,7 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  Rect _calculateEnergyReadingBounds(BayRenderData renderData) {
+  Rect _calculateEnergyReadingBounds(dynamic renderData) {
     const double estimatedMaxEnergyTextWidth = 120.0;
     const double estimatedTotalEnergyTextHeight = 12 * 8;
 
@@ -277,7 +262,8 @@ class SldViewWidget extends StatelessWidget {
     }
 
     energyTextBasePosition =
-        energyTextBasePosition + renderData.energyReadingOffset;
+        energyTextBasePosition +
+        (renderData.energyReadingOffset ?? Offset.zero);
 
     return Rect.fromLTWH(
       energyTextBasePosition.dx,
@@ -287,7 +273,7 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  String _getBayDisplayText(BayRenderData renderData) {
+  String _getBayDisplayText(dynamic renderData) {
     switch (renderData.bay.bayType) {
       case 'Busbar':
         return '${renderData.voltageLevel} ${renderData.bayName}';
