@@ -7,23 +7,19 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
-import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../models/signature_models.dart';
 import '../../controllers/sld_controller.dart';
-import '../../enums/movement_mode.dart';
-import '../../models/energy_readings_data.dart';
 import '../../models/saved_sld_model.dart';
 import '../../models/user_model.dart';
 import '../../models/assessment_model.dart';
-import '../../models/bay_model.dart';
 import '../../services/energy_data_service.dart';
-import '../../utils/snackbar_utils.dart';
 import '../../utils/pdf_generator.dart';
 import '../../widgets/energy_movement_controls_widget.dart';
 import '../../widgets/energy_speed_dial_widget.dart';
 import '../../widgets/energy_tables_widget.dart';
-import '../../widgets/energy_assessment_dialog.dart';
 import '../../widgets/sld_view_widget.dart';
+import '../../widgets/signature_dialog.dart';
 import '../../utils/energy_sld_utils.dart';
 
 class CapturedSldData {
@@ -84,6 +80,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   final GlobalKey _sldRepaintBoundaryKey = GlobalKey();
 
   late EnergyDataService _energyDataService;
+
+  // Signature-related fields
+  List<SignatureData> _signatures = [];
+  List<DistributionFeederData> _distributionFeederData = [];
 
   @override
   void initState() {
@@ -394,7 +394,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  void _showFixedSnackBar(String message, {bool isError = false}) {
+  void _showFixedSnackBar(
+    String message, {
+    bool isError = false,
+    Duration? duration,
+  }) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -402,7 +406,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         backgroundColor: isError ? Colors.red : null,
         behavior: SnackBarBehavior.fixed,
         margin: null,
-        duration: const Duration(seconds: 3),
+        duration: duration ?? Duration(seconds: isError ? 4 : 3),
       ),
     );
   }
@@ -475,9 +479,66 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
+  // Signature dialog method
+  void _showSignatureDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => SignatureDialog(
+        existingSignatures: _signatures.isNotEmpty ? _signatures : null,
+        onSignaturesAdded: (signatures) {
+          setState(() {
+            _signatures = signatures;
+          });
+
+          final count = signatures.length;
+          _showFixedSnackBar(
+            '$count signature${count != 1 ? 's' : ''} added successfully!',
+            duration: const Duration(seconds: 3),
+          );
+        },
+      ),
+    );
+  }
+
+  // Prepare distribution feeder data
+  void _prepareDistributionFeederData() {
+    final sldController = Provider.of<SldController>(context, listen: false);
+    _distributionFeederData.clear();
+
+    final distributionFeeders = sldController.allBays
+        .where(
+          (bay) =>
+              bay.bayType.toLowerCase() == 'feeder' &&
+              (bay.name.contains('DIST') || bay.name.contains('Distribution')),
+        )
+        .toList();
+
+    for (var feeder in distributionFeeders) {
+      final energyData = sldController.bayEnergyData[feeder.id];
+      if (energyData != null) {
+        _distributionFeederData.add(
+          DistributionFeederData(
+            feederName: feeder.name,
+            distributionZone: 'Zone 1',
+            distributionCircle: 'Circle 1',
+            distributionDivision: 'Division 1',
+            distributionSubdivision: 'Subdivision 1',
+            importEnergy: energyData.adjustedImportConsumed,
+            exportEnergy: energyData.adjustedExportConsumed,
+            feederType: feeder.feederType ?? 'Distribution',
+          ),
+        );
+      }
+    }
+  }
+
   void _generateAndSharePdf() async {
     try {
       _showFixedSnackBar('Generating PDF...');
+
+      // Prepare distribution feeder data
+      _prepareDistributionFeederData();
 
       final matrix = _transformationController?.value ?? Matrix4.identity();
       final double sldScale = matrix.storage[0];
@@ -493,6 +554,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           listen: false,
         );
 
+        // Check what field actually exists in your SldController
         final pdfData = PdfGeneratorData(
           substationName: widget.substationName,
           dateRange: _dateRangeText,
@@ -506,7 +568,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                   'lossPercentage': 0.0,
                 },
           busEnergySummaryData: sldController.busEnergySummary,
-          aggregatedFeederData: sldController.aggregatedFeederEnergyData,
+          // Use the correct field name from your SldController
+          aggregatedFeederData:
+              sldController.aggregatedFeederEnergyData ??
+              [], // ✅ Use this if the field exists
           assessmentsForPdf: _energyDataService.allAssessmentsForDisplay
               .map((a) => a.toFirestore())
               .toList(),
@@ -518,6 +583,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           sldBaseLogicalHeight: capturedData.baseLogicalHeight,
           sldZoom: sldScale,
           sldOffset: sldOffsetFromController,
+          signatures: _signatures,
+          distributionFeederData: _distributionFeederData,
         );
 
         final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
@@ -807,6 +874,36 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         ],
       ),
       actions: [
+        // Add signature count indicator
+        if (_signatures.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.teal.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.teal.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.draw_outlined,
+                  size: 14,
+                  color: Colors.teal.shade700,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${_signatures.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.teal.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
         IconButton(
           icon: Container(
             padding: const EdgeInsets.all(8),
@@ -868,13 +965,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     borderRadius: BorderRadius.circular(11),
                     child: InteractiveViewer(
                       transformationController: _transformationController!,
-                      boundaryMargin: EdgeInsets.all(
-                        math.max(20.0, _sldContentSize.width * 0.1),
-                      ),
+                      panEnabled: true,
+                      scaleEnabled: true,
+                      constrained: false,
+                      boundaryMargin: EdgeInsets.all(double.infinity),
                       minScale: 0.2,
                       maxScale: 5.0,
-                      constrained: true,
-                      clipBehavior: Clip.hardEdge,
+                      clipBehavior: Clip.none,
                       child: RepaintBoundary(
                         key: _sldRepaintBoundaryKey,
                         child: Container(
@@ -923,6 +1020,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             ],
           ),
 
+        // Fixed: Positioned widgets as direct children of Stack
         if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
           Positioned(
             top: 16,
@@ -967,6 +1065,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             ),
           ),
 
+        // Fixed: Speed dial as direct child of Stack
         if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
           EnergySpeedDialWidget(
             isViewingSavedSld: _isViewingSavedSld,
@@ -976,6 +1075,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             onSharePdf: _generateAndSharePdf,
             onConfigureBusbar: _showBusbarConfiguration,
             onAddAssessment: _showAssessmentDialog,
+            onAddSignatures: _showSignatureDialog,
           ),
       ],
     );

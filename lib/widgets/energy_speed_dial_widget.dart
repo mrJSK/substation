@@ -1,6 +1,7 @@
 // lib/widgets/energy_speed_dial_widget.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Add this import for haptic feedback
 import 'dart:math' as math;
 
 class EnergySpeedDialWidget extends StatefulWidget {
@@ -11,6 +12,7 @@ class EnergySpeedDialWidget extends StatefulWidget {
   final VoidCallback onSharePdf;
   final VoidCallback onConfigureBusbar;
   final VoidCallback onAddAssessment;
+  final VoidCallback onAddSignatures; // New callback for signatures
 
   const EnergySpeedDialWidget({
     super.key,
@@ -21,6 +23,7 @@ class EnergySpeedDialWidget extends StatefulWidget {
     required this.onSharePdf,
     required this.onConfigureBusbar,
     required this.onAddAssessment,
+    required this.onAddSignatures, // Add this parameter
   });
 
   @override
@@ -70,12 +73,14 @@ class _EnergySpeedDialWidgetState extends State<EnergySpeedDialWidget>
         label: 'Save SLD',
         onTap: widget.isViewingSavedSld ? null : widget.onSaveSld,
         isEnabled: !widget.isViewingSavedSld,
+        color: Colors.blue,
       ),
       _SpeedDialAction(
         icon: Icons.share_outlined,
         label: 'Share PDF',
         onTap: widget.onSharePdf,
         isEnabled: true,
+        color: Colors.green,
       ),
       _SpeedDialAction(
         icon: widget.showTables
@@ -84,18 +89,28 @@ class _EnergySpeedDialWidgetState extends State<EnergySpeedDialWidget>
         label: widget.showTables ? 'Hide Tables' : 'Show Tables',
         onTap: widget.onToggleTables,
         isEnabled: true,
+        color: Colors.orange,
       ),
       _SpeedDialAction(
         icon: Icons.settings_input_antenna_outlined,
         label: 'Configure Busbar',
         onTap: widget.onConfigureBusbar,
         isEnabled: !widget.isViewingSavedSld,
+        color: Colors.purple,
       ),
       _SpeedDialAction(
         icon: Icons.assessment_outlined,
         label: 'Add Assessment',
         onTap: widget.onAddAssessment,
         isEnabled: !widget.isViewingSavedSld,
+        color: Colors.red,
+      ),
+      _SpeedDialAction(
+        icon: Icons.draw_outlined,
+        label: 'Add Signatures',
+        onTap: widget.onAddSignatures, // New signature action
+        isEnabled: true, // Always enabled for adding signatures
+        color: Colors.teal,
       ),
     ]);
   }
@@ -141,7 +156,7 @@ class _EnergySpeedDialWidgetState extends State<EnergySpeedDialWidget>
                   final action = entry.value;
 
                   // Staggered animation delay
-                  final delay = index * 0.1;
+                  final delay = index * 0.08; // Slightly faster stagger
                   final animationValue = Curves.easeOut.transform(
                     math.max(
                       0.0,
@@ -179,16 +194,16 @@ class _EnergySpeedDialWidgetState extends State<EnergySpeedDialWidget>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Tooltip
+        // Tooltip with enhanced styling
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: theme.colorScheme.inverseSurface,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(8),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 4,
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
             ],
@@ -197,44 +212,51 @@ class _EnergySpeedDialWidgetState extends State<EnergySpeedDialWidget>
             action.label,
             style: TextStyle(
               color: theme.colorScheme.onInverseSurface,
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w500,
+              letterSpacing: 0.2,
             ),
           ),
         ),
         const SizedBox(width: 12),
 
-        // Action button
+        // Use Listener instead of InkWell to avoid gesture conflicts
         Material(
-          elevation: 6,
-          shadowColor: Colors.black.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(28),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: action.isEnabled
-                  ? theme.colorScheme.surface
-                  : theme.colorScheme.surface.withOpacity(0.6),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: theme.colorScheme.outline.withOpacity(0.2),
-                width: 1,
+          elevation: action.isEnabled ? 6 : 2,
+          shadowColor: action.isEnabled
+              ? action.color.withOpacity(0.3)
+              : Colors.black.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(22),
+          child: Listener(
+            // Changed from InkWell to Listener
+            onPointerDown: action.isEnabled
+                ? (_) {
+                    _toggle();
+                    _triggerHapticFeedback();
+                    action.onTap?.call();
+                  }
+                : null,
+            behavior: HitTestBehavior.opaque, // Ensures it consumes the tap
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: action.isEnabled
+                    ? action.color.withOpacity(0.9)
+                    : theme.colorScheme.surface.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: action.isEnabled
+                      ? action.color.withOpacity(0.3)
+                      : theme.colorScheme.outline.withOpacity(0.2),
+                  width: 1,
+                ),
               ),
-            ),
-            child: InkWell(
-              onTap: action.isEnabled
-                  ? () {
-                      _toggle();
-                      action.onTap?.call();
-                    }
-                  : null,
-              borderRadius: BorderRadius.circular(20),
               child: Icon(
                 action.icon,
                 size: 20,
                 color: action.isEnabled
-                    ? theme.colorScheme.onSurface
+                    ? Colors.white
                     : theme.colorScheme.onSurface.withOpacity(0.4),
               ),
             ),
@@ -245,50 +267,69 @@ class _EnergySpeedDialWidgetState extends State<EnergySpeedDialWidget>
   }
 
   Widget _buildMainFAB(ThemeData theme) {
-    return Stack(
-      children: [
-        // Backdrop/Overlay when open
-        if (_isOpen)
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _toggle,
-              child: Container(color: Colors.transparent),
+    return Material(
+      elevation: 8,
+      shadowColor: theme.colorScheme.primary.withOpacity(0.4),
+      borderRadius: BorderRadius.circular(28),
+      child: Listener(
+        // Use Listener instead of GestureDetector/InkWell
+        onPointerDown: (_) {
+          _triggerHapticFeedback();
+          _toggle();
+        },
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary,
+            borderRadius: BorderRadius.circular(28),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                theme.colorScheme.primary,
+                theme.colorScheme.primary.withOpacity(0.8),
+              ],
             ),
           ),
-
-        // Main floating action button
-        AnimatedBuilder(
-          animation: _rotationAnimation,
-          builder: (context, child) {
-            return Material(
-              elevation: 6,
-              shadowColor: Colors.black.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(28),
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: InkWell(
-                  onTap: _toggle,
-                  borderRadius: BorderRadius.circular(28),
-                  child: Transform.rotate(
-                    angle: _rotationAnimation.value * 2 * math.pi,
-                    child: Icon(
-                      _isOpen ? Icons.close : Icons.add,
-                      color: theme.colorScheme.onPrimary,
-                      size: 24,
-                    ),
+          child: AnimatedBuilder(
+            animation: _rotationAnimation,
+            builder: (context, child) {
+              return Transform.rotate(
+                angle: _rotationAnimation.value * 2 * math.pi,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder:
+                      (Widget child, Animation<double> animation) {
+                        return RotationTransition(
+                          turns: animation,
+                          child: child,
+                        );
+                      },
+                  child: Icon(
+                    _isOpen ? Icons.close : Icons.speed,
+                    key: ValueKey(_isOpen),
+                    color: theme.colorScheme.onPrimary,
+                    size: 24,
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
-      ],
+      ),
     );
+  }
+
+  void _triggerHapticFeedback() {
+    // Add haptic feedback for better user experience
+    try {
+      HapticFeedback.lightImpact(); // Now properly implemented
+    } catch (e) {
+      // Ignore if haptic feedback is not available
+      print('Haptic feedback not available: $e');
+    }
   }
 }
 
@@ -297,11 +338,13 @@ class _SpeedDialAction {
   final String label;
   final VoidCallback? onTap;
   final bool isEnabled;
+  final Color color; // New color property for visual distinction
 
   _SpeedDialAction({
     required this.icon,
     required this.label,
     required this.onTap,
     required this.isEnabled,
+    this.color = Colors.blue, // Default color
   });
 }

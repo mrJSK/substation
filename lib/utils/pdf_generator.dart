@@ -7,11 +7,13 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:substation_manager/screens/subdivision_dashboard_tabs/energy_sld_screen.dart';
 import 'dart:io';
 
 import '../models/bay_model.dart';
 import '../models/bay_connection_model.dart';
 import '../models/energy_readings_data.dart';
+import '../models/signature_models.dart';
 import '../painters/single_line_diagram_painter.dart';
 
 class PdfGeneratorData {
@@ -30,6 +32,8 @@ class PdfGeneratorData {
   final double sldBaseLogicalHeight;
   final double sldZoom;
   final Offset sldOffset;
+  final List<SignatureData>? signatures;
+  final List<DistributionFeederData>? distributionFeederData;
 
   PdfGeneratorData({
     required this.substationName,
@@ -47,6 +51,8 @@ class PdfGeneratorData {
     required this.sldBaseLogicalHeight,
     required this.sldZoom,
     required this.sldOffset,
+    this.signatures,
+    this.distributionFeederData,
   });
 }
 
@@ -237,8 +243,6 @@ class PdfGenerator {
           final double totalPageHeight = PdfPageFormat.a4.height - 40;
           final double headerHeight = totalPageHeight * 0.08;
           final double sldAreaHeight = totalPageHeight * 0.65;
-          final double tableAreaHeight =
-              totalPageHeight - headerHeight - sldAreaHeight;
 
           final double imageAspect =
               (data.sldBaseLogicalWidth > 0 && data.sldBaseLogicalHeight > 0)
@@ -285,6 +289,32 @@ class PdfGenerator {
               pw.SizedBox(height: 8),
               _buildConsolidatedEnergyTable(data),
               pw.SizedBox(height: 12),
+              _buildFooter(),
+            ],
+          );
+        },
+      ),
+    );
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(20),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              _buildPageHeader(
+                "Distribution & Assessment Analysis - Page 2",
+                data,
+              ),
+              pw.SizedBox(height: 16),
+              _buildDistributionTable(data),
+              pw.SizedBox(height: 20),
+              _buildAssessmentsTable(data),
+              pw.SizedBox(height: 30),
+              _buildSignatureSection(data),
+              pw.Spacer(),
               _buildFooter(),
             ],
           );
@@ -413,20 +443,30 @@ class PdfGenerator {
     );
   }
 
-  static pw.Widget _buildSldSection(
-    pw.ImageProvider sldImage,
-    PdfGeneratorData data,
-  ) {
+  static pw.Widget _buildPageHeader(String title, PdfGeneratorData data) {
     return pw.Container(
-      margin: const pw.EdgeInsets.symmetric(vertical: 8),
+      padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: pw.BoxDecoration(
-        color: PdfColors.white,
+        color: PdfColors.grey100,
         border: pw.Border.all(color: PdfColors.grey300, width: 1),
-        borderRadius: pw.BorderRadius.circular(8),
+        borderRadius: pw.BorderRadius.circular(4),
       ),
-      child: pw.Container(
-        padding: const pw.EdgeInsets.all(8),
-        child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            title,
+            style: pw.TextStyle(
+              fontSize: 14,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.black,
+            ),
+          ),
+          pw.Text(
+            data.substationName,
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+          ),
+        ],
       ),
     );
   }
@@ -550,6 +590,263 @@ class PdfGenerator {
           ],
         ),
       ),
+    );
+  }
+
+  static pw.Widget _buildDistributionTable(PdfGeneratorData data) {
+    if (data.aggregatedFeederData.isEmpty) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.all(12),
+        decoration: pw.BoxDecoration(
+          color: PdfColors.grey50,
+          border: pw.Border.all(color: PdfColors.grey300, width: 1),
+          borderRadius: pw.BorderRadius.circular(4),
+        ),
+        child: pw.Text(
+          'No Distribution Data Available',
+          style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
+        ),
+      );
+    }
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Feeder Energy Supplied by Distribution Hierarchy',
+          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColors.grey400, width: 1),
+            borderRadius: pw.BorderRadius.circular(4),
+          ),
+          child: pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.5),
+              1: pw.FlexColumnWidth(1.5),
+              2: pw.FlexColumnWidth(1.5),
+              3: pw.FlexColumnWidth(2.0),
+              4: pw.FlexColumnWidth(1.2),
+              5: pw.FlexColumnWidth(1.2),
+            },
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                children: [
+                  _buildTableHeaderCell('D-Zone'),
+                  _buildTableHeaderCell('D-Circle'),
+                  _buildTableHeaderCell('D-Division'),
+                  _buildTableHeaderCell('D-Subdivision'),
+                  _buildTableHeaderCell('Import (MWH)'),
+                  _buildTableHeaderCell('Export (MWH)'),
+                ],
+              ),
+              ...data.aggregatedFeederData.take(15).map((feeder) {
+                // feeder is AggregatedFeederEnergyData
+                final importMWh = (feeder.importedEnergy) / 1000;
+                final exportMWh = (feeder.exportedEnergy) / 1000;
+                return pw.TableRow(
+                  children: [
+                    _buildTableDataCell(feeder.zoneName),
+                    _buildTableDataCell(feeder.circleName),
+                    _buildTableDataCell(feeder.divisionName),
+                    _buildTableDataCell(feeder.distributionSubdivisionName),
+                    _buildTableDataCell(importMWh.toStringAsFixed(2)),
+                    _buildTableDataCell(exportMWh.toStringAsFixed(2)),
+                  ],
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildAssessmentsTable(PdfGeneratorData data) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Energy Assessments',
+          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 8),
+
+        if (data.assessmentsForPdf.isEmpty)
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey50,
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+              borderRadius: pw.BorderRadius.circular(4),
+            ),
+            child: pw.Text(
+              'No assessments were made for this period.',
+              style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
+            ),
+          )
+        else
+          pw.Container(
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey400, width: 1),
+              borderRadius: pw.BorderRadius.circular(4),
+            ),
+            child: pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+              columnWidths: const {
+                0: pw.FlexColumnWidth(2.0),
+                1: pw.FlexColumnWidth(1.5),
+                2: pw.FlexColumnWidth(1.5),
+                3: pw.FlexColumnWidth(3.0),
+                4: pw.FlexColumnWidth(1.8),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    _buildTableHeaderCell('Bay Name'),
+                    _buildTableHeaderCell('Import Adj.'),
+                    _buildTableHeaderCell('Export Adj.'),
+                    _buildTableHeaderCell('Reason'),
+                    _buildTableHeaderCell('Timestamp'),
+                  ],
+                ),
+                ...data.assessmentsForPdf.map((assessment) {
+                  final timestamp = assessment['timestamp'] != null
+                      ? (assessment['timestamp'] as Timestamp).toDate()
+                      : DateTime.now();
+
+                  return pw.TableRow(
+                    children: [
+                      _buildTableDataCell(assessment['bayName'] ?? 'N/A'),
+                      _buildTableDataCell(
+                        assessment['importAdjustment']?.toStringAsFixed(2) ??
+                            '0.00',
+                      ),
+                      _buildTableDataCell(
+                        assessment['exportAdjustment']?.toStringAsFixed(2) ??
+                            '0.00',
+                      ),
+                      _buildTableDataCell(
+                        assessment['reason'] ?? 'No reason provided',
+                      ),
+                      _buildTableDataCell(
+                        '${timestamp.day}/${timestamp.month}/${timestamp.year}',
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildSignatureSection(PdfGeneratorData data) {
+    final signatures = data.signatures ?? <SignatureData>[];
+    final List<SignatureData> finalSignatures = List.from(signatures);
+
+    // Build rows in groups of 3
+    List<pw.Widget> signatureRows = [];
+    const int signaturesPerRow = 3;
+
+    for (int i = 0; i < finalSignatures.length; i += signaturesPerRow) {
+      final rowSignatures = finalSignatures
+          .skip(i)
+          .take(signaturesPerRow)
+          .toList();
+
+      signatureRows.add(
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: rowSignatures.map((sig) {
+            return pw.Expanded(
+              child: pw.Container(
+                margin: const pw.EdgeInsets.symmetric(horizontal: 8),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    // Signature line
+                    pw.Container(
+                      height: 50,
+                      alignment: pw.Alignment.bottomCenter,
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(
+                          bottom: pw.BorderSide(
+                            color: PdfColors.black,
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text(
+                      sig.name.isNotEmpty ? sig.name : ' ', // avoid collapsing
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      sig.designation,
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        color: PdfColors.grey700,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      sig.department,
+                      style: pw.TextStyle(
+                        fontSize: 8,
+                        color: PdfColors.grey600,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      );
+
+      if (i + signaturesPerRow < finalSignatures.length) {
+        signatureRows.add(pw.SizedBox(height: 30));
+      }
+    }
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Signatures',
+          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Text(
+          'I certify that the above energy account is correct:',
+          style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+        ),
+        pw.SizedBox(height: 20),
+
+        if (finalSignatures.isEmpty)
+          pw.Text(
+            'No signatures provided.',
+            style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+          )
+        else
+          ...signatureRows,
+      ],
     );
   }
 
