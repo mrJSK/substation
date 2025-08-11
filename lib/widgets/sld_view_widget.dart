@@ -1,4 +1,3 @@
-// lib/widgets/sld_view_widget.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -22,17 +21,14 @@ class SldViewWidget extends StatelessWidget {
     this.onBayTapped,
   });
 
-  // Constants that match the controller's spacing
-  static const double _contentPadding =
-      120.0; // Match sidePadding from controller
-  static const double _topPadding = 100.0; // Match topPadding from controller
+  static const double _contentPadding = 120.0;
+  static const double _topPadding = 100.0;
 
   @override
   Widget build(BuildContext context) {
     final sldController = Provider.of<SldController>(context);
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
-    // Early return if no data available
     if (sldController.bayRenderDataList.isEmpty) {
       return Container(
         width: double.infinity,
@@ -62,7 +58,6 @@ class SldViewWidget extends StatelessWidget {
       );
     }
 
-    // Enhanced content bounds calculation
     final contentBounds = _calculateContentBounds(sldController);
 
     final double canvasWidth = max(
@@ -74,7 +69,6 @@ class SldViewWidget extends StatelessWidget {
       contentBounds.height,
     );
 
-    // PDF capture mode
     if (isCapturingPdf) {
       return Container(
         width: canvasWidth,
@@ -92,29 +86,33 @@ class SldViewWidget extends StatelessWidget {
       );
     }
 
-    // Interactive mode
-    return InteractiveViewer(
-      boundaryMargin: const EdgeInsets.all(double.infinity),
-      minScale: 0.1,
-      maxScale: 4.0,
-      constrained: false,
-      child: GestureDetector(
-        onTapUp: onBayTapped != null
-            ? (details) => _handleTapUp(context, details, sldController)
-            : null,
-        onLongPressStart: onBayTapped != null
-            ? (details) => _handleLongPress(context, details, sldController)
-            : null,
-        child: Container(
-          width: canvasWidth,
-          height: canvasHeight,
-          color: Colors.white,
-          child: CustomPaint(
-            size: Size(canvasWidth, canvasHeight),
-            painter: _createPainter(
-              sldController,
-              colorScheme,
-              isPdfMode: false,
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.white,
+      child: InteractiveViewer(
+        boundaryMargin: const EdgeInsets.all(double.infinity),
+        minScale: 0.1,
+        maxScale: 4.0,
+        constrained: false,
+        child: GestureDetector(
+          onTapUp: onBayTapped != null
+              ? (details) => _handleTapUp(context, details, sldController)
+              : null,
+          onLongPressStart: onBayTapped != null
+              ? (details) => _handleLongPress(context, details, sldController)
+              : null,
+          child: Container(
+            width: canvasWidth,
+            height: canvasHeight,
+            color: Colors.white,
+            child: CustomPaint(
+              size: Size(canvasWidth, canvasHeight),
+              painter: _createPainter(
+                sldController,
+                colorScheme,
+                isPdfMode: false,
+              ),
             ),
           ),
         ),
@@ -122,28 +120,24 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  // Enhanced content bounds calculation
   ContentBounds _calculateContentBounds(SldController sldController) {
     double minX = double.infinity;
     double minY = double.infinity;
     double maxX = double.negativeInfinity;
     double maxY = double.negativeInfinity;
 
-    // Calculate bounds for all bay symbols
     for (var renderData in sldController.bayRenderDataList) {
       minX = min(minX, renderData.rect.left);
       minY = min(minY, renderData.rect.top);
       maxX = max(maxX, renderData.rect.right);
       maxY = max(maxY, renderData.rect.bottom);
 
-      // Account for text bounds
       final textBounds = _calculateTextBounds(renderData);
       minX = min(minX, textBounds.left);
       minY = min(minY, textBounds.top);
       maxX = max(maxX, textBounds.right);
       maxY = max(maxY, textBounds.bottom);
 
-      // Account for energy reading bounds if applicable
       if (isEnergySld &&
           sldController.showEnergyReadings &&
           sldController.bayEnergyData.containsKey(renderData.bay.id)) {
@@ -155,7 +149,6 @@ class SldViewWidget extends StatelessWidget {
       }
     }
 
-    // Fallback bounds if calculations fail
     if (!minX.isFinite ||
         !minY.isFinite ||
         !maxX.isFinite ||
@@ -191,7 +184,6 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  // Enhanced text bounds calculation
   Rect _calculateTextBounds(BayRenderData renderData) {
     final TextPainter textPainter = TextPainter(
       text: TextSpan(
@@ -213,7 +205,7 @@ class SldViewWidget extends StatelessWidget {
       case 'Transformer':
         textPosition = renderData.rect.centerLeft + renderData.textOffset;
         textPosition = Offset(
-          textPosition.dx - 150, // Account for multi-line transformer text
+          textPosition.dx - 150,
           textPosition.dy - textPainter.height / 2 - 20,
         );
         break;
@@ -247,11 +239,9 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  // Enhanced energy reading bounds calculation
   Rect _calculateEnergyReadingBounds(BayRenderData renderData) {
     const double estimatedMaxEnergyTextWidth = 120.0;
-    const double estimatedTotalEnergyTextHeight =
-        12 * 8; // More lines for new format
+    const double estimatedTotalEnergyTextHeight = 12 * 8;
 
     Offset energyTextBasePosition;
     switch (renderData.bay.bayType) {
@@ -312,7 +302,6 @@ class SldViewWidget extends StatelessWidget {
     }
   }
 
-  // Create painter with proper configuration
   SingleLineDiagramPainter _createPainter(
     SldController sldController,
     ColorScheme colorScheme, {
@@ -349,7 +338,6 @@ class SldViewWidget extends StatelessWidget {
     );
   }
 
-  // Enhanced tap handling with proper coordinate transformation
   void _handleTapUp(
     BuildContext context,
     TapUpDetails details,
@@ -372,7 +360,6 @@ class SldViewWidget extends StatelessWidget {
     }
   }
 
-  // Enhanced long press handling
   void _handleLongPress(
     BuildContext context,
     LongPressStartDetails details,
@@ -395,10 +382,8 @@ class SldViewWidget extends StatelessWidget {
     }
   }
 
-  // Enhanced bay finding logic
   Bay? _findBayAtPosition(Offset position, SldController sldController) {
     for (var renderData in sldController.bayRenderDataList) {
-      // Use actual rect without hardcoded padding adjustments
       if (renderData.rect.contains(position)) {
         return renderData.bay;
       }
@@ -407,7 +392,6 @@ class SldViewWidget extends StatelessWidget {
   }
 }
 
-// Helper class for content bounds
 class ContentBounds {
   final double minX;
   final double minY;

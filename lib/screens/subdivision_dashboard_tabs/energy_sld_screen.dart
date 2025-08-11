@@ -1,4 +1,3 @@
-// lib/screens/energy_sld_screen.dart
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -84,7 +83,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   Size _sldContentSize = const Size(1200, 800);
   final GlobalKey _sldRepaintBoundaryKey = GlobalKey();
 
-  // Energy Data Service instance
   late EnergyDataService _energyDataService;
 
   @override
@@ -92,7 +90,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     super.initState();
     _isViewingSavedSld = widget.savedSld != null;
 
-    // Initialize the energy data service
     _energyDataService = EnergyDataService(
       substationId: widget.substationId,
       currentUser: widget.currentUser,
@@ -168,13 +165,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       }
 
       if (fromSaved && widget.savedSld != null) {
-        // Use service to load from saved SLD
         await _energyDataService.loadFromSavedSld(
           widget.savedSld!,
           sldController,
         );
       } else {
-        // Use service to load live energy data
         await _energyDataService.loadLiveEnergyData(
           _startDate,
           _endDate,
@@ -182,7 +177,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         );
       }
 
-      // Set energy readings visibility
       sldController.setShowEnergyReadings(_showEnergyReadings);
       _calculateAndSetSldBounds(sldController);
 
@@ -413,11 +407,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // CORRECTED: Use the floating context menu from EnergySldUtils
   void _showBayActions(BuildContext context, dynamic bay, Offset tapPosition) {
     final sldController = Provider.of<SldController>(context, listen: false);
-
-    // Call the floating context menu from EnergySldUtils
     EnergySldUtils.showBayActions(
       context,
       bay,
@@ -564,13 +555,11 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  // Using Energy Data Service for busbar configuration
   void _showBusbarConfiguration() {
     final sldController = Provider.of<SldController>(context, listen: false);
     _energyDataService.showBusbarSelectionDialog(context, sldController);
   }
 
-  // Using Energy Data Service for assessment dialog
   void _showAssessmentDialog() {
     final sldController = Provider.of<SldController>(context, listen: false);
     _energyDataService.showBaySelectionForAssessment(context, sldController);
@@ -851,44 +840,59 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             children: [
               Expanded(
                 child: Container(
-                  width: double.infinity,
-                  color: Colors.white,
-                  child: InteractiveViewer(
-                    transformationController: _transformationController!,
-                    boundaryMargin: EdgeInsets.all(
-                      math.max(20.0, _sldContentSize.width * 0.1),
-                    ),
-                    minScale: 0.2,
-                    maxScale: 5.0,
-                    constrained: false,
-                    clipBehavior: Clip.none,
-                    child: RepaintBoundary(
-                      key: _sldRepaintBoundaryKey,
-                      child: Container(
-                        width: math.max(
-                          800,
-                          _sldContentSize.width,
-                        ), // Ensure minimum size
-                        height: math.max(600, _sldContentSize.height),
-                        color: Colors.white,
-                        child: Center(
-                          child: SldViewWidget(
-                            isEnergySld: true,
-                            isCapturingPdf: _isCapturingPdf,
-                            onBayTapped: _isCapturingPdf
-                                ? null
-                                : (bay, tapPosition) {
-                                    if (sldController
-                                            .selectedBayForMovementId ==
-                                        null) {
-                                      // CORRECTED: Use the floating context menu
-                                      _showBayActions(
-                                        context,
-                                        bay,
-                                        tapPosition,
-                                      );
-                                    }
-                                  },
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    border: Border.all(color: Colors.grey.shade300, width: 1),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: InteractiveViewer(
+                      transformationController: _transformationController!,
+                      boundaryMargin: EdgeInsets.all(
+                        math.max(20.0, _sldContentSize.width * 0.1),
+                      ),
+                      minScale: 0.2,
+                      maxScale: 5.0,
+                      constrained: true,
+                      clipBehavior: Clip.hardEdge,
+                      child: RepaintBoundary(
+                        key: _sldRepaintBoundaryKey,
+                        child: Container(
+                          width: math.max(800, _sldContentSize.width),
+                          height: math.max(600, _sldContentSize.height),
+                          color: Colors.white,
+                          child: Center(
+                            child: SldViewWidget(
+                              isEnergySld: true,
+                              isCapturingPdf: _isCapturingPdf,
+                              onBayTapped: _isCapturingPdf
+                                  ? null
+                                  : (bay, tapPosition) {
+                                      if (sldController
+                                              .selectedBayForMovementId ==
+                                          null) {
+                                        _showBayActions(
+                                          context,
+                                          bay,
+                                          tapPosition,
+                                        );
+                                      }
+                                    },
+                            ),
                           ),
                         ),
                       ),

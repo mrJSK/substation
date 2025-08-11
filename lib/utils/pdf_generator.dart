@@ -1,5 +1,3 @@
-// lib/utils/pdf_generator.dart
-
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -53,7 +51,6 @@ class PdfGeneratorData {
 }
 
 class PdfGenerator {
-  // NEW: Generate SLD PDF method
   static Future<void> generateSldPdf({
     required List<BayRenderData> bayRenderDataList,
     required List<BayConnection> bayConnections,
@@ -68,7 +65,6 @@ class PdfGenerator {
     String? focusedBayId,
   }) async {
     try {
-      // Create a custom painter for PDF generation
       final sldImageBytes = await _captureSldAsImage(
         bayRenderDataList: bayRenderDataList,
         bayConnections: bayConnections,
@@ -86,27 +82,19 @@ class PdfGenerator {
 
       pdf.addPage(
         pw.MultiPage(
-          pageFormat:
-              PdfPageFormat.a4.landscape, // Landscape for better SLD viewing
+          pageFormat: PdfPageFormat.a4.landscape,
           margin: const pw.EdgeInsets.all(20),
           build: (pw.Context context) {
             return [
-              // Header
               _buildSldPdfHeader(title),
               pw.SizedBox(height: 20),
-
-              // SLD Image
               _buildSldImageSection(sldImage, title),
               pw.SizedBox(height: 20),
-
-              // Bay Information Table
               if (focusedBayId != null && baysMap[focusedBayId] != null)
                 _buildFocusedBayInfo(
                   baysMap[focusedBayId]!,
                   bayEnergyData[focusedBayId],
                 ),
-
-              // Energy Summary (if energy readings are shown)
               if (showEnergyReadings && bayEnergyData.isNotEmpty) ...[
                 pw.SizedBox(height: 20),
                 _buildEnergyDataSection(
@@ -115,8 +103,6 @@ class PdfGenerator {
                   baysMap,
                 ),
               ],
-
-              // Bay List
               pw.SizedBox(height: 20),
               _buildBayListSection(bayRenderDataList),
             ];
@@ -127,21 +113,19 @@ class PdfGenerator {
               margin: const pw.EdgeInsets.only(top: 10),
               child: pw.Text(
                 'Page ${context.pageNumber} of ${context.pagesCount}',
-                style: const pw.TextStyle(fontSize: 10),
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
               ),
             );
           },
         ),
       );
 
-      // Save and share the PDF
       await _savePdf(pdf.save(), filename, title);
     } catch (e) {
       throw Exception('Failed to generate SLD PDF: $e');
     }
   }
 
-  // Capture SLD as image for PDF
   static Future<Uint8List> _captureSldAsImage({
     required List<BayRenderData> bayRenderDataList,
     required List<BayConnection> bayConnections,
@@ -153,7 +137,6 @@ class PdfGenerator {
     required bool showEnergyReadings,
     String? focusedBayId,
   }) async {
-    // Calculate content bounds
     double minX = double.infinity;
     double minY = double.infinity;
     double maxX = double.negativeInfinity;
@@ -178,11 +161,9 @@ class PdfGenerator {
     final width = (maxX - minX) + 2 * padding;
     final height = (maxY - minY) + 2 * padding;
 
-    // Create a picture recorder
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // Create the painter
     final painter = SingleLineDiagramPainter(
       bayRenderDataList: bayRenderDataList,
       bayConnections: bayConnections,
@@ -213,7 +194,7 @@ class PdfGenerator {
       busbarRects: busbarRects,
       busbarConnectionPoints: busbarConnectionPoints,
       debugDrawHitboxes: false,
-      selectedBayForMovementId: focusedBayId, // Highlight focused bay
+      selectedBayForMovementId: focusedBayId,
       bayEnergyData: bayEnergyData,
       busEnergySummary: busEnergySummary,
       showEnergyReadings: showEnergyReadings,
@@ -225,10 +206,8 @@ class PdfGenerator {
       connectionLineColor: Colors.black,
     );
 
-    // Paint the SLD
     painter.paint(canvas, Size(width, height));
 
-    // Convert to image
     final picture = recorder.endRecording();
     final image = await picture.toImage(width.round(), height.round());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -236,216 +215,6 @@ class PdfGenerator {
     return byteData!.buffer.asUint8List();
   }
 
-  static pw.Widget _buildSldPdfHeader(String title) {
-    return pw.Header(
-      level: 0,
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                title,
-                style: pw.TextStyle(
-                  fontSize: 24,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 5),
-              pw.Text(
-                'Generated from Energy Management System',
-                style: const pw.TextStyle(fontSize: 12),
-              ),
-            ],
-          ),
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text('Generated on:', style: const pw.TextStyle(fontSize: 10)),
-              pw.Text(
-                DateTime.now().toString().split('.')[0],
-                style: const pw.TextStyle(fontSize: 10),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  static pw.Widget _buildSldImageSection(
-    pw.ImageProvider sldImage,
-    String title,
-  ) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Single Line Diagram',
-          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Container(
-          width: double.infinity,
-          height: 400, // Increased height for landscape
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey300),
-          ),
-          child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
-        ),
-      ],
-    );
-  }
-
-  static pw.Widget _buildFocusedBayInfo(Bay bay, BayEnergyData? energyData) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Bay Information - ${bay.name}',
-          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.grey300),
-          children: [
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-              children: [
-                _buildTableCell('Property', isHeader: true),
-                _buildTableCell('Value', isHeader: true),
-              ],
-            ),
-            pw.TableRow(
-              children: [
-                _buildTableCell('Bay Type'),
-                _buildTableCell(bay.bayType),
-              ],
-            ),
-            pw.TableRow(
-              children: [
-                _buildTableCell('Voltage Level'),
-                _buildTableCell(bay.voltageLevel),
-              ],
-            ),
-            if (bay.make != null && bay.make!.isNotEmpty)
-              pw.TableRow(
-                children: [_buildTableCell('Make'), _buildTableCell(bay.make!)],
-              ),
-            if (energyData != null) ...[
-              pw.TableRow(
-                children: [
-                  _buildTableCell('Import Reading'),
-                  _buildTableCell(
-                    '${energyData.importReading.toStringAsFixed(2)} kWh',
-                  ),
-                ],
-              ),
-              pw.TableRow(
-                children: [
-                  _buildTableCell('Export Reading'),
-                  _buildTableCell(
-                    '${energyData.exportReading.toStringAsFixed(2)} kWh',
-                  ),
-                ],
-              ),
-              pw.TableRow(
-                children: [
-                  _buildTableCell('Net Consumption'),
-                  _buildTableCell(
-                    '${energyData.adjustedImportConsumed.toStringAsFixed(2)} kWh',
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ],
-    );
-  }
-
-  static pw.Widget _buildEnergyDataSection(
-    Map<String, BayEnergyData> bayEnergyData,
-    Map<String, Map<String, double>> busEnergySummary,
-    Map<String, Bay> baysMap,
-  ) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Energy Data Summary',
-          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.grey300),
-          children: [
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-              children: [
-                _buildTableCell('Bay Name', isHeader: true),
-                _buildTableCell('Type', isHeader: true),
-                _buildTableCell('Import (kWh)', isHeader: true),
-                _buildTableCell('Export (kWh)', isHeader: true),
-              ],
-            ),
-            ...bayEnergyData.entries.take(10).map((entry) {
-              final bay = baysMap[entry.key];
-              final energyData = entry.value;
-              return pw.TableRow(
-                children: [
-                  _buildTableCell(bay?.name ?? 'Unknown'),
-                  _buildTableCell(bay?.bayType ?? 'N/A'),
-                  _buildTableCell(energyData.importReading.toStringAsFixed(2)),
-                  _buildTableCell(energyData.exportReading.toStringAsFixed(2)),
-                ],
-              );
-            }).toList(),
-          ],
-        ),
-      ],
-    );
-  }
-
-  static pw.Widget _buildBayListSection(List<BayRenderData> bayRenderDataList) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Bay List',
-          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.grey300),
-          children: [
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-              children: [
-                _buildTableCell('Bay Name', isHeader: true),
-                _buildTableCell('Type', isHeader: true),
-                _buildTableCell('Voltage Level', isHeader: true),
-                _buildTableCell('Make', isHeader: true),
-              ],
-            ),
-            ...bayRenderDataList.take(20).map((renderData) {
-              return pw.TableRow(
-                children: [
-                  _buildTableCell(renderData.bay.name),
-                  _buildTableCell(renderData.bay.bayType),
-                  _buildTableCell(renderData.bay.voltageLevel),
-                  _buildTableCell(renderData.bay.make ?? 'N/A'),
-                ],
-              );
-            }).toList(),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // Existing energy report generation method
   static Future<Uint8List> generateEnergyReportPdf(
     PdfGeneratorData data,
   ) async {
@@ -453,34 +222,40 @@ class PdfGenerator {
     final sldImage = pw.MemoryImage(data.sldImageBytes);
 
     pdf.addPage(
-      pw.MultiPage(
+      pw.Page(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(20),
         build: (pw.Context context) {
-          return [
-            _buildHeader(data),
-            pw.SizedBox(height: 20),
-            _buildSldSection(sldImage, data),
-            pw.SizedBox(height: 20),
-            _buildEnergySummary(data),
-            pw.SizedBox(height: 20),
-            _buildBusEnergyDetails(data),
-            pw.SizedBox(height: 20),
-            if (data.assessmentsForPdf.isNotEmpty) ...[
-              _buildAssessmentsSection(data),
-              pw.SizedBox(height: 20),
+          final double totalPageHeight = PdfPageFormat.a4.height - 40;
+          final double headerHeight =
+              totalPageHeight * 0.08; // Increased slightly
+          final double sldHeight =
+              totalPageHeight * 0.70; // Reduced to fit table
+          final double tableHeaderHeight =
+              totalPageHeight * 0.04; // Space for table header
+          final double tableHeight =
+              totalPageHeight * 0.18; // Increased for better visibility
+
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Container(height: headerHeight, child: _buildHeader(data)),
+
+              pw.Container(
+                height: sldHeight,
+                child: _buildSldSection(sldImage, data),
+              ),
+
+              pw.Container(
+                // height: tableHeaderHeight,
+                child: _buildTableHeader(),
+              ),
+
+              pw.Container(
+                // height: tableHeight,
+                child: _buildConsolidatedEnergyTable(data),
+              ),
             ],
-            _buildFooter(),
-          ];
-        },
-        footer: (pw.Context context) {
-          return pw.Container(
-            alignment: pw.Alignment.centerRight,
-            margin: const pw.EdgeInsets.only(top: 10),
-            child: pw.Text(
-              'Page ${context.pageNumber} of ${context.pagesCount}',
-              style: const pw.TextStyle(fontSize: 10),
-            ),
           );
         },
       ),
@@ -489,51 +264,84 @@ class PdfGenerator {
     return pdf.save();
   }
 
-  // Helper method to save and share PDF
-  static Future<void> _savePdf(
-    Future<Uint8List> pdfBytesFuture,
-    String filename,
-    String subject,
-  ) async {
-    final pdfBytes = await pdfBytesFuture;
-    await sharePdf(pdfBytes, '$filename.pdf', subject);
-  }
-
-  // Existing helper methods
+  // Updated header with voltage levels and complete title
   static pw.Widget _buildHeader(PdfGeneratorData data) {
-    return pw.Header(
-      level: 0,
+    // Get the highest voltage level from the busbars
+    String highestVoltage = '';
+    if (data.busEnergySummaryData.isNotEmpty) {
+      final voltages =
+          data.busEnergySummaryData.entries
+              .map((entry) {
+                final bay = data.baysMap[entry.key];
+                return _extractVoltageValue(bay?.voltageLevel ?? '0');
+              })
+              .where((voltage) => voltage > 0)
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+
+      if (voltages.isNotEmpty) {
+        highestVoltage = '${voltages.first.toInt()}kV';
+      }
+    }
+
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border(
+          bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
+        ),
+      ),
+      padding: const pw.EdgeInsets.symmetric(
+        vertical: 8,
+        horizontal: 12,
+      ), // Reduced padding
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
+          // Left side: Main title with substation and voltage
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                'Energy SLD Report',
+                'Energy Account',
                 style: pw.TextStyle(
-                  fontSize: 24,
+                  fontSize: 14,
                   fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
                 ),
               ),
-              pw.SizedBox(height: 5),
+              pw.SizedBox(height: 4),
               pw.Text(
-                'Substation: ${data.substationName}',
-                style: const pw.TextStyle(fontSize: 16),
-              ),
-              pw.Text(
-                'Period: ${data.dateRange}',
-                style: const pw.TextStyle(fontSize: 12),
+                '$highestVoltage ${data.substationName}',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.normal,
+                  color: PdfColors.grey800,
+                ),
               ),
             ],
           ),
+          // Right side: Period and generation date
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.end,
             children: [
-              pw.Text('Generated on:', style: const pw.TextStyle(fontSize: 10)),
               pw.Text(
-                DateTime.now().toString().split('.')[0],
-                style: const pw.TextStyle(fontSize: 10),
+                'Period: ${data.dateRange}',
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.normal,
+                  color: PdfColors.grey700,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Generated: ${DateTime.now().toString().split('.')[0].split(' ')[0]}',
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.normal,
+                  color: PdfColors.grey700,
+                ),
               ),
             ],
           ),
@@ -546,23 +354,650 @@ class PdfGenerator {
     pw.ImageProvider sldImage,
     PdfGeneratorData data,
   ) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
+    return pw.Container(
+      margin: const pw.EdgeInsets.symmetric(vertical: 8),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Container(
+        padding: const pw.EdgeInsets.all(8),
+        child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
+      ),
+    );
+  }
+
+  // New table header section
+  static pw.Widget _buildTableHeader() {
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 4),
+      child: pw.Text(
+        'Energy Abstract Summary',
+        style: pw.TextStyle(
+          fontSize: 14,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColors.black,
+        ),
+        textAlign: pw.TextAlign.center,
+      ),
+    );
+  }
+
+  // Updated table with better sizing for complete visibility
+  static pw.Widget _buildConsolidatedEnergyTable(PdfGeneratorData data) {
+    final abstract = data.abstractEnergyData;
+
+    // Sort busbars by voltage level (highest to lowest)
+    final busbars = data.busEnergySummaryData.entries.toList()
+      ..sort((a, b) {
+        final bayA = data.baysMap[a.key];
+        final bayB = data.baysMap[b.key];
+
+        final voltageA = _extractVoltageValue(bayA?.voltageLevel ?? '0');
+        final voltageB = _extractVoltageValue(bayB?.voltageLevel ?? '0');
+
+        return voltageB.compareTo(voltageA);
+      });
+
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey400, width: 1),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Container(
+        padding: const pw.EdgeInsets.all(6), // Reduced padding
+        child: pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+          columnWidths: _buildColumnWidths(busbars.length),
+          children: [
+            // Header row with busbar names (sorted by voltage)
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              children: [
+                _buildTableHeaderCell('Metric'),
+                ...busbars.map((entry) {
+                  final bay = data.baysMap[entry.key];
+                  return _buildTableHeaderCell(
+                    '${bay?.voltageLevel ?? 'Unknown'} BUS',
+                  );
+                }).toList(),
+                _buildTableHeaderCell('TOTAL'),
+              ],
+            ),
+
+            // Import (MWh) row
+            pw.TableRow(
+              children: [
+                _buildTableDataCell('Import (MWh)', isBold: true),
+                ...busbars.map((entry) {
+                  final energyData = entry.value;
+                  final importMWh = (energyData['totalImp'] ?? 0.0) / 1000;
+                  return _buildTableDataCell(importMWh.toStringAsFixed(2));
+                }).toList(),
+                _buildTableDataCell(
+                  '${((abstract['totalImp'] ?? 0.0) / 1000).toStringAsFixed(2)}',
+                  isBold: true,
+                ),
+              ],
+            ),
+
+            // Export (MWh) row
+            pw.TableRow(
+              children: [
+                _buildTableDataCell('Export (MWh)', isBold: true),
+                ...busbars.map((entry) {
+                  final energyData = entry.value;
+                  final exportMWh = (energyData['totalExp'] ?? 0.0) / 1000;
+                  return _buildTableDataCell(exportMWh.toStringAsFixed(2));
+                }).toList(),
+                _buildTableDataCell(
+                  '${((abstract['totalExp'] ?? 0.0) / 1000).toStringAsFixed(2)}',
+                  isBold: true,
+                ),
+              ],
+            ),
+
+            // Difference (MWh) row
+            pw.TableRow(
+              children: [
+                _buildTableDataCell('Difference (MWh)', isBold: true),
+                ...busbars.map((entry) {
+                  final energyData = entry.value;
+                  final importMWh = (energyData['totalImp'] ?? 0.0) / 1000;
+                  final exportMWh = (energyData['totalExp'] ?? 0.0) / 1000;
+                  final difference = importMWh - exportMWh;
+                  return _buildTableDataCell(difference.toStringAsFixed(2));
+                }).toList(),
+                _buildTableDataCell(
+                  '${((abstract['difference'] ?? 0.0) / 1000).toStringAsFixed(2)}',
+                  isBold: true,
+                ),
+              ],
+            ),
+
+            // Loss (%) row
+            pw.TableRow(
+              children: [
+                _buildTableDataCell('Loss (%)', isBold: true),
+                ...busbars.map((entry) {
+                  final energyData = entry.value;
+                  final importMWh = (energyData['totalImp'] ?? 0.0) / 1000;
+                  final exportMWh = (energyData['totalExp'] ?? 0.0) / 1000;
+                  final difference = importMWh - exportMWh;
+                  final lossPercentage = importMWh > 0
+                      ? ((difference / importMWh) * 100)
+                      : 0.0;
+                  return _buildTableDataCell(
+                    '${lossPercentage.toStringAsFixed(2)}%',
+                  );
+                }).toList(),
+                _buildTableDataCell(
+                  '${(abstract['lossPercentage'] ?? 0.0).toStringAsFixed(2)}%',
+                  isBold: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper method to extract numeric voltage value for sorting
+  static double _extractVoltageValue(String voltageLevel) {
+    final cleanVoltage = voltageLevel
+        .toUpperCase()
+        .replaceAll('KV', '')
+        .replaceAll(' ', '')
+        .trim();
+
+    try {
+      return double.parse(cleanVoltage);
+    } catch (e) {
+      return 0.0;
+    }
+  }
+
+  // Helper method to create dynamic column widths
+  static Map<int, pw.TableColumnWidth> _buildColumnWidths(int busbarCount) {
+    final Map<int, pw.TableColumnWidth> columnWidths = {
+      0: const pw.FlexColumnWidth(1.8), // Metric column - slightly smaller
+    };
+
+    for (int i = 1; i <= busbarCount; i++) {
+      columnWidths[i] = const pw.FlexColumnWidth(1.2); // Bus columns - smaller
+    }
+
+    columnWidths[busbarCount + 1] = const pw.FlexColumnWidth(
+      1.2,
+    ); // Total column - smaller
+
+    return columnWidths;
+  }
+
+  // Professional table styling for headers
+  static pw.Widget _buildTableHeaderCell(String text) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(
+        vertical: 8,
+        horizontal: 6,
+      ), // Reduced padding
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: 9, // Reduced font size
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColors.black,
+        ),
+        textAlign: pw.TextAlign.center,
+      ),
+    );
+  }
+
+  // Professional table styling for data cells
+  static pw.Widget _buildTableDataCell(String text, {bool isBold = false}) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(
+        vertical: 6,
+        horizontal: 4,
+      ), // Reduced padding
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: 8, // Reduced font size
+          fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          color: PdfColors.black,
+        ),
+        textAlign: pw.TextAlign.center,
+      ),
+    );
+  }
+
+  // static pw.Widget _buildTableHeader(String text) {
+  //   return pw.Container(
+  //     padding: const pw.EdgeInsets.all(10),
+  //     child: pw.Text(
+  //       text,
+  //       style: pw.TextStyle(
+  //         fontSize: 10,
+  //         fontWeight: pw.FontWeight.bold,
+  //         color: PdfColors.black,
+  //       ),
+  //       textAlign: pw.TextAlign.center,
+  //     ),
+  //   );
+  // }
+
+  static pw.Widget _buildTableCell(String text, {bool isBold = false}) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(10),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: 9,
+          fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          color: PdfColors.black,
+        ),
+        textAlign: pw.TextAlign.center,
+      ),
+    );
+  }
+
+  static pw.TableRow _buildEnergyTableRow(
+    String metric,
+    String value,
+    String unit,
+    PdfColor backgroundColor,
+  ) {
+    return pw.TableRow(
+      decoration: pw.BoxDecoration(color: backgroundColor),
       children: [
-        pw.Text(
-          'Single Line Diagram',
-          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Container(
-          width: double.infinity,
-          height: 600,
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey300),
-          ),
-          child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
-        ),
+        _buildModernTableCell(metric, isMetric: true),
+        _buildModernTableCell(value, isValue: true),
+        _buildModernTableCell(unit),
       ],
+    );
+  }
+
+  static pw.Widget _buildModernTableCell(
+    String text, {
+    bool isHeader = false,
+    bool isMetric = false,
+    bool isValue = false,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: isHeader ? 10 : 9,
+          fontWeight: isHeader
+              ? pw.FontWeight.bold
+              : isValue
+              ? pw.FontWeight.bold
+              : pw.FontWeight.normal,
+          color: PdfColors.black,
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _buildSldPdfHeader(String title) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      decoration: pw.BoxDecoration(
+        gradient: const pw.LinearGradient(
+          colors: [PdfColors.blue600, PdfColors.blue800],
+          begin: pw.Alignment.topLeft,
+          end: pw.Alignment.bottomRight,
+        ),
+        borderRadius: pw.BorderRadius.circular(12),
+      ),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                title,
+                style: pw.TextStyle(
+                  fontSize: 24,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.white,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Energy Management System',
+                style: pw.TextStyle(fontSize: 12, color: PdfColors.white),
+              ),
+            ],
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.white,
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Text(
+                  'Generated',
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    color: PdfColors.grey600,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.Text(
+                  DateTime.now().toString().split('.')[0].split(' ')[0],
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColors.grey800,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildSldImageSection(
+    pw.ImageProvider sldImage,
+    String title,
+  ) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(16),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey50,
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
+              ),
+            ),
+            child: pw.Text(
+              'Single Line Diagram',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey800,
+              ),
+            ),
+          ),
+          pw.Container(
+            height: 400,
+            padding: const pw.EdgeInsets.all(16),
+            child: pw.Center(child: pw.Image(sldImage, fit: pw.BoxFit.contain)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildFocusedBayInfo(Bay bay, BayEnergyData? energyData) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.symmetric(vertical: 8),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
+              ),
+            ),
+            child: pw.Text(
+              'Bay Information - ${bay.name}',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.black,
+              ),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            child: pw.Table(
+              border: pw.TableBorder(
+                horizontalInside: pw.BorderSide(
+                  color: PdfColors.grey300,
+                  width: 1,
+                ),
+              ),
+              columnWidths: const {
+                0: pw.FlexColumnWidth(1),
+                1: pw.FlexColumnWidth(2),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                  children: [
+                    _buildModernTableCell('Property', isHeader: true),
+                    _buildModernTableCell('Value', isHeader: true),
+                  ],
+                ),
+                pw.TableRow(
+                  children: [
+                    _buildModernTableCell('Bay Type'),
+                    _buildModernTableCell(bay.bayType),
+                  ],
+                ),
+                pw.TableRow(
+                  children: [
+                    _buildModernTableCell('Voltage Level'),
+                    _buildModernTableCell(bay.voltageLevel),
+                  ],
+                ),
+                if (bay.make != null && bay.make!.isNotEmpty)
+                  pw.TableRow(
+                    children: [
+                      _buildModernTableCell('Make'),
+                      _buildModernTableCell(bay.make!),
+                    ],
+                  ),
+                if (energyData != null) ...[
+                  pw.TableRow(
+                    children: [
+                      _buildModernTableCell('Import Reading'),
+                      _buildModernTableCell(
+                        '${energyData.importReading.toStringAsFixed(2)} kWh',
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      _buildModernTableCell('Export Reading'),
+                      _buildModernTableCell(
+                        '${energyData.exportReading.toStringAsFixed(2)} kWh',
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      _buildModernTableCell('Net Consumption'),
+                      _buildModernTableCell(
+                        '${energyData.adjustedImportConsumed.toStringAsFixed(2)} kWh',
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildEnergyDataSection(
+    Map<String, BayEnergyData> bayEnergyData,
+    Map<String, Map<String, double>> busEnergySummary,
+    Map<String, Bay> baysMap,
+  ) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.symmetric(vertical: 8),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
+              ),
+            ),
+            child: pw.Text(
+              'Energy Data Summary',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.black,
+              ),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            child: pw.Table(
+              border: pw.TableBorder(
+                horizontalInside: pw.BorderSide(
+                  color: PdfColors.grey300,
+                  width: 1,
+                ),
+                verticalInside: pw.BorderSide(
+                  color: PdfColors.grey300,
+                  width: 1,
+                ),
+              ),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                  children: [
+                    _buildModernTableCell('Bay Name', isHeader: true),
+                    _buildModernTableCell('Type', isHeader: true),
+                    _buildModernTableCell('Import (kWh)', isHeader: true),
+                    _buildModernTableCell('Export (kWh)', isHeader: true),
+                  ],
+                ),
+                ...bayEnergyData.entries.take(10).map((entry) {
+                  final bay = baysMap[entry.key];
+                  final energyData = entry.value;
+                  return pw.TableRow(
+                    children: [
+                      _buildModernTableCell(bay?.name ?? 'Unknown'),
+                      _buildModernTableCell(bay?.bayType ?? 'N/A'),
+                      _buildModernTableCell(
+                        energyData.importReading.toStringAsFixed(2),
+                        isValue: true,
+                      ),
+                      _buildModernTableCell(
+                        energyData.exportReading.toStringAsFixed(2),
+                        isValue: true,
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildBayListSection(List<BayRenderData> bayRenderDataList) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.symmetric(vertical: 8),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColors.grey300, width: 1),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
+              ),
+            ),
+            child: pw.Text(
+              'Bay List',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.black,
+              ),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            child: pw.Table(
+              border: pw.TableBorder(
+                horizontalInside: pw.BorderSide(
+                  color: PdfColors.grey300,
+                  width: 1,
+                ),
+                verticalInside: pw.BorderSide(
+                  color: PdfColors.grey300,
+                  width: 1,
+                ),
+              ),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                  children: [
+                    _buildModernTableCell('Bay Name', isHeader: true),
+                    _buildModernTableCell('Type', isHeader: true),
+                    _buildModernTableCell('Voltage Level', isHeader: true),
+                    _buildModernTableCell('Make', isHeader: true),
+                  ],
+                ),
+                ...bayRenderDataList.take(20).map((renderData) {
+                  return pw.TableRow(
+                    children: [
+                      _buildModernTableCell(renderData.bay.name),
+                      _buildModernTableCell(renderData.bay.bayType),
+                      _buildModernTableCell(renderData.bay.voltageLevel),
+                      _buildModernTableCell(renderData.bay.make ?? 'N/A'),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -582,45 +1017,45 @@ class PdfGenerator {
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey100),
               children: [
-                _buildTableCell('Metric', isHeader: true),
-                _buildTableCell('Value', isHeader: true),
-                _buildTableCell('Unit', isHeader: true),
+                _buildBasicTableCell('Metric', isHeader: true),
+                _buildBasicTableCell('Value', isHeader: true),
+                _buildBasicTableCell('Unit', isHeader: true),
               ],
             ),
             pw.TableRow(
               children: [
-                _buildTableCell('Total Import'),
-                _buildTableCell(
+                _buildBasicTableCell('Total Import'),
+                _buildBasicTableCell(
                   '${abstract['totalImp']?.toStringAsFixed(2) ?? '0.00'}',
                 ),
-                _buildTableCell('kWh'),
+                _buildBasicTableCell('kWh'),
               ],
             ),
             pw.TableRow(
               children: [
-                _buildTableCell('Total Export'),
-                _buildTableCell(
+                _buildBasicTableCell('Total Export'),
+                _buildBasicTableCell(
                   '${abstract['totalExp']?.toStringAsFixed(2) ?? '0.00'}',
                 ),
-                _buildTableCell('kWh'),
+                _buildBasicTableCell('kWh'),
               ],
             ),
             pw.TableRow(
               children: [
-                _buildTableCell('Net Difference'),
-                _buildTableCell(
+                _buildBasicTableCell('Net Difference'),
+                _buildBasicTableCell(
                   '${abstract['difference']?.toStringAsFixed(2) ?? '0.00'}',
                 ),
-                _buildTableCell('kWh'),
+                _buildBasicTableCell('kWh'),
               ],
             ),
             pw.TableRow(
               children: [
-                _buildTableCell('Loss Percentage'),
-                _buildTableCell(
+                _buildBasicTableCell('Loss Percentage'),
+                _buildBasicTableCell(
                   '${abstract['lossPercentage']?.toStringAsFixed(2) ?? '0.00'}',
                 ),
-                _buildTableCell('%'),
+                _buildBasicTableCell('%'),
               ],
             ),
           ],
@@ -644,10 +1079,10 @@ class PdfGenerator {
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey100),
               children: [
-                _buildTableCell('Bus Name', isHeader: true),
-                _buildTableCell('Voltage Level', isHeader: true),
-                _buildTableCell('Import (kWh)', isHeader: true),
-                _buildTableCell('Export (kWh)', isHeader: true),
+                _buildBasicTableCell('Bus Name', isHeader: true),
+                _buildBasicTableCell('Voltage Level', isHeader: true),
+                _buildBasicTableCell('Import (kWh)', isHeader: true),
+                _buildBasicTableCell('Export (kWh)', isHeader: true),
               ],
             ),
             ...data.busEnergySummaryData.entries.map((entry) {
@@ -656,12 +1091,12 @@ class PdfGenerator {
               final bay = data.baysMap[busId];
               return pw.TableRow(
                 children: [
-                  _buildTableCell(bay?.name ?? 'Unknown'),
-                  _buildTableCell(bay?.voltageLevel ?? 'N/A'),
-                  _buildTableCell(
+                  _buildBasicTableCell(bay?.name ?? 'Unknown'),
+                  _buildBasicTableCell(bay?.voltageLevel ?? 'N/A'),
+                  _buildBasicTableCell(
                     '${energyData['totalImp']?.toStringAsFixed(2) ?? '0.00'}',
                   ),
-                  _buildTableCell(
+                  _buildBasicTableCell(
                     '${energyData['totalExp']?.toStringAsFixed(2) ?? '0.00'}',
                   ),
                 ],
@@ -688,7 +1123,7 @@ class PdfGenerator {
             padding: const pw.EdgeInsets.all(10),
             decoration: pw.BoxDecoration(
               border: pw.Border.all(color: PdfColors.grey300),
-              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+              borderRadius: pw.BorderRadius.circular(5),
             ),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -710,7 +1145,7 @@ class PdfGenerator {
     );
   }
 
-  static pw.Widget _buildTableCell(String text, {bool isHeader = false}) {
+  static pw.Widget _buildBasicTableCell(String text, {bool isHeader = false}) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(8),
       child: pw.Text(
@@ -734,6 +1169,15 @@ class PdfGenerator {
         textAlign: pw.TextAlign.center,
       ),
     );
+  }
+
+  static Future<void> _savePdf(
+    Future<Uint8List> pdfBytesFuture,
+    String filename,
+    String subject,
+  ) async {
+    final pdfBytes = await pdfBytesFuture;
+    await sharePdf(pdfBytes, '$filename.pdf', subject);
   }
 
   static Future<void> sharePdf(
