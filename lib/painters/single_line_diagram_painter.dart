@@ -131,8 +131,7 @@ class SingleLineDiagramPainter extends CustomPainter {
   static const double horizontalSpacing = 120;
   static const double verticalBusbarSpacing = 250;
   static const double lineFeederHeight = 100.0;
-  static const double equipmentSpacing =
-      15.0; // New constant for equipment spacing
+  static const double equipmentSpacing = 15.0;
 
   // Performance optimization: Pre-computed paint objects
   static final Paint _linePaint = Paint()
@@ -168,6 +167,25 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.transformerColor,
     required this.connectionLineColor,
   });
+
+  // 🔥 CRITICAL FIX: Add hitTest method for gesture detection
+  @override
+  bool? hitTest(Offset position) {
+    print('DEBUG: Hit test at position: $position');
+
+    // Check if position hits any bay
+    for (var renderData in bayRenderDataList) {
+      if (renderData.rect.contains(position)) {
+        print(
+          'DEBUG: Hit detected for ${renderData.bay.name} (${renderData.bay.bayType})',
+        );
+        return true;
+      }
+    }
+
+    print('DEBUG: No hit detected');
+    return false; // Return false instead of null for precise control
+  }
 
   // Optimized voltage level color mapping with caching
   static final Map<String, Color> _voltageColorCache = <String, Color>{};
@@ -303,16 +321,16 @@ class SingleLineDiagramPainter extends CustomPainter {
     _drawBusbars(canvas);
     _drawConnections(canvas);
     _drawBaySymbolsAndLabels(canvas);
-    _drawEquipmentInstances(canvas); // NEW: Draw equipment instances
+    _drawEquipmentInstances(canvas);
 
-    // Draw energy readings conditionally (FIXED: removed duplicate)
+    // Draw energy readings conditionally
     if (showEnergyReadings) {
       _drawEnergyReadings(canvas);
     }
 
-    // Draw debug hitboxes last (overlay)
+    // Draw debug hitboxes last (overlay) - ENHANCED
     if (debugDrawHitboxes) {
-      _drawDebugHitboxes(canvas);
+      _drawEnhancedDebugHitboxes(canvas);
     }
 
     // Restore the canvas state
@@ -411,13 +429,10 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
   }
 
-  // In single_line_diagram_painter.dart, update the _drawBayEquipment method:
-
   void _drawBayEquipment(Canvas canvas, BayRenderData renderData) {
     final equipmentList = renderData.equipmentInstances;
     if (equipmentList.isEmpty) return;
 
-    final bayRect = renderData.rect;
     final equipmentSize = Size(20, 20);
 
     for (int i = 0; i < equipmentList.length; i++) {
@@ -433,9 +448,8 @@ class SingleLineDiagramPainter extends CustomPainter {
       canvas.save();
       canvas.translate(equipmentPosition.dx, equipmentPosition.dy);
 
-      // FIX: Use symbolKey instead of equipmentTypeId
       final equipmentPainter = _getSymbolPainter(
-        equipment.symbolKey, // ✅ Changed from equipment.equipmentTypeId
+        equipment.symbolKey,
         defaultBayColor.withOpacity(0.7),
         equipmentSize,
       );
@@ -443,10 +457,9 @@ class SingleLineDiagramPainter extends CustomPainter {
       equipmentPainter.paint(canvas, equipmentSize);
       canvas.restore();
 
-      // FIX: Use equipmentTypeName instead of name
       _drawText(
         canvas,
-        equipment.equipmentTypeName, // ✅ Changed from equipment.name
+        equipment.equipmentTypeName,
         equipmentPosition.translate(0, equipmentSize.height + 2),
         fontSize: 7,
         textAlign: TextAlign.center,
@@ -465,25 +478,21 @@ class SingleLineDiagramPainter extends CustomPainter {
 
     switch (renderData.bayType) {
       case 'Transformer':
-        // Position equipment on the right side of transformer
         return Offset(
           bayRect.right + 10,
           bayRect.top + (index * (equipmentSize.height + equipmentSpacing)),
         );
       case 'Line':
-        // Position equipment above the line symbol
         return Offset(
           bayRect.left + (index * (equipmentSize.width + equipmentSpacing)),
           bayRect.top - equipmentSize.height - 5,
         );
       case 'Feeder':
-        // Position equipment below the feeder symbol
         return Offset(
           bayRect.left + (index * (equipmentSize.width + equipmentSpacing)),
           bayRect.bottom + 5,
         );
       default:
-        // Position around the bay symbol
         return Offset(
           bayRect.right + 5,
           bayRect.center.dy +
@@ -621,7 +630,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
   }
 
-  // Rest of the methods remain the same...
   void _drawEnergyReadings(Canvas canvas) {
     if (bayEnergyData.isEmpty) return;
 
@@ -833,13 +841,40 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
   }
 
-  void _drawDebugHitboxes(Canvas canvas) {
+  // 🔥 ENHANCED DEBUG HITBOXES - Complete replacement for the simple version
+  void _drawEnhancedDebugHitboxes(Canvas canvas) {
+    if (!debugDrawHitboxes) return;
+
     final debugPaint = Paint()
       ..color = Colors.red.withOpacity(0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    final fillPaint = Paint()
+      ..color = Colors.red.withOpacity(0.1)
       ..style = PaintingStyle.fill;
 
     for (var renderData in bayRenderDataList) {
+      // Draw hitbox outline
       canvas.drawRect(renderData.rect, debugPaint);
+
+      // Fill hitbox with transparent color
+      canvas.drawRect(renderData.rect, fillPaint);
+
+      // Draw bay type label for debugging
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: '${renderData.bay.bayType}\n${renderData.bay.name}',
+          style: const TextStyle(
+            color: Colors.red,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+
+      textPainter.paint(canvas, renderData.rect.topLeft + const Offset(2, 2));
     }
   }
 
@@ -861,7 +896,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     Offset startPoint;
     Offset endPoint;
 
-    // Enhanced connection logic matching the controller
     if (sourceBay.bayType == 'Busbar' && targetBay.bayType == 'Transformer') {
       startPoint =
           busbarConnectionPoints[sourceBay.id]?[targetBay.id] ??

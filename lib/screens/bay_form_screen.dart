@@ -705,7 +705,11 @@ class _BayFormScreenState extends State<BayFormScreen>
 
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Bay updated successfully!');
+
+          // 🔥 FIX: Call onSaveSuccess first, then navigate
           widget.onSaveSuccess();
+
+          // Pop back to the calling screen
           Navigator.of(context).pop();
         }
       } else {
@@ -795,9 +799,14 @@ class _BayFormScreenState extends State<BayFormScreen>
         }
 
         await _createDefaultReadingAssignment(newBay, firebaseUser.uid);
+
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Bay created successfully!');
+
+          // 🔥 FIX: Call onSaveSuccess first, then navigate
           widget.onSaveSuccess();
+
+          // Pop back to the calling screen
           Navigator.of(context).pop();
         }
       }
@@ -1070,38 +1079,32 @@ class _BayFormScreenState extends State<BayFormScreen>
       ),
     );
 
+    // 🔥 FIX: Loading state WITHOUT AppBar
     if (_isLoadingConnections) {
       return Scaffold(
         backgroundColor: const Color(0xFFFAFAFA),
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black87,
-          elevation: 0,
-          title: const Text(
-            'Loading Bay Data',
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black87),
-            onPressed: widget.onCancel,
-          ),
-        ),
-        body: const Center(
+        // ❌ REMOVED: No AppBar during loading
+        body: SafeArea(
+          // ✅ Added SafeArea instead
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: Colors.blue),
-              SizedBox(height: 16),
-              Text(
-                'Loading bay data...',
-                style: TextStyle(
-                  fontFamily: 'Roboto',
-                  fontSize: 16,
-                  color: Colors.black87,
+              const Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Colors.blue),
+                      SizedBox(height: 16),
+                      Text(
+                        'Loading bay data...',
+                        style: TextStyle(
+                          fontFamily: 'Roboto',
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1642,7 +1645,6 @@ class _BayFormScreenState extends State<BayFormScreen>
             : _nonGovernmentFeederTypes,
         onChanged: (v) => setState(() => _selectedFeederType = v),
         validator: (v) => v == null ? 'Required' : null,
-        // fillColor: Colors.blue[50],
       ),
       const SizedBox(height: 16),
       Text(
