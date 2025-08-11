@@ -57,6 +57,16 @@ class BayRenderData {
   String get voltageLevel => bay.voltageLevel;
 }
 
+// Add this class for equipment color scheme compatibility
+class EquipmentPainter {
+  static const Map<String, List<Color>> equipmentColorScheme = {
+    'Transformer': [Color(0xFFD32F2F)], // Red for transformers
+    'Line': [Color(0xFF1565C0)], // Blue for lines
+    'Feeder': [Color(0xFF2E7D32)], // Green for feeders
+    'Busbar': [Color(0xFF424242)], // Grey for busbars
+  };
+}
+
 // Optimized Generic Icon Painter
 class _GenericIconPainter extends CustomPainter {
   final Color color;
@@ -134,18 +144,9 @@ class SingleLineDiagramPainter extends CustomPainter {
   static const double equipmentSpacing = 15.0;
 
   // Performance optimization: Pre-computed paint objects
-  static final Paint _linePaint = Paint()
-    ..strokeWidth = 2.5
-    ..style = PaintingStyle.stroke
-    ..isAntiAlias = true;
-
   static final Paint _busbarPaint = Paint()
     ..strokeWidth = 3.0
     ..style = PaintingStyle.stroke
-    ..isAntiAlias = true;
-
-  static final Paint _connectionDotPaint = Paint()
-    ..style = PaintingStyle.fill
     ..isAntiAlias = true;
 
   SingleLineDiagramPainter({
@@ -308,10 +309,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     // Apply transformations for PDF generation and content bounds
     _applyCanvasTransformations(canvas, size);
 
-    // Update paint colors
-    _linePaint.color = connectionLineColor;
-    _connectionDotPaint.color = connectionLineColor;
-
     // Draw debug bounds if enabled
     if (debugDrawHitboxes) {
       _drawDebugBounds(canvas, size);
@@ -429,11 +426,17 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
   }
 
+  // UPDATED: Equipment instance colors to match parent bay
   void _drawBayEquipment(Canvas canvas, BayRenderData renderData) {
     final equipmentList = renderData.equipmentInstances;
     if (equipmentList.isEmpty) return;
 
     final equipmentSize = Size(20, 20);
+    // Use the same color as the parent bay for consistency
+    final equipmentColor = _getEquipmentDisplayColor(
+      renderData.bayId,
+      renderData.bayType,
+    );
 
     for (int i = 0; i < equipmentList.length; i++) {
       final equipment = equipmentList[i];
@@ -450,7 +453,7 @@ class SingleLineDiagramPainter extends CustomPainter {
 
       final equipmentPainter = _getSymbolPainter(
         equipment.symbolKey,
-        defaultBayColor.withOpacity(0.7),
+        equipmentColor.withOpacity(0.7), // Use consistent color
         equipmentSize,
       );
 
@@ -463,7 +466,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         equipmentPosition.translate(0, equipmentSize.height + 2),
         fontSize: 7,
         textAlign: TextAlign.center,
-        textColor: defaultBayColor.withOpacity(0.8),
+        textColor: equipmentColor.withOpacity(0.8), // Consistent text color
       );
     }
   }
@@ -543,6 +546,45 @@ class SingleLineDiagramPainter extends CustomPainter {
     }
   }
 
+  // NEW: Method to get consistent equipment display colors
+  Color _getEquipmentDisplayColor(String bayId, String bayType) {
+    // For equipment connected to busbars, use busbar colors
+    final connectedBusbar = _findConnectedBusbar(bayId);
+    if (connectedBusbar != null) {
+      return _getBusbarColor(connectedBusbar.voltageLevel);
+    }
+
+    // Fallback to equipment-specific colors
+    switch (bayType) {
+      case 'Transformer':
+        return const Color(0xFFD32F2F); // Red for transformers
+      case 'Line':
+        return const Color(0xFF1565C0); // Blue for lines
+      case 'Feeder':
+        return const Color(0xFF2E7D32); // Green for feeders
+      default:
+        return defaultBayColor;
+    }
+  }
+
+  // NEW: Helper method to find connected busbar
+  Bay? _findConnectedBusbar(String bayId) {
+    for (var connection in bayConnections) {
+      if (connection.sourceBayId == bayId) {
+        final targetBay = baysMap[connection.targetBayId];
+        if (targetBay?.bayType == 'Busbar') {
+          return targetBay;
+        }
+      } else if (connection.targetBayId == bayId) {
+        final sourceBay = baysMap[connection.sourceBayId];
+        if (sourceBay?.bayType == 'Busbar') {
+          return sourceBay;
+        }
+      }
+    }
+    return null;
+  }
+
   void _drawBaySymbol(
     Canvas canvas,
     BayRenderData renderData,
@@ -550,7 +592,14 @@ class SingleLineDiagramPainter extends CustomPainter {
   ) {
     final rect = renderData.rect;
     final bayType = renderData.bayType;
-    final color = isSelected ? Colors.green : _getBayTypeColor(bayType);
+
+    Color color;
+    if (isSelected) {
+      color = Colors.green;
+    } else {
+      // Use the same color logic as connections for consistency
+      color = _getEquipmentDisplayColor(renderData.bayId, bayType);
+    }
 
     canvas.save();
     canvas.translate(rect.topLeft.dx, rect.topLeft.dy);
@@ -566,6 +615,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     canvas.restore();
   }
 
+  // UPDATED: Bay label colors to match equipment colors
   void _drawBayLabel(Canvas canvas, BayRenderData renderData, bool isSelected) {
     final rect = renderData.rect;
     final bayType = renderData.bayType;
@@ -576,6 +626,11 @@ class SingleLineDiagramPainter extends CustomPainter {
     Offset labelPosition;
     double offsetY = 0;
     TextAlign textAlign = TextAlign.center;
+
+    // Use consistent color for labels
+    Color labelColor = isSelected
+        ? Colors.green
+        : _getEquipmentDisplayColor(renderData.bayId, bayType);
 
     switch (bayType) {
       case 'Transformer':
@@ -599,6 +654,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         label = bayName;
         labelPosition = rect.center + renderData.textOffset;
         _drawGenericBayBackground(canvas, rect, isSelected);
+        labelColor = defaultBayColor; // Keep default for generic bays
     }
 
     _drawText(
@@ -608,7 +664,7 @@ class SingleLineDiagramPainter extends CustomPainter {
       offsetY: offsetY,
       isBold: true,
       textAlign: textAlign,
-      textColor: defaultBayColor,
+      textColor: labelColor, // Use consistent color
     );
   }
 
@@ -1069,6 +1125,43 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
   }
 
+  // UPDATED: Connection color method to be more explicit
+  Color _getConnectionColor(
+    String sourceBayType,
+    String targetBayType,
+    String sourceBayId,
+    String targetBayId,
+  ) {
+    // Priority 1: If connecting to a busbar, use the busbar's voltage-based color
+    if (sourceBayType == 'Busbar') {
+      final sourceBay = baysMap[sourceBayId];
+      if (sourceBay != null) {
+        return _getBusbarColor(sourceBay.voltageLevel);
+      }
+    }
+
+    if (targetBayType == 'Busbar') {
+      final targetBay = baysMap[targetBayId];
+      if (targetBay != null) {
+        return _getBusbarColor(targetBay.voltageLevel);
+      }
+    }
+
+    // Priority 2: For equipment-to-equipment connections, use a neutral color
+    // or the color of the higher priority equipment
+    if (sourceBayType == 'Transformer' || targetBayType == 'Transformer') {
+      return const Color(0xFFD32F2F); // Red for transformer connections
+    } else if (sourceBayType == 'Line' || targetBayType == 'Line') {
+      return const Color(0xFF1565C0); // Blue for line connections
+    } else if (sourceBayType == 'Feeder' || targetBayType == 'Feeder') {
+      return const Color(0xFF2E7D32); // Green for feeder connections
+    }
+
+    // Priority 3: Fallback to theme color
+    return connectionLineColor;
+  }
+
+  // FIXED CONNECTION LINE DRAWING METHOD
   void _drawConnectionLine(
     Canvas canvas,
     Offset startPoint,
@@ -1078,42 +1171,67 @@ class SingleLineDiagramPainter extends CustomPainter {
     String sourceBayId,
     String targetBayId,
   ) {
-    canvas.drawLine(startPoint, endPoint, _linePaint);
+    // Get the appropriate color for the connection
+    Color connectionColor = _getConnectionColor(
+      sourceBayType,
+      targetBayType,
+      sourceBayId,
+      targetBayId,
+    );
+
+    // Create a paint with the dynamic color
+    final connectionPaint = Paint()
+      ..color = connectionColor
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+
+    canvas.drawLine(startPoint, endPoint, connectionPaint);
+
+    // Draw connection dots with matching color
+    final connectionDotPaint = Paint()
+      ..color = connectionColor
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
 
     if (sourceBayType == 'Busbar' && targetBayType != 'Busbar') {
       final busConnectionPoint =
           busbarConnectionPoints[sourceBayId]?[targetBayId];
       if (busConnectionPoint != null) {
-        canvas.drawCircle(busConnectionPoint, 4.0, _connectionDotPaint);
+        canvas.drawCircle(busConnectionPoint, 4.0, connectionDotPaint);
       }
     } else if (targetBayType == 'Busbar' && sourceBayType != 'Busbar') {
       final busConnectionPoint =
           busbarConnectionPoints[targetBayId]?[sourceBayId];
       if (busConnectionPoint != null) {
-        canvas.drawCircle(busConnectionPoint, 4.0, _connectionDotPaint);
+        canvas.drawCircle(busConnectionPoint, 4.0, connectionDotPaint);
       }
     }
 
+    // Draw arrowheads with matching color for transformers
     if ((sourceBayType == 'Busbar' && targetBayType == 'Transformer') ||
         (sourceBayType == 'Transformer' && targetBayType == 'Busbar')) {
-      _drawArrowhead(canvas, startPoint, endPoint, _linePaint);
+      _drawArrowhead(canvas, startPoint, endPoint, connectionPaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant SingleLineDiagramPainter oldDelegate) {
+    // Only repaint if actually necessary
     return oldDelegate.bayRenderDataList != bayRenderDataList ||
         oldDelegate.bayConnections != bayConnections ||
         oldDelegate.baysMap != baysMap ||
         oldDelegate.busbarRects != busbarRects ||
         oldDelegate.busbarConnectionPoints != busbarConnectionPoints ||
-        oldDelegate.debugDrawHitboxes != debugDrawHitboxes ||
         oldDelegate.selectedBayForMovementId != selectedBayForMovementId ||
         oldDelegate.bayEnergyData != bayEnergyData ||
         oldDelegate.busEnergySummary != busEnergySummary ||
-        oldDelegate.contentBounds != contentBounds ||
-        oldDelegate.originOffsetForPdf != originOffsetForPdf ||
         oldDelegate.showEnergyReadings != showEnergyReadings ||
+        oldDelegate.debugDrawHitboxes != debugDrawHitboxes ||
+        // Only check bounds/colors if they actually changed
+        (oldDelegate.contentBounds?.width != contentBounds?.width ||
+            oldDelegate.contentBounds?.height != contentBounds?.height) ||
         oldDelegate.defaultBayColor != defaultBayColor ||
         oldDelegate.defaultLineFeederColor != defaultLineFeederColor ||
         oldDelegate.transformerColor != transformerColor ||

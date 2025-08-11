@@ -556,7 +556,7 @@ class PdfGenerator {
         pw.SizedBox(height: 10),
         pw.Container(
           width: double.infinity,
-          height: 300,
+          height: 600,
           decoration: pw.BoxDecoration(
             border: pw.Border.all(color: PdfColors.grey300),
           ),
