@@ -1,3 +1,4 @@
+// lib/screens/admin/reading_template_management_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -61,6 +62,295 @@ class _ReadingTemplateManagementScreenState
     'group',
   ];
   final List<String> _frequencies = ['hourly', 'daily', 'monthly'];
+
+  // HARDCODED TEMPLATES - Your default energy fields
+  final List<ReadingField> _defaultEnergyFields = [
+    ReadingField(
+      name: 'Previous Day Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Current Day Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Previous Day Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Current Day Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.daily,
+    ),
+    ReadingField(
+      name: 'Previous Month Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+    ReadingField(
+      name: 'Current Month Reading (Import)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+    ReadingField(
+      name: 'Previous Month Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+    ReadingField(
+      name: 'Current Month Reading (Export)',
+      dataType: ReadingFieldDataType.number,
+      isMandatory: true,
+      unit: 'MWH',
+      frequency: ReadingFrequency.monthly,
+    ),
+  ];
+
+  // HARDCODED TEMPLATES - Your hourly fields by bay type
+  final Map<String, List<ReadingField>> _defaultHourlyFields = {
+    'Feeder': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Transformer': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Power Factor',
+        unit: '',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Real Power (MW)',
+        unit: 'MW',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Voltage',
+        unit: 'kV',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Apparent Power (MVAR)',
+        unit: 'MVAR',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Gas Pressure (SF6)',
+        unit: 'kg/cm2',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Winding Temperature',
+        unit: 'Celsius',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Oil Temperature',
+        unit: 'Celsius',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Tap Position',
+        unit: 'No.',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Frequency',
+        unit: 'Hz',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Line': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Power Factor',
+        unit: '',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Real Power (MW)',
+        unit: 'MW',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Voltage',
+        unit: 'kV',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Apparent Power (MVAR)',
+        unit: 'MVAR',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Gas Pressure (SF6)',
+        unit: 'kg/cm2',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Capacitor Bank': [
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Power Factor',
+        unit: '',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Battery': [
+      ReadingField(
+        name: 'Voltage',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+      ReadingField(
+        name: 'Current',
+        unit: 'A',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+    'Busbar': [
+      ReadingField(
+        name: 'Voltage',
+        unit: 'kV',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.hourly,
+      ),
+    ],
+  };
+
+  // HARDCODED TEMPLATES - Your daily fields by bay type
+  // Updated battery default fields with grouped structure
+  final Map<String, List<ReadingField>> _defaultDailyFields = {
+    'Battery': [
+      // Single set of overall battery readings (not grouped)
+      ReadingField(
+        name: 'Positive to Earth Voltage',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.daily,
+      ),
+      ReadingField(
+        name: 'Negative to Earth Voltage',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.daily,
+      ),
+      ReadingField(
+        name: 'Positive to Negative Voltage',
+        unit: 'V',
+        dataType: ReadingFieldDataType.number,
+        isMandatory: true,
+        frequency: ReadingFrequency.daily,
+      ),
+      // 8 Groups of cell readings (each group has 3 fields)
+      ...List.generate(8, (groupIndex) {
+        final cellNumber = groupIndex + 1;
+        return [
+          ReadingField(
+            name: 'Cell Number',
+            unit: '',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+            frequency: ReadingFrequency.daily,
+            groupName: 'Cell $cellNumber', // This groups the fields
+          ),
+          ReadingField(
+            name: 'Voltage',
+            unit: 'V',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+            frequency: ReadingFrequency.daily,
+            groupName: 'Cell $cellNumber', // Same group name
+          ),
+          ReadingField(
+            name: 'Specific Gravity',
+            unit: '',
+            dataType: ReadingFieldDataType.number,
+            isMandatory: true,
+            frequency: ReadingFrequency.daily,
+            groupName: 'Cell $cellNumber', // Same group name
+          ),
+        ];
+      }).expand((group) => group).toList(),
+    ],
+  };
 
   @override
   void initState() {
@@ -361,131 +651,6 @@ class _ReadingTemplateManagementScreenState
     );
   }
 
-  Widget _buildFormView(ThemeData theme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildBayTypeSelection(theme),
-            const SizedBox(height: 24),
-            _buildReadingFieldsSection(theme),
-            const SizedBox(height: 24),
-            _buildActionButtons(theme),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBayTypeSelection(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Bay Type Configuration',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: _selectedBayType,
-            decoration: InputDecoration(
-              labelText: 'Select Bay Type *',
-              labelStyle: TextStyle(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
-                fontSize: 14,
-              ),
-              border: UnderlineInputBorder(
-                borderSide: BorderSide(
-                  color: theme.colorScheme.outline.withOpacity(0.3),
-                ),
-              ),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(
-                  color: theme.colorScheme.outline.withOpacity(0.3),
-                ),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(
-                  color: theme.colorScheme.primary,
-                  width: 2,
-                ),
-              ),
-              errorBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: theme.colorScheme.error),
-              ),
-              focusedErrorBorder: UnderlineInputBorder(
-                borderSide: BorderSide(
-                  color: theme.colorScheme.error,
-                  width: 2,
-                ),
-              ),
-            ),
-            items: _bayTypes.map((type) {
-              return DropdownMenuItem(
-                value: type,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: _getBayTypeColor(type),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: _getBayTypeIcon(
-                        type,
-                        size: 12.0,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      type,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-            onChanged: _onBayTypeSelected,
-            validator: (value) =>
-                value == null ? 'Please select a bay type' : null,
-            style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
-            dropdownColor: Colors.white,
-            icon: Icon(
-              Icons.arrow_drop_down,
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Updated function to use your existing icon painters
   Widget _getBayTypeIcon(
     String bayType, {
     double size = 20.0,
@@ -574,6 +739,121 @@ class _ReadingTemplateManagementScreenState
     );
   }
 
+  Widget _buildFormView(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBayTypeSelection(theme),
+            const SizedBox(height: 24),
+            _buildReadingFieldsSection(theme),
+            const SizedBox(height: 24),
+            _buildActionButtons(theme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBayTypeSelection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bay Type Configuration',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _selectedBayType,
+            decoration: InputDecoration(
+              labelText: 'Select Bay Type *',
+              labelStyle: TextStyle(
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                fontSize: 14,
+              ),
+              border: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+            ),
+            items: _bayTypes.map((type) {
+              return DropdownMenuItem(
+                value: type,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: _getBayTypeColor(type),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: _getBayTypeIcon(
+                        type,
+                        size: 12.0,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      type,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            onChanged: _onBayTypeSelected,
+            validator: (value) =>
+                value == null ? 'Please select a bay type' : null,
+            style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
+            dropdownColor: Colors.white,
+            icon: Icon(
+              Icons.arrow_drop_down,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildReadingFieldsSection(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -602,7 +882,6 @@ class _ReadingTemplateManagementScreenState
                 ),
               ),
               const Spacer(),
-              // ADD FIELD BUTTON
               TextButton.icon(
                 onPressed: _addReadingField,
                 icon: Icon(
@@ -612,30 +891,6 @@ class _ReadingTemplateManagementScreenState
                 ),
                 label: Text(
                   'Add Field',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // ADD GROUP BUTTON
-              TextButton.icon(
-                onPressed: _addGroupReadingField,
-                icon: Icon(
-                  Icons.group_add,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                label: Text(
-                  'Add Group',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -691,28 +946,21 @@ class _ReadingTemplateManagementScreenState
           else
             ...List.generate(_readingFields.length, (index) {
               final field = _readingFields[index];
-              if (field['dataType'] == 'group') {
-                return _buildGroupFieldInput(field, index, theme);
-              } else {
-                return _buildReadingFieldCard(field, index, theme);
-              }
+              return _buildReadingFieldCard(field, index, theme);
             }),
         ],
       ),
     );
   }
 
-  // Keep all your existing methods for the rest of the UI
   Widget _buildReadingFieldCard(
     Map<String, dynamic> field,
     int index,
-    ThemeData theme, {
-    bool isSubField = false,
-    int? subFieldIndex,
-    int? groupIndex,
-  }) {
-    // Your existing implementation from the attachment
+    ThemeData theme,
+  ) {
     final isDefault = field['isDefault'] ?? false;
+    final groupName = field['groupName'] as String?;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -749,12 +997,31 @@ class _ReadingTemplateManagementScreenState
                     ),
                   ),
                 ),
+              if (groupName != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    groupName,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ),
+              ],
               const Spacer(),
               if (!isDefault)
                 IconButton(
-                  onPressed: () => isSubField
-                      ? _removeSubField(groupIndex!, subFieldIndex!)
-                      : _removeReadingField(index),
+                  onPressed: () => _removeReadingField(index),
                   icon: Icon(
                     Icons.delete_outline,
                     color: theme.colorScheme.error,
@@ -764,6 +1031,45 @@ class _ReadingTemplateManagementScreenState
             ],
           ),
           const SizedBox(height: 12),
+
+          // Group Name field for custom fields
+          if (!isDefault) ...[
+            TextFormField(
+              initialValue: field['groupName'],
+              decoration: InputDecoration(
+                labelText: 'Group Name (optional)',
+                isDense: true,
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: (value) =>
+                  field['groupName'] = value.isEmpty ? null : value,
+            ),
+            const SizedBox(height: 12),
+          ],
+
           TextFormField(
             initialValue: field['name'],
             decoration: InputDecoration(
@@ -789,19 +1095,13 @@ class _ReadingTemplateManagementScreenState
                   width: 2,
                 ),
               ),
-              errorBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: theme.colorScheme.error),
-              ),
-              focusedErrorBorder: UnderlineInputBorder(
-                borderSide: BorderSide(
-                  color: theme.colorScheme.error,
-                  width: 2,
-                ),
-              ),
             ),
             style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
             onChanged: isDefault ? null : (value) => field['name'] = value,
             readOnly: isDefault,
+            validator: (value) => value == null || value.trim().isEmpty
+                ? 'Field name required'
+                : null,
           ),
           const SizedBox(height: 12),
           Row(
@@ -832,15 +1132,6 @@ class _ReadingTemplateManagementScreenState
                         width: 2,
                       ),
                     ),
-                    errorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: theme.colorScheme.error),
-                    ),
-                    focusedErrorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.error,
-                        width: 2,
-                      ),
-                    ),
                   ),
                   items: _dataTypes.map((type) {
                     return DropdownMenuItem(
@@ -856,7 +1147,13 @@ class _ReadingTemplateManagementScreenState
                   }).toList(),
                   onChanged: isDefault
                       ? null
-                      : (value) => setState(() => field['dataType'] = value),
+                      : (value) => setState(() {
+                          field['dataType'] = value!;
+                          if (value != 'dropdown') field['options'] = [];
+                          if (value != 'number') field['unit'] = '';
+                          if (value != 'boolean')
+                            field['description_remarks'] = '';
+                        }),
                   style: TextStyle(
                     color: theme.colorScheme.onSurface,
                     fontSize: 14,
@@ -895,15 +1192,6 @@ class _ReadingTemplateManagementScreenState
                         width: 2,
                       ),
                     ),
-                    errorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: theme.colorScheme.error),
-                    ),
-                    focusedErrorBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.error,
-                        width: 2,
-                      ),
-                    ),
                   ),
                   items: _frequencies.map((freq) {
                     return DropdownMenuItem(
@@ -932,7 +1220,7 @@ class _ReadingTemplateManagementScreenState
                   }).toList(),
                   onChanged: isDefault
                       ? null
-                      : (value) => setState(() => field['frequency'] = value),
+                      : (value) => setState(() => field['frequency'] = value!),
                   style: TextStyle(
                     color: theme.colorScheme.onSurface,
                     fontSize: 14,
@@ -946,6 +1234,52 @@ class _ReadingTemplateManagementScreenState
               ),
             ],
           ),
+
+          // Conditional fields based on dataType
+          if (field['dataType'] == 'dropdown') ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: (field['options'] as List<dynamic>?)?.join(','),
+              decoration: InputDecoration(
+                labelText: 'Options (comma-separated)',
+                hintText: 'e.g., Option1, Option2',
+                isDense: true,
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: isDefault
+                  ? null
+                  : (value) => field['options'] = value
+                        .split(',')
+                        .map((e) => e.trim())
+                        .where((e) => e.isNotEmpty)
+                        .toList(),
+              readOnly: isDefault,
+            ),
+          ],
+
           if (field['dataType'] == 'number') ...[
             const SizedBox(height: 12),
             TextFormField(
@@ -973,15 +1307,6 @@ class _ReadingTemplateManagementScreenState
                     width: 2,
                   ),
                 ),
-                errorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: theme.colorScheme.error),
-                ),
-                focusedErrorBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.error,
-                    width: 2,
-                  ),
-                ),
               ),
               style: TextStyle(
                 fontSize: 14,
@@ -991,6 +1316,47 @@ class _ReadingTemplateManagementScreenState
               readOnly: isDefault,
             ),
           ],
+
+          if (field['dataType'] == 'boolean') ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: field['description_remarks'],
+              decoration: InputDecoration(
+                labelText: 'Description / Remarks (Optional)',
+                isDense: true,
+                labelStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.colorScheme.onSurface,
+              ),
+              onChanged: isDefault
+                  ? null
+                  : (value) => field['description_remarks'] = value,
+              readOnly: isDefault,
+              maxLines: 2,
+            ),
+          ],
+
           const SizedBox(height: 12),
           Row(
             children: [
@@ -1009,176 +1375,6 @@ class _ReadingTemplateManagementScreenState
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildGroupFieldInput(
-    Map<String, dynamic> group,
-    int index,
-    ThemeData theme,
-  ) {
-    // Your existing implementation from the attachment
-    final isDefault = group['isDefault'] ?? false;
-
-    return ExpansionTile(
-      title: Text(
-        group['name'].isEmpty ? 'Unnamed Group' : group['name'],
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: theme.colorScheme.onSurface,
-        ),
-      ),
-      leading: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Icon(Icons.group, size: 16, color: theme.colorScheme.primary),
-      ),
-      trailing: isDefault
-          ? null
-          : IconButton(
-              icon: Icon(
-                Icons.delete_outline,
-                size: 18,
-                color: theme.colorScheme.error,
-              ),
-              onPressed: () => _removeReadingField(index),
-            ),
-      childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-      backgroundColor: isDefault ? Colors.blue.shade50 : Colors.grey.shade50,
-      collapsedBackgroundColor: isDefault
-          ? Colors.blue.shade50
-          : Colors.grey.shade50,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      collapsedShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
-      children: [
-        Row(
-          children: [
-            if (isDefault)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'DEFAULT',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.blue.shade700,
-                  ),
-                ),
-              ),
-            if (isDefault) const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.purple.shade100,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'GROUP',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.purple.shade700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        TextFormField(
-          initialValue: group['name'],
-          decoration: InputDecoration(
-            labelText: 'Group Name',
-            isDense: true,
-            labelStyle: TextStyle(
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
-              fontSize: 14,
-            ),
-            border: UnderlineInputBorder(
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
-              ),
-            ),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
-              ),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(
-                color: theme.colorScheme.primary,
-                width: 2,
-              ),
-            ),
-          ),
-          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
-          onChanged: isDefault ? null : (value) => group['name'] = value,
-          readOnly: isDefault,
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Subfields',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-            ),
-            if (!isDefault)
-              TextButton.icon(
-                onPressed: () => _addSubFieldToGroup(index),
-                icon: Icon(
-                  Icons.add,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                label: Text(
-                  'Add Subfield',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ...(group['nestedFields'] as List<Map<String, dynamic>>)
-            .asMap()
-            .entries
-            .map(
-              (entry) => _buildReadingFieldCard(
-                entry.value,
-                index,
-                theme,
-                isSubField: true,
-                subFieldIndex: entry.key,
-                groupIndex: index,
-              ),
-            ),
-      ],
     );
   }
 
@@ -1310,51 +1506,73 @@ class _ReadingTemplateManagementScreenState
     });
   }
 
+  bool _isDefaultField(String fieldName) {
+    // Check if it's a default energy field (except for Battery and Busbar)
+    if (_selectedBayType != 'Battery' &&
+        _selectedBayType != 'Busbar' &&
+        _defaultEnergyFields.any((field) => field.name == fieldName)) {
+      return true;
+    }
+
+    // Check hourly fields for selected bay type
+    if (_selectedBayType != null) {
+      if (_defaultHourlyFields[_selectedBayType]?.any(
+            (field) => field.name == fieldName,
+          ) ??
+          false) {
+        return true;
+      }
+
+      // Check daily fields for selected bay type
+      if (_defaultDailyFields[_selectedBayType]?.any(
+            (field) => field.name == fieldName,
+          ) ??
+          false) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   void _onBayTypeSelected(String? newBayType) {
     setState(() {
       _selectedBayType = newBayType;
-      _readingFields.clear();
+
+      // Clear only custom fields, keep default ones if applicable
+      _readingFields.removeWhere((field) => !(field['isDefault'] ?? false));
+
       if (newBayType != null) {
-        _addDefaultFieldsForBayType(newBayType);
+        // Add default fields based on bay type
+        List<ReadingField> defaultFields = [];
+
+        // Add energy fields (except for Battery and Busbar)
+        if (newBayType != 'Battery' && newBayType != 'Busbar') {
+          defaultFields.addAll(_defaultEnergyFields);
+        }
+
+        // Add hourly fields for this bay type
+        defaultFields.addAll(_defaultHourlyFields[newBayType] ?? []);
+
+        // Add daily fields for this bay type
+        defaultFields.addAll(_defaultDailyFields[newBayType] ?? []);
+
+        // Convert to maps and mark as default
+        final defaultFieldsAsMaps = defaultFields
+            .map((field) => field.toMap()..['isDefault'] = true)
+            .toList();
+
+        // Add default fields that aren't already present
+        for (var defaultField in defaultFieldsAsMaps) {
+          if (!_readingFields.any(
+            (existing) => existing['name'] == defaultField['name'],
+          )) {
+            // Insert at beginning to show defaults first
+            _readingFields.insert(0, defaultField);
+          }
+        }
       }
     });
-  }
-
-  void _addDefaultFieldsForBayType(String bayType) {
-    final defaultFields = _getDefaultFieldsForBayType(bayType);
-    for (final field in defaultFields) {
-      _readingFields.add(field.toMap()..['isDefault'] = true);
-    }
-  }
-
-  List<ReadingField> _getDefaultFieldsForBayType(String bayType) {
-    switch (bayType.toLowerCase()) {
-      case 'transformer':
-        return [
-          ReadingField(
-            name: 'Current',
-            dataType: ReadingFieldDataType.number,
-            unit: 'A',
-            isMandatory: true,
-            frequency: ReadingFrequency.hourly,
-            nestedFields: null,
-          ),
-          ReadingField(
-            name: 'Voltage',
-            dataType: ReadingFieldDataType.number,
-            unit: 'kV',
-            isMandatory: true,
-            frequency: ReadingFrequency.hourly,
-            nestedFields: null,
-          ),
-        ];
-      default:
-        return [];
-    }
-  }
-
-  bool _isDefaultField(String fieldName) {
-    return false;
   }
 
   void _addReadingField() {
@@ -1366,51 +1584,12 @@ class _ReadingTemplateManagementScreenState
         'unit': '',
         'isMandatory': false,
         'isDefault': false,
-        'nestedFields': null,
-      });
-    });
-  }
-
-  void _addGroupReadingField() {
-    setState(() {
-      _readingFields.add({
-        'name': '',
-        'dataType': 'group',
-        'frequency': 'daily',
-        'unit': '',
-        'isMandatory': false,
-        'isDefault': false,
-        'nestedFields': <Map<String, dynamic>>[],
-      });
-    });
-  }
-
-  void _addSubFieldToGroup(int groupIndex) {
-    setState(() {
-      final group = _readingFields[groupIndex];
-      (group['nestedFields'] as List<Map<String, dynamic>>).add({
-        'name': '',
-        'dataType': 'text',
-        'frequency': 'daily',
-        'unit': '',
-        'isMandatory': false,
-        'isDefault': false,
-        'nestedFields': null,
       });
     });
   }
 
   void _removeReadingField(int index) {
     setState(() => _readingFields.removeAt(index));
-  }
-
-  void _removeSubField(int groupIndex, int subFieldIndex) {
-    setState(() {
-      final group = _readingFields[groupIndex];
-      (group['nestedFields'] as List<Map<String, dynamic>>).removeAt(
-        subFieldIndex,
-      );
-    });
   }
 
   Future<void> _fetchReadingTemplates() async {
@@ -1424,13 +1603,15 @@ class _ReadingTemplateManagementScreenState
           .map((doc) => ReadingTemplate.fromFirestore(doc))
           .toList();
     } catch (e) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'Failed to load templates: $e',
-        isError: true,
-      );
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to load templates: $e',
+          isError: true,
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -1460,15 +1641,6 @@ class _ReadingTemplateManagementScreenState
 
     try {
       final readingFields = _readingFields.map((fieldMap) {
-        if (fieldMap['dataType'] == 'group') {
-          return ReadingField.fromMap({
-            ...fieldMap,
-            'nestedFields':
-                (fieldMap['nestedFields'] as List<Map<String, dynamic>>)
-                    .map((subField) => ReadingField.fromMap(subField).toMap())
-                    .toList(),
-          });
-        }
         return ReadingField.fromMap(fieldMap);
       }).toList();
 

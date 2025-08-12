@@ -367,10 +367,11 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final screenSize = MediaQuery.of(context).size;
 
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF8F9FA),
+        backgroundColor: const Color(0xFFFAFAFA),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -397,62 +398,86 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Reading Assignment',
-              style: TextStyle(
-                color: theme.colorScheme.onSurface,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              widget.bayName,
-              style: TextStyle(
-                color: theme.colorScheme.primary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: theme.colorScheme.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: Colors.grey.shade200),
-        ),
-      ),
+      backgroundColor: const Color(0xFFFAFAFA),
+      appBar: _buildAppBar(theme),
       body: FadeTransition(
         opacity: _fadeAnimation,
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeaderSection(theme)),
-            SliverToBoxAdapter(child: _buildDateSelector(theme)),
-            SliverToBoxAdapter(child: _buildTemplateSelector(theme)),
-            if (_selectedTemplate != null)
-              SliverToBoxAdapter(child: _buildFieldsSection(theme)),
-            SliverToBoxAdapter(child: _buildActionButtons(theme)),
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
-          ],
+        child: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: screenSize.width * 0.05,
+                    vertical: 16,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeaderSection(theme),
+                      const SizedBox(height: 16),
+                      _buildDateSelector(theme),
+                      const SizedBox(height: 16),
+                      _buildTemplateSelector(theme),
+                      if (_selectedTemplate != null) ...[
+                        const SizedBox(height: 16),
+                        _buildFieldsSection(theme),
+                      ],
+                      const SizedBox(height: 100), // Bottom padding
+                    ],
+                  ),
+                ),
+              ),
+              _buildActionButtons(theme),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      centerTitle: false,
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Reading Assignment',
+            style: TextStyle(
+              color: theme.colorScheme.onSurface,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            widget.bayName,
+            style: TextStyle(
+              color: theme.colorScheme.primary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back_ios, color: theme.colorScheme.onSurface),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: Colors.grey.shade200),
       ),
     );
   }
 
   Widget _buildHeaderSection(ThemeData theme) {
     return Container(
-      margin: const EdgeInsets.all(20),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -462,7 +487,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
       ),
       child: Row(
@@ -471,15 +496,15 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: theme.colorScheme.primary,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.electrical_services,
               color: Colors.white,
-              size: 24,
+              size: 20,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -511,25 +536,24 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
 
   Widget _buildDateSelector(ThemeData theme) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.all(20),
+        contentPadding: const EdgeInsets.all(16),
         leading: Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: theme.colorScheme.secondary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             Icons.calendar_today,
@@ -563,16 +587,15 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
 
   Widget _buildTemplateSelector(ThemeData theme) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -594,12 +617,14 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Reading Template',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
+              Expanded(
+                child: Text(
+                  'Reading Template',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
                 ),
               ),
             ],
@@ -607,10 +632,10 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
           const SizedBox(height: 16),
           if (_availableReadingTemplates.isEmpty)
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.orange.withOpacity(0.3)),
               ),
               child: Row(
@@ -623,6 +648,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                       style: const TextStyle(
                         color: Colors.orange,
                         fontWeight: FontWeight.w500,
+                        fontSize: 14,
                       ),
                     ),
                   ),
@@ -634,22 +660,32 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               value: _selectedTemplate,
               decoration: InputDecoration(
                 labelText: 'Select Template',
-                prefixIcon: const Icon(Icons.list_alt),
+                prefixIcon: const Icon(Icons.list_alt, size: 20),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 filled: true,
                 fillColor: Colors.grey.shade50,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
               ),
+              isExpanded: true, // Fix overflow in dropdown
               items: _availableReadingTemplates.map((template) {
                 return DropdownMenuItem(
                   value: template,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         template.bayType,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       if (template.id != null)
                         Text(
@@ -658,6 +694,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                             fontSize: 12,
                             color: Colors.grey.shade600,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                     ],
                   ),
@@ -674,16 +711,15 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
 
   Widget _buildFieldsSection(ThemeData theme) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -707,47 +743,51 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Reading Fields Configuration',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
+                Expanded(
+                  child: Text(
+                    'Reading Fields Configuration',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            ListView.builder(
+            const SizedBox(height: 16),
+            ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _instanceReadingFields.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final field = _instanceReadingFields[index];
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  child: _buildReadingFieldDefinitionInput(field, index),
-                );
+                return _buildReadingFieldDefinitionInput(field, index, theme);
               },
             ),
             if (widget.currentUser.role == UserRole.admin ||
-                widget.currentUser.role == UserRole.subdivisionManager)
-              Container(
+                widget.currentUser.role == UserRole.subdivisionManager) ...[
+              const SizedBox(height: 16),
+              SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: _addInstanceReadingField,
-                  icon: const Icon(Icons.add_circle_outline),
-                  label: const Text('Add Custom Field'),
+                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                  label: const Text(
+                    'Add Custom Field',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     side: BorderSide(color: theme.colorScheme.primary),
                   ),
                 ),
               ),
+            ],
           ],
         ),
       ),
@@ -757,25 +797,27 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
   Widget _buildReadingFieldDefinitionInput(
     Map<String, dynamic> fieldDef,
     int index,
+    ThemeData theme,
   ) {
-    final theme = Theme.of(context);
     final String currentFieldName = fieldDef['name'] as String;
     final String currentDataType = fieldDef['dataType'] as String;
     final bool currentIsMandatory = fieldDef['isMandatory'] as bool;
     final String currentUnit = fieldDef['unit'] as String? ?? '';
     final List<String> currentOptions = List.from(fieldDef['options'] ?? []);
     final String currentFrequency = fieldDef['frequency'] as String;
+    final String? groupName = fieldDef['groupName'] as String?;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.grey.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header Row
           Row(
             children: [
               Container(
@@ -792,25 +834,51 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  currentFieldName.isNotEmpty
-                      ? currentFieldName
-                      : 'Unnamed Field',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      currentFieldName.isNotEmpty
+                          ? currentFieldName
+                          : 'Unnamed Field',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (groupName != null)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          groupName,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               if (currentIsMandatory)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: 6,
+                    vertical: 2,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                   child: const Text(
                     'Required',
@@ -821,20 +889,42 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                     ),
                   ),
                 ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => _removeInstanceReadingField(index),
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: theme.colorScheme.error,
+                  size: 18,
+                ),
+                style: IconButton.styleFrom(
+                  backgroundColor: theme.colorScheme.error.withOpacity(0.1),
+                  minimumSize: const Size(32, 32),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+
+          // Field Name Input
           TextFormField(
             initialValue: currentFieldName,
             decoration: InputDecoration(
               labelText: 'Field Name',
-              prefixIcon: const Icon(Icons.edit, size: 20),
+              prefixIcon: const Icon(Icons.edit, size: 18),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
               filled: true,
               fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+              isDense: true,
             ),
+            style: const TextStyle(fontSize: 14),
             onChanged: (value) {
               setState(() {
                 fieldDef['name'] = value;
@@ -856,6 +946,8 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                 : null,
           ),
           const SizedBox(height: 12),
+
+          // Data Type and Frequency Row
           Row(
             children: [
               Expanded(
@@ -865,18 +957,25 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                     labelText: 'Data Type',
                     prefixIcon: Icon(
                       _getDataTypeIcon(currentDataType),
-                      size: 20,
+                      size: 18,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     filled: true,
                     fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    isDense: true,
                   ),
+                  isExpanded: true,
                   items: _dataTypes.map((type) {
                     return DropdownMenuItem(
                       value: type,
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             _getDataTypeIcon(type),
@@ -884,7 +983,13 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                             color: _getDataTypeColor(type),
                           ),
                           const SizedBox(width: 8),
-                          Text(type),
+                          Flexible(
+                            child: Text(
+                              type,
+                              style: const TextStyle(fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     );
@@ -899,21 +1004,34 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   },
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonFormField<String>(
                   value: currentFrequency,
                   decoration: InputDecoration(
                     labelText: 'Frequency',
-                    prefixIcon: const Icon(Icons.schedule, size: 20),
+                    prefixIcon: const Icon(Icons.schedule, size: 18),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     filled: true,
                     fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    isDense: true,
                   ),
+                  isExpanded: true,
                   items: _frequencies.map((freq) {
-                    return DropdownMenuItem(value: freq, child: Text(freq));
+                    return DropdownMenuItem(
+                      value: freq,
+                      child: Text(
+                        freq,
+                        style: const TextStyle(fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
                   }).toList(),
                   onChanged: (value) =>
                       setState(() => fieldDef['frequency'] = value!),
@@ -921,6 +1039,8 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               ),
             ],
           ),
+
+          // Conditional Fields
           if (currentDataType == 'dropdown') ...[
             const SizedBox(height: 12),
             TextFormField(
@@ -928,13 +1048,19 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               decoration: InputDecoration(
                 labelText: 'Options (comma-separated)',
                 hintText: 'Option1, Option2, Option3',
-                prefixIcon: const Icon(Icons.list, size: 20),
+                prefixIcon: const Icon(Icons.list, size: 18),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 filled: true,
                 fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
               ),
+              style: const TextStyle(fontSize: 14),
               onChanged: (value) => fieldDef['options'] = value
                   .split(',')
                   .map((e) => e.trim())
@@ -942,47 +1068,45 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   .toList(),
             ),
           ],
+
           if (currentDataType == 'number') ...[
             const SizedBox(height: 12),
             TextFormField(
               initialValue: currentUnit,
               decoration: InputDecoration(
                 labelText: 'Unit (e.g., V, A, kW)',
-                prefixIcon: const Icon(Icons.straighten, size: 20),
+                prefixIcon: const Icon(Icons.straighten, size: 18),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 filled: true,
                 fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
               ),
+              style: const TextStyle(fontSize: 14),
               onChanged: (value) => fieldDef['unit'] = value,
             ),
           ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: CheckboxListTile(
-                  title: const Text('Mandatory Field'),
-                  value: currentIsMandatory,
-                  onChanged: (value) =>
-                      setState(() => fieldDef['isMandatory'] = value!),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              ),
-              IconButton(
-                onPressed: () => _removeInstanceReadingField(index),
-                icon: Icon(
-                  Icons.delete_outline,
-                  color: theme.colorScheme.error,
-                ),
-                style: IconButton.styleFrom(
-                  backgroundColor: theme.colorScheme.error.withOpacity(0.1),
-                ),
-              ),
-            ],
+
+          const SizedBox(height: 8),
+
+          // Mandatory Checkbox
+          CheckboxListTile(
+            title: const Text(
+              'Mandatory Field',
+              style: TextStyle(fontSize: 14),
+            ),
+            value: currentIsMandatory,
+            onChanged: (value) =>
+                setState(() => fieldDef['isMandatory'] = value!),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            visualDensity: VisualDensity.compact,
           ),
         ],
       ),
@@ -991,61 +1115,65 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
 
   Widget _buildActionButtons(ThemeData theme) {
     return Container(
-      margin: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          if (_isSaving)
-            Container(
-              padding: const EdgeInsets.all(20),
-              child: Column(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: _isSaving
+            ? Column(
                 children: [
                   CircularProgressIndicator(
                     valueColor: AlwaysStoppedAnimation<Color>(
                       theme.colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   Text(
                     'Saving assignment...',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 14,
                       color: theme.colorScheme.primary,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
-              ),
-            )
-          else
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: _selectedTemplate != null ? _saveAssignment : null,
-                icon: Icon(
-                  _existingAssignmentId == null ? Icons.save : Icons.update,
-                  size: 24,
-                ),
-                label: Text(
-                  _existingAssignmentId == null
-                      ? 'Save Assignment'
-                      : 'Update Assignment',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+              )
+            : SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _selectedTemplate != null ? _saveAssignment : null,
+                  icon: Icon(
+                    _existingAssignmentId == null ? Icons.save : Icons.update,
+                    size: 20,
+                  ),
+                  label: Text(
+                    _existingAssignmentId == null
+                        ? 'Save Assignment'
+                        : 'Update Assignment',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 2,
                   ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 2,
-                ),
               ),
-            ),
-        ],
       ),
     );
   }

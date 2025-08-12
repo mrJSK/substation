@@ -654,13 +654,15 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     .toList() ??
                 [];
 
+            // FIXED: Check the correct collection for reading assignments
             return StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
-                  .collection('userReadingConfigs')
-                  .where('substationId', isEqualTo: widget.substationId)
+                  .collection(
+                    'bayReadingAssignments',
+                  ) // CORRECTED COLLECTION NAME
                   .snapshots(),
-              builder: (context, readingConfigSnapshot) {
-                if (readingConfigSnapshot.connectionState ==
+              builder: (context, readingAssignmentSnapshot) {
+                if (readingAssignmentSnapshot.connectionState ==
                     ConnectionState.waiting) {
                   return Center(
                     child: CircularProgressIndicator(
@@ -669,23 +671,21 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   );
                 }
 
-                if (readingConfigSnapshot.hasError) {
+                if (readingAssignmentSnapshot.hasError) {
                   return Center(
                     child: Text(
-                      'Error loading reading assignments: ${readingConfigSnapshot.error}',
+                      'Error loading reading assignments: ${readingAssignmentSnapshot.error}',
                     ),
                   );
                 }
 
-                // Collect assigned bay IDs
+                // FIXED: Collect assigned bay IDs from the correct structure
                 final assignedBays = <String>{};
-                for (var doc in readingConfigSnapshot.data!.docs) {
-                  final userReadingsConfig = UserReadingsConfig.fromFirestore(
-                    doc,
-                  );
-                  for (var configuredBayReading
-                      in userReadingsConfig.configuredReadings) {
-                    assignedBays.add(configuredBayReading.bayId);
+                for (var doc in readingAssignmentSnapshot.data!.docs) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final bayId = data['bayId'] as String?;
+                  if (bayId != null) {
+                    assignedBays.add(bayId);
                   }
                 }
 
@@ -803,7 +803,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               children: bays.map((bay) {
                 final isAssigned = assignedBays.contains(bay.id);
 
-                // MODIFIED: Updated the ListTile with delete icon beside menu_book icon
+                // CORRECTED: Updated the ListTile with proper reading assignment icon handling
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
@@ -841,56 +841,27 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // MODIFIED: Updated reading assignment and delete icons container
+                        // CORRECTED: Reading assignment icon with proper navigation and refresh
+                        _buildReadingAssignmentIcon(bay, isAssigned),
+                        const SizedBox(width: 4),
+                        // Delete icon
                         Container(
                           decoration: BoxDecoration(
-                            color: isAssigned
-                                ? Colors.green.withOpacity(0.1)
-                                : Colors.red.withOpacity(0.1),
+                            color: theme.colorScheme.error.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Reading assignment icon
-                              IconButton(
-                                icon: Icon(
-                                  Icons.menu_book,
-                                  color: isAssigned ? Colors.green : Colors.red,
-                                  size: 20,
-                                ),
-                                tooltip: isAssigned
-                                    ? 'Reading Assigned'
-                                    : 'Reading Unassigned',
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          BayReadingAssignmentScreen(
-                                            bayId: bay.id,
-                                            bayName: bay.name,
-                                            currentUser: widget.currentUser,
-                                          ),
-                                    ),
-                                  );
-                                },
-                              ),
-                              // ADDED: Delete icon beside menu_book
-                              IconButton(
-                                icon: Icon(
-                                  Icons.delete,
-                                  color: theme.colorScheme.error,
-                                  size: 20,
-                                ),
-                                tooltip: 'Delete Bay',
-                                onPressed: () =>
-                                    _confirmDeleteBay(context, bay),
-                              ),
-                            ],
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.delete,
+                              color: theme.colorScheme.error,
+                              size: 20,
+                            ),
+                            tooltip: 'Delete Bay',
+                            onPressed: () => _confirmDeleteBay(context, bay),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        // Edit icon (remains unchanged)
+                        // Edit icon
                         Container(
                           decoration: BoxDecoration(
                             color: theme.colorScheme.primary.withOpacity(0.1),
@@ -916,7 +887,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           );
         }).toList(),
 
-        // Standalone Equipment Section (remains unchanged)
+        // Standalone Equipment Section
         if (standaloneEquipment.isNotEmpty)
           Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -1004,6 +975,53 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  // NEW: Reading assignment icon widget with proper state management
+  Widget _buildReadingAssignmentIcon(Bay bay, bool isAssigned) {
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isAssigned
+            ? Colors.green.withOpacity(0.1)
+            : Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isAssigned
+              ? Colors.green.withOpacity(0.3)
+              : Colors.grey.withOpacity(0.3),
+        ),
+      ),
+      child: IconButton(
+        icon: Icon(
+          Icons.menu_book,
+          color: isAssigned ? Colors.green.shade600 : Colors.grey.shade600,
+          size: 20,
+        ),
+        tooltip: isAssigned
+            ? 'Reading template assigned'
+            : 'No reading template assigned',
+        onPressed: () async {
+          final result = await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => BayReadingAssignmentScreen(
+                bayId: bay.id,
+                bayName: bay.name,
+                currentUser: widget.currentUser,
+              ),
+            ),
+          );
+
+          // Refresh the UI if assignment was saved
+          if (result == true && mounted) {
+            setState(
+              () {},
+            ); // This will trigger rebuild and refresh the icon colors
+          }
+        },
+      ),
     );
   }
 
@@ -1242,12 +1260,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             ),
           ],
           const SizedBox(height: 16),
-          // CORRECTED: Updated to use saveAllPendingChanges() instead of saveSelectedBayLayoutChanges()
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () async {
-                // Show confirmation dialog since this saves ALL changes
                 final bool confirm =
                     await showDialog(
                       context: context,
@@ -1630,16 +1646,13 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
 
     if (confirmed == true) {
-      // Show animated deletion process
       await _performAnimatedDeletion(context, bay);
     }
   }
 
-  // NEW: Animated deletion method
   Future<void> _performAnimatedDeletion(BuildContext context, Bay bay) async {
     final theme = Theme.of(context);
 
-    // Show loading overlay with animation
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1662,7 +1675,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Animated loading indicator
                 TweenAnimationBuilder<double>(
                   tween: Tween(begin: 0.0, end: 1.0),
                   duration: const Duration(milliseconds: 500),
@@ -1720,39 +1732,27 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
 
     try {
-      // Simulate network delay for better UX (minimum 1.5 seconds)
       final deletionFuture = _deleteBay(bay);
       final delayFuture = Future.delayed(const Duration(milliseconds: 1500));
 
-      // Wait for both the actual deletion and the minimum delay
       await Future.wait([deletionFuture, delayFuture]);
 
-      // Close loading dialog
       if (context.mounted) {
         Navigator.of(context).pop();
       }
 
-      // Show success animation
       if (context.mounted) {
         await _showSuccessAnimation(context, bay);
       }
 
-      // Refresh the data - use your existing method name
       if (mounted) {
-        // Replace this with your actual method name:
-        // _loadSubstationDetails();
-        // OR _fetchSubstationData();
-        // OR _loadBaysData();
-        // OR _refreshSubstationData();
-        setState(() {}); // Fallback to trigger rebuild
+        setState(() {});
       }
     } catch (e) {
-      // Close loading dialog
       if (context.mounted) {
         Navigator.of(context).pop();
       }
 
-      // Show error message
       if (context.mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1778,16 +1778,13 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     }
   }
 
-  // NEW: Success animation method with auto-dismiss
   Future<void> _showSuccessAnimation(BuildContext context, Bay bay) async {
     final theme = Theme.of(context);
 
-    // Show success dialog with animation and auto-dismiss
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        // Auto-dismiss after animation completes
         Timer(const Duration(milliseconds: 1000), () {
           if (context.mounted && Navigator.canPop(context)) {
             Navigator.of(context).pop();
@@ -1820,7 +1817,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Success icon with animation
                         TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
                           duration: const Duration(milliseconds: 300),
@@ -1861,7 +1857,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 12),
-                        // Auto-dismiss indicator
                         SizedBox(
                           width: 60,
                           child: LinearProgressIndicator(
@@ -1883,17 +1878,14 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
   }
 
-  // Actual deletion method with your existing logic
   Future<void> _deleteBay(Bay bay) async {
     try {
       debugPrint('Attempting to delete bay: ${bay.id}');
 
-      // Delete the bay document
       await FirebaseFirestore.instance.collection('bays').doc(bay.id).delete();
 
       debugPrint('Bay deleted: ${bay.id}. Now deleting connections...');
 
-      // Delete related connections using batch
       final batch = FirebaseFirestore.instance.batch();
       final connectionsSnapshot = await FirebaseFirestore.instance
           .collection('bay_connections')

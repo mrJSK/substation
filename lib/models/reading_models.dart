@@ -22,6 +22,7 @@ class ReadingField {
   final ReadingFrequency? frequency; // Made optional for nested fields
   final String? descriptionRemarks; // For boolean fields
   final List<ReadingField>? nestedFields; // For group type fields
+  final String? groupName;
 
   ReadingField({
     required this.name,
@@ -32,56 +33,41 @@ class ReadingField {
     this.frequency, // No longer required
     this.descriptionRemarks,
     this.nestedFields,
+    this.groupName,
   });
 
-  // Convert from a Map (e.g., from Firestore)
   factory ReadingField.fromMap(Map<String, dynamic> map) {
     return ReadingField(
-      name: map['name'] as String,
+      name: map['name'] ?? '',
       dataType: ReadingFieldDataType.values.firstWhere(
-        (e) => e.toString().split('.').last == map['dataType'],
-        orElse: () => ReadingFieldDataType.text, // Default to text if not found
+        (e) => e.toString().split('.').last == (map['dataType'] ?? 'text'),
+        orElse: () => ReadingFieldDataType.text,
       ),
-      unit: map['unit'] as String?,
-      options: (map['options'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList(),
-      isMandatory: map['isMandatory'] as bool? ?? false,
-      frequency: map['frequency'] != null
-          ? ReadingFrequency.values.firstWhere(
-              (e) => e.toString().split('.').last == map['frequency'],
-              orElse: () => ReadingFrequency.onDemand, // Default
-            )
+      unit: map['unit'],
+      options: map['options'] != null
+          ? List<String>.from(map['options'])
           : null,
-      descriptionRemarks: map['description_remarks'] as String?,
-      nestedFields: (map['nestedFields'] as List<dynamic>?)
-          ?.map(
-            (fieldMap) =>
-                ReadingField.fromMap(fieldMap as Map<String, dynamic>),
-          )
-          .toList(),
+      isMandatory: map['isMandatory'] ?? false,
+      frequency: ReadingFrequency.values.firstWhere(
+        (e) => e.toString().split('.').last == (map['frequency'] ?? 'daily'),
+        orElse: () => ReadingFrequency.daily,
+      ),
+      descriptionRemarks: map['description_remarks'],
+      groupName: map['groupName'], // Add this line
     );
   }
 
-  // Convert to a Map (e.g., for Firestore)
   Map<String, dynamic> toMap() {
-    final map = {
+    return {
       'name': name,
       'dataType': dataType.toString().split('.').last,
       'unit': unit,
       'options': options,
       'isMandatory': isMandatory,
+      'frequency': frequency.toString().split('.').last,
       'description_remarks': descriptionRemarks,
+      'groupName': groupName, // Add this line
     };
-    if (frequency != null) {
-      map['frequency'] = frequency!.toString().split('.').last;
-    }
-    if (nestedFields != null) {
-      map['nestedFields'] = nestedFields!
-          .map((field) => field.toMap())
-          .toList();
-    }
-    return map;
   }
 }
 
