@@ -17,7 +17,6 @@ class BusbarIconPainter extends EquipmentPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final colors = EquipmentPainter.equipmentColorScheme['Busbar']!;
-    final gradientPaint = createGradientPaint(size, colors, isFill: false);
 
     final double busbarY = size.height / 2;
 

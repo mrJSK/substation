@@ -84,8 +84,7 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
       _bayMandatoryFields.clear();
       for (var doc in assignmentsSnapshot.docs) {
         final assignedFieldsData =
-            (doc.data() as Map<String, dynamic>)['assignedFields']
-                as List<dynamic>;
+            (doc.data())['assignedFields'] as List<dynamic>;
         final List<ReadingField> allFields = assignedFieldsData
             .map(
               (fieldMap) =>

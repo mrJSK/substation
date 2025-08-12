@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/bay_model.dart';
-import '../utils/snackbar_utils.dart';
 import 'equipment_assignment_screen.dart'; // Import the equipment assignment screen
 
 class BaySelectionScreen extends StatelessWidget {

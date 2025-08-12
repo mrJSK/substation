@@ -66,6 +66,7 @@ dependencies:
   excel: ^4.0.6
   open_filex: ^4.7.0
   reorderables: ^0.6.0
+  firebase_messaging: ^15.2.7
 
 dev_dependencies:
   flutter_test:

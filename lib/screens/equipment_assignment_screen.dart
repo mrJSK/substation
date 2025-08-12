@@ -15,7 +15,6 @@ import '../../equipment_icons/isolator_icon.dart';
 import '../../equipment_icons/pt_icon.dart';
 import '../../equipment_icons/line_icon.dart';
 import '../../equipment_icons/feeder_icon.dart';
-import '../models/bay_model.dart'; // Import Bay model (still needed for bay type fetching if required elsewhere)
 
 class EquipmentAssignmentScreen extends StatefulWidget {
   final String bayId;

@@ -5,8 +5,6 @@ import 'package:substation_manager/models/equipment_model.dart';
 import 'package:substation_manager/models/user_model.dart';
 import '../utils/snackbar_utils.dart';
 import 'equipment_assignment_screen.dart'; // For adding and editing equipment
-import 'dart:math'; // For min/max
-import '../models/bay_model.dart'; // Import Bay model
 import 'package:vector_math/vector_math_64.dart'
     show Matrix4; // Make sure this import is present
 
@@ -408,7 +406,6 @@ class _BayEquipmentManagementScreenState
       TransformationController();
   Matrix4 _currentInverseMatrix = Matrix4.identity();
   String? _selectedEquipmentId;
-  static const double _movementStep = 20.0;
   String? _bayType;
   String? _transformerEquipmentId;
 

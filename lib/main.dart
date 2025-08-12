@@ -5,14 +5,16 @@ import 'package:provider/provider.dart';
 
 import '../firebase_options.dart'; // Ensure this path is correct
 import '../models/app_state_data.dart';
-import '../screens/auth_screen.dart';
 import '../screens/home_screen.dart'; // This will be the new routing screen
-import '../screens/splash_screen.dart'; // The initial splash screen
+import '../screens/splash_screen.dart';
+import 'services/fcm_service.dart'; // The initial splash screen
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Initialize Firebase once at the application start
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // In your main.dart or app initialization
+  await FCMService.initializeFCM();
 
   runApp(
     // Provide AppStateData globally

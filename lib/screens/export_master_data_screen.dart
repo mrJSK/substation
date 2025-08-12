@@ -45,11 +45,6 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   Subdivision? _selectedSubdivision;
   Substation? _selectedSubstation;
 
-  DistributionZone? _selectedDistributionZone;
-  DistributionCircle? _selectedDistributionCircle;
-  DistributionDivision? _selectedDistributionDivision;
-  DistributionSubdivision? _selectedDistributionSubdivision;
-
   List<MasterEquipmentTemplate> _selectedEquipmentTypes = [];
   List<String> _selectedVoltageLevels = [];
   DateTime? _startDate;
@@ -375,7 +370,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
               substationInfo['circleName'],
               substationInfo['zoneName'],
               eq.status,
-              eq.createdAt?.toDate().toString() ?? 'N/A',
+              eq.createdAt.toDate().toString(),
             ]);
           }
         }
@@ -456,7 +451,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
           substationInfo['zoneName'],
           equipmentSnapshot.docs.length,
           bay.multiplyingFactor?.toString() ?? 'N/A',
-          bay.createdAt?.toDate().toString() ?? 'N/A',
+          bay.createdAt.toDate().toString(),
         ]);
       }
     }
@@ -646,49 +641,41 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
         'zoneName': 'Unknown',
       };
 
-      if (substation.subdivisionId != null) {
-        final subdivisionDoc = await FirebaseFirestore.instance
-            .collection('subdivisions')
-            .doc(substation.subdivisionId!)
+      final subdivisionDoc = await FirebaseFirestore.instance
+          .collection('subdivisions')
+          .doc(substation.subdivisionId)
+          .get();
+
+      if (subdivisionDoc.exists) {
+        final subdivision = Subdivision.fromFirestore(subdivisionDoc);
+        info['subdivisionName'] = subdivision.name;
+
+        final divisionDoc = await FirebaseFirestore.instance
+            .collection('divisions')
+            .doc(subdivision.divisionId)
             .get();
 
-        if (subdivisionDoc.exists) {
-          final subdivision = Subdivision.fromFirestore(subdivisionDoc);
-          info['subdivisionName'] = subdivision.name;
+        if (divisionDoc.exists) {
+          final division = Division.fromFirestore(divisionDoc);
+          info['divisionName'] = division.name;
 
-          if (subdivision.divisionId != null) {
-            final divisionDoc = await FirebaseFirestore.instance
-                .collection('divisions')
-                .doc(subdivision.divisionId!)
+          final circleDoc = await FirebaseFirestore.instance
+              .collection('circles')
+              .doc(division.circleId)
+              .get();
+
+          if (circleDoc.exists) {
+            final circle = Circle.fromFirestore(circleDoc);
+            info['circleName'] = circle.name;
+
+            final zoneDoc = await FirebaseFirestore.instance
+                .collection('zones')
+                .doc(circle.zoneId)
                 .get();
 
-            if (divisionDoc.exists) {
-              final division = Division.fromFirestore(divisionDoc);
-              info['divisionName'] = division.name;
-
-              if (division.circleId != null) {
-                final circleDoc = await FirebaseFirestore.instance
-                    .collection('circles')
-                    .doc(division.circleId!)
-                    .get();
-
-                if (circleDoc.exists) {
-                  final circle = Circle.fromFirestore(circleDoc);
-                  info['circleName'] = circle.name;
-
-                  if (circle.zoneId != null) {
-                    final zoneDoc = await FirebaseFirestore.instance
-                        .collection('zones')
-                        .doc(circle.zoneId!)
-                        .get();
-
-                    if (zoneDoc.exists) {
-                      final zone = Zone.fromFirestore(zoneDoc);
-                      info['zoneName'] = zone.name;
-                    }
-                  }
-                }
-              }
+            if (zoneDoc.exists) {
+              final zone = Zone.fromFirestore(zoneDoc);
+              info['zoneName'] = zone.name;
             }
           }
         }

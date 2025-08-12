@@ -1,15 +1,11 @@
 // lib/screens/readings_configuration_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dropdown_search/dropdown_search.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/hierarchy_models.dart';
-import '../../utils/snackbar_utils.dart';
 import '../../models/user_readings_config_model.dart';
-import '../../models/reading_models.dart';
 
 class ReadingConfigurationScreen extends StatefulWidget {
   final AppUser currentUser;

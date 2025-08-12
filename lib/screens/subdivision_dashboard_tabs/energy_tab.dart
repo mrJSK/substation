@@ -12,13 +12,11 @@ import '../../models/logsheet_models.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/hierarchy_models.dart';
-import '../../models/user_readings_config_model.dart';
 import '../../utils/snackbar_utils.dart';
 import '../../models/app_state_data.dart';
 import '../../models/energy_readings_data.dart'; // Now uses unified model
 import '../../models/busbar_energy_map.dart';
 import '../../models/assessment_model.dart';
-import '../../models/substation_sld_layout_model.dart';
 
 // Enhanced Equipment Icon Widget
 class _EquipmentIcon extends StatelessWidget {
@@ -271,13 +269,11 @@ class EnergyTab extends StatefulWidget {
 
 class _EnergyTabState extends State<EnergyTab> {
   bool _isLoading = true;
-  String? _errorMessage;
   Substation? _selectedSubstation;
-  List<Substation> _allSubstations = [];
   List<LogsheetEntry> _allLogsheetEntries = [];
 
   // Updated to use unified BayEnergyData model
-  Map<String, BayEnergyData> _computedBayEnergyData =
+  final Map<String, BayEnergyData> _computedBayEnergyData =
       {}; // Changed from List to Map
   Map<String, Bay> _baysMap = {};
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
@@ -292,13 +288,12 @@ class _EnergyTabState extends State<EnergyTab> {
   Map<String, Circle> _circlesMap = {};
   Map<String, Division> _divisionsMap = {};
   Map<String, Subdivision> _subdivisionsMap = {};
-  Map<String, Substation> _substationsMap = {};
   Map<String, DistributionZone> _distributionZonesMap = {};
   Map<String, DistributionCircle> _distributionCirclesMap = {};
   Map<String, DistributionDivision> _distributionDivisionsMap = {};
   Map<String, DistributionSubdivision> _distributionSubdivisionsMap = {};
   Map<String, BusbarEnergyMap> _busbarEnergyMaps = {};
-  Map<String, Assessment> _latestAssessmentsPerBay = {};
+  final Map<String, Assessment> _latestAssessmentsPerBay = {};
   bool _isSldCreated = false;
 
   @override
@@ -396,7 +391,6 @@ class _EnergyTabState extends State<EnergyTab> {
     } else {
       setState(() {
         _isLoading = false;
-        _errorMessage = null;
         _allLogsheetEntries.clear();
         _baysMap.clear();
         _computedBayEnergyData.clear();
@@ -446,8 +440,6 @@ class _EnergyTabState extends State<EnergyTab> {
           doc.id: Subdivision.fromFirestore(doc),
       };
     }
-
-    _substationsMap = {for (var s in _allSubstations) s.id: s};
   }
 
   Future<void> _fetchDistributionHierarchyData() async {
@@ -496,7 +488,6 @@ class _EnergyTabState extends State<EnergyTab> {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
       _allLogsheetEntries.clear();
       _baysMap.clear();
       _computedBayEnergyData.clear();
@@ -799,32 +790,6 @@ class _EnergyTabState extends State<EnergyTab> {
       'difference': overallDifference,
       'lossPercentage': overallLossPercentage,
     };
-  }
-
-  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: isStartDate ? _startDate : _endDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) {
-      if (!mounted) return;
-      setState(() {
-        if (isStartDate) {
-          _startDate = picked;
-          if (_startDate.isAfter(_endDate)) {
-            _endDate = _startDate;
-          }
-        } else {
-          _endDate = picked;
-          if (_endDate.isBefore(_startDate)) {
-            _startDate = _endDate;
-          }
-        }
-      });
-      _fetchEnergyData();
-    }
   }
 
   @override

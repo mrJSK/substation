@@ -6,6 +6,7 @@ import '../models/user_model.dart';
 import '../models/app_state_data.dart';
 import '../screens/admin/reading_template_management_screen.dart';
 import '../screens/equipment_hierarchy_selection_screen.dart';
+import '../screens/notification_preferences_screen.dart';
 import '../screens/report_builder_wizard_screen.dart';
 import '../screens/saved_sld_list_screen.dart';
 import '../models/hierarchy_models.dart';
@@ -452,11 +453,11 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
       case UserRole.subdivisionManager:
         return [
           {
-            'icon': Icons.dashboard_rounded,
-            'title': 'Dashboard',
-            'subtitle': 'Subdivision view',
-            'onTap': () => Navigator.pop(context),
-            'color': Colors.blue,
+            'icon': Icons.notifications_rounded,
+            'title': 'Notification Preferences',
+            'subtitle': 'Configure event alerts',
+            'onTap': () => _navigateToNotificationPreferences(context),
+            'color': Colors.amber,
           },
           {
             'icon': Icons.analytics_rounded, // Updated this icon
@@ -704,6 +705,17 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
           ],
         );
       },
+    );
+  }
+
+  void _navigateToNotificationPreferences(BuildContext context) {
+    Navigator.of(context).pop(); // Close the drawer
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) =>
+            NotificationPreferencesScreen(currentUser: widget.user),
+      ),
     );
   }
 }

@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:collection/collection.dart';
-import 'dart:math';
 
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
 import '../../models/equipment_model.dart';
-import '../../models/user_readings_config_model.dart';
 import '../../painters/single_line_diagram_painter.dart';
 import '../../utils/snackbar_utils.dart';
 import '../bay_form_screen.dart';
@@ -980,7 +978,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
   // NEW: Reading assignment icon widget with proper state management
   Widget _buildReadingAssignmentIcon(Bay bay, bool isAssigned) {
-    final theme = Theme.of(context);
+    Theme.of(context);
 
     return Container(
       decoration: BoxDecoration(
@@ -1340,207 +1338,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         iconSize: 24,
       ),
     );
-  }
-
-  void _showBayDetailsModalSheet(BuildContext context, Bay bay) {
-    final theme = Theme.of(context);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext bc) {
-        return Container(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Bay Details',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  bay.name,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildDetailRow('ID:', bay.id),
-              _buildDetailRow('Type:', bay.bayType),
-              _buildDetailRow('Voltage Level:', bay.voltageLevel),
-              if (bay.make != null && bay.make!.isNotEmpty)
-                _buildDetailRow('Make:', bay.make!),
-              _buildDetailRow('Created By:', bay.createdBy),
-              _buildDetailRow(
-                'Created At:',
-                bay.createdAt.toDate().toLocal().toString().split('.')[0],
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showBaySymbolActions(
-    BuildContext context,
-    Bay bay,
-    Offset tapPosition,
-    SldController sldController,
-  ) {
-    final List<PopupMenuEntry<String>> menuItems = [
-      const PopupMenuItem<String>(
-        value: 'view_details',
-        child: ListTile(
-          leading: Icon(Icons.info),
-          title: Text('View Bay Details'),
-        ),
-      ),
-      const PopupMenuItem<String>(
-        value: 'edit',
-        child: ListTile(
-          leading: Icon(Icons.edit),
-          title: Text('Edit Bay Details'),
-        ),
-      ),
-      const PopupMenuItem<String>(
-        value: 'adjust',
-        child: ListTile(
-          leading: Icon(Icons.open_with),
-          title: Text('Adjust Position/Size'),
-        ),
-      ),
-      const PopupMenuItem<String>(
-        value: 'manage_equipment',
-        child: ListTile(
-          leading: Icon(Icons.settings),
-          title: Text('Manage Equipment'),
-        ),
-      ),
-      const PopupMenuItem<String>(
-        value: 'readings',
-        child: ListTile(
-          leading: Icon(Icons.menu_book),
-          title: Text('Manage Reading Assignments'),
-        ),
-      ),
-      PopupMenuItem<String>(
-        value: 'delete',
-        child: ListTile(
-          leading: Icon(
-            Icons.delete,
-            color: Theme.of(context).colorScheme.error,
-          ),
-          title: Text(
-            'Delete Bay',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ),
-      ),
-    ];
-
-    showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        tapPosition.dx,
-        tapPosition.dy,
-        MediaQuery.of(context).size.width - tapPosition.dx,
-        MediaQuery.of(context).size.height - tapPosition.dy,
-      ),
-      items: menuItems,
-    ).then((value) {
-      if (value == 'view_details') {
-        _showBayDetailsModalSheet(context, bay);
-      } else if (value == 'edit') {
-        _setViewMode(BayDetailViewMode.edit, bay: bay);
-      } else if (value == 'adjust') {
-        sldController.setSelectedBayForMovement(bay.id, mode: MovementMode.bay);
-        SnackBarUtils.showSnackBar(
-          context,
-          'Selected "${bay.name}". Use controls below to adjust.',
-        );
-      } else if (value == 'manage_equipment') {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => BayEquipmentManagementScreen(
-              bayId: bay.id,
-              bayName: bay.name,
-              substationId: widget.substationId,
-              currentUser: widget.currentUser,
-            ),
-          ),
-        );
-      } else if (value == 'readings') {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => BayReadingAssignmentScreen(
-              bayId: bay.id,
-              bayName: bay.name,
-              currentUser: widget.currentUser,
-            ),
-          ),
-        );
-      } else if (value == 'delete') {
-        _confirmDeleteBay(context, bay);
-      }
-    });
   }
 
   Future<void> _confirmDeleteBay(BuildContext context, Bay bay) async {

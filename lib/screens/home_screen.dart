@@ -1,22 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 
 import '../models/user_model.dart';
-import '../models/hierarchy_models.dart';
 import '../models/app_state_data.dart';
 import '../screens/auth_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
-import '../screens/equipment_hierarchy_selection_screen.dart';
-import 'subdivision_dashboard_tabs/energy_sld_screen.dart';
-import '../screens/saved_sld_list_screen.dart';
 import 'substation_dashboard/substation_user_dashboard_screen.dart';
 import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
-import '../screens/admin/reading_template_management_screen.dart';
-import 'subdivision_dashboard_tabs/chart_configuration_screen.dart';
-import '../controllers/sld_controller.dart';
 import '../utils/snackbar_utils.dart';
 
 class HomeRouter extends StatelessWidget {

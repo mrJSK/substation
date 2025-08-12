@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 // Import necessary packages for PDF generation and sharing
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart'; // Often used with pdf package for preview/printing dialogs
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io'; // For File operations
@@ -16,9 +15,6 @@ import '../models/energy_readings_data.dart';
 import '../models/user_model.dart';
 import '../models/saved_sld_model.dart'; // Import the SavedSld model
 import '../models/assessment_model.dart'; // Import Assessment model for fromMap
-import '../models/bay_model.dart'; // For Bay model if needed for lookup (already handled by saving bayName)
-import '../models/bay_connection_model.dart'; // If needed for diagram reconstruction
-import '../models/busbar_energy_map.dart'; // If needed for diagram reconstruction
 import '../utils/snackbar_utils.dart';
 import 'subdivision_dashboard_tabs/energy_sld_screen.dart'; // Import EnergySldScreen
 

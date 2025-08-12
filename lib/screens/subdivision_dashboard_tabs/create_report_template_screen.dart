@@ -1,24 +1,11 @@
 // lib/screens/generate_custom_report_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:excel/excel.dart' hide Border;
-import 'package:csv/csv.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import 'package:share_plus/share_plus.dart';
 import 'package:dropdown_search/dropdown_search.dart';
-import 'package:collection/collection.dart';
-
-import '../../models/app_state_data.dart';
 import '../../models/bay_model.dart';
-import '../../models/logsheet_models.dart';
-import '../../models/reading_models.dart';
-import '../../models/report_template_model.dart';
 import '../../models/tripping_shutdown_model.dart';
-import '../../utils/snackbar_utils.dart';
 
 enum ReportMode { summary, export }
 
@@ -46,41 +33,13 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
   late TabController _tabController;
   ReportMode _currentMode = ReportMode.summary;
 
-  List<Bay> _availableBays = [];
+  final List<Bay> _availableBays = [];
   Bay? _selectedBay;
-  bool _isLoading = false;
-  bool _isGenerating = false;
+  final bool _isLoading = false;
+  final bool _isGenerating = false;
 
-  Map<String, dynamic> _statisticalSummary = {};
-  List<TrippingShutdownEntry> _bayTrippingEvents = [];
-
-  List<ReportTemplate> _availableTemplates = [];
-  ReportTemplate? _selectedTemplate;
-  ExportDataType _selectedDataType = ExportDataType.operations;
-
-  List<String> _selectedBayTypes = [];
-  List<String> _selectedVoltageLevels = [];
-  List<ReadingField> _selectedReadingFields = [];
-  List<String> _selectedEventTypes = ['Tripping', 'Shutdown'];
-  List<String> _selectedStatuses = ['OPEN', 'CLOSED'];
-  List<String> _selectedEnergyFields = [
-    'Energy_Import_Present',
-    'Energy_Export_Present',
-    'Current',
-    'Voltage',
-    'Power Factor',
-  ];
-
-  List<String> _allBayTypes = [];
-  final List<String> _allVoltageLevels = [
-    '765kV',
-    '400kV',
-    '220kV',
-    '132kV',
-    '33kV',
-    '11kV',
-  ];
-  List<ReadingField> _availableReadingFields = [];
+  final Map<String, dynamic> _statisticalSummary = {};
+  final List<TrippingShutdownEntry> _bayTrippingEvents = [];
 
   @override
   void initState() {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:intl/intl.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import '../../../models/user_model.dart';
@@ -11,6 +12,7 @@ import 'package:collection/collection.dart';
 
 class TrippingShutdownEntryScreen extends StatefulWidget {
   final String substationId;
+  final String substationName; // Add this parameter
   final AppUser currentUser;
   final TrippingShutdownEntry? entryToEdit;
   final bool isViewOnly;
@@ -18,6 +20,7 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
   const TrippingShutdownEntryScreen({
     super.key,
     required this.substationId,
+    required this.substationName, // Add this required parameter
     required this.currentUser,
     this.entryToEdit,
     this.isViewOnly = false,
@@ -82,6 +85,7 @@ class _TrippingShutdownEntryScreenState
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+    _initializeFCM(); // Initialize FCM for notifications
     _initializeForm();
   }
 
@@ -95,6 +99,55 @@ class _TrippingShutdownEntryScreenState
     _bayFlagsControllers.forEach((key, controller) => controller.dispose());
     _animationController.dispose();
     super.dispose();
+  }
+
+  // Initialize FCM for notifications
+  Future<void> _initializeFCM() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+
+      // Request permission
+      NotificationSettings settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        // Get FCM token
+        String? token = await messaging.getToken();
+        if (token != null) {
+          await _saveFCMToken(token);
+        }
+
+        // Listen for token refresh
+        FirebaseMessaging.instance.onTokenRefresh.listen(_saveFCMToken);
+      }
+    } catch (e) {
+      print('Error initializing FCM: $e');
+    }
+  }
+
+  // Save FCM token to Firestore
+  Future<void> _saveFCMToken(String token) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      await FirebaseFirestore.instance.collection('fcmTokens').doc(token).set({
+        'userId': user.uid,
+        'token': token,
+        'active': true,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastUsed': FieldValue.serverTimestamp(),
+        'deviceInfo': {
+          'platform': Theme.of(context).platform.toString(),
+          'userAgent': 'Flutter App',
+        },
+      });
+    } catch (e) {
+      print('Error saving FCM token: $e');
+    }
   }
 
   Future<void> _initializeForm() async {
@@ -295,7 +348,7 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // [Keep all your existing methods: _saveEvent, _showModificationReasonDialog]
+  // Enhanced save method with notification functionality
   Future<void> _saveEvent() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -383,9 +436,17 @@ class _TrippingShutdownEntryScreenState
     }
 
     setState(() => _isSaving = true);
+
+    // Show notification preview for new events
+    if (widget.entryToEdit == null &&
+        (_selectedEventType == 'Tripping' ||
+            _selectedEventType == 'Shutdown')) {
+      await _showNotificationPreview();
+    }
+
     try {
       final String currentUserId = widget.currentUser.uid;
-      final Timestamp now = Timestamp.now();
+      final Timestamp nowTimestamp = Timestamp.now();
       String status = _endDate != null && _endTime != null ? 'CLOSED' : 'OPEN';
       Timestamp? eventEndTime = _endDate != null && _endTime != null
           ? Timestamp.fromDate(
@@ -401,7 +462,9 @@ class _TrippingShutdownEntryScreenState
       String? closedBy = _endDate != null && _endTime != null
           ? currentUserId
           : null;
-      Timestamp? closedAt = _endDate != null && _endTime != null ? now : null;
+      Timestamp? closedAt = _endDate != null && _endTime != null
+          ? nowTimestamp
+          : null;
 
       if (widget.entryToEdit == null) {
         if (_selectedMultiBays.isEmpty) {
@@ -452,7 +515,7 @@ class _TrippingShutdownEntryScreenState
                 ? _distanceController.text.trim()
                 : null,
             createdBy: currentUserId,
-            createdAt: now,
+            createdAt: nowTimestamp,
             closedBy: closedBy,
             closedAt: closedAt,
             shutdownType: _selectedEventType == 'Shutdown'
@@ -465,12 +528,23 @@ class _TrippingShutdownEntryScreenState
                 ? _shutdownPersonDesignationController.text.trim()
                 : null,
           );
+
+          // Save with notification data for Cloud Functions
           await FirebaseFirestore.instance
               .collection('trippingShutdownEntries')
-              .add(newEntry.toFirestore());
+              .add(
+                newEntry.toFirestore()..addAll({
+                  'substationName':
+                      widget.substationName, // Add for notifications
+                }),
+              );
         }
-        if (mounted)
-          SnackBarUtils.showSnackBar(context, 'Event(s) created successfully!');
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Event(s) created successfully! ${_selectedEventType == 'Tripping' ? '⚡' : '🔌'} Notifications sent to managers.',
+          );
+        }
       } else {
         if (widget.currentUser.role == UserRole.substationUser &&
             !_isClosingEvent) {
@@ -544,7 +618,10 @@ class _TrippingShutdownEntryScreenState
         await FirebaseFirestore.instance
             .collection('trippingShutdownEntries')
             .doc(updatedEntry.id)
-            .update(updatedEntry.toFirestore());
+            .update(
+              updatedEntry.toFirestore()
+                ..addAll({'substationName': widget.substationName}),
+            );
 
         if (widget.currentUser.role == UserRole.subdivisionManager &&
             modificationReason!.isNotEmpty) {
@@ -553,15 +630,19 @@ class _TrippingShutdownEntryScreenState
               .add({
                 'eventId': updatedEntry.id,
                 'modifiedBy': currentUserId,
-                'modifiedAt': now,
+                'modifiedAt': nowTimestamp,
                 'reason': modificationReason,
                 'oldEventData': widget.entryToEdit!.toFirestore(),
                 'newEventData': updatedEntry.toFirestore(),
               });
         }
 
-        if (mounted)
-          SnackBarUtils.showSnackBar(context, 'Event updated successfully!');
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Event updated successfully! ${_isClosingEvent ? 'Closure notifications sent.' : ''}',
+          );
+        }
       }
 
       if (mounted) Navigator.of(context).pop(true);
@@ -576,6 +657,95 @@ class _TrippingShutdownEntryScreenState
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  // Show notification preview dialog
+  Future<void> _showNotificationPreview() async {
+    final theme = Theme.of(context);
+    final selectedBay = _selectedMultiBays.first;
+
+    return showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: theme.colorScheme.surface,
+        title: Row(
+          children: [
+            Icon(
+              _selectedEventType == 'Tripping'
+                  ? Icons.flash_on
+                  : Icons.power_off,
+              color: _selectedEventType == 'Tripping'
+                  ? Colors.red
+                  : Colors.orange,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Notification Preview',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        content: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color:
+                (_selectedEventType == 'Tripping' ? Colors.red : Colors.orange)
+                    .withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color:
+                  (_selectedEventType == 'Tripping'
+                          ? Colors.red
+                          : Colors.orange)
+                      .withOpacity(0.3),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _selectedEventType == 'Tripping'
+                    ? '⚡ Tripping Event Alert'
+                    : '🔌 Shutdown Event Alert',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _selectedEventType == 'Tripping'
+                    ? '${selectedBay.name} at ${widget.substationName} has tripped'
+                    : '${selectedBay.name} at ${widget.substationName} is under shutdown',
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'This notification will be sent to eligible managers based on their preferences.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'Continue',
+              style: TextStyle(color: theme.colorScheme.primary),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<String?> _showModificationReasonDialog() async {
@@ -814,7 +984,6 @@ class _TrippingShutdownEntryScreenState
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     bool isEditingExisting = widget.entryToEdit != null;
@@ -829,13 +998,10 @@ class _TrippingShutdownEntryScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.white, // ✅ Match other screens
-        elevation: 0, // ✅ Consistent with theme
+        backgroundColor: Colors.white,
+        elevation: 0,
         leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: theme.colorScheme.onSurface,
-          ), // ✅ Use theme colors
+          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -849,10 +1015,40 @@ class _TrippingShutdownEntryScreenState
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface, // ✅ Use theme colors
+            color: theme.colorScheme.onSurface,
           ),
         ),
         actions: [
+          // Notification indicator for new events
+          if (!isEditingExisting)
+            Container(
+              margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.blue.withOpacity(0.5)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.notifications_active,
+                    size: 14,
+                    color: Colors.blue.shade700,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Auto-notify',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (isEditingExisting)
             Container(
               margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
@@ -932,6 +1128,37 @@ class _TrippingShutdownEntryScreenState
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  // Notification Info Card (for new events)
+                  if (!isEditingExisting)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.notifications_active,
+                            color: Colors.blue.shade700,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Creating this event will automatically send notifications to subdivision managers and higher officials based on their preferences.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Bay Selection Card
                   _buildFormCard(
                     title: isMultiBaySelectionMode
@@ -1373,14 +1600,14 @@ class _TrippingShutdownEntryScreenState
                   : Icon(
                       isEditingExisting && !isClosedEvent
                           ? Icons.check_circle_outline
-                          : Icons.save,
+                          : Icons.notification_add,
                     ),
               label: Text(
                 _isSaving
                     ? 'Saving...'
                     : isEditingExisting && !isClosedEvent
                     ? 'Close Event'
-                    : 'Create Event',
+                    : 'Create & Notify',
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             )

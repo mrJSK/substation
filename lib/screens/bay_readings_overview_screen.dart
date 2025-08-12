@@ -280,7 +280,6 @@ class BayReadingsOverviewScreen extends StatefulWidget {
 
 class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
   bool _isLoading = true;
-  DateTime _earliestAssignmentDate = DateTime(2000, 1, 1);
   final Map<String, bool> _overallSlotCompletionStatus = {};
   List<Bay> _allBaysInSubstation = [];
   Map<String, List<ReadingField>> _bayMandatoryFields = {};
@@ -401,8 +400,6 @@ class _BayReadingsOverviewScreenState extends State<BayReadingsOverviewScreen> {
           }
         }
       }
-
-      _earliestAssignmentDate = tempEarliestDate ?? DateTime(2000, 1, 1);
 
       // Fetch reading templates for chart configuration
       final readingTemplateDocs = await FirebaseFirestore.instance

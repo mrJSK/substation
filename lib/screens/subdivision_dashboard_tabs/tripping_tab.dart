@@ -1,17 +1,14 @@
 // lib/screens/subdivision_dashboard_tabs/tripping_tab.dart
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
-import 'package:collection/collection.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../models/user_model.dart';
 import '../../models/tripping_shutdown_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../utils/snackbar_utils.dart';
-import '../../models/app_state_data.dart';
 import '../substation_dashboard/tripping_shutdown_entry_screen.dart';
 
 class TrippingTab extends StatefulWidget {
@@ -41,6 +38,9 @@ class _TrippingTabState extends State<TrippingTab>
   List<Bay> _allBaysInSubdivisionList = [];
   List<Substation> _substationsInSubdivision = [];
   Map<String, Substation> _substationsMap = {};
+
+  // Cache for substation names (for notifications)
+  Map<String, String> _substationNamesCache = {};
 
   // Filter States
   List<String> _selectedFilterSubstationIds = [];
@@ -93,6 +93,40 @@ class _TrippingTabState extends State<TrippingTab>
     _filterAnimationController.dispose();
     _fabAnimationController.dispose();
     super.dispose();
+  }
+
+  // Helper method to get substation name (with caching)
+  Future<String> _getSubstationName(String substationId) async {
+    // Return cached name if available
+    if (_substationNamesCache.containsKey(substationId)) {
+      return _substationNamesCache[substationId]!;
+    }
+
+    // Check if we have it in our substations map
+    if (_substationsMap.containsKey(substationId)) {
+      final name = _substationsMap[substationId]!.name;
+      _substationNamesCache[substationId] = name;
+      return name;
+    }
+
+    // Fetch from Firestore as fallback
+    try {
+      final substationDoc = await FirebaseFirestore.instance
+          .collection('substations')
+          .doc(substationId)
+          .get();
+
+      if (substationDoc.exists) {
+        final name = substationDoc.data()?['name'] ?? 'Unknown Substation';
+        _substationNamesCache[substationId] = name;
+        return name;
+      }
+    } catch (e) {
+      print('Error fetching substation name: $e');
+    }
+
+    _substationNamesCache[substationId] = 'Unknown Substation';
+    return 'Unknown Substation';
   }
 
   @override
@@ -670,11 +704,15 @@ class _TrippingTabState extends State<TrippingTab>
     }
   }
 
-  void _viewEventDetails(TrippingShutdownEntry entry) {
+  // Updated navigation methods with substationName parameter
+  void _viewEventDetails(TrippingShutdownEntry entry) async {
+    final substationName = await _getSubstationName(entry.substationId);
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => TrippingShutdownEntryScreen(
           substationId: entry.substationId,
+          substationName: substationName, // ✅ Added required parameter
           currentUser: widget.currentUser,
           entryToEdit: entry,
           isViewOnly: true,
@@ -683,12 +721,15 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  void _editEvent(TrippingShutdownEntry entry) {
+  void _editEvent(TrippingShutdownEntry entry) async {
+    final substationName = await _getSubstationName(entry.substationId);
+
     Navigator.of(context)
         .push(
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: entry.substationId,
+              substationName: substationName, // ✅ Added required parameter
               currentUser: widget.currentUser,
               entryToEdit: entry,
               isViewOnly: false,
@@ -698,7 +739,7 @@ class _TrippingTabState extends State<TrippingTab>
         .then((_) => _fetchTrippingShutdownEvents());
   }
 
-  void _createNewEvent() {
+  void _createNewEvent() async {
     if (_substationsInSubdivision.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
@@ -708,12 +749,15 @@ class _TrippingTabState extends State<TrippingTab>
       return;
     }
 
-    final defaultSubstationId = _substationsInSubdivision.first.id;
+    final defaultSubstation = _substationsInSubdivision.first;
+    final substationName = await _getSubstationName(defaultSubstation.id);
+
     Navigator.of(context)
         .push(
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
-              substationId: defaultSubstationId,
+              substationId: defaultSubstation.id,
+              substationName: substationName, // ✅ Added required parameter
               currentUser: widget.currentUser,
               isViewOnly: false,
             ),
@@ -750,13 +794,174 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  // Data fetching methods (implementation remains the same)
+  // Data fetching methods implementation
   Future<void> _fetchInitialHierarchyDataAndEvents() async {
-    // Implementation remains the same
+    setState(() => _isLoading = true);
+
+    try {
+      // Get subdivision based on current user
+      String? subdivisionId;
+      if (widget.currentUser.assignedLevels != null &&
+          widget.currentUser.assignedLevels!.containsKey('subdivisionId')) {
+        subdivisionId = widget.currentUser.assignedLevels!['subdivisionId'];
+      }
+
+      if (subdivisionId == null) {
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'No subdivision assigned to your user.',
+            isError: true,
+          );
+        }
+        return;
+      }
+
+      // Fetch substations in subdivision
+      final substationsSnapshot = await FirebaseFirestore.instance
+          .collection('substations')
+          .where('subdivisionId', isEqualTo: subdivisionId)
+          .orderBy('name')
+          .get();
+
+      _substationsInSubdivision = substationsSnapshot.docs
+          .map((doc) => Substation.fromFirestore(doc))
+          .toList();
+
+      _substationsMap = {
+        for (var substation in _substationsInSubdivision)
+          substation.id: substation,
+      };
+
+      // Fetch all bays in subdivision
+      if (_substationsInSubdivision.isNotEmpty) {
+        final substationIds = _substationsInSubdivision
+            .map((s) => s.id)
+            .toList();
+
+        final baysSnapshot = await FirebaseFirestore.instance
+            .collection('bays')
+            .where('substationId', whereIn: substationIds)
+            .orderBy('name')
+            .get();
+
+        _allBaysInSubdivisionList = baysSnapshot.docs
+            .map((doc) => Bay.fromFirestore(doc))
+            .toList();
+
+        _baysMap = {for (var bay in _allBaysInSubdivisionList) bay.id: bay};
+      }
+
+      // Fetch events
+      await _fetchTrippingShutdownEvents();
+    } catch (e) {
+      print('Error fetching initial data: $e');
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error loading data: $e',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   Future<void> _fetchTrippingShutdownEvents() async {
-    // Implementation remains the same
+    if (_substationsInSubdivision.isEmpty) {
+      setState(() {
+        _groupedEntriesByBayType = {};
+        _sortedBayTypes = [];
+      });
+      return;
+    }
+
+    try {
+      final substationIds = _selectedFilterSubstationIds.isNotEmpty
+          ? _selectedFilterSubstationIds
+          : _substationsInSubdivision.map((s) => s.id).toList();
+
+      if (substationIds.isEmpty) return;
+
+      // Build query
+      Query query = FirebaseFirestore.instance.collection(
+        'trippingShutdownEntries',
+      );
+
+      // Filter by substations
+      query = query.where('substationId', whereIn: substationIds);
+
+      // Filter by date range
+      query = query
+          .where(
+            'startTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+          )
+          .where(
+            'startTime',
+            isLessThanOrEqualTo: Timestamp.fromDate(
+              widget.endDate.add(const Duration(days: 1)),
+            ),
+          );
+
+      // Order by start time (most recent first)
+      query = query.orderBy('startTime', descending: true);
+
+      final eventsSnapshot = await query.get();
+      List<TrippingShutdownEntry> allEvents = eventsSnapshot.docs
+          .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+          .toList();
+
+      // Apply additional filters
+      if (_selectedFilterBayIds.isNotEmpty) {
+        allEvents = allEvents
+            .where((event) => _selectedFilterBayIds.contains(event.bayId))
+            .toList();
+      }
+
+      if (_selectedFilterBayTypes.isNotEmpty) {
+        allEvents = allEvents.where((event) {
+          final bay = _baysMap[event.bayId];
+          return bay != null && _selectedFilterBayTypes.contains(bay.bayType);
+        }).toList();
+      }
+
+      if (_selectedFilterVoltageLevels.isNotEmpty) {
+        allEvents = allEvents.where((event) {
+          final bay = _baysMap[event.bayId];
+          return bay != null &&
+              _selectedFilterVoltageLevels.contains(bay.voltageLevel);
+        }).toList();
+      }
+
+      // Group by bay type
+      _groupedEntriesByBayType = {};
+      for (var event in allEvents) {
+        final bay = _baysMap[event.bayId];
+        final bayType = bay?.bayType ?? 'Unknown';
+
+        _groupedEntriesByBayType.putIfAbsent(bayType, () => []).add(event);
+      }
+
+      // Sort bay types
+      _sortedBayTypes = _groupedEntriesByBayType.keys.toList()..sort();
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      print('Error fetching events: $e');
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error loading events: $e',
+          isError: true,
+        );
+      }
+    }
   }
 
   Future<void> _confirmDeleteEntry(
@@ -764,11 +969,64 @@ class _TrippingTabState extends State<TrippingTab>
     String eventType,
     String bayName,
   ) async {
-    // Implementation remains the same
+    final theme = Theme.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red.shade600),
+            const SizedBox(width: 8),
+            const Text('Confirm Delete'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete this $eventType event for $bayName?\n\nThis action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('trippingShutdownEntries')
+            .doc(entryId)
+            .delete();
+
+        if (mounted) {
+          SnackBarUtils.showSnackBar(context, 'Event deleted successfully.');
+          _fetchTrippingShutdownEvents();
+        }
+      } catch (e) {
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Error deleting event: $e',
+            isError: true,
+          );
+        }
+      }
+    }
   }
 }
 
-// Custom Filter Dialog Widget
+// Custom Filter Dialog Widget (unchanged)
 class _FilterDialog extends StatefulWidget {
   final List<String> selectedSubstationIds;
   final List<String> selectedVoltageLevels;

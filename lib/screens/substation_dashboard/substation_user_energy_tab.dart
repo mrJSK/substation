@@ -5,7 +5,6 @@ import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/reading_models.dart';
 import '../../utils/snackbar_utils.dart';
-import '../bay_readings_status_screen.dart';
 import 'logsheet_entry_screen.dart';
 
 class SubstationUserEnergyTab extends StatefulWidget {
@@ -524,7 +523,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    Theme.of(context);
 
     if (widget.substationId.isEmpty) {
       return const Center(

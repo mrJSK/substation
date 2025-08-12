@@ -8,7 +8,6 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 
@@ -45,7 +44,6 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
   ReportTemplate? _selectedTemplate;
   bool _isLoading = false;
   bool _isGenerating = false;
-  ExportDataType _selectedDataType = ExportDataType.operations;
   late TabController _tabController;
 
   List<String> _selectedBayTypes = [];

@@ -1,7 +1,6 @@
 // lib/equipment_icons/feeder_icon.dart
 
 import 'package:flutter/material.dart';
-import 'dart:math';
 import 'package:substation_manager/equipment_icons/transformer_icon.dart';
 
 class FeederIconPainter extends EquipmentPainter {

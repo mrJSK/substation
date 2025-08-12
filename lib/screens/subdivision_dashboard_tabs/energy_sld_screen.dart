@@ -569,9 +569,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 },
           busEnergySummaryData: sldController.busEnergySummary,
           // Use the correct field name from your SldController
-          aggregatedFeederData:
-              sldController.aggregatedFeederEnergyData ??
-              [], // ✅ Use this if the field exists
+          aggregatedFeederData: sldController
+              .aggregatedFeederEnergyData, // ✅ Use this if the field exists
           assessmentsForPdf: _energyDataService.allAssessmentsForDisplay
               .map((a) => a.toFirestore())
               .toList(),
@@ -656,21 +655,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     });
 
     return voltages.isNotEmpty ? voltages : ['132kV', '33kV'];
-  }
-
-  IconData _getBayIcon(String bayType) {
-    switch (bayType.toLowerCase()) {
-      case 'transformer':
-        return Icons.electrical_services;
-      case 'line':
-        return Icons.linear_scale;
-      case 'feeder':
-        return Icons.cable;
-      case 'busbar':
-        return Icons.horizontal_rule;
-      default:
-        return Icons.square;
-    }
   }
 
   @override

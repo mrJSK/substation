@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:substation_manager/equipment_icons/transformer_icon.dart';
-import 'dart:math';
 
 class BatteryIconPainter extends EquipmentPainter {
   BatteryIconPainter({

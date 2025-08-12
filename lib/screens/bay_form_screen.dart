@@ -13,10 +13,6 @@ import '../models/hierarchy_models.dart';
 import '../widgets/add_hierarchy_dialog.dart';
 import '../utils/snackbar_utils.dart';
 import '../equipment_icons/feeder_icon.dart';
-import '../equipment_icons/ground_icon.dart';
-import '../equipment_icons/ct_icon.dart';
-import '../equipment_icons/isolator_icon.dart';
-import '../equipment_icons/energy_meter_icon.dart';
 import '../equipment_icons/capacitor_bank_icon.dart';
 import '../equipment_icons/circuit_breaker_icon.dart';
 
@@ -504,17 +500,6 @@ class _BayFormScreenState extends State<BayFormScreen>
 
     setState(() => _isSavingBay = true);
     final firebaseUser = widget.currentUser;
-    if (firebaseUser == null) {
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'User not authenticated.',
-          isError: true,
-        );
-      }
-      setState(() => _isSavingBay = false);
-      return;
-    }
 
     try {
       final String? bayName = _bayNameController.text.trim();
@@ -942,8 +927,7 @@ class _BayFormScreenState extends State<BayFormScreen>
           }
         },
         validator: validator,
-        enabled:
-            (parentId == null || (parentId != null && parentId.isNotEmpty)),
+        enabled: (parentId == null || (parentId.isNotEmpty)),
         dropdownDecoratorProps: DropDownDecoratorProps(
           dropdownSearchDecoration: InputDecoration(
             labelText: label,

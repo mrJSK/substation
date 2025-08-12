@@ -6,7 +6,6 @@ import '../../models/bay_model.dart';
 import '../../models/reading_models.dart';
 import '../../utils/snackbar_utils.dart';
 import '../bay_readings_status_screen.dart';
-import 'logsheet_entry_screen.dart';
 
 class SubstationUserOperationsTab extends StatefulWidget {
   final String substationId;
