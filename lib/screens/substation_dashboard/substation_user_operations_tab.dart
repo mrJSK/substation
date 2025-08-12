@@ -5,6 +5,7 @@ import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/reading_models.dart';
 import '../../utils/snackbar_utils.dart';
+import '../bay_readings_status_screen.dart';
 import 'logsheet_entry_screen.dart';
 
 class SubstationUserOperationsTab extends StatefulWidget {
@@ -466,18 +467,17 @@ class _SubstationUserOperationsTabState
                         ),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
+                          // Fixed navigation
                           Navigator.of(context)
                               .push(
                                 MaterialPageRoute(
-                                  builder: (context) => LogsheetEntryScreen(
+                                  builder: (context) => BayReadingsStatusScreen(
                                     substationId: widget.substationId,
                                     substationName: widget.substationName,
-                                    bayId: '',
-                                    readingDate: widget.selectedDate,
-                                    frequency: 'hourly',
-                                    readingHour: slot['hour'],
                                     currentUser: widget.currentUser,
-                                    forceReadOnly: false,
+                                    frequencyType: 'hourly',
+                                    selectedDate: widget.selectedDate,
+                                    selectedHour: slot['hour'],
                                   ),
                                 ),
                               )

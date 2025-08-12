@@ -12,7 +12,7 @@ import '../../equipment_icons/energy_meter_icon.dart';
 import '../../equipment_icons/feeder_icon.dart';
 import '../../equipment_icons/circuit_breaker_icon.dart';
 
-// Widget to render equipment icons based on field or bay type
+// Enhanced Equipment Icon Widget matching BayReadingsStatusScreen style
 class _EquipmentIcon extends StatelessWidget {
   final String type;
   final double size;
@@ -70,11 +70,26 @@ class _EquipmentIcon extends StatelessWidget {
           size: iconSize,
         );
         break;
-      case 'sld':
+      case 'transformer':
         child = Icon(Icons.electrical_services, size: size, color: color);
         break;
+      case 'feeder':
+        child = Icon(Icons.power, size: size, color: color);
+        break;
+      case 'line':
+        child = Icon(Icons.power_input, size: size, color: color);
+        break;
+      case 'busbar':
+        child = Icon(Icons.horizontal_rule, size: size, color: color);
+        break;
+      case 'capacitor bank':
+        child = Icon(Icons.battery_charging_full, size: size, color: color);
+        break;
+      case 'reactor':
+        child = Icon(Icons.device_hub, size: size, color: color);
+        break;
       default:
-        child = Icon(Icons.device_unknown, size: size, color: color);
+        child = Icon(Icons.electrical_services, size: size, color: color);
     }
 
     return SizedBox(width: size, height: size, child: child);
@@ -556,6 +571,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     );
   }
 
+  // Enhanced reading field input to match BayReadingsStatusScreen style
   Widget _buildReadingFieldInput(ReadingField field) {
     final theme = Theme.of(context);
     final String fieldName = field.name;
@@ -576,24 +592,46 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     final String? unit = field.unit;
     final List<String>? options = field.options;
 
-    final inputDecoration = InputDecoration(
-      labelText: fieldName + (isMandatory ? ' *' : ''),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      filled: true,
-      fillColor: isReadOnly
-          ? Colors.grey.shade100
-          : theme.colorScheme.primary.withOpacity(0.05),
-      suffixText: unit,
-      prefixIcon: _EquipmentIcon(
-        type: _currentBay?.bayType ?? dataType,
-        color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
+    // Container styling matching BayReadingsStatusScreen
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      errorStyle: TextStyle(
-        color: theme.colorScheme.error,
-        fontFamily: 'Roboto',
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: _buildFieldWidget(
+          field,
+          theme,
+          fieldName,
+          dataType,
+          isMandatory,
+          isReadOnly,
+          unit,
+          options,
+        ),
       ),
     );
+  }
 
+  Widget _buildFieldWidget(
+    ReadingField field,
+    ThemeData theme,
+    String fieldName,
+    String dataType,
+    bool isMandatory,
+    bool isReadOnly,
+    String? unit,
+    List<String>? options,
+  ) {
     String? Function(String?)? validator;
     if (isMandatory && !isReadOnly) {
       validator = (value) => (value == null || value.trim().isEmpty)
@@ -604,97 +642,228 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     Widget fieldWidget;
     switch (dataType) {
       case 'text':
-        fieldWidget = TextFormField(
-          controller: _readingTextFieldControllers.putIfAbsent(
-            fieldName,
-            () => TextEditingController(),
-          ),
-          readOnly: isReadOnly,
-          decoration: inputDecoration,
-          validator: validator,
+        fieldWidget = Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: (isReadOnly ? Colors.grey : theme.colorScheme.primary)
+                    .withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _EquipmentIcon(
+                type: _currentBay?.bayType ?? dataType,
+                color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    fieldName + (isMandatory ? ' *' : ''),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _readingTextFieldControllers.putIfAbsent(
+                      fieldName,
+                      () => TextEditingController(),
+                    ),
+                    readOnly: isReadOnly,
+                    decoration: InputDecoration(
+                      hintText: 'Enter ${fieldName.toLowerCase()}',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: isReadOnly
+                          ? Colors.grey.shade100
+                          : theme.colorScheme.primary.withOpacity(0.05),
+                      suffixText: unit,
+                    ),
+                    validator: validator,
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
         break;
       case 'number':
-        fieldWidget = TextFormField(
-          controller: _readingTextFieldControllers.putIfAbsent(
-            fieldName,
-            () => TextEditingController(),
-          ),
-          readOnly: isReadOnly,
-          decoration: inputDecoration.copyWith(
-            hintText: unit != null && unit.isNotEmpty
-                ? 'Enter value in $unit'
-                : null,
-          ),
-          keyboardType: TextInputType.number,
-          validator: (value) {
-            if (validator != null && validator(value) != null)
-              return validator(value);
-            if (value!.isNotEmpty && double.tryParse(value) == null)
-              return 'Enter a valid number for $fieldName';
-            return null;
-          },
+        fieldWidget = Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: (isReadOnly ? Colors.grey : theme.colorScheme.primary)
+                    .withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _EquipmentIcon(
+                type: _currentBay?.bayType ?? dataType,
+                color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    fieldName + (isMandatory ? ' *' : ''),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _readingTextFieldControllers.putIfAbsent(
+                      fieldName,
+                      () => TextEditingController(),
+                    ),
+                    readOnly: isReadOnly,
+                    decoration: InputDecoration(
+                      hintText: unit != null && unit.isNotEmpty
+                          ? 'Enter value in $unit'
+                          : 'Enter numerical value',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: isReadOnly
+                          ? Colors.grey.shade100
+                          : theme.colorScheme.primary.withOpacity(0.05),
+                      suffixText: unit,
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (validator != null && validator(value) != null)
+                        return validator(value);
+                      if (value!.isNotEmpty && double.tryParse(value) == null)
+                        return 'Enter a valid number for $fieldName';
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
         break;
       case 'boolean':
         fieldWidget = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SwitchListTile(
-              title: Text(
-                fieldName + (isMandatory ? ' *' : ''),
-                style: const TextStyle(fontFamily: 'Roboto'),
-              ),
-              value: _readingBooleanFieldValues.putIfAbsent(
-                fieldName,
-                () => false,
-              ),
-              onChanged: isReadOnly
-                  ? null
-                  : (value) => setState(
-                      () => _readingBooleanFieldValues[fieldName] = value,
-                    ),
-              secondary: _EquipmentIcon(
-                type: 'boolean',
-                color: isReadOnly ? Colors.grey : Colors.purple[700]!,
-              ),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (_readingBooleanFieldValues[fieldName]!)
-              Padding(
-                padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
-                child: TextFormField(
-                  controller: _readingBooleanDescriptionControllers.putIfAbsent(
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: (isReadOnly ? Colors.grey : Colors.purple[700]!)
+                        .withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    _readingBooleanFieldValues.putIfAbsent(
+                          fieldName,
+                          () => false,
+                        )
+                        ? Icons.check_circle
+                        : Icons.cancel,
+                    color: isReadOnly ? Colors.grey : Colors.purple[700],
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fieldName + (isMandatory ? ' *' : ''),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _readingBooleanFieldValues[fieldName]!
+                                  ? Colors.green
+                                  : Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _readingBooleanFieldValues[fieldName]!
+                                ? 'Yes'
+                                : 'No',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _readingBooleanFieldValues[fieldName]!
+                                  ? Colors.green
+                                  : Colors.red,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _readingBooleanFieldValues.putIfAbsent(
                     fieldName,
-                    () => TextEditingController(),
+                    () => false,
                   ),
-                  readOnly: isReadOnly,
-                  decoration: inputDecoration.copyWith(
-                    labelText: 'Description / Remarks (Optional)',
-                    prefixIcon: Icon(
-                      Icons.description,
-                      color: isReadOnly ? Colors.grey : Colors.purple[700],
-                    ),
-                  ),
-                  maxLines: 2,
+                  onChanged: isReadOnly
+                      ? null
+                      : (value) => setState(
+                          () => _readingBooleanFieldValues[fieldName] = value,
+                        ),
                 ),
-              ),
-            if (isMandatory &&
-                !isReadOnly &&
-                !_readingBooleanFieldValues[fieldName]! &&
-                _formKey.currentState?.validate() == false)
-              Padding(
-                padding: const EdgeInsets.only(left: 48, top: 4),
-                child: Text(
-                  '$fieldName is mandatory',
-                  style: TextStyle(
-                    color: theme.colorScheme.error,
-                    fontSize: 12,
-                    fontFamily: 'Roboto',
+              ],
+            ),
+            if (_readingBooleanFieldValues[fieldName]!) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _readingBooleanDescriptionControllers.putIfAbsent(
+                  fieldName,
+                  () => TextEditingController(),
+                ),
+                readOnly: isReadOnly,
+                decoration: InputDecoration(
+                  labelText: 'Description / Remarks (Optional)',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  filled: true,
+                  fillColor: theme.colorScheme.primary.withOpacity(0.05),
+                  prefixIcon: Icon(
+                    Icons.description,
+                    color: isReadOnly ? Colors.grey : Colors.purple[700],
                   ),
                 ),
+                maxLines: 2,
               ),
+            ],
           ],
         );
         break;
@@ -705,108 +874,144 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               ? widget.readingDate
               : null,
         );
-        fieldWidget = ListTile(
-          leading: Icon(
-            Icons.calendar_today,
-            color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
-          ),
-          title: Text(
-            fieldName +
-                (isMandatory ? ' *' : '') +
-                ': ' +
-                (currentDate == null
-                    ? 'Select Date'
-                    : DateFormat('yyyy-MM-dd').format(currentDate)),
-            style: const TextStyle(fontFamily: 'Roboto'),
-          ),
-          trailing: IconButton(
-            icon: Icon(
-              Icons.clear,
-              color: isReadOnly
-                  ? Colors.grey
-                  : theme.colorScheme.onSurfaceVariant,
+        fieldWidget = Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: (isReadOnly ? Colors.grey : theme.colorScheme.primary)
+                    .withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.calendar_today,
+                color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
+                size: 24,
+              ),
             ),
-            onPressed: isReadOnly
-                ? null
-                : () =>
-                      setState(() => _readingDateFieldValues[fieldName] = null),
-          ),
-          onTap: isReadOnly
-              ? null
-              : () async {
-                  final theme = Theme.of(context);
-                  final DateTime? picked = await showDatePicker(
-                    context: context,
-                    initialDate: currentDate ?? DateTime.now(),
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime(2101),
-                    builder: (context, child) => Theme(
-                      data: theme.copyWith(
-                        colorScheme: theme.colorScheme.copyWith(
-                          primary: theme.colorScheme.primary,
-                          onPrimary: theme.colorScheme.onPrimary,
-                          surface: theme.colorScheme.surface,
-                          onSurface: theme.colorScheme.onSurface,
-                        ),
-                        dialogBackgroundColor: theme.colorScheme.surface,
-                      ),
-                      child: child!,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    fieldName + (isMandatory ? ' *' : ''),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
-                  );
-                  if (picked != null)
-                    setState(() => _readingDateFieldValues[fieldName] = picked);
-                },
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    currentDate == null
+                        ? 'Select Date'
+                        : DateFormat('yyyy-MM-dd').format(currentDate),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.arrow_forward_ios, size: 16),
+              onPressed: isReadOnly
+                  ? null
+                  : () async {
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: currentDate ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2101),
+                      );
+                      if (picked != null)
+                        setState(
+                          () => _readingDateFieldValues[fieldName] = picked,
+                        );
+                    },
+            ),
+          ],
         );
         break;
       case 'dropdown':
-        fieldWidget = DropdownButtonFormField<String>(
-          value: _readingDropdownFieldValues[fieldName],
-          decoration: inputDecoration,
-          items: options!
-              .map(
-                (option) => DropdownMenuItem(
-                  value: option,
-                  child: Text(
-                    option,
-                    style: const TextStyle(fontFamily: 'Roboto'),
+        fieldWidget = Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: (isReadOnly ? Colors.grey : theme.colorScheme.primary)
+                    .withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.arrow_drop_down,
+                color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    fieldName + (isMandatory ? ' *' : ''),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              )
-              .toList(),
-          onChanged: isReadOnly
-              ? null
-              : (value) => setState(
-                  () => _readingDropdownFieldValues[fieldName] = value,
-                ),
-          validator: validator,
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: _readingDropdownFieldValues[fieldName],
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: isReadOnly
+                          ? Colors.grey.shade100
+                          : theme.colorScheme.primary.withOpacity(0.05),
+                    ),
+                    items: options!
+                        .map(
+                          (option) => DropdownMenuItem(
+                            value: option,
+                            child: Text(option),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: isReadOnly
+                        ? null
+                        : (value) => setState(
+                            () =>
+                                _readingDropdownFieldValues[fieldName] = value,
+                          ),
+                    validator: validator,
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
         break;
       default:
-        fieldWidget = Text(
-          'Unsupported data type: $dataType for $fieldName',
-          style: const TextStyle(fontFamily: 'Roboto'),
-        );
+        fieldWidget = Text('Unsupported data type: $dataType for $fieldName');
     }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: AbsorbPointer(absorbing: isReadOnly, child: fieldWidget),
-    );
+    return fieldWidget;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    String titleText = widget.forceReadOnly
-        ? "View Readings"
-        : "Enter Readings";
-    if (_currentBay != null) {
-      titleText =
-          "${_currentBay!.name} (${StringExtension(widget.frequency).capitalize()}";
-      if (widget.frequency == 'hourly' && widget.readingHour != null) {
-        titleText += " - ${widget.readingHour!.toString().padLeft(2, '0')}:00)";
-      } else {
-        titleText += ")";
-      }
+    String slotTitle = DateFormat('dd.MMM.yyyy').format(widget.readingDate);
+    if (widget.frequency == 'hourly' && widget.readingHour != null) {
+      slotTitle += ' - ${widget.readingHour!.toString().padLeft(2, '0')}:00 Hr';
+    } else if (widget.frequency == 'daily') {
+      slotTitle += ' - Daily Reading';
     }
 
     final bool isReadOnlyView =
@@ -815,229 +1020,275 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             _existingLogsheetEntry != null);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
         title: Text(
-          titleText,
-          style: const TextStyle(
-            fontFamily: 'Roboto',
+          _currentBay?.name ?? 'Reading Entry',
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
+            fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
-        centerTitle: true,
-        backgroundColor: theme.colorScheme.surface,
-      ),
-      body: SafeArea(
-        child: _isLoading
-            ? Center(
-                child: Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          if (_existingLogsheetEntry != null)
+            Container(
+              margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.green.withOpacity(0.5)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    size: 16,
+                    color: Colors.green.shade700,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Loading readings...',
-                          style: TextStyle(
-                            fontFamily: 'Roboto',
-                            color: theme.colorScheme.onSurface,
-                          ),
-                        ),
-                      ],
+                  const SizedBox(width: 4),
+                  Text(
+                    'Saved',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.green.shade700,
                     ),
                   ),
-                ),
-              )
-            : Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                margin: const EdgeInsets.all(16),
-                child: AnimatedCrossFade(
-                  firstChild: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                ],
+              ),
+            ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                // Header matching BayReadingsStatusScreen style
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
                         children: [
-                          _EquipmentIcon(
-                            type: _currentBay?.bayType ?? 'default',
-                            color: theme.colorScheme.primary,
-                            size: 80,
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            'No ${widget.frequency.toLowerCase()} reading fields defined for this slot.',
-                            style: TextStyle(
-                              fontFamily: 'Roboto',
-                              fontStyle: FontStyle.italic,
-                              color: theme.colorScheme.onSurfaceVariant,
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.primary,
-                              foregroundColor: theme.colorScheme.onPrimary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+                            child: _EquipmentIcon(
+                              type: _currentBay?.bayType ?? 'default',
+                              color: theme.colorScheme.primary,
+                              size: 24,
                             ),
-                            child: const Text(
-                              'Back',
-                              style: TextStyle(fontFamily: 'Roboto'),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  slotTitle,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  widget.substationName,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: theme.colorScheme.onSurface
+                                        .withOpacity(0.7),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                  secondChild: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      if (_currentBay?.multiplyingFactor != null) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: theme.colorScheme.outline.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Row(
                             children: [
-                              _EquipmentIcon(
-                                type: _currentBay?.bayType ?? 'default',
-                                color: theme.colorScheme.primary,
-                                size: 32,
+                              Icon(
+                                Icons.calculate,
+                                color: theme.colorScheme.secondary,
+                                size: 16,
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                               Text(
-                                'Substation: ${widget.substationName}',
+                                'Multiplying Factor: ${_currentBay!.multiplyingFactor}',
                                 style: TextStyle(
-                                  fontFamily: 'Roboto',
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: theme.colorScheme.onSurface,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: theme.colorScheme.secondary,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          ListTile(
-                            leading: Icon(
-                              Icons.calendar_today,
-                              color: theme.colorScheme.primary,
-                            ),
-                            title: Text(
-                              'Reading Date: ${DateFormat('yyyy-MM-dd').format(widget.readingDate)}',
-                              style: const TextStyle(fontFamily: 'Roboto'),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          if (_currentBay?.multiplyingFactor != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 24),
-                              child: Center(
-                                child: Chip(
-                                  label: Text(
-                                    'Multiplying Factor: ${_currentBay!.multiplyingFactor}',
-                                    style: const TextStyle(
-                                      fontFamily: 'Roboto',
-                                    ),
-                                  ),
-                                  backgroundColor:
-                                      theme.colorScheme.secondaryContainer,
-                                  side: BorderSide(
-                                    color: theme.colorScheme.secondary,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // Content
+                Expanded(
+                  child: _filteredReadingFields.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 64,
+                                  color: Colors.grey.shade400,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No Reading Fields Available',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade600,
                                   ),
                                 ),
-                              ),
-                            ),
-                          ..._filteredReadingFields
-                              .map((field) => _buildReadingFieldInput(field))
-                              .toList(),
-                          if (isReadOnlyView)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Text(
-                                  widget.forceReadOnly
-                                      ? 'Viewing saved readings.'
-                                      : 'Readings are saved and cannot be modified by Substation Users.',
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No ${widget.frequency.toLowerCase()} reading fields are defined for this slot.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    fontFamily: 'Roboto',
-                                    fontStyle: FontStyle.italic,
-                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  crossFadeState: _filteredReadingFields.isEmpty
-                      ? CrossFadeState.showFirst
-                      : CrossFadeState.showSecond,
-                  duration: const Duration(milliseconds: 300),
+                          ),
+                        )
+                      : Form(
+                          key: _formKey,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                            ),
+                            itemCount:
+                                _filteredReadingFields.length +
+                                (isReadOnlyView ? 1 : 0) +
+                                1, // +1 for bottom padding
+                            itemBuilder: (context, index) {
+                              if (index == _filteredReadingFields.length) {
+                                if (isReadOnlyView) {
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.blue.withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.info_outline,
+                                          color: Colors.blue.shade700,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            widget.forceReadOnly
+                                                ? 'Viewing saved readings.'
+                                                : 'Readings are saved and cannot be modified by Substation Users.',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.blue.shade700,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                } else {
+                                  return const SizedBox(
+                                    height: 100,
+                                  ); // Bottom padding
+                                }
+                              } else if (index ==
+                                  _filteredReadingFields.length + 1) {
+                                return const SizedBox(
+                                  height: 100,
+                                ); // Bottom padding
+                              }
+
+                              return _buildReadingFieldInput(
+                                _filteredReadingFields[index],
+                              );
+                            },
+                          ),
+                        ),
                 ),
-              ),
-      ),
-      bottomNavigationBar: !isReadOnlyView
-          ? Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: _isSaving
-                  ? Center(
+              ],
+            ),
+      floatingActionButton: !isReadOnlyView && _filteredReadingFields.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: _isSaving ? null : _saveLogsheetEntry,
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              elevation: 4,
+              icon: _isSaving
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
                       child: CircularProgressIndicator(
-                        color: theme.colorScheme.primary,
-                      ),
-                    )
-                  : ElevatedButton.icon(
-                      onPressed: _saveLogsheetEntry,
-                      icon: Icon(
-                        Icons.save,
+                        strokeWidth: 2,
                         color: theme.colorScheme.onPrimary,
                       ),
-                      label: Text(
-                        _existingLogsheetEntry == null
-                            ? 'Save Logsheet Entry'
-                            : 'Update Logsheet Entry',
-                        style: const TextStyle(fontFamily: 'Roboto'),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
-                    ),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(
+                _isSaving
+                    ? 'Saving...'
+                    : _existingLogsheetEntry == null
+                    ? 'Save Entry'
+                    : 'Update Entry',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
             )
           : null,
     );

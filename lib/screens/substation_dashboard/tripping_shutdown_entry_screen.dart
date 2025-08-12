@@ -7,7 +7,7 @@ import '../../../models/user_model.dart';
 import '../../../models/bay_model.dart';
 import '../../../models/tripping_shutdown_model.dart';
 import '../../../utils/snackbar_utils.dart';
-import 'package:collection/collection.dart'; // For firstWhereOrNull
+import 'package:collection/collection.dart';
 
 class TrippingShutdownEntryScreen extends StatefulWidget {
   final String substationId;
@@ -29,11 +29,13 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
 }
 
 class _TrippingShutdownEntryScreenState
-    extends State<TrippingShutdownEntryScreen> {
+    extends State<TrippingShutdownEntryScreen>
+    with SingleTickerProviderStateMixin {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isClosingEvent = false;
+  late AnimationController _animationController;
 
   List<Bay> _allBays = [];
   Bay? _selectedBay;
@@ -76,6 +78,10 @@ class _TrippingShutdownEntryScreenState
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
     _initializeForm();
   }
 
@@ -87,6 +93,7 @@ class _TrippingShutdownEntryScreenState
     _shutdownPersonNameController.dispose();
     _shutdownPersonDesignationController.dispose();
     _bayFlagsControllers.forEach((key, controller) => controller.dispose());
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -147,6 +154,8 @@ class _TrippingShutdownEntryScreenState
         _selectedEventType = _eventTypes.first;
         _hasAutoReclose = false;
       }
+
+      _animationController.forward();
     } catch (e) {
       print("Error initializing form: $e");
       if (mounted) {
@@ -217,17 +226,42 @@ class _TrippingShutdownEntryScreenState
         ? (_startTime ?? TimeOfDay.now())
         : (_endTime ?? TimeOfDay.now());
 
+    final theme = Theme.of(context);
     final DateTime? pickedDate = await showDatePicker(
       context: context,
       initialDate: initialDate,
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
+      builder: (context, child) => Theme(
+        data: theme.copyWith(
+          colorScheme: theme.colorScheme.copyWith(
+            primary: theme.colorScheme.primary,
+            onPrimary: theme.colorScheme.onPrimary,
+            surface: theme.colorScheme.surface,
+            onSurface: theme.colorScheme.onSurface,
+          ),
+          dialogBackgroundColor: theme.colorScheme.surface,
+        ),
+        child: child!,
+      ),
     );
 
     if (pickedDate != null) {
       final TimeOfDay? pickedTime = await showTimePicker(
         context: context,
         initialTime: initialTime,
+        builder: (context, child) => Theme(
+          data: theme.copyWith(
+            colorScheme: theme.colorScheme.copyWith(
+              primary: theme.colorScheme.primary,
+              onPrimary: theme.colorScheme.onPrimary,
+              surface: theme.colorScheme.surface,
+              onSurface: theme.colorScheme.onSurface,
+            ),
+            dialogBackgroundColor: theme.colorScheme.surface,
+          ),
+          child: child!,
+        ),
       );
 
       if (pickedTime != null) {
@@ -261,6 +295,7 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
+  // [Keep all your existing methods: _saveEvent, _showModificationReasonDialog]
   Future<void> _saveEvent() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -549,26 +584,49 @@ class _TrippingShutdownEntryScreenState
       return "N/A";
     }
 
+    final theme = Theme.of(context);
     TextEditingController reasonController = TextEditingController();
     return await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reason for Modification'),
-        content: TextField(
-          controller: reasonController,
-          decoration: const InputDecoration(
-            hintText: "Enter reason for modifying this event...",
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: theme.colorScheme.surface,
+        title: Text(
+          'Reason for Modification',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface,
           ),
-          autofocus: true,
+        ),
+        content: TextFormField(
+          controller: reasonController,
+          decoration: InputDecoration(
+            hintText: 'Enter reason for modification...',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            filled: true,
+            fillColor: theme.colorScheme.primary.withOpacity(0.05),
+          ),
+          maxLength: 200,
           maxLines: 3,
+          autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: theme.colorScheme.onSurface),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(reasonController.text),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             child: const Text('Submit'),
           ),
         ],
@@ -576,8 +634,189 @@ class _TrippingShutdownEntryScreenState
     );
   }
 
+  Widget _buildFormCard({
+    required String title,
+    required Widget child,
+    IconData? icon,
+    Color? iconColor,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (icon != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: (iconColor ?? theme.colorScheme.primary)
+                          .withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: iconColor ?? theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateTimeSelector({
+    required String label,
+    required DateTime? date,
+    required TimeOfDay? time,
+    required bool isStart,
+    required bool enabled,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: enabled ? () => _selectDateTime(context, isStart) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    icon ?? Icons.schedule,
+                    color: enabled ? theme.colorScheme.primary : Colors.grey,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        date != null && time != null
+                            ? '${DateFormat('yyyy-MM-dd').format(date)} at ${time.format(context)}'
+                            : 'Select Date & Time',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: enabled
+                              ? theme.colorScheme.onSurface
+                              : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  color: enabled ? theme.colorScheme.primary : Colors.grey,
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChipSelector({
+    required String label,
+    required List<String> options,
+    required List<String> selectedValues,
+    required Function(String, bool) onSelectionChanged,
+    required bool enabled,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8.0,
+          runSpacing: 8.0,
+          children: options.map((option) {
+            bool isSelected = selectedValues.contains(option);
+            return FilterChip(
+              label: Text(option),
+              selected: isSelected,
+              onSelected: enabled
+                  ? (selected) => onSelectionChanged(option, selected)
+                  : null,
+              selectedColor: Theme.of(
+                context,
+              ).colorScheme.primary.withOpacity(0.2),
+              checkmarkColor: Theme.of(context).colorScheme.primary,
+              backgroundColor: Colors.grey.shade100,
+              side: BorderSide(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.grey.shade300,
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  @override
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     bool isEditingExisting = widget.entryToEdit != null;
     bool isClosedEvent =
         isEditingExisting && widget.entryToEdit!.status == 'CLOSED';
@@ -588,7 +827,17 @@ class _TrippingShutdownEntryScreenState
         (_selectedEventType == 'Shutdown') || (_isClosingEvent);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
+        backgroundColor: Colors.white, // ✅ Match other screens
+        elevation: 0, // ✅ Consistent with theme
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back,
+            color: theme.colorScheme.onSurface,
+          ), // ✅ Use theme colors
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Text(
           isEditingExisting
               ? isClosedEvent
@@ -597,99 +846,214 @@ class _TrippingShutdownEntryScreenState
                     ? 'Close Event'
                     : 'Edit Event'
               : 'New Event Entry',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface, // ✅ Use theme colors
+          ),
         ),
+        actions: [
+          if (isEditingExisting)
+            Container(
+              margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: (isClosedEvent ? Colors.green : Colors.orange)
+                    .withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: (isClosedEvent ? Colors.green : Colors.orange)
+                      .withOpacity(0.5),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isClosedEvent ? Icons.check_circle : Icons.pending,
+                    size: 16,
+                    color: isClosedEvent
+                        ? Colors.green.shade700
+                        : Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    isClosedEvent ? 'Closed' : 'Open',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isClosedEvent
+                          ? Colors.green.shade700
+                          : Colors.orange.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Form(
-                key: _formKey,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
+          ? Center(
+              child: Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (isMultiBaySelectionMode &&
-                        _allBays.isNotEmpty &&
-                        _selectedMultiBays.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
-                        child: Text(
-                          'Please select at least one bay to proceed.',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                    if (isMultiBaySelectionMode)
-                      DropdownSearch<Bay>.multiSelection(
-                        items: _allBays,
-                        selectedItems: _selectedMultiBays,
-                        itemAsString: (Bay bay) =>
-                            '${bay.name} (${bay.bayType})',
-                        dropdownDecoratorProps: const DropDownDecoratorProps(
-                          dropdownSearchDecoration: InputDecoration(
-                            labelText: 'Select Bay(s)',
-                            border: OutlineInputBorder(),
-                            helperText: 'Select one or more bays',
-                          ),
-                        ),
-                        enabled: isFormEnabled,
-                        onChanged: (List<Bay> newValue) {
-                          setState(() {
-                            _selectedMultiBays = newValue;
-                            _selectedBay = newValue.firstWhereOrNull(
-                              (bay) => true,
-                            );
-                            final Map<String, TextEditingController>
-                            newBayFlagsControllers = {};
-                            for (var bay in newValue) {
-                              newBayFlagsControllers[bay.id] =
-                                  _bayFlagsControllers[bay.id] ??
-                                  TextEditingController();
-                            }
-                            _bayFlagsControllers.forEach((id, controller) {
-                              if (!newBayFlagsControllers.containsKey(id)) {
-                                controller.dispose();
-                              }
-                            });
-                            _bayFlagsControllers = newBayFlagsControllers;
-                            _updateConditionalFields();
-                          });
-                        },
-                        validator: (selectedItems) {
-                          if (selectedItems == null || selectedItems.isEmpty) {
-                            return 'Please select at least one bay';
-                          }
-                          return null;
-                        },
-                      )
-                    else
-                      DropdownSearch<Bay>(
-                        items: _allBays,
-                        selectedItem: _selectedBay,
-                        itemAsString: (Bay bay) =>
-                            '${bay.name} (${bay.bayType})',
-                        dropdownDecoratorProps: const DropDownDecoratorProps(
-                          dropdownSearchDecoration: InputDecoration(
-                            labelText: 'Selected Bay',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        enabled: false,
-                        onChanged: (Bay? newValue) {},
-                        popupProps: const PopupProps.menu(showSearchBox: true),
-                      ),
+                    CircularProgressIndicator(
+                      color: theme.colorScheme.primary,
+                      strokeWidth: 3,
+                    ),
                     const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
+                    Text(
+                      'Loading event details...',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : Form(
+              key: _formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // Bay Selection Card
+                  _buildFormCard(
+                    title: isMultiBaySelectionMode
+                        ? 'Select Bay(s)'
+                        : 'Selected Bay',
+                    icon: Icons.electrical_services,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isMultiBaySelectionMode &&
+                            _allBays.isNotEmpty &&
+                            _selectedMultiBays.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: Text(
+                              'Please select at least one bay to proceed.',
+                              style: TextStyle(
+                                color: theme.colorScheme.error,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        if (isMultiBaySelectionMode)
+                          DropdownSearch<Bay>.multiSelection(
+                            items: _allBays,
+                            selectedItems: _selectedMultiBays,
+                            itemAsString: (Bay bay) =>
+                                '${bay.name} (${bay.bayType})',
+                            dropdownDecoratorProps:
+                                const DropDownDecoratorProps(
+                                  dropdownSearchDecoration: InputDecoration(
+                                    labelText: 'Select Bay(s)',
+                                    border: OutlineInputBorder(),
+                                    helperText: 'Select one or more bays',
+                                  ),
+                                ),
+                            enabled: isFormEnabled,
+                            onChanged: (List<Bay> newValue) {
+                              setState(() {
+                                _selectedMultiBays = newValue;
+                                _selectedBay = newValue.firstWhereOrNull(
+                                  (bay) => true,
+                                );
+                                final Map<String, TextEditingController>
+                                newBayFlagsControllers = {};
+                                for (var bay in newValue) {
+                                  newBayFlagsControllers[bay.id] =
+                                      _bayFlagsControllers[bay.id] ??
+                                      TextEditingController();
+                                }
+                                _bayFlagsControllers.forEach((id, controller) {
+                                  if (!newBayFlagsControllers.containsKey(id)) {
+                                    controller.dispose();
+                                  }
+                                });
+                                _bayFlagsControllers = newBayFlagsControllers;
+                                _updateConditionalFields();
+                              });
+                            },
+                            validator: (selectedItems) {
+                              if (selectedItems == null ||
+                                  selectedItems.isEmpty) {
+                                return 'Please select at least one bay';
+                              }
+                              return null;
+                            },
+                          )
+                        else
+                          DropdownSearch<Bay>(
+                            items: _allBays,
+                            selectedItem: _selectedBay,
+                            itemAsString: (Bay bay) =>
+                                '${bay.name} (${bay.bayType})',
+                            dropdownDecoratorProps:
+                                const DropDownDecoratorProps(
+                                  dropdownSearchDecoration: InputDecoration(
+                                    labelText: 'Selected Bay',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                            enabled: false,
+                            onChanged: (Bay? newValue) {},
+                            popupProps: const PopupProps.menu(
+                              showSearchBox: true,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  // Event Type Card
+                  _buildFormCard(
+                    title: 'Event Type',
+                    icon: Icons.flash_on,
+                    iconColor: _selectedEventType == 'Tripping'
+                        ? Colors.red
+                        : Colors.orange,
+                    child: DropdownButtonFormField<String>(
                       decoration: const InputDecoration(
                         labelText: 'Event Type',
                         border: OutlineInputBorder(),
                       ),
                       value: _selectedEventType,
                       items: _eventTypes.map((type) {
-                        return DropdownMenuItem(value: type, child: Text(type));
+                        return DropdownMenuItem(
+                          value: type,
+                          child: Row(
+                            children: [
+                              Icon(
+                                type == 'Tripping'
+                                    ? Icons.flash_on
+                                    : Icons.power_off,
+                                color: type == 'Tripping'
+                                    ? Colors.red
+                                    : Colors.orange,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(type),
+                            ],
+                          ),
+                        );
                       }).toList(),
                       onChanged: isFormEnabled
                           ? (String? newValue) {
@@ -702,182 +1066,198 @@ class _TrippingShutdownEntryScreenState
                       validator: (value) =>
                           value == null ? 'Please select event type' : null,
                     ),
-                    const SizedBox(height: 16),
-                    ListTile(
-                      title: Text(
-                        'Start Date: ${_startDate != null ? DateFormat('yyyy-MM-dd').format(_startDate!) : 'Select Date'}',
-                      ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: isFormEnabled
-                          ? () => _selectDateTime(context, true)
-                          : null,
-                    ),
-                    ListTile(
-                      title: Text(
-                        'Start Time: ${_startTime != null ? _startTime!.format(context) : 'Select Time'}',
-                      ),
-                      trailing: const Icon(Icons.access_time),
-                      onTap: isFormEnabled
-                          ? () => _selectDateTime(context, true)
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
-                    if (isMultiBaySelectionMode &&
-                        _selectedMultiBays.isNotEmpty)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Flags/Cause of Event (per Bay):',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          ..._selectedMultiBays.map((bay) {
-                            if (!_bayFlagsControllers.containsKey(bay.id)) {
-                              _bayFlagsControllers[bay.id] =
-                                  TextEditingController(text: '');
-                            }
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 16.0),
-                              child: TextFormField(
-                                controller: _bayFlagsControllers[bay.id],
-                                decoration: InputDecoration(
-                                  labelText: 'Flags/Cause for ${bay.name}',
-                                  border: const OutlineInputBorder(),
-                                  alignLabelWithHint: true,
-                                ),
-                                maxLines: 3,
-                                enabled: isFormEnabled,
-                                validator: (value) {
-                                  if (isFlagsCauseMandatoryGlobal) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      if (_selectedEventType == 'Shutdown') {
-                                        return 'Reason for Shutdown for ${bay.name} is mandatory.';
-                                      } else if (_isClosingEvent) {
-                                        return 'Reason for closing for ${bay.name} is mandatory.';
-                                      }
-                                      return 'Flags/Cause for ${bay.name} cannot be empty.';
-                                    }
-                                  }
-                                  return null;
-                                },
-                              ),
-                            );
-                          }).toList(),
-                        ],
-                      )
-                    else
-                      TextFormField(
-                        controller: _flagsCauseController,
-                        decoration: const InputDecoration(
-                          labelText: 'Flags/Cause of Event',
-                          border: OutlineInputBorder(),
-                          alignLabelWithHint: true,
-                        ),
-                        maxLines: 3,
-                        enabled: isFormEnabled,
-                        validator: (value) {
-                          if (isFlagsCauseMandatoryGlobal) {
-                            if (value == null || value.trim().isEmpty) {
-                              if (_selectedEventType == 'Shutdown') {
-                                return 'Reason for Shutdown is mandatory.';
-                              } else if (_isClosingEvent) {
-                                return 'Reason for closing the event is mandatory.';
-                              }
-                              return 'Flags/Cause cannot be empty.';
-                            }
-                          }
-                          return null;
-                        },
-                      ),
-                    const SizedBox(height: 16),
-                    Visibility(
-                      visible: _showReasonForNonFeeder,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
-                        child: TextFormField(
-                          controller: _reasonForNonFeederController,
-                          decoration: const InputDecoration(
-                            labelText:
-                                'Reason for Tripping/Shutdown (Non-Feeder Bay)',
-                            border: OutlineInputBorder(),
-                          ),
-                          maxLines: 2,
+                  ),
+
+                  // Date Time Card
+                  _buildFormCard(
+                    title: 'Event Timing',
+                    icon: Icons.schedule,
+                    child: Column(
+                      children: [
+                        _buildDateTimeSelector(
+                          label: 'Start Date & Time',
+                          date: _startDate,
+                          time: _startTime,
+                          isStart: true,
                           enabled: isFormEnabled,
+                          icon: Icons.play_arrow,
                         ),
-                      ),
+                        if (isEditingExisting && !isClosedEvent) ...[
+                          const SizedBox(height: 16),
+                          _buildDateTimeSelector(
+                            label: 'End Date & Time',
+                            date: _endDate,
+                            time: _endTime,
+                            isStart: false,
+                            enabled: isFormEnabled,
+                            icon: Icons.stop,
+                          ),
+                        ],
+                      ],
                     ),
-                    Visibility(
-                      visible: _showHasAutoReclose,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
-                        child: SwitchListTile(
-                          title: const Text('Auto-reclose (A/R) occurred'),
-                          value: _hasAutoReclose,
-                          onChanged: isFormEnabled
-                              ? (bool value) =>
-                                    setState(() => _hasAutoReclose = value)
-                              : null,
-                          secondary: const Icon(Icons.power_settings_new),
-                        ),
-                      ),
-                    ),
-                    Visibility(
-                      visible: _showPhaseFaults,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Phase Faults:'),
-                            Wrap(
-                              spacing: 8.0,
-                              children: _phaseFaultOptions.map((fault) {
-                                bool isSelected = _selectedPhaseFaults.contains(
-                                  fault,
-                                );
-                                return ChoiceChip(
-                                  label: Text(fault),
-                                  selected: isSelected,
-                                  onSelected: isFormEnabled
-                                      ? (selected) {
-                                          setState(() {
-                                            if (selected) {
-                                              _selectedPhaseFaults.add(fault);
-                                            } else {
-                                              _selectedPhaseFaults.remove(
-                                                fault,
-                                              );
-                                            }
-                                          });
+                  ),
+
+                  // Flags/Cause Card
+                  _buildFormCard(
+                    title: 'Event Details',
+                    icon: Icons.description,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isMultiBaySelectionMode &&
+                            _selectedMultiBays.isNotEmpty)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Flags/Cause of Event (per Bay):',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 12),
+                              ..._selectedMultiBays.map((bay) {
+                                if (!_bayFlagsControllers.containsKey(bay.id)) {
+                                  _bayFlagsControllers[bay.id] =
+                                      TextEditingController(text: '');
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 16.0),
+                                  child: TextFormField(
+                                    controller: _bayFlagsControllers[bay.id],
+                                    decoration: InputDecoration(
+                                      labelText: 'Flags/Cause for ${bay.name}',
+                                      border: const OutlineInputBorder(),
+                                      alignLabelWithHint: true,
+                                    ),
+                                    maxLines: 3,
+                                    enabled: isFormEnabled,
+                                    validator: (value) {
+                                      if (isFlagsCauseMandatoryGlobal) {
+                                        if (value == null ||
+                                            value.trim().isEmpty) {
+                                          if (_selectedEventType ==
+                                              'Shutdown') {
+                                            return 'Reason for Shutdown for ${bay.name} is mandatory.';
+                                          } else if (_isClosingEvent) {
+                                            return 'Reason for closing for ${bay.name} is mandatory.';
+                                          }
+                                          return 'Flags/Cause for ${bay.name} cannot be empty.';
                                         }
-                                      : null,
+                                      }
+                                      return null;
+                                    },
+                                  ),
                                 );
                               }).toList(),
+                            ],
+                          )
+                        else
+                          TextFormField(
+                            controller: _flagsCauseController,
+                            decoration: const InputDecoration(
+                              labelText: 'Flags/Cause of Event',
+                              border: OutlineInputBorder(),
+                              alignLabelWithHint: true,
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Visibility(
-                      visible: _showDistance,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
-                        child: TextFormField(
-                          controller: _distanceController,
-                          decoration: const InputDecoration(
-                            labelText: 'Fault Distance (Km)',
-                            border: OutlineInputBorder(),
+                            maxLines: 3,
+                            enabled: isFormEnabled,
+                            validator: (value) {
+                              if (isFlagsCauseMandatoryGlobal) {
+                                if (value == null || value.trim().isEmpty) {
+                                  if (_selectedEventType == 'Shutdown') {
+                                    return 'Reason for Shutdown is mandatory.';
+                                  } else if (_isClosingEvent) {
+                                    return 'Reason for closing the event is mandatory.';
+                                  }
+                                  return 'Flags/Cause cannot be empty.';
+                                }
+                              }
+                              return null;
+                            },
                           ),
-                          keyboardType: TextInputType.number,
-                          enabled: isFormEnabled,
+                      ],
+                    ),
+                  ),
+
+                  // Conditional Fields
+                  if (_showReasonForNonFeeder)
+                    _buildFormCard(
+                      title: 'Non-Feeder Bay Reason',
+                      icon: Icons.help_outline,
+                      iconColor: Colors.blue,
+                      child: TextFormField(
+                        controller: _reasonForNonFeederController,
+                        decoration: const InputDecoration(
+                          labelText:
+                              'Reason for Tripping/Shutdown (Non-Feeder Bay)',
+                          border: OutlineInputBorder(),
                         ),
+                        maxLines: 2,
+                        enabled: isFormEnabled,
                       ),
                     ),
-                    Visibility(
-                      visible: _selectedEventType == 'Shutdown',
+
+                  if (_showHasAutoReclose)
+                    _buildFormCard(
+                      title: 'Auto-Reclose Settings',
+                      icon: Icons.refresh,
+                      iconColor: Colors.green,
+                      child: SwitchListTile(
+                        title: const Text('Auto-reclose (A/R) occurred'),
+                        value: _hasAutoReclose,
+                        onChanged: isFormEnabled
+                            ? (bool value) =>
+                                  setState(() => _hasAutoReclose = value)
+                            : null,
+                        secondary: const Icon(Icons.power_settings_new),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+
+                  if (_showPhaseFaults)
+                    _buildFormCard(
+                      title: 'Phase Fault Selection',
+                      icon: Icons.flash_on,
+                      iconColor: Colors.red,
+                      child: _buildChipSelector(
+                        label: 'Select Phase Faults:',
+                        options: _phaseFaultOptions,
+                        selectedValues: _selectedPhaseFaults,
+                        onSelectionChanged: (fault, selected) {
+                          setState(() {
+                            if (selected) {
+                              _selectedPhaseFaults.add(fault);
+                            } else {
+                              _selectedPhaseFaults.remove(fault);
+                            }
+                          });
+                        },
+                        enabled: isFormEnabled,
+                      ),
+                    ),
+
+                  if (_showDistance)
+                    _buildFormCard(
+                      title: 'Fault Distance',
+                      icon: Icons.straighten,
+                      iconColor: Colors.purple,
+                      child: TextFormField(
+                        controller: _distanceController,
+                        decoration: const InputDecoration(
+                          labelText: 'Fault Distance (Km)',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        enabled: isFormEnabled,
+                      ),
+                    ),
+
+                  // Shutdown Specific Fields
+                  if (_selectedEventType == 'Shutdown')
+                    _buildFormCard(
+                      title: 'Shutdown Details',
+                      icon: Icons.power_off,
+                      iconColor: Colors.orange,
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           DropdownButtonFormField<String>(
                             decoration: const InputDecoration(
@@ -933,84 +1313,78 @@ class _TrippingShutdownEntryScreenState
                                       : null
                                 : null,
                           ),
-                          const SizedBox(height: 16),
                         ],
                       ),
                     ),
-                    if (isEditingExisting && !isClosedEvent)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+
+                  // Status Information
+                  if (isReadOnly)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      ),
+                      child: Row(
                         children: [
-                          const Divider(height: 32, thickness: 1),
-                          Text(
-                            'Close Event Details',
-                            style: Theme.of(context).textTheme.titleMedium,
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.blue.shade700,
+                            size: 20,
                           ),
-                          const SizedBox(height: 16),
-                          ListTile(
-                            title: Text(
-                              'End Date: ${_endDate != null ? DateFormat('yyyy-MM-dd').format(_endDate!) : 'Select Date'}',
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              widget.isViewOnly
+                                  ? 'This event is in view-only mode.'
+                                  : 'This event is already closed.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.blue.shade700,
+                              ),
                             ),
-                            trailing: const Icon(Icons.calendar_today),
-                            onTap: isFormEnabled
-                                ? () => _selectDateTime(context, false)
-                                : null,
                           ),
-                          ListTile(
-                            title: Text(
-                              'End Time: ${_endTime != null ? _endTime!.format(context) : 'Select Time'}',
-                            ),
-                            trailing: const Icon(Icons.access_time),
-                            onTap: isFormEnabled
-                                ? () => _selectDateTime(context, false)
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
                         ],
                       ),
-                    if (!isReadOnly)
-                      Center(
-                        child: _isSaving
-                            ? const CircularProgressIndicator()
-                            : ElevatedButton.icon(
-                                onPressed: _saveEvent,
-                                icon: Icon(
-                                  isEditingExisting && !isClosedEvent
-                                      ? Icons.check_circle_outline
-                                      : Icons.save,
-                                ),
-                                label: Text(
-                                  isEditingExisting && !isClosedEvent
-                                      ? 'Close Event'
-                                      : 'Create Event',
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size(double.infinity, 50),
-                                ),
-                              ),
-                      ),
-                    if (widget.isViewOnly || isClosedEvent)
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Text(
-                            widget.isViewOnly
-                                ? 'This event is in view-only mode.'
-                                : 'This event is already closed.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey.shade700,
-                                ),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                  ],
-                ),
+                    ),
+
+                  // Bottom spacing for FAB
+                  const SizedBox(height: 100),
+                ],
               ),
             ),
+      floatingActionButton: !isReadOnly
+          ? FloatingActionButton.extended(
+              onPressed: _isSaving ? null : _saveEvent,
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              elevation: 4,
+              icon: _isSaving
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.onPrimary,
+                      ),
+                    )
+                  : Icon(
+                      isEditingExisting && !isClosedEvent
+                          ? Icons.check_circle_outline
+                          : Icons.save,
+                    ),
+              label: Text(
+                _isSaving
+                    ? 'Saving...'
+                    : isEditingExisting && !isClosedEvent
+                    ? 'Close Event'
+                    : 'Create Event',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+            )
+          : null,
     );
   }
 }
