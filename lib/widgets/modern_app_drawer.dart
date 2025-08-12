@@ -6,6 +6,7 @@ import '../models/user_model.dart';
 import '../models/app_state_data.dart';
 import '../screens/admin/reading_template_management_screen.dart';
 import '../screens/equipment_hierarchy_selection_screen.dart';
+import '../screens/report_builder_wizard_screen.dart';
 import '../screens/saved_sld_list_screen.dart';
 import '../models/hierarchy_models.dart';
 import '../screens/subdivision_dashboard_tabs/chart_configuration_screen.dart';
@@ -458,6 +459,13 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'color': Colors.blue,
           },
           {
+            'icon': Icons.analytics_rounded, // Updated this icon
+            'title': 'Custom Reports',
+            'subtitle': 'Build & export reports',
+            'onTap': () => _navigateToCustomReports(context),
+            'color': Colors.purple,
+          },
+          {
             'icon': Icons.tune_rounded,
             'title': 'Charts',
             'subtitle': 'Configure charts',
@@ -518,8 +526,29 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => Navigator.pop(context),
             'color': Colors.blue,
           },
+          {
+            'icon': Icons.analytics_rounded,
+            'title': 'Custom Reports',
+            'subtitle': 'Build & export reports',
+            'onTap': () => _navigateToCustomReports(context),
+            'color': Colors.purple,
+          },
         ];
     }
+  }
+
+  // Add this new method for Custom Reports navigation
+  void _navigateToCustomReports(BuildContext context) {
+    Navigator.of(context).pop(); // Close the drawer
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ReportBuilderWizardScreen(
+          currentUser:
+              widget.user, // This should work if widget.user is of type AppUser
+        ),
+      ),
+    );
   }
 
   void _navigateToEnergySLD(BuildContext context) async {

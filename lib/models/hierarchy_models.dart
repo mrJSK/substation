@@ -495,7 +495,6 @@ class Subdivision extends HierarchyItem {
 class Substation extends HierarchyItem {
   final String subdivisionId;
   final String? cityId;
-
   final String? voltageLevel;
   final String? type;
   final String? operation;
@@ -503,6 +502,11 @@ class Substation extends HierarchyItem {
   final Timestamp? commissioningDate;
   final String? status;
   final String? statusDescription;
+
+  // Add these fields to store the hierarchy names
+  final String? subdivisionName;
+  final String? divisionName;
+  final String? circleName;
 
   Substation({
     required super.id,
@@ -524,6 +528,10 @@ class Substation extends HierarchyItem {
     this.commissioningDate,
     this.status,
     this.statusDescription,
+    // Add these parameters
+    this.subdivisionName,
+    this.divisionName,
+    this.circleName,
   });
 
   @override
@@ -551,6 +559,10 @@ class Substation extends HierarchyItem {
       commissioningDate: data['commissioningDate'] as Timestamp?,
       status: data['status'],
       statusDescription: data['statusDescription'],
+      // Add these fields
+      subdivisionName: data['subdivisionName'],
+      divisionName: data['divisionName'],
+      circleName: data['circleName'],
     );
   }
 
@@ -574,6 +586,10 @@ class Substation extends HierarchyItem {
     'commissioningDate': commissioningDate,
     'status': status,
     'statusDescription': statusDescription,
+    // Add these fields
+    'subdivisionName': subdivisionName,
+    'divisionName': divisionName,
+    'circleName': circleName,
   };
 
   Substation copyWith({
@@ -596,6 +612,10 @@ class Substation extends HierarchyItem {
     Timestamp? commissioningDate,
     String? status,
     String? statusDescription,
+    // Add these parameters
+    String? subdivisionName,
+    String? divisionName,
+    String? circleName,
   }) => Substation(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -616,6 +636,10 @@ class Substation extends HierarchyItem {
     commissioningDate: commissioningDate ?? this.commissioningDate,
     status: status ?? this.status,
     statusDescription: statusDescription ?? this.statusDescription,
+    // Add these fields
+    subdivisionName: subdivisionName ?? this.subdivisionName,
+    divisionName: divisionName ?? this.divisionName,
+    circleName: circleName ?? this.circleName,
   );
 }
 

@@ -70,7 +70,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   bool _isCapturingPdf = false;
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 1));
   DateTime _endDate = DateTime.now();
-  bool _showTables = true;
+  bool _showTables = false;
   bool _isViewingSavedSld = false;
   bool _showEnergyReadings = true;
 
