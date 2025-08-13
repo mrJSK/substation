@@ -1,5 +1,3 @@
-// lib/screens/community/blog_article_screen.dart
-
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -8,9 +6,20 @@ import '../../models/community_models.dart';
 import '../../models/user_model.dart';
 import '../../services/community_service.dart';
 
+// Modern theme constants (matching the list screen)
+class MediumTheme {
+  static const Color primaryText = Color(0xFF1A1A1A);
+  static const Color secondaryText = Color(0xFF6B6B6B);
+  static const Color lightGray = Color(0xFFF5F5F5);
+  static const Color mediumGray = Color(0xFFE8E8E8);
+  static const Color accent = Color(0xFF2E7D32);
+  static const Color background = Color(0xFFFFFFFF);
+  static const Color cardBackground = Color(0xFFFFFFFF);
+}
+
 class BlogArticleScreen extends StatefulWidget {
   final AppUser currentUser;
-  final KnowledgePost? existingPost; // For editing
+  final KnowledgePost? existingPost;
 
   const BlogArticleScreen({
     Key? key,
@@ -37,8 +46,7 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
   bool _allowComments = true;
   int _priority = 2;
 
-  // File upload constraints
-  static const int maxFileSize = 1024 * 1024; // 1MB
+  static const int maxFileSize = 1024 * 1024;
   static const List<String> allowedExtensions = [
     'xlsx',
     'xls',
@@ -90,473 +98,813 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFFAFAFA),
-      appBar: AppBar(
-        title: Text(
-          widget.existingPost != null ? 'Edit Article' : 'Create Article',
-          style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: IconThemeData(color: Colors.black87),
-        actions: [
-          TextButton(
-            onPressed: _isLoading ? null : () => _saveArticle(PostStatus.draft),
-            child: Text(
-              'Save Draft',
-              style: TextStyle(
-                color: _isLoading ? Colors.grey : Colors.orange,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: _isLoading
-                ? null
-                : () => _saveArticle(PostStatus.pending),
-            child: Text(
-              'Publish',
-              style: TextStyle(
-                color: _isLoading
-                    ? Colors.grey
-                    : Theme.of(context).primaryColor,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
+      backgroundColor: MediumTheme.background,
+      appBar: _buildAppBar(),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? _buildLoadingState()
           : Form(
               key: _formKey,
               child: SingleChildScrollView(
-                padding: EdgeInsets.all(16),
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 24),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Basic Information Card
-                    _buildSectionCard(
-                      title: 'Article Information',
-                      icon: Icons.article,
-                      children: [
-                        _buildTextField(
-                          controller: _titleController,
-                          label: 'Title *',
-                          hintText: 'Enter article title...',
-                          validator: (value) => value?.trim().isEmpty == true
-                              ? 'Title is required'
-                              : null,
-                        ),
-                        SizedBox(height: 16),
-                        _buildTextField(
-                          controller: _summaryController,
-                          label: 'Summary *',
-                          hintText: 'Brief description of the article...',
-                          maxLines: 2,
-                          validator: (value) => value?.trim().isEmpty == true
-                              ? 'Summary is required'
-                              : null,
-                        ),
-                        SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildDropdownField(
-                                label: 'Category *',
-                                value: _selectedCategory,
-                                items: _categories.map((category) {
-                                  return DropdownMenuItem(
-                                    value: category,
-                                    child: Text(
-                                      _getCategoryDisplayName(category),
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedCategory = value!;
-                                  });
-                                },
-                              ),
-                            ),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: _buildDropdownField(
-                                label: 'Visibility *',
-                                value: _selectedVisibility,
-                                items: PostVisibility.values.map((visibility) {
-                                  return DropdownMenuItem(
-                                    value: visibility,
-                                    child: Text(
-                                      _getVisibilityDisplayName(visibility),
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedVisibility = value!;
-                                  });
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-
-                    SizedBox(height: 16),
-
-                    // Content Card
-                    _buildSectionCard(
-                      title: 'Content',
-                      icon: Icons.edit_note,
-                      children: [
-                        _buildTextField(
-                          controller: _contentController,
-                          label: 'Article Content *',
-                          hintText: 'Write your article content here...',
-                          maxLines: 15,
-                          validator: (value) => value?.trim().isEmpty == true
-                              ? 'Content is required'
-                              : null,
-                        ),
-                      ],
-                    ),
-
-                    SizedBox(height: 16),
-
-                    // Tags Card
-                    _buildSectionCard(
-                      title: 'Tags',
-                      icon: Icons.local_offer,
-                      children: [_buildTagInputField()],
-                    ),
-
-                    SizedBox(height: 16),
-
-                    // Attachments Card
-                    _buildSectionCard(
-                      title: 'Attachments',
-                      icon: Icons.attach_file,
-                      children: [_buildAttachmentsSection()],
-                    ),
-
-                    SizedBox(height: 16),
-
-                    // Settings Card
-                    _buildSectionCard(
-                      title: 'Settings',
-                      icon: Icons.settings,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildDropdownField(
-                                label: 'Priority',
-                                value: _priority,
-                                items: [
-                                  DropdownMenuItem(
-                                    value: 1,
-                                    child: Text('Low'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 2,
-                                    child: Text('Medium'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 3,
-                                    child: Text('High'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 4,
-                                    child: Text('Critical'),
-                                  ),
-                                ],
-                                onChanged: (value) {
-                                  setState(() {
-                                    _priority = value!;
-                                  });
-                                },
-                              ),
-                            ),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey[300]!),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: SwitchListTile(
-                                  title: Text('Allow Comments'),
-                                  value: _allowComments,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _allowComments = value;
-                                    });
-                                  },
-                                  activeColor: Theme.of(context).primaryColor,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-
-                    SizedBox(height: 80), // Space for bottom action bar
+                    _buildHeader(),
+                    SizedBox(height: 40),
+                    _buildTitleSection(),
+                    SizedBox(height: 32),
+                    _buildSummarySection(),
+                    SizedBox(height: 32),
+                    _buildCategorySection(),
+                    SizedBox(height: 40),
+                    _buildContentSection(),
+                    SizedBox(height: 40),
+                    _buildTagsSection(),
+                    SizedBox(height: 40),
+                    _buildAttachmentsSection(),
+                    SizedBox(height: 40),
+                    _buildSettingsSection(),
+                    SizedBox(height: 120),
                   ],
                 ),
               ),
             ),
-      bottomNavigationBar: Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              spreadRadius: 1,
-              blurRadius: 10,
-              offset: Offset(0, -2),
+      floatingActionButton: _buildFloatingActions(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: MediumTheme.background,
+      elevation: 0,
+      surfaceTintColor: MediumTheme.background,
+      leading: IconButton(
+        icon: Icon(
+          Icons.close_outlined,
+          color: MediumTheme.primaryText,
+          size: 24,
+        ),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: Text(
+        widget.existingPost != null ? 'Edit Story' : 'New Story',
+        style: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: MediumTheme.primaryText,
+          letterSpacing: -0.5,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => _saveArticle(PostStatus.draft),
+          child: Text(
+            'Save Draft',
+            style: TextStyle(
+              color: _isLoading
+                  ? MediumTheme.secondaryText
+                  : MediumTheme.accent,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+            ),
+          ),
+        ),
+        SizedBox(width: 16),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: MediumTheme.accent, strokeWidth: 3),
+          SizedBox(height: 24),
+          Text(
+            'Saving your story...',
+            style: TextStyle(
+              color: MediumTheme.secondaryText,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 24,
+          backgroundColor: MediumTheme.lightGray,
+          child: Text(
+            widget.currentUser.name.isNotEmpty
+                ? widget.currentUser.name[0].toUpperCase()
+                : 'U',
+            style: TextStyle(
+              color: MediumTheme.primaryText,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            ),
+          ),
+        ),
+        SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.currentUser.name,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: MediumTheme.primaryText,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Draft in ${_getCategoryDisplayName(_selectedCategory)}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: MediumTheme.secondaryText,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTitleSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _titleController,
+          validator: (value) =>
+              value?.trim().isEmpty == true ? 'Title is required' : null,
+          style: TextStyle(
+            fontSize: 36,
+            fontWeight: FontWeight.w700,
+            color: MediumTheme.primaryText,
+            height: 1.2,
+            letterSpacing: -1,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Your story title...',
+            hintStyle: TextStyle(
+              fontSize: 36,
+              fontWeight: FontWeight.w700,
+              color: MediumTheme.secondaryText.withOpacity(0.4),
+              height: 1.2,
+              letterSpacing: -1,
+            ),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.zero,
+          ),
+          maxLines: null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummarySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Summary',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: MediumTheme.primaryText,
+          ),
+        ),
+        SizedBox(height: 12),
+        TextFormField(
+          controller: _summaryController,
+          validator: (value) =>
+              value?.trim().isEmpty == true ? 'Summary is required' : null,
+          style: TextStyle(
+            fontSize: 16,
+            color: MediumTheme.primaryText,
+            height: 1.6,
+            letterSpacing: -0.2,
+          ),
+          decoration: InputDecoration(
+            hintText: 'A brief summary of your story...',
+            hintStyle: TextStyle(
+              fontSize: 16,
+              color: MediumTheme.secondaryText.withOpacity(0.6),
+              height: 1.6,
+              letterSpacing: -0.2,
+            ),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(vertical: 12),
+          ),
+          maxLines: 4,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategorySection() {
+    return Container(
+      padding: EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: MediumTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Category',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: MediumTheme.primaryText,
+            ),
+          ),
+          SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: _categories.map((category) {
+              final isSelected = _selectedCategory == category;
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedCategory = category;
+                  });
+                },
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? MediumTheme.accent
+                        : MediumTheme.lightGray,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: isSelected
+                          ? MediumTheme.accent
+                          : MediumTheme.mediumGray,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    _getCategoryDisplayName(category),
+                    style: TextStyle(
+                      color: isSelected
+                          ? Colors.white
+                          : MediumTheme.primaryText,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContentSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Your Story',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: MediumTheme.primaryText,
+          ),
+        ),
+        SizedBox(height: 16),
+        TextFormField(
+          controller: _contentController,
+          validator: (value) =>
+              value?.trim().isEmpty == true ? 'Content is required' : null,
+          style: TextStyle(
+            fontSize: 16,
+            color: MediumTheme.primaryText,
+            height: 1.7,
+            letterSpacing: -0.2,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Write your story here...',
+            hintStyle: TextStyle(
+              fontSize: 16,
+              color: MediumTheme.secondaryText.withOpacity(0.6),
+              height: 1.7,
+              letterSpacing: -0.2,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: MediumTheme.lightGray, width: 1.5),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: MediumTheme.lightGray, width: 1.5),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: MediumTheme.accent, width: 2),
+            ),
+            contentPadding: EdgeInsets.all(24),
+            filled: true,
+            fillColor: MediumTheme.cardBackground,
+          ),
+          maxLines: 16,
+          minLines: 10,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTagsSection() {
+    return Container(
+      padding: EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: MediumTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.local_offer_outlined,
+                color: MediumTheme.accent,
+                size: 22,
+              ),
+              SizedBox(width: 12),
+              Text(
+                'Tags',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: MediumTheme.primaryText,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _tagController,
+                  style: TextStyle(
+                    color: MediumTheme.primaryText,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Add a tag...',
+                    hintStyle: TextStyle(
+                      color: MediumTheme.secondaryText.withOpacity(0.6),
+                      fontSize: 15,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: MediumTheme.lightGray,
+                        width: 1.5,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: MediumTheme.lightGray,
+                        width: 1.5,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: MediumTheme.accent,
+                        width: 2,
+                      ),
+                    ),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                  onSubmitted: _addTag,
+                ),
+              ),
+              SizedBox(width: 16),
+              Container(
+                height: 48,
+                width: 48,
+                decoration: BoxDecoration(
+                  color: MediumTheme.accent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  onPressed: () => _addTag(_tagController.text),
+                  icon: Icon(Icons.add, color: Colors.white, size: 24),
+                ),
+              ),
+            ],
+          ),
+          if (_tags.isNotEmpty) ...[
+            SizedBox(height: 20),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _tags.map((tag) {
+                return Container(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: MediumTheme.accent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: MediumTheme.accent.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        tag,
+                        style: TextStyle(
+                          color: MediumTheme.accent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => _removeTag(tag),
+                        child: Icon(
+                          Icons.close,
+                          size: 18,
+                          color: MediumTheme.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
           ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentsSection() {
+    return Container(
+      padding: EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: MediumTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.attach_file_outlined,
+                color: MediumTheme.accent,
+                size: 22,
+              ),
+              SizedBox(width: 12),
+              Text(
+                'Attachments',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: MediumTheme.primaryText,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+          Text(
+            'Supported: ${allowedExtensions.join(', ').toUpperCase()} (Max 1MB each)',
+            style: TextStyle(
+              fontSize: 14,
+              color: MediumTheme.secondaryText,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 20),
+          InkWell(
+            onTap: _pickFiles,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: MediumTheme.lightGray,
+                  style: BorderStyle.solid,
+                  width: 1.5,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.cloud_upload_outlined,
+                    size: 40,
+                    color: MediumTheme.accent,
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Upload Files',
+                    style: TextStyle(
+                      color: MediumTheme.primaryText,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_attachments.isNotEmpty) ...[
+            SizedBox(height: 20),
+            ..._attachments.map(
+              (attachment) => _buildAttachmentTile(attachment),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentTile(PostAttachment attachment) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: MediumTheme.lightGray,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _getFileIcon(attachment.fileType),
+            color: MediumTheme.accent,
+            size: 24,
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  attachment.fileName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: MediumTheme.primaryText,
+                    fontSize: 15,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  _formatFileSize(attachment.fileSizeBytes),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: MediumTheme.secondaryText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => _removeAttachment(attachment),
+            icon: Icon(Icons.delete_outline, color: Colors.red[400], size: 24),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsSection() {
+    return Container(
+      padding: EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: MediumTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.settings_outlined,
+                color: MediumTheme.accent,
+                size: 22,
+              ),
+              SizedBox(width: 12),
+              Text(
+                'Publishing Settings',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: MediumTheme.primaryText,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Priority Level',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: MediumTheme.primaryText,
+                        fontSize: 15,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: MediumTheme.lightGray,
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: DropdownButton<int>(
+                        value: _priority,
+                        isExpanded: true,
+                        underline: SizedBox(),
+                        style: TextStyle(
+                          color: MediumTheme.primaryText,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        items: [
+                          DropdownMenuItem(value: 1, child: Text('Low')),
+                          DropdownMenuItem(value: 2, child: Text('Medium')),
+                          DropdownMenuItem(value: 3, child: Text('High')),
+                          DropdownMenuItem(value: 4, child: Text('Critical')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _priority = value!;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: 24),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Allow Comments',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: MediumTheme.primaryText,
+                      fontSize: 15,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Switch(
+                    value: _allowComments,
+                    onChanged: (value) {
+                      setState(() {
+                        _allowComments = value;
+                      });
+                    },
+                    activeColor: MediumTheme.accent,
+                    trackOutlineColor: MaterialStateProperty.all(
+                      MediumTheme.lightGray,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingActions() {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 56,
               child: OutlinedButton(
                 onPressed: _isLoading ? null : () => Navigator.pop(context),
-                child: Text('Cancel'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey[600],
-                  side: BorderSide(color: Colors.grey[300]!),
-                  padding: EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: MediumTheme.mediumGray, width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  foregroundColor: MediumTheme.primaryText,
+                ),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                 ),
               ),
             ),
-            SizedBox(width: 16),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: _isLoading
-                    ? null
-                    : () => _saveArticle(PostStatus.draft),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                ),
-                child: Text('Save Draft'),
-              ),
-            ),
-            SizedBox(width: 16),
-            Expanded(
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Container(
+              height: 56,
               child: ElevatedButton(
                 onPressed: _isLoading
                     ? null
                     : () => _saveArticle(PostStatus.pending),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
+                  backgroundColor: MediumTheme.accent,
                   foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                ),
-                child: Text('Publish'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionCard({
-    required String title,
-    required IconData icon,
-    required List<Widget> children,
-  }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: Theme.of(context).primaryColor),
-                SizedBox(width: 12),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-              ],
-            ),
-            SizedBox(height: 16),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    String? hintText,
-    int maxLines = 1,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hintText,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdownField<T>({
-    required String label,
-    required T value,
-    required List<DropdownMenuItem<T>> items,
-    required void Function(T?) onChanged,
-  }) {
-    return DropdownButtonFormField<T>(
-      value: value,
-      items: items,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTagInputField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _tagController,
-                decoration: InputDecoration(
-                  labelText: 'Add Tag',
-                  hintText: 'Enter tag and press add...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(
-                      color: Theme.of(context).primaryColor,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.publish_outlined, size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      'Publish',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-                onSubmitted: _addTag,
               ),
             ),
-            SizedBox(width: 8),
-            IconButton(
-              onPressed: () => _addTag(_tagController.text),
-              icon: Icon(Icons.add_circle),
-              color: Theme.of(context).primaryColor,
-            ),
-          ],
-        ),
-        if (_tags.isNotEmpty) ...[
-          SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _tags.map((tag) {
-              return Chip(
-                label: Text(tag),
-                deleteIcon: Icon(Icons.close, size: 18),
-                onDeleted: () => _removeTag(tag),
-                backgroundColor: Theme.of(
-                  context,
-                ).primaryColor.withOpacity(0.1),
-                labelStyle: TextStyle(color: Theme.of(context).primaryColor),
-              );
-            }).toList(),
           ),
         ],
-      ],
-    );
-  }
-
-  Widget _buildAttachmentsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Supported formats: ${allowedExtensions.join(', ').toUpperCase()} (Max 1MB each)',
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-        ),
-        SizedBox(height: 12),
-        ElevatedButton.icon(
-          onPressed: _pickFiles,
-          icon: Icon(Icons.upload_file),
-          label: Text('Upload Files'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).primaryColor,
-            foregroundColor: Colors.white,
-          ),
-        ),
-        if (_attachments.isNotEmpty) ...[
-          SizedBox(height: 16),
-          ...(_attachments
-              .map((attachment) => _buildAttachmentTile(attachment))
-              .toList()),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildAttachmentTile(PostAttachment attachment) {
-    return Card(
-      margin: EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Icon(_getFileIcon(attachment.fileType)),
-        title: Text(attachment.fileName),
-        subtitle: Text(_formatFileSize(attachment.fileSizeBytes)),
-        trailing: IconButton(
-          icon: Icon(Icons.delete, color: Colors.red),
-          onPressed: () => _removeAttachment(attachment),
-        ),
       ),
     );
   }
 
+  // Helper Methods (unchanged)
   void _addTag(String tag) {
     final trimmedTag = tag.trim();
     if (trimmedTag.isNotEmpty && !_tags.contains(trimmedTag)) {
@@ -583,7 +931,6 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
 
       if (result != null) {
         for (PlatformFile file in result.files) {
-          // Check file size
           if (file.size > maxFileSize) {
             _showErrorSnackBar(
               'File ${file.name} is too large. Max size is 1MB.',
@@ -591,18 +938,16 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
             continue;
           }
 
-          // Check if already added
           if (_attachments.any((att) => att.fileName == file.name)) {
             _showErrorSnackBar('File ${file.name} is already added.');
             continue;
           }
 
-          // Add to attachments (we'll upload when saving)
           setState(() {
             _attachments.add(
               PostAttachment(
                 fileName: file.name,
-                fileUrl: '', // Will be set after upload
+                fileUrl: '',
                 fileType: _getFileType(file.extension ?? ''),
                 fileSizeBytes: file.size,
                 uploadedAt: Timestamp.now(),
@@ -633,7 +978,6 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
     });
 
     try {
-      // Upload attachments if any
       List<PostAttachment> uploadedAttachments = [];
       if (_attachments.isNotEmpty) {
         uploadedAttachments = await CommunityService.uploadPostAttachments(
@@ -642,9 +986,7 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
                 (att) => PlatformFile(
                   name: att.fileName,
                   size: att.fileSizeBytes,
-                  bytes: Uint8List(
-                    0,
-                  ), // This would need to be the actual file bytes
+                  bytes: Uint8List(0),
                 ),
               )
               .toList(),
@@ -675,17 +1017,17 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
           widget.existingPost!.id!,
           post,
         );
-        _showSuccessSnackBar('Article updated successfully');
+        _showSuccessSnackBar('Story updated successfully');
       } else {
         await CommunityService.createKnowledgePost(post);
         _showSuccessSnackBar(
-          'Article ${status == PostStatus.draft ? 'saved as draft' : 'submitted for approval'}',
+          'Story ${status == PostStatus.draft ? 'saved as draft' : 'submitted for review'}',
         );
       }
 
       Navigator.pop(context);
     } catch (e) {
-      _showErrorSnackBar('Failed to save article: $e');
+      _showErrorSnackBar('Failed to save story: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -747,32 +1089,34 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
   IconData _getFileIcon(String fileType) {
     switch (fileType.toLowerCase()) {
       case 'excel':
-        return Icons.table_chart;
+        return Icons.table_chart_outlined;
       case 'doc':
-        return Icons.description;
+        return Icons.description_outlined;
       case 'pdf':
-        return Icons.picture_as_pdf;
+        return Icons.picture_as_pdf_outlined;
       default:
-        return Icons.attach_file;
+        return Icons.attach_file_outlined;
     }
   }
 
   String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
+    if (bytes < 1024)
       return '${bytes} B';
-    } else if (bytes < 1024 * 1024) {
+    else if (bytes < 1024 * 1024)
       return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    } else {
+    else
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
   }
 
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: MediumTheme.accent,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: EdgeInsets.all(16),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }
@@ -781,8 +1125,11 @@ class _BlogArticleScreenState extends State<BlogArticleScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: Colors.red[400],
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: EdgeInsets.all(16),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }

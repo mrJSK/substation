@@ -10,7 +10,7 @@ import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart';
 import '../../widgets/modern_app_drawer.dart';
-import 'create_report_template_screen.dart';
+import 'reports_tab.dart';
 import 'operations_tab.dart';
 import 'energy_tab.dart';
 import 'subdivision_asset_management_screen.dart';

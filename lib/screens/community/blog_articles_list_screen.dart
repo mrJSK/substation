@@ -8,6 +8,16 @@ import '../../services/community_service.dart';
 import 'blog_article_screen.dart';
 import 'knowledge_post_detail_screen.dart';
 
+// Medium-inspired theme constants
+class MediumTheme {
+  static const Color primaryText = Color(0xFF292929);
+  static const Color secondaryText = Color(0xFF757575);
+  static const Color lightGray = Color(0xFFF2F2F2);
+  static const Color mediumGray = Color(0xFFE6E6E6);
+  static const Color accent = Color(0xFF1A8917);
+  static const Color background = Color(0xFFFDFDFD);
+}
+
 class BlogArticlesListScreen extends StatefulWidget {
   final AppUser currentUser;
 
@@ -101,26 +111,21 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
     final suggestions = <String>{};
     final queryLower = query.toLowerCase();
 
-    // Generate suggestions from all posts
     for (final post in _allPosts + _myPosts + _draftPosts) {
-      // Title suggestions
       if (post.title.toLowerCase().contains(queryLower)) {
         suggestions.add(post.title);
       }
 
-      // Tag suggestions
       for (final tag in post.tags) {
         if (tag.toLowerCase().contains(queryLower)) {
           suggestions.add(tag);
         }
       }
 
-      // Author suggestions
       if (post.authorName.toLowerCase().contains(queryLower)) {
         suggestions.add(post.authorName);
       }
 
-      // Category suggestions
       if (_getCategoryDisplayName(
         post.category,
       ).toLowerCase().contains(queryLower)) {
@@ -128,7 +133,6 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
       }
     }
 
-    // Limit to 5 suggestions and sort by relevance
     _searchSuggestions =
         suggestions
             .where((s) => s.toLowerCase().contains(queryLower))
@@ -169,54 +173,64 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
 
     return OverlayEntry(
       builder: (context) => Positioned(
-        width: size.width - 32,
+        width: size.width - 48,
         child: CompositedTransformFollower(
           link: _layerLink,
           showWhenUnlinked: false,
-          offset: Offset(16, 120),
+          offset: Offset(24, 110),
           child: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(8),
+            elevation: 12,
+            borderRadius: BorderRadius.circular(12),
+            shadowColor: Colors.black.withOpacity(0.1),
             child: Container(
-              constraints: BoxConstraints(maxHeight: 200),
+              constraints: BoxConstraints(maxHeight: 240),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: MediumTheme.lightGray, width: 0.5),
               ),
               child: ListView.builder(
-                padding: EdgeInsets.zero,
+                padding: EdgeInsets.symmetric(vertical: 8),
                 shrinkWrap: true,
                 itemCount: _searchSuggestions.length,
                 itemBuilder: (context, index) {
                   final suggestion = _searchSuggestions[index];
-                  return ListTile(
-                    dense: true,
-                    leading: Icon(
-                      Icons.search,
-                      size: 16,
-                      color: Colors.grey[600],
-                    ),
-                    title: RichText(
-                      text: TextSpan(
-                        children: _highlightSearchTerm(
-                          suggestion,
-                          _currentSearchQuery,
-                        ),
-                        style: TextStyle(color: Colors.black87, fontSize: 14),
-                      ),
-                    ),
+                  return InkWell(
                     onTap: () {
                       _searchController.text = suggestion;
                       _hideSuggestionsOverlay();
                       _searchFocusNode.unfocus();
                     },
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.search_outlined,
+                            size: 18,
+                            color: MediumTheme.secondaryText,
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: RichText(
+                              text: TextSpan(
+                                children: _highlightSearchTerm(
+                                  suggestion,
+                                  _currentSearchQuery,
+                                ),
+                                style: TextStyle(
+                                  color: MediumTheme.primaryText,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 },
               ),
@@ -251,8 +265,8 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
             indexOfHighlight + searchTerm.length,
           ),
           style: TextStyle(
-            backgroundColor: Colors.yellow[200],
-            fontWeight: FontWeight.bold,
+            backgroundColor: Colors.yellow[100],
+            fontWeight: FontWeight.w600,
           ),
         ),
       );
@@ -328,50 +342,75 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFFAFAFA),
+      backgroundColor: MediumTheme.background,
       appBar: AppBar(
         title: _isSearching
             ? CompositedTransformTarget(
                 link: _layerLink,
-                child: TextField(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: 'Search articles, tags, authors...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.grey[400]),
-                    suffixIcon: _currentSearchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(Icons.clear, size: 20),
-                            onPressed: () {
-                              _searchController.clear();
-                              _hideSuggestionsOverlay();
-                            },
-                          )
-                        : null,
+                child: Container(
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: MediumTheme.lightGray,
+                    borderRadius: BorderRadius.circular(21),
                   ),
-                  style: TextStyle(color: Colors.black87),
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Search articles, tags, authors...',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      hintStyle: TextStyle(
+                        color: MediumTheme.secondaryText,
+                        fontSize: 15,
+                      ),
+                      suffixIcon: _currentSearchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: Icon(Icons.clear, size: 20),
+                              onPressed: () {
+                                _searchController.clear();
+                                _hideSuggestionsOverlay();
+                              },
+                            )
+                          : null,
+                    ),
+                    style: TextStyle(
+                      color: MediumTheme.primaryText,
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
               )
             : Text(
-                'Blog & Articles',
+                'Stories & Articles',
                 style: TextStyle(
+                  fontSize: 20,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                  color: MediumTheme.primaryText,
                 ),
               ),
         backgroundColor: Colors.white,
         elevation: 0,
-        iconTheme: IconThemeData(color: Colors.black87),
+        surfaceTintColor: Colors.white,
+        iconTheme: IconThemeData(color: MediumTheme.primaryText),
         actions: [
           IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            icon: Icon(
+              _isSearching ? Icons.close_outlined : Icons.search_outlined,
+              color: MediumTheme.secondaryText,
+            ),
             onPressed: _toggleSearch,
           ),
           if (!_isSearching)
             PopupMenuButton<String>(
-              icon: Icon(Icons.filter_list),
+              icon: Icon(Icons.tune_outlined, color: MediumTheme.secondaryText),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               onSelected: (category) {
                 setState(() {
                   _selectedCategory = category;
@@ -383,40 +422,82 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
                   value: category,
                   child: Row(
                     children: [
-                      Icon(
-                        _selectedCategory == category
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_unchecked,
-                        size: 18,
-                        color: Theme.of(context).primaryColor,
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _selectedCategory == category
+                              ? MediumTheme.accent
+                              : Colors.transparent,
+                          border: Border.all(
+                            color: _selectedCategory == category
+                                ? MediumTheme.accent
+                                : MediumTheme.secondaryText,
+                            width: 2,
+                          ),
+                        ),
+                        child: _selectedCategory == category
+                            ? Icon(Icons.check, size: 10, color: Colors.white)
+                            : null,
                       ),
-                      SizedBox(width: 8),
+                      SizedBox(width: 12),
                       Text(_getCategoryDisplayName(category)),
                     ],
                   ),
                 );
               }).toList(),
             ),
+          if (!_isSearching)
+            Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: MediumTheme.lightGray,
+                child: Text(
+                  widget.currentUser.name.isNotEmpty
+                      ? widget.currentUser.name[0].toUpperCase()
+                      : 'U',
+                  style: TextStyle(
+                    color: MediumTheme.primaryText,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
         ],
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(
             48 +
                 (_currentSearchQuery.isNotEmpty || _selectedCategory != 'all'
-                    ? 40
+                    ? 50
                     : 0),
           ),
           child: Column(
             children: [
-              TabBar(
-                controller: _tabController,
-                labelColor: Theme.of(context).primaryColor,
-                unselectedLabelColor: Colors.grey[600],
-                indicatorColor: Theme.of(context).primaryColor,
-                tabs: [
-                  Tab(text: 'All Articles (${_filteredAllPosts.length})'),
-                  Tab(text: 'My Articles (${_filteredMyPosts.length})'),
-                  Tab(text: 'Drafts (${_filteredDraftPosts.length})'),
-                ],
+              Container(
+                color: Colors.white,
+                child: TabBar(
+                  controller: _tabController,
+                  labelColor: MediumTheme.accent,
+                  unselectedLabelColor: MediumTheme.secondaryText,
+                  indicatorColor: MediumTheme.accent,
+                  indicatorWeight: 2,
+                  labelStyle: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  unselectedLabelStyle: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                  tabs: [
+                    Tab(text: 'All (${_filteredAllPosts.length})'),
+                    Tab(text: 'Mine (${_filteredMyPosts.length})'),
+                    Tab(text: 'Drafts (${_filteredDraftPosts.length})'),
+                  ],
+                ),
               ),
               if (_currentSearchQuery.isNotEmpty || _selectedCategory != 'all')
                 _buildActiveFilters(),
@@ -442,74 +523,64 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: _createNewArticle,
-        backgroundColor: Theme.of(context).primaryColor,
-        icon: Icon(Icons.add, color: Colors.white),
-        label: Text(
-          'New Article',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
+        backgroundColor: MediumTheme.accent,
+        child: Icon(Icons.edit_outlined, color: Colors.white, size: 22),
+        elevation: 6,
       ),
     );
   }
 
   Widget _buildActiveFilters() {
     return Container(
-      height: 40,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: Colors.grey[50],
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      color: MediumTheme.lightGray.withOpacity(0.3),
       child: Row(
         children: [
           Text(
-            'Active filters:',
+            'Filters:',
             style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+              fontSize: 13,
+              color: MediumTheme.secondaryText,
               fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(width: 8),
+          SizedBox(width: 12),
           Expanded(
             child: Row(
               children: [
                 if (_currentSearchQuery.isNotEmpty)
                   Container(
                     margin: EdgeInsets.only(right: 8),
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                      color: MediumTheme.accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: Theme.of(context).primaryColor.withOpacity(0.3),
+                        color: MediumTheme.accent.withOpacity(0.3),
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.search,
-                          size: 12,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                        SizedBox(width: 4),
+                        Icon(Icons.search, size: 14, color: MediumTheme.accent),
+                        SizedBox(width: 6),
                         Text(
                           '"${_currentSearchQuery}"',
                           style: TextStyle(
-                            fontSize: 11,
-                            color: Theme.of(context).primaryColor,
+                            fontSize: 12,
+                            color: MediumTheme.accent,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        SizedBox(width: 4),
+                        SizedBox(width: 6),
                         InkWell(
-                          onTap: () {
-                            _searchController.clear();
-                          },
+                          onTap: () => _searchController.clear(),
                           child: Icon(
                             Icons.close,
-                            size: 12,
-                            color: Theme.of(context).primaryColor,
+                            size: 14,
+                            color: MediumTheme.accent,
                           ),
                         ),
                       ],
@@ -518,26 +589,30 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
                 if (_selectedCategory != 'all')
                   Container(
                     margin: EdgeInsets.only(right: 8),
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.orange.withOpacity(0.3)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.category, size: 12, color: Colors.orange),
-                        SizedBox(width: 4),
+                        Icon(
+                          Icons.category_outlined,
+                          size: 14,
+                          color: Colors.orange,
+                        ),
+                        SizedBox(width: 6),
                         Text(
                           _getCategoryDisplayName(_selectedCategory),
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
                             color: Colors.orange,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        SizedBox(width: 4),
+                        SizedBox(width: 6),
                         InkWell(
                           onTap: () {
                             setState(() {
@@ -547,7 +622,7 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
                           },
                           child: Icon(
                             Icons.close,
-                            size: 12,
+                            size: 14,
                             color: Colors.orange,
                           ),
                         ),
@@ -560,10 +635,10 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
           TextButton(
             onPressed: _clearAllFilters,
             child: Text(
-              'Clear All',
+              'Clear all',
               style: TextStyle(
-                fontSize: 11,
-                color: Colors.red,
+                fontSize: 12,
+                color: Colors.red[400],
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -579,7 +654,12 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
     bool isDraft = false,
   }) {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
+      return Center(
+        child: CircularProgressIndicator(
+          color: MediumTheme.accent,
+          strokeWidth: 2,
+        ),
+      );
     }
 
     if (posts.isEmpty) {
@@ -588,11 +668,12 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
 
     return RefreshIndicator(
       onRefresh: _loadArticles,
+      color: MediumTheme.accent,
       child: ListView.builder(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         itemCount: posts.length,
         itemBuilder: (context, index) {
-          return _buildArticleCard(
+          return _buildMediumStyleCard(
             posts[index],
             showAuthor: showAuthor,
             isDraft: isDraft,
@@ -607,227 +688,331 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
         _currentSearchQuery.isNotEmpty || _selectedCategory != 'all';
 
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            hasActiveFilters
-                ? Icons.search_off
-                : (isDraft ? Icons.pending : Icons.article_outlined),
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          SizedBox(height: 16),
-          Text(
-            hasActiveFilters
-                ? 'No articles found'
-                : (isDraft ? 'No drafts yet' : 'No articles yet'),
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[600],
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            hasActiveFilters
-                ? 'Try adjusting your search or filters'
-                : (isDraft
-                      ? 'Your draft articles will appear here'
-                      : 'Start sharing knowledge with the community'),
-            style: TextStyle(color: Colors.grey[500], fontSize: 14),
-          ),
-          SizedBox(height: 24),
-          if (hasActiveFilters)
-            OutlinedButton.icon(
-              onPressed: _clearAllFilters,
-              icon: Icon(Icons.clear_all),
-              label: Text('Clear Filters'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).primaryColor,
+      child: Padding(
+        padding: EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: MediumTheme.lightGray,
+                shape: BoxShape.circle,
               ),
-            )
-          else
-            ElevatedButton.icon(
-              onPressed: _createNewArticle,
-              icon: Icon(Icons.add),
-              label: Text('Create Article'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
+              child: Icon(
+                hasActiveFilters
+                    ? Icons.search_off_outlined
+                    : (isDraft ? Icons.drafts : Icons.article_outlined),
+                size: 48,
+                color: MediumTheme.secondaryText,
               ),
             ),
-        ],
+            SizedBox(height: 32),
+            Text(
+              hasActiveFilters
+                  ? 'No articles found'
+                  : (isDraft ? 'No drafts yet' : 'No articles yet'),
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
+                color: MediumTheme.primaryText,
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              hasActiveFilters
+                  ? 'Try adjusting your search or filters'
+                  : (isDraft
+                        ? 'Your draft articles will appear here'
+                        : 'Start sharing your knowledge with the community'),
+              style: TextStyle(
+                color: MediumTheme.secondaryText,
+                fontSize: 16,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 32),
+            if (hasActiveFilters)
+              OutlinedButton.icon(
+                onPressed: _clearAllFilters,
+                icon: Icon(Icons.clear_all, size: 18),
+                label: Text('Clear filters'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: MediumTheme.accent,
+                  side: BorderSide(color: MediumTheme.accent),
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              )
+            else
+              ElevatedButton.icon(
+                onPressed: _createNewArticle,
+                icon: Icon(Icons.edit_outlined, size: 18),
+                label: Text('Write an article'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: MediumTheme.accent,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  elevation: 0,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildArticleCard(
+  Widget _buildMediumStyleCard(
     KnowledgePost post, {
     required bool showAuthor,
     bool isDraft = false,
   }) {
-    return Card(
-      margin: EdgeInsets.only(bottom: 16),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      margin: EdgeInsets.only(bottom: 48),
       child: InkWell(
         onTap: () => _navigateToArticle(post),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(post.status).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getStatusDisplayName(post.status),
-                      style: TextStyle(
-                        color: _getStatusColor(post.status),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Author info and date (Medium style - at the top)
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: MediumTheme.lightGray,
+                  child: Text(
+                    post.authorName.isNotEmpty
+                        ? post.authorName[0].toUpperCase()
+                        : 'A',
+                    style: TextStyle(
+                      color: MediumTheme.primaryText,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
                     ),
                   ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (showAuthor)
+                        Text(
+                          post.authorName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: MediumTheme.primaryText,
+                          ),
+                        ),
+                      Text(
+                        '${_formatDate(post.createdAt)} • ${_getReadTime(post.content)} min read',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: MediumTheme.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!showAuthor && post.authorId == widget.currentUser.uid)
+                  PopupMenuButton<String>(
+                    icon: Icon(
+                      Icons.more_horiz,
+                      color: MediumTheme.secondaryText,
+                    ),
+                    onSelected: (value) => _handleMenuAction(value, post),
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined, size: 18),
+                            SizedBox(width: 12),
+                            Text('Edit'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: Colors.red,
+                            ),
+                            SizedBox(width: 12),
+                            Text('Delete', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+
+            SizedBox(height: 16),
+
+            // Title - larger and more prominent
+            Text(
+              post.title,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+                color: MediumTheme.primaryText,
+                letterSpacing: -0.8,
+              ),
+            ),
+
+            SizedBox(height: 16),
+
+            // Featured image if available (assuming first attachment is image)
+            if (post.attachments.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  post.attachments[0].fileUrl,
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      SizedBox.shrink(),
+                ),
+              ),
+
+            SizedBox(height: 16),
+
+            // Summary with Medium's style
+            Text(
+              post.summary,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.6,
+                color: MediumTheme.secondaryText,
+                letterSpacing: -0.2,
+              ),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+
+            SizedBox(height: 20),
+
+            // Bottom meta info
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: MediumTheme.lightGray,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    _getCategoryDisplayName(post.category),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: MediumTheme.secondaryText,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (post.tags.isNotEmpty) ...[
                   SizedBox(width: 8),
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getCategoryDisplayName(post.category),
-                      style: TextStyle(
-                        color: Colors.blue,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
+                  ...post.tags
+                      .take(2)
+                      .map(
+                        (tag) => Container(
+                          margin: EdgeInsets.only(right: 8),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: MediumTheme.accent.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            tag,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: MediumTheme.accent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  Spacer(),
-                  if (!showAuthor && post.authorId == widget.currentUser.uid)
-                    PopupMenuButton<String>(
-                      onSelected: (value) => _handleMenuAction(value, post),
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'edit',
-                          child: Row(
-                            children: [
-                              Icon(Icons.edit, size: 16),
-                              SizedBox(width: 8),
-                              Text('Edit'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete, size: 16, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text(
-                                'Delete',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
                 ],
-              ),
-              SizedBox(height: 12),
-              Text(
-                post.title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              SizedBox(height: 8),
-              Text(
-                post.summary,
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              SizedBox(height: 12),
-              if (post.tags.isNotEmpty)
-                Wrap(
-                  spacing: 6,
-                  children: post.tags.take(3).map((tag) {
-                    return Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
+                Spacer(),
+                Row(
+                  children: [
+                    if (post.attachments.isNotEmpty) ...[
+                      Icon(
+                        Icons.attach_file_outlined,
+                        size: 16,
+                        color: MediumTheme.secondaryText,
                       ),
-                      child: Text(
-                        tag,
-                        style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                      SizedBox(width: 4),
+                      Text(
+                        '${post.attachments.length}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: MediumTheme.secondaryText,
+                        ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              SizedBox(height: 12),
-              Row(
-                children: [
-                  if (showAuthor) ...[
-                    Text(
-                      'By ${post.authorName}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
+                      SizedBox(width: 16),
+                    ],
+                    Icon(
+                      Icons.favorite_border,
+                      size: 16,
+                      color: MediumTheme.secondaryText,
                     ),
-                    SizedBox(width: 16),
-                  ],
-                  Text(
-                    _formatDate(post.createdAt),
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                  ),
-                  Spacer(),
-                  if (post.attachments.isNotEmpty) ...[
-                    Icon(Icons.attach_file, size: 16, color: Colors.grey[500]),
                     SizedBox(width: 4),
                     Text(
-                      '${post.attachments.length}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      '${post.metrics.likes}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: MediumTheme.secondaryText,
+                      ),
                     ),
-                    SizedBox(width: 12),
                   ],
-                  Icon(Icons.visibility, size: 16, color: Colors.grey[500]),
-                  SizedBox(width: 4),
-                  Text(
-                    '${post.metrics.views}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+
+            // Status indicator
+            if (post.status != PostStatus.approved) ...[
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(post.status).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _getStatusDisplayName(post.status),
+                  style: TextStyle(
+                    color: _getStatusColor(post.status),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
-                  SizedBox(width: 12),
-                  Icon(Icons.thumb_up, size: 16, color: Colors.grey[500]),
-                  SizedBox(width: 4),
-                  Text(
-                    '${post.metrics.likes}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                  ),
-                ],
+                ),
               ),
             ],
-          ),
+
+            // Removed subtle divider for more minimalist design with white space
+          ],
         ),
       ),
     );
+  }
+
+  int _getReadTime(String content) {
+    // Average reading speed: 200-250 words per minute
+    final wordCount = content.split(' ').length;
+    return (wordCount / 225).ceil().clamp(1, 99);
   }
 
   void _toggleSearch() {
@@ -878,11 +1063,11 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
   Color _getStatusColor(PostStatus status) {
     switch (status) {
       case PostStatus.draft:
-        return Colors.grey;
+        return Colors.grey[600]!;
       case PostStatus.pending:
         return Colors.orange;
       case PostStatus.approved:
-        return Colors.green;
+        return MediumTheme.accent;
       case PostStatus.rejected:
         return Colors.red;
       case PostStatus.archived:
@@ -895,7 +1080,7 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
       case PostStatus.draft:
         return 'Draft';
       case PostStatus.pending:
-        return 'Pending';
+        return 'Under Review';
       case PostStatus.approved:
         return 'Published';
       case PostStatus.rejected:
@@ -911,7 +1096,21 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
     final difference = now.difference(date);
 
     if (difference.inDays > 7) {
-      return '${date.day}/${date.month}/${date.year}';
+      final months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
+      return '${months[date.month - 1]} ${date.day}';
     } else if (difference.inDays > 0) {
       return '${difference.inDays}d ago';
     } else if (difference.inHours > 0) {
@@ -966,7 +1165,11 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete Article'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Article',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
         content: Text('Are you sure you want to delete "${post.title}"?'),
         actions: [
           TextButton(
@@ -978,7 +1181,12 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
               Navigator.pop(context);
               _deleteArticle(post);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             child: Text('Delete'),
           ),
         ],
@@ -1001,8 +1209,9 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: MediumTheme.accent,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -1011,8 +1220,9 @@ class _BlogArticlesListScreenState extends State<BlogArticlesListScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: Colors.red[400],
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }

@@ -40,7 +40,7 @@ dependencies:
   path: ^1.8.3 # For cross-platform path manipulation
   csv: ^5.1.1 # For generating CSV reports
   image: ^4.1.7 # For image manipulation (overlaying text on photos)
-  intl: ^0.18.1 # For internationalization, used for date/time formatting
+  intl: ^0.20.2 # For internationalization, used for date/time formatting
   permission_handler: ^11.3.0 # For requesting runtime permissions (camera, location, storage)
   firebase_core: ^3.14.0 # Firebase Core
   google_sign_in: ^6.3.0 # Google Sign-In for authentication
@@ -69,6 +69,7 @@ dependencies:
   firebase_messaging: ^15.2.7
   file_picker: ^10.3.1
   url_launcher: ^6.3.2
+  flutter_quill: ^11.4.2
 
 dev_dependencies:
   flutter_test:

@@ -8,6 +8,17 @@ import '../../models/user_model.dart';
 import '../../services/community_service.dart';
 import 'blog_article_screen.dart';
 
+// Medium-inspired theme constants (matching the other screens)
+class MediumTheme {
+  static const Color primaryText = Color(0xFF292929);
+  static const Color secondaryText = Color(0xFF757575);
+  static const Color lightGray = Color(0xFFF2F2F2);
+  static const Color mediumGray = Color(0xFFE6E6E6);
+  static const Color accent = Color(0xFF1A8917);
+  static const Color background = Color(0xFFFDFDFD);
+  static const Color cardBackground = Colors.white;
+}
+
 class KnowledgePostDetailScreen extends StatefulWidget {
   final String postId;
   final AppUser currentUser;
@@ -93,37 +104,22 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: Color(0xFFFAFAFA),
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          iconTheme: IconThemeData(color: Colors.black87),
-        ),
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_post == null) {
-      return Scaffold(
-        backgroundColor: Color(0xFFFAFAFA),
-        appBar: AppBar(
-          title: Text('Article Not Found'),
-          backgroundColor: Colors.white,
-          elevation: 0,
-          iconTheme: IconThemeData(color: Colors.black87),
-        ),
+        backgroundColor: MediumTheme.background,
+        appBar: _buildAppBar(),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, size: 80, color: Colors.grey[400]),
+              CircularProgressIndicator(
+                color: MediumTheme.accent,
+                strokeWidth: 2,
+              ),
               SizedBox(height: 16),
               Text(
-                'Article not found',
+                'Loading story...',
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[600],
+                  color: MediumTheme.secondaryText,
+                  fontSize: 16,
                 ),
               ),
             ],
@@ -132,186 +128,513 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
       );
     }
 
+    if (_post == null) {
+      return Scaffold(
+        backgroundColor: MediumTheme.background,
+        appBar: _buildAppBar(),
+        body: _buildNotFoundState(),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: Color(0xFFFAFAFA),
-      appBar: AppBar(
-        title: Text(
-          'Article',
-          style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: IconThemeData(color: Colors.black87),
-        actions: [
-          if (_post!.authorId == widget.currentUser.uid)
-            PopupMenuButton<String>(
-              onSelected: _handleMenuAction,
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'edit',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit, size: 18),
-                      SizedBox(width: 8),
-                      Text('Edit'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete, size: 18, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Delete', style: TextStyle(color: Colors.red)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          IconButton(icon: Icon(Icons.share), onPressed: _sharePost),
-        ],
-      ),
+      backgroundColor: MediumTheme.background,
+      appBar: _buildAppBar(),
       body: Column(
         children: [
           Expanded(
             child: SingleChildScrollView(
               controller: _scrollController,
-              padding: EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Post Header
-                  _buildPostHeader(),
-
-                  SizedBox(height: 20),
-
-                  // Post Content
-                  _buildPostContent(),
-
-                  SizedBox(height: 20),
-
-                  // Attachments
-                  if (_post!.attachments.isNotEmpty) _buildAttachments(),
-
-                  SizedBox(height: 20),
-
-                  // Tags
-                  if (_post!.tags.isNotEmpty) _buildTags(),
-
-                  SizedBox(height: 20),
-
-                  // Engagement Stats
-                  _buildEngagementStats(),
-
-                  SizedBox(height: 20),
-
-                  // Comments Section
+                  _buildArticleHeader(),
+                  _buildArticleContent(),
+                  _buildArticleFooter(),
                   if (_post!.allowComments) _buildCommentsSection(),
+                  SizedBox(height: 100), // Space for floating actions
                 ],
               ),
             ),
           ),
-
-          // Bottom Action Bar
-          if (_post!.allowComments || _canLike()) _buildBottomActionBar(),
         ],
+      ),
+      floatingActionButton: _buildFloatingActions(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white.withOpacity(0.95),
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      leading: IconButton(
+        icon: Icon(
+          Icons.arrow_back_ios_outlined,
+          color: MediumTheme.primaryText,
+          size: 20,
+        ),
+        onPressed: () => Navigator.pop(context),
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(
+            Icons.share_outlined,
+            color: MediumTheme.secondaryText,
+            size: 22,
+          ),
+          onPressed: _sharePost,
+        ),
+        if (_post?.authorId == widget.currentUser.uid)
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_horiz, color: MediumTheme.secondaryText),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            onSelected: _handleMenuAction,
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.edit_outlined,
+                      size: 18,
+                      color: MediumTheme.accent,
+                    ),
+                    SizedBox(width: 12),
+                    Text('Edit Story'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: Colors.red[400],
+                    ),
+                    SizedBox(width: 12),
+                    Text('Delete', style: TextStyle(color: Colors.red[400])),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildNotFoundState() {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: MediumTheme.lightGray,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.article_outlined,
+                size: 48,
+                color: MediumTheme.secondaryText,
+              ),
+            ),
+            SizedBox(height: 32),
+            Text(
+              'Story not found',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
+                color: MediumTheme.primaryText,
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'The story you\'re looking for might have been moved or deleted.',
+              style: TextStyle(
+                color: MediumTheme.secondaryText,
+                fontSize: 16,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildPostHeader() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Status badge
-            Row(
-              children: [
+  Widget _buildArticleHeader() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 32),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Category and status
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: MediumTheme.accent.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  _getCategoryDisplayName(_post!.category),
+                  style: TextStyle(
+                    color: MediumTheme.accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (_post!.status != PostStatus.approved) ...[
+                SizedBox(width: 12),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: _getStatusColor(_post!.status).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
                     _getStatusDisplayName(_post!.status),
                     style: TextStyle(
                       color: _getStatusColor(_post!.status),
                       fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                Spacer(),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _getCategoryDisplayName(_post!.category),
-                    style: TextStyle(
-                      color: Theme.of(context).primaryColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
               ],
+            ],
+          ),
+
+          SizedBox(height: 24),
+
+          // Title
+          Text(
+            _post!.title,
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w700,
+              color: MediumTheme.primaryText,
+              height: 1.2,
+              letterSpacing: -0.5,
             ),
+          ),
 
-            SizedBox(height: 16),
+          SizedBox(height: 16),
 
-            // Title
+          // Summary
+          Text(
+            _post!.summary,
+            style: TextStyle(
+              fontSize: 20,
+              color: MediumTheme.secondaryText,
+              height: 1.5,
+              letterSpacing: -0.2,
+            ),
+          ),
+
+          SizedBox(height: 32),
+
+          // Author info and metadata
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: MediumTheme.lightGray,
+                child: Text(
+                  _post!.authorName.isNotEmpty
+                      ? _post!.authorName[0].toUpperCase()
+                      : 'A',
+                  style: TextStyle(
+                    color: MediumTheme.primaryText,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _post!.authorName,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: MediumTheme.primaryText,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          _formatDate(_post!.createdAt),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: MediumTheme.secondaryText,
+                          ),
+                        ),
+                        Text(
+                          ' • ${_getReadTime(_post!.content)} min read',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: MediumTheme.secondaryText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 24),
+
+          // Engagement bar
+          Row(
+            children: [
+              _buildEngagementButton(
+                icon: _isLiked ? Icons.favorite : Icons.favorite_border,
+                count: _post!.metrics.likes,
+                color: _isLiked ? Colors.red[400]! : MediumTheme.secondaryText,
+                onTap: _canLike() ? _toggleLike : null,
+              ),
+              SizedBox(width: 24),
+              _buildEngagementButton(
+                icon: Icons.mode_comment_outlined,
+                count: _post!.metrics.comments,
+                color: MediumTheme.secondaryText,
+                onTap: _post!.allowComments ? _scrollToComments : null,
+              ),
+              SizedBox(width: 24),
+              _buildEngagementButton(
+                icon: Icons.visibility_outlined,
+                count: _post!.metrics.views,
+                color: MediumTheme.secondaryText,
+              ),
+            ],
+          ),
+
+          // Divider
+          Container(
+            margin: EdgeInsets.only(top: 24),
+            height: 1,
+            color: MediumTheme.lightGray,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEngagementButton({
+    required IconData icon,
+    required int count,
+    required Color color,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color),
+            SizedBox(width: 6),
             Text(
-              _post!.title,
+              count.toString(),
               style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-                height: 1.3,
+                color: color,
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
 
-            SizedBox(height: 12),
+  Widget _buildArticleContent() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Article content with improved typography
+          Text(
+            _post!.content,
+            style: TextStyle(
+              fontSize: 18,
+              height: 1.6,
+              color: MediumTheme.primaryText,
+              letterSpacing: -0.1,
+            ),
+          ),
 
-            // Summary
-            Text(
-              _post!.summary,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-                height: 1.4,
+          if (_post!.attachments.isNotEmpty) ...[
+            SizedBox(height: 48),
+            _buildAttachmentsSection(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Attachments',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: MediumTheme.primaryText,
+          ),
+        ),
+        SizedBox(height: 16),
+        ..._post!.attachments.map(
+          (attachment) => _buildAttachmentTile(attachment),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAttachmentTile(PostAttachment attachment) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: MediumTheme.lightGray),
+        borderRadius: BorderRadius.circular(12),
+        color: MediumTheme.background,
+      ),
+      child: InkWell(
+        onTap: () => _downloadAttachment(attachment),
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: MediumTheme.accent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                _getFileIcon(attachment.fileType),
+                color: MediumTheme.accent,
+                size: 24,
               ),
             ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    attachment.fileName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: MediumTheme.primaryText,
+                      fontSize: 15,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '${_formatFileSize(attachment.fileSizeBytes)} • ${attachment.fileType.toUpperCase()}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: MediumTheme.secondaryText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.download_outlined, color: MediumTheme.accent, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
 
-            SizedBox(height: 16),
+  Widget _buildArticleFooter() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_post!.tags.isNotEmpty) ...[
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: _post!.tags.map((tag) {
+                return Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: MediumTheme.lightGray,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    tag,
+                    style: TextStyle(
+                      color: MediumTheme.secondaryText,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            SizedBox(height: 32),
+          ],
 
-            // Author and date info
-            Row(
+          // Author section
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: MediumTheme.background,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: MediumTheme.lightGray),
+            ),
+            child: Row(
               children: [
                 CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).primaryColor.withOpacity(0.1),
+                  radius: 32,
+                  backgroundColor: MediumTheme.lightGray,
                   child: Text(
                     _post!.authorName.isNotEmpty
                         ? _post!.authorName[0].toUpperCase()
                         : 'A',
                     style: TextStyle(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.bold,
+                      color: MediumTheme.primaryText,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 24,
                     ),
                   ),
                 ),
-                SizedBox(width: 12),
+                SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -319,286 +642,107 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
                       Text(
                         _post!.authorName,
                         style: TextStyle(
+                          fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: MediumTheme.primaryText,
                         ),
                       ),
+                      SizedBox(height: 4),
                       Text(
                         _post!.authorDesignation,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: MediumTheme.secondaryText,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      _formatDate(_post!.createdAt),
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                    ),
-                    if (_post!.updatedAt != null)
-                      Text(
-                        'Updated ${_formatDate(_post!.updatedAt!)}',
-                        style: TextStyle(fontSize: 10, color: Colors.grey[400]),
-                      ),
-                  ],
-                ),
               ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPostContent() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Content',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              _post!.content,
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.6,
-                color: Colors.black87,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAttachments() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.attach_file, color: Theme.of(context).primaryColor),
-                SizedBox(width: 8),
-                Text(
-                  'Attachments (${_post!.attachments.length})',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12),
-            ...(_post!.attachments
-                .map((attachment) => _buildAttachmentTile(attachment))
-                .toList()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAttachmentTile(PostAttachment attachment) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ListTile(
-        leading: Icon(_getFileIcon(attachment.fileType)),
-        title: Text(
-          attachment.fileName,
-          style: TextStyle(fontWeight: FontWeight.w500),
-        ),
-        subtitle: Text(
-          '${_formatFileSize(attachment.fileSizeBytes)} • ${attachment.fileType.toUpperCase()}',
-          style: TextStyle(fontSize: 12),
-        ),
-        trailing: IconButton(
-          icon: Icon(Icons.download, color: Theme.of(context).primaryColor),
-          onPressed: () => _downloadAttachment(attachment),
-        ),
-        onTap: () => _downloadAttachment(attachment),
-      ),
-    );
-  }
-
-  Widget _buildTags() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Tags',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-            SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _post!.tags.map((tag) {
-                return Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Theme.of(context).primaryColor.withOpacity(0.3),
-                    ),
-                  ),
-                  child: Text(
-                    tag,
-                    style: TextStyle(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEngagementStats() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildStatItem(
-              icon: Icons.visibility,
-              count: _post!.metrics.views,
-              label: 'Views',
-              color: Colors.blue,
-            ),
-            _buildStatItem(
-              icon: Icons.thumb_up,
-              count: _post!.metrics.likes,
-              label: 'Likes',
-              color: Colors.green,
-            ),
-            _buildStatItem(
-              icon: Icons.comment,
-              count: _post!.metrics.comments,
-              label: 'Comments',
-              color: Colors.orange,
-            ),
-            _buildStatItem(
-              icon: Icons.share,
-              count: _post!.metrics.shares,
-              label: 'Shares',
-              color: Colors.purple,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatItem({
-    required IconData icon,
-    required int count,
-    required String label,
-    required Color color,
-  }) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        SizedBox(height: 4),
-        Text(
-          count.toString(),
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
           ),
-        ),
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildCommentsSection() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Comments (${_comments.length})',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+    return Container(
+      width: double.infinity,
+      margin: EdgeInsets.only(top: 24),
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Comments',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  color: MediumTheme.primaryText,
+                ),
               ),
-            ),
-            SizedBox(height: 16),
-            if (_comments.isEmpty)
+              SizedBox(width: 8),
               Container(
-                padding: EdgeInsets.all(20),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.comment_outlined,
-                        size: 48,
-                        color: Colors.grey[400],
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'No comments yet',
-                        style: TextStyle(color: Colors.grey[500]),
-                      ),
-                      Text(
-                        'Be the first to comment!',
-                        style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                      ),
-                    ],
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: MediumTheme.lightGray,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_comments.length}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: MediumTheme.secondaryText,
                   ),
                 ),
-              )
-            else
-              ...(_comments
-                  .map((comment) => _buildCommentTile(comment))
-                  .toList()),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 24),
+
+          if (_comments.isEmpty)
+            _buildEmptyCommentsState()
+          else
+            ..._comments.map((comment) => _buildCommentTile(comment)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyCommentsState() {
+    return Container(
+      padding: EdgeInsets.all(48),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(
+              Icons.mode_comment_outlined,
+              size: 64,
+              color: MediumTheme.secondaryText.withOpacity(0.5),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'No comments yet',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: MediumTheme.secondaryText,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Be the first to share your thoughts',
+              style: TextStyle(
+                fontSize: 14,
+                color: MediumTheme.secondaryText.withOpacity(0.7),
+              ),
+            ),
           ],
         ),
       ),
@@ -607,35 +751,27 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
 
   Widget _buildCommentTile(PostComment comment) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
+      margin: EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               CircleAvatar(
-                radius: 16,
-                backgroundColor: Theme.of(
-                  context,
-                ).primaryColor.withOpacity(0.1),
+                radius: 20,
+                backgroundColor: MediumTheme.lightGray,
                 child: Text(
                   comment.userName.isNotEmpty
                       ? comment.userName[0].toUpperCase()
                       : 'U',
                   style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                    color: MediumTheme.primaryText,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
               ),
-              SizedBox(width: 8),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,80 +779,84 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
                     Text(
                       comment.userName,
                       style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 15,
+                        color: MediumTheme.primaryText,
                       ),
                     ),
+                    SizedBox(height: 2),
                     Text(
-                      comment.userDesignation,
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      _formatDate(comment.createdAt),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: MediumTheme.secondaryText,
+                      ),
                     ),
                   ],
                 ),
               ),
-              Text(
-                _formatDate(comment.createdAt),
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-              ),
             ],
           ),
-          SizedBox(height: 8),
-          Text(comment.content, style: TextStyle(fontSize: 14, height: 1.4)),
+          SizedBox(height: 12),
+          Padding(
+            padding: EdgeInsets.only(left: 52),
+            child: Text(
+              comment.content,
+              style: TextStyle(
+                fontSize: 16,
+                height: 1.5,
+                color: MediumTheme.primaryText,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildBottomActionBar() {
+  Widget _buildFloatingActions() {
+    if (!_post!.allowComments && !_canLike()) return SizedBox();
+
     return Container(
-      padding: EdgeInsets.all(16),
+      margin: EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: MediumTheme.lightGray),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.3),
-            spreadRadius: 1,
-            blurRadius: 10,
-            offset: Offset(0, -2),
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: Offset(0, 4),
           ),
         ],
       ),
       child: Row(
         children: [
           if (_canLike()) ...[
-            IconButton(
-              onPressed: _toggleLike,
-              icon: Icon(
-                _isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                color: _isLiked ? Colors.blue : Colors.grey[600],
+            GestureDetector(
+              onTap: _toggleLike,
+              child: Container(
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  _isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: _isLiked ? Colors.red[400] : MediumTheme.secondaryText,
+                  size: 22,
+                ),
               ),
             ),
-            Text(
-              '${_post!.metrics.likes}',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-            SizedBox(width: 16),
+            SizedBox(width: 8),
           ],
           if (_post!.allowComments) ...[
             Expanded(
               child: TextField(
                 controller: _commentController,
+                style: TextStyle(color: MediumTheme.primaryText),
                 decoration: InputDecoration(
                   hintText: 'Write a comment...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide(
-                      color: Theme.of(context).primaryColor,
-                    ),
-                  ),
+                  hintStyle: TextStyle(color: MediumTheme.secondaryText),
+                  border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 8,
@@ -726,16 +866,33 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
               ),
             ),
             SizedBox(width: 8),
-            IconButton(
-              onPressed: _isCommenting ? null : _postComment,
-              icon: _isCommenting
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(Icons.send),
-              color: Theme.of(context).primaryColor,
+            GestureDetector(
+              onTap: _isCommenting ? null : _postComment,
+              child: Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _commentController.text.trim().isNotEmpty
+                      ? MediumTheme.accent
+                      : MediumTheme.lightGray,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: _isCommenting
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(
+                        Icons.send,
+                        color: _commentController.text.trim().isNotEmpty
+                            ? Colors.white
+                            : MediumTheme.secondaryText,
+                        size: 16,
+                      ),
+              ),
             ),
           ],
         ],
@@ -743,15 +900,28 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
     );
   }
 
-  // Helper Methods
+  int _getReadTime(String content) {
+    final wordCount = content.split(' ').length;
+    return (wordCount / 225).ceil().clamp(1, 99);
+  }
+
+  void _scrollToComments() {
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  // Helper Methods (keeping existing logic with improved styling)
   Color _getStatusColor(PostStatus status) {
     switch (status) {
       case PostStatus.draft:
-        return Colors.grey;
+        return Colors.grey[600]!;
       case PostStatus.pending:
         return Colors.orange;
       case PostStatus.approved:
-        return Colors.green;
+        return MediumTheme.accent;
       case PostStatus.rejected:
         return Colors.red;
       case PostStatus.archived:
@@ -764,7 +934,7 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
       case PostStatus.draft:
         return 'Draft';
       case PostStatus.pending:
-        return 'Pending Approval';
+        return 'Under Review';
       case PostStatus.approved:
         return 'Published';
       case PostStatus.rejected:
@@ -783,7 +953,7 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
       case 'maintenance':
         return 'Maintenance';
       case 'news':
-        return 'News';
+        return 'News & Updates';
       case 'training':
         return 'Training';
       case 'policy':
@@ -800,25 +970,24 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
       case 'excel':
       case 'xlsx':
       case 'xls':
-        return Icons.table_chart;
+        return Icons.table_chart_outlined;
       case 'doc':
       case 'docx':
-        return Icons.description;
+        return Icons.description_outlined;
       case 'pdf':
-        return Icons.picture_as_pdf;
+        return Icons.picture_as_pdf_outlined;
       default:
-        return Icons.attach_file;
+        return Icons.attach_file_outlined;
     }
   }
 
   String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
+    if (bytes < 1024)
       return '${bytes} B';
-    } else if (bytes < 1024 * 1024) {
+    else if (bytes < 1024 * 1024)
       return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    } else {
+    else
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
   }
 
   String _formatDate(Timestamp timestamp) {
@@ -827,7 +996,21 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
     final difference = now.difference(date);
 
     if (difference.inDays > 7) {
-      return '${date.day}/${date.month}/${date.year}';
+      final months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
+      return '${months[date.month - 1]} ${date.day}';
     } else if (difference.inDays > 0) {
       return '${difference.inDays}d ago';
     } else if (difference.inHours > 0) {
@@ -841,7 +1024,7 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
     return _post!.status == PostStatus.approved;
   }
 
-  // Action Methods
+  // Action Methods (keeping existing logic)
   void _handleMenuAction(String action) {
     switch (action) {
       case 'edit':
@@ -865,8 +1048,12 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete Article'),
-        content: Text('Are you sure you want to delete this article?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Story',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        content: Text('Are you sure you want to delete this story?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -877,7 +1064,12 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
               Navigator.pop(context);
               _deletePost();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[400],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             child: Text('Delete'),
           ),
         ],
@@ -887,14 +1079,12 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
 
   Future<void> _deletePost() async {
     try {
-      // Archive the post instead of actual deletion
       final archivedPost = _post!.copyWith(status: PostStatus.archived);
       await CommunityService.updateKnowledgePost(widget.postId, archivedPost);
-
-      _showSuccessSnackBar('Article deleted successfully');
+      _showSuccessSnackBar('Story deleted successfully');
       Navigator.pop(context);
     } catch (e) {
-      _showErrorSnackBar('Failed to delete article: $e');
+      _showErrorSnackBar('Failed to delete story: $e');
     }
   }
 
@@ -945,10 +1135,9 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
     try {
       final comment = PostComment(
         postId: widget.postId,
-        authorId: widget.currentUser.uid, // Changed from userId
-        authorName: widget.currentUser.name, // Changed from userName
-        authorDesignation:
-            widget.currentUser.designationDisplayName, // Now explicitly set
+        authorId: widget.currentUser.uid,
+        authorName: widget.currentUser.name,
+        authorDesignation: widget.currentUser.designationDisplayName,
         content: commentText,
         createdAt: Timestamp.now(),
       );
@@ -960,7 +1149,7 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
         _isCommenting = false;
       });
 
-      _loadComments(); // Reload comments
+      _loadComments();
       _showSuccessSnackBar('Comment posted successfully');
     } catch (e) {
       setState(() {
@@ -971,7 +1160,6 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
   }
 
   void _sharePost() {
-    // Implement share functionality
     _showSuccessSnackBar('Share functionality to be implemented');
   }
 
@@ -991,8 +1179,9 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: MediumTheme.accent,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -1001,8 +1190,9 @@ class _KnowledgePostDetailScreenState extends State<KnowledgePostDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: Colors.red[400],
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
