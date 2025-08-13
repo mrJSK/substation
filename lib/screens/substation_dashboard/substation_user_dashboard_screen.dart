@@ -7,19 +7,16 @@ import '../../models/app_state_data.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/user_model.dart';
 import '../../utils/snackbar_utils.dart';
+import '../../widgets/modern_app_drawer.dart'; // Add this import
 import 'substation_user_operations_tab.dart';
 import 'substation_user_energy_tab.dart';
 import 'substation_user_tripping_tab.dart';
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
-  final Widget? drawer;
+  // Removed drawer parameter since we're using bottom modal
 
-  const SubstationUserDashboardScreen({
-    super.key,
-    required this.currentUser,
-    this.drawer,
-  });
+  const SubstationUserDashboardScreen({super.key, required this.currentUser});
 
   @override
   State<SubstationUserDashboardScreen> createState() =>
@@ -116,10 +113,9 @@ class _SubstationUserDashboardScreenState
   }
 
   Future<void> _selectSingleDate() async {
-    // Remove BuildContext parameter
-    final theme = Theme.of(context); // Use context from build method
+    final theme = Theme.of(context);
     final DateTime? picked = await showDatePicker(
-      context: context, // Use context from build method
+      context: context,
       initialDate: _singleDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
@@ -219,14 +215,11 @@ class _SubstationUserDashboardScreenState
             fontWeight: FontWeight.w600,
           ),
         ),
-        leading: Builder(
-          builder: (BuildContext context) {
-            return IconButton(
-              icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-            );
+        leading: IconButton(
+          icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+          onPressed: () {
+            // Show the bottom modal drawer
+            ModernAppDrawer.show(context, widget.currentUser);
           },
         ),
         actions: [
@@ -277,7 +270,7 @@ class _SubstationUserDashboardScreenState
               )
             : null,
       ),
-      drawer: widget.drawer,
+      // Removed drawer: widget.drawer since we're using bottom modal
       body: SafeArea(
         child: _isLoadingSubstations
             ? Center(

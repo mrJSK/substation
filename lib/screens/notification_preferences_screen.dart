@@ -22,6 +22,7 @@ class _NotificationPreferencesScreenState
 
   NotificationPreferences? _preferences;
   List<String> _availableSubstations = [];
+  Map<String, String> _substationIdToName = {}; // Added this line
 
   // Voltage level options
   final List<int> _voltageOptions = [11, 33, 66, 110, 132, 220, 400, 765];
@@ -64,15 +65,8 @@ class _NotificationPreferencesScreenState
         );
       }
 
-      // Load available substations
-      final substationsSnapshot = await FirebaseFirestore.instance
-          .collection('substations')
-          .orderBy('name')
-          .get();
-
-      _availableSubstations = substationsSnapshot.docs
-          .map((doc) => doc.id)
-          .toList();
+      // Load available substations with names
+      await _loadAvailableSubstations(); // Updated this line
     } catch (e) {
       if (mounted) {
         SnackBarUtils.showSnackBar(
@@ -85,6 +79,72 @@ class _NotificationPreferencesScreenState
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  // Added this method from the comprehensive code
+  Future<void> _loadAvailableSubstations() async {
+    _availableSubstations.clear();
+    _substationIdToName.clear();
+
+    try {
+      Query substationsQuery = FirebaseFirestore.instance
+          .collection('substations')
+          .orderBy('name');
+
+      // Filter substations based on user role and assigned levels
+      if (widget.currentUser.assignedLevels != null) {
+        final assignedLevels = widget.currentUser.assignedLevels!;
+
+        // For subdivision managers and substation users, filter by subdivision
+        if (widget.currentUser.role == UserRole.subdivisionManager ||
+            widget.currentUser.role == UserRole.substationUser) {
+          final subdivisionId = assignedLevels['subdivisionId'];
+          if (subdivisionId != null) {
+            substationsQuery = substationsQuery.where(
+              'subdivisionId',
+              isEqualTo: subdivisionId,
+            );
+          }
+        }
+        // For division managers, filter by division
+        else if (widget.currentUser.role == UserRole.divisionManager) {
+          final divisionId = assignedLevels['divisionId'];
+          if (divisionId != null) {
+            // Get all subdivisions in this division first
+            final subdivisionsSnapshot = await FirebaseFirestore.instance
+                .collection('subdivisions')
+                .where('divisionId', isEqualTo: divisionId)
+                .get();
+
+            final subdivisionIds = subdivisionsSnapshot.docs
+                .map((doc) => doc.id)
+                .toList();
+            if (subdivisionIds.isNotEmpty) {
+              substationsQuery = substationsQuery.where(
+                'subdivisionId',
+                whereIn: subdivisionIds,
+              );
+            }
+          }
+        }
+      }
+
+      final substationsSnapshot = await substationsQuery.get();
+
+      for (var doc in substationsSnapshot.docs) {
+        final substationId = doc.id;
+        final substationData = doc.data() as Map<String, dynamic>;
+        final substationName = substationData['name'] as String?;
+
+        // Only include substations that have proper names
+        if (substationName != null && substationName.trim().isNotEmpty) {
+          _availableSubstations.add(substationId);
+          _substationIdToName[substationId] = substationName.trim();
+        }
+      }
+    } catch (e) {
+      print('Error loading substations: $e');
     }
   }
 
@@ -410,7 +470,7 @@ class _NotificationPreferencesScreenState
             ),
           ),
 
-          // Substation Filters
+          // Substation Filters - Updated to show names and IDs
           _buildPreferenceCard(
             title: 'Substations',
             icon: Icons.account_tree,
@@ -449,49 +509,89 @@ class _NotificationPreferencesScreenState
                 if (!(_preferences?.subscribedSubstations.contains('all') ??
                     false)) ...[
                   const Divider(),
-                  Container(
-                    height: 200,
-                    child: ListView.builder(
-                      itemCount: _availableSubstations.length,
-                      itemBuilder: (context, index) {
-                        final substationId = _availableSubstations[index];
-                        bool isSelected =
-                            _preferences?.subscribedSubstations.contains(
-                              substationId,
-                            ) ??
-                            false;
-                        return CheckboxListTile(
-                          title: Text(substationId),
-                          value: isSelected,
-                          onChanged: (selected) {
-                            setState(() {
-                              final substations = List<String>.from(
-                                _preferences!.subscribedSubstations,
-                              );
-                              if (selected == true) {
-                                substations.add(substationId);
-                              } else {
-                                substations.remove(substationId);
-                              }
-                              _preferences = NotificationPreferences(
-                                userId: _preferences!.userId,
-                                subscribedVoltageThresholds:
-                                    _preferences!.subscribedVoltageThresholds,
-                                subscribedBayTypes:
-                                    _preferences!.subscribedBayTypes,
-                                subscribedSubstations: substations,
-                                enableTrippingNotifications:
-                                    _preferences!.enableTrippingNotifications,
-                                enableShutdownNotifications:
-                                    _preferences!.enableShutdownNotifications,
-                              );
-                            });
-                          },
-                          contentPadding: const EdgeInsets.only(left: 16),
-                        );
-                      },
+                  if (_availableSubstations.isNotEmpty)
+                    Container(
+                      height: 200,
+                      child: ListView.builder(
+                        itemCount: _availableSubstations.length,
+                        itemBuilder: (context, index) {
+                          final substationId = _availableSubstations[index];
+                          final substationName =
+                              _substationIdToName[substationId] ??
+                              'Unknown Substation'; // Updated this line
+                          bool isSelected =
+                              _preferences?.subscribedSubstations.contains(
+                                substationId,
+                              ) ??
+                              false;
+                          return CheckboxListTile(
+                            title: Text(
+                              substationName, // Updated to show name
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'ID: ${substationId.length > 8 ? '${substationId.substring(0, 8)}...' : substationId}', // Added subtitle with ID
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey.shade500,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                            value: isSelected,
+                            onChanged: (selected) {
+                              setState(() {
+                                final substations = List<String>.from(
+                                  _preferences!.subscribedSubstations,
+                                );
+                                if (selected == true) {
+                                  substations.add(substationId);
+                                } else {
+                                  substations.remove(substationId);
+                                }
+                                _preferences = NotificationPreferences(
+                                  userId: _preferences!.userId,
+                                  subscribedVoltageThresholds:
+                                      _preferences!.subscribedVoltageThresholds,
+                                  subscribedBayTypes:
+                                      _preferences!.subscribedBayTypes,
+                                  subscribedSubstations: substations,
+                                  enableTrippingNotifications:
+                                      _preferences!.enableTrippingNotifications,
+                                  enableShutdownNotifications:
+                                      _preferences!.enableShutdownNotifications,
+                                );
+                              });
+                            },
+                            contentPadding: const EdgeInsets.only(left: 16),
+                          );
+                        },
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.grey.shade600),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'No substations available in your area',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ],
             ),
