@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/user_model.dart';
 import '../models/app_state_data.dart';
 import '../screens/admin/reading_template_management_screen.dart';
-import '../screens/equipment_hierarchy_selection_screen.dart';
+import '../screens/community/blog_articles_list_screen.dart';
 import '../screens/notification_preferences_screen.dart';
 import '../screens/report_builder_wizard_screen.dart';
 import '../screens/saved_sld_list_screen.dart';
@@ -13,7 +13,9 @@ import '../models/hierarchy_models.dart';
 import '../screens/subdivision_dashboard_tabs/chart_configuration_screen.dart';
 import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart';
 import '../controllers/sld_controller.dart';
+import '../screens/user_profile_screen.dart';
 import '../utils/snackbar_utils.dart';
+import '../screens/community/professional_directory_screen.dart';
 
 class ModernAppDrawer extends StatelessWidget {
   final AppUser user;
@@ -71,6 +73,17 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
   void dispose() {
     _animationController.dispose();
     super.dispose();
+  }
+
+  // Add this new method for Blog Articles navigation
+  void _navigateToBlogArticles(BuildContext context) {
+    Navigator.of(context).pop(); // Close the drawer
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => BlogArticlesListScreen(currentUser: widget.user),
+      ),
+    );
   }
 
   @override
@@ -244,11 +257,22 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
 
           const SizedBox(height: 20),
 
-          // Settings section
+          // Settings section - Updated to include Profile
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
+                Expanded(
+                  child: _buildSettingsTile(
+                    context,
+                    theme,
+                    isDarkMode,
+                    Icons.account_circle_outlined,
+                    'Profile',
+                    onTap: () => _navigateToProfile(context),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: _buildSettingsTile(
                     context,
@@ -363,7 +387,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
         onTap: isToggle ? () => appStateData.toggleTheme() : onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12), // Reduced padding to fit 3 tiles
           decoration: BoxDecoration(
             color: isDarkMode
                 ? const Color(0xFF2C2C2E)
@@ -373,8 +397,8 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
           child: Column(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 28, // Slightly smaller icon container
+                height: 28,
                 decoration: BoxDecoration(
                   color: isLogout
                       ? Colors.red.withOpacity(0.15)
@@ -384,16 +408,16 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
                 child: Icon(
                   icon,
                   color: isLogout ? Colors.red : theme.colorScheme.primary,
-                  size: 18,
+                  size: 16, // Smaller icon
                 ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
 
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 11, // Smaller text to fit better
                   fontWeight: FontWeight.w500,
                   color: isLogout
                       ? Colors.red
@@ -405,13 +429,13 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
               if (isToggle) ...[
                 const SizedBox(height: 4),
                 Container(
-                  width: 32,
-                  height: 18,
+                  width: 28,
+                  height: 16,
                   decoration: BoxDecoration(
                     color: appStateData.themeMode == ThemeMode.dark
                         ? theme.colorScheme.primary
                         : Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: AnimatedAlign(
                     duration: const Duration(milliseconds: 200),
@@ -419,8 +443,8 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
                         ? Alignment.centerRight
                         : Alignment.centerLeft,
                     child: Container(
-                      width: 14,
-                      height: 14,
+                      width: 12,
+                      height: 12,
                       margin: const EdgeInsets.all(2),
                       decoration: const BoxDecoration(
                         color: Colors.white,
@@ -440,6 +464,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
   List<Map<String, dynamic>> _getNavigationItems(BuildContext context) {
     switch (widget.user.role) {
       case UserRole.admin:
+      case UserRole.superAdmin:
         return [
           {
             'icon': Icons.dashboard_rounded,
@@ -447,6 +472,116 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'subtitle': 'System overview',
             'onTap': () => Navigator.pop(context),
             'color': Colors.blue,
+          },
+          {
+            'icon': Icons.article_rounded, // Add blog menu
+            'title': 'Blog & Articles',
+            'subtitle': 'Knowledge sharing hub',
+            'onTap': () => _navigateToBlogArticles(context),
+            'color': Colors.deepPurple,
+          },
+          {
+            'icon': Icons.contacts_rounded,
+            'title': 'Professional Directory',
+            'subtitle': 'Manage contacts & vendors',
+            'onTap': () => _navigateToProfessionalDirectory(context),
+            'color': Colors.indigo,
+          },
+        ];
+
+      case UserRole.zoneManager:
+        return [
+          {
+            'icon': Icons.dashboard_rounded,
+            'title': 'Dashboard',
+            'subtitle': 'Zone overview',
+            'onTap': () => Navigator.pop(context),
+            'color': Colors.blue,
+          },
+          {
+            'icon': Icons.article_rounded, // Add blog menu
+            'title': 'Blog & Articles',
+            'subtitle': 'Knowledge sharing hub',
+            'onTap': () => _navigateToBlogArticles(context),
+            'color': Colors.deepPurple,
+          },
+          {
+            'icon': Icons.contacts_rounded,
+            'title': 'Professional Directory',
+            'subtitle': 'Zone contacts & vendors',
+            'onTap': () => _navigateToProfessionalDirectory(context),
+            'color': Colors.indigo,
+          },
+          {
+            'icon': Icons.analytics_rounded,
+            'title': 'Custom Reports',
+            'subtitle': 'Build & export reports',
+            'onTap': () => _navigateToCustomReports(context),
+            'color': Colors.purple,
+          },
+        ];
+
+      case UserRole.circleManager:
+        return [
+          {
+            'icon': Icons.dashboard_rounded,
+            'title': 'Dashboard',
+            'subtitle': 'Circle overview',
+            'onTap': () => Navigator.pop(context),
+            'color': Colors.blue,
+          },
+          {
+            'icon': Icons.article_rounded, // Add blog menu
+            'title': 'Blog & Articles',
+            'subtitle': 'Knowledge sharing hub',
+            'onTap': () => _navigateToBlogArticles(context),
+            'color': Colors.deepPurple,
+          },
+          {
+            'icon': Icons.contacts_rounded,
+            'title': 'Professional Directory',
+            'subtitle': 'Circle contacts & vendors',
+            'onTap': () => _navigateToProfessionalDirectory(context),
+            'color': Colors.indigo,
+          },
+          {
+            'icon': Icons.analytics_rounded,
+            'title': 'Custom Reports',
+            'subtitle': 'Build & export reports',
+            'onTap': () => _navigateToCustomReports(context),
+            'color': Colors.purple,
+          },
+        ];
+
+      case UserRole.divisionManager:
+        return [
+          {
+            'icon': Icons.dashboard_rounded,
+            'title': 'Dashboard',
+            'subtitle': 'Division overview',
+            'onTap': () => Navigator.pop(context),
+            'color': Colors.blue,
+          },
+          {
+            'icon': Icons.article_rounded, // Add blog menu
+            'title': 'Blog & Articles',
+            'subtitle': 'Knowledge sharing hub',
+            'onTap': () => _navigateToBlogArticles(context),
+            'color': Colors.deepPurple,
+          },
+          {
+            'icon': Icons.contacts_rounded,
+            'title': 'Professional Directory',
+            'subtitle': 'Division contacts & vendors',
+            'onTap': () => _navigateToProfessionalDirectory(context),
+            'color': Colors.indigo,
+          },
+          {
+            'icon': Icons.analytics_rounded,
+            'title': 'Custom Reports',
+            'subtitle': 'Build & export reports',
+            'onTap': () => _navigateToCustomReports(context),
+            'color': Colors.purple,
           },
         ];
 
@@ -460,7 +595,21 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'color': Colors.amber,
           },
           {
-            'icon': Icons.analytics_rounded, // Updated this icon
+            'icon': Icons.article_rounded, // Add blog menu
+            'title': 'Blog & Articles',
+            'subtitle': 'Knowledge sharing hub',
+            'onTap': () => _navigateToBlogArticles(context),
+            'color': Colors.deepPurple,
+          },
+          {
+            'icon': Icons.contacts_rounded,
+            'title': 'Professional Directory',
+            'subtitle': 'Local contacts & vendors',
+            'onTap': () => _navigateToProfessionalDirectory(context),
+            'color': Colors.indigo,
+          },
+          {
+            'icon': Icons.analytics_rounded,
             'title': 'Custom Reports',
             'subtitle': 'Build & export reports',
             'onTap': () => _navigateToCustomReports(context),
@@ -494,13 +643,6 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'color': Colors.teal,
           },
           {
-            'icon': Icons.flash_on_rounded,
-            'title': 'Energy SLD',
-            'subtitle': 'Line diagrams',
-            'onTap': () => _navigateToEnergySLD(context),
-            'color': Colors.green,
-          },
-          {
             'icon': Icons.history_rounded,
             'title': 'Saved SLDs',
             'subtitle': 'Previous diagrams',
@@ -528,6 +670,13 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'color': Colors.blue,
           },
           {
+            'icon': Icons.article_rounded, // Add blog menu
+            'title': 'Blog & Articles',
+            'subtitle': 'Knowledge sharing hub',
+            'onTap': () => _navigateToBlogArticles(context),
+            'color': Colors.deepPurple,
+          },
+          {
             'icon': Icons.analytics_rounded,
             'title': 'Custom Reports',
             'subtitle': 'Build & export reports',
@@ -538,63 +687,45 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
     }
   }
 
+  // Add this new method for Profile navigation
+  void _navigateToProfile(BuildContext context) {
+    Navigator.of(context).pop(); // Close the drawer
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => UserProfileScreen(currentUser: widget.user),
+      ),
+    );
+  }
+
+  // Add this new method for Professional Directory navigation
+  void _navigateToProfessionalDirectory(BuildContext context) {
+    Navigator.of(context).pop(); // Close the drawer
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) =>
+            ProfessionalDirectoryScreen(currentUser: widget.user),
+      ),
+    );
+  }
+
   // Add this new method for Custom Reports navigation
   void _navigateToCustomReports(BuildContext context) {
     Navigator.of(context).pop(); // Close the drawer
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => ReportBuilderWizardScreen(
-          currentUser:
-              widget.user, // This should work if widget.user is of type AppUser
-        ),
+        builder: (context) =>
+            ReportBuilderWizardScreen(currentUser: widget.user),
       ),
     );
-  }
-
-  void _navigateToEnergySLD(BuildContext context) async {
-    Navigator.of(context).pop();
-    final selectedSubstation =
-        await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) =>
-                    EquipmentHierarchySelectionScreen(currentUser: widget.user),
-              ),
-            )
-            as Substation?;
-
-    if (selectedSubstation != null) {
-      if (context.mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => ChangeNotifierProvider<SldController>(
-              create: (context) => SldController(
-                substationId: selectedSubstation.id,
-                transformationController: TransformationController(),
-              ),
-              child: EnergySldScreen(
-                substationId: selectedSubstation.id,
-                substationName: selectedSubstation.name,
-                currentUser: widget.user,
-              ),
-            ),
-          ),
-        );
-      }
-    } else {
-      if (context.mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'No substation selected for Energy SLD.',
-          isError: true,
-        );
-      }
-    }
   }
 
   Color _getRoleColor(UserRole role) {
     switch (role) {
       case UserRole.admin:
+      case UserRole.superAdmin:
         return Colors.red;
       case UserRole.subdivisionManager:
         return Colors.purple;
@@ -615,6 +746,8 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
     switch (role) {
       case UserRole.admin:
         return 'Administrator';
+      case UserRole.superAdmin:
+        return 'Super Administrator';
       case UserRole.subdivisionManager:
         return 'Subdivision Manager';
       case UserRole.substationUser:
@@ -636,7 +769,6 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        // Use different context name
         return AlertDialog(
           backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
           shape: RoundedRectangleBorder(
@@ -661,8 +793,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
           ),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.pop(dialogContext), // Close only dialog
+              onPressed: () => Navigator.pop(dialogContext),
               child: Text(
                 'Cancel',
                 style: TextStyle(
@@ -675,19 +806,14 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             ),
             ElevatedButton(
               onPressed: () async {
-                // Close the logout dialog first
                 Navigator.pop(dialogContext);
-
-                // Close the drawer modal sheet
                 Navigator.pop(context);
 
-                // Then sign out
                 try {
                   await FirebaseAuth.instance.signOut();
                   await GoogleSignIn().signOut();
                 } catch (e) {
                   print('Error during sign out: $e');
-                  // Optionally show error message
                 }
               },
               style: ElevatedButton.styleFrom(

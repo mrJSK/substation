@@ -1,4 +1,5 @@
 // lib/models/user_model.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Define the roles for clarity and type safety
@@ -15,38 +16,130 @@ enum UserRole {
   pending,
 }
 
+// Define designation enum for standardization
+enum Designation {
+  director,
+  chiefEngineer, // CE
+  superintendingEngineer, // SE
+  executiveEngineer, // EE
+  assistantEngineerSDO, // SDO/AE
+  juniorEngineer, // JE
+  technician,
+}
+
 class AppUser {
   final String uid;
-  final String email;
+  final String email; // From Google Sign-in (non-editable)
+  final String name; // Mandatory
+  final String mobile; // Mandatory
+  final Designation designation; // Mandatory
   final UserRole role;
   final bool approved;
-  // Assigned levels could be a map like {'zoneId': 'zoneABC', 'circleId': 'circleXYZ'}
-  // This is for granular access control, ensuring a user only manages what they're assigned.
+
+  // Hierarchy information (mandatory - current posting)
+  final String? companyId;
+  final String? companyName;
+  final String? stateId;
+  final String? stateName;
+  final String? zoneId;
+  final String? zoneName;
+  final String? circleId;
+  final String? circleName;
+  final String? divisionId;
+  final String? divisionName;
+  final String? subdivisionId;
+  final String? subdivisionName;
+  final String? substationId;
+  final String? substationName;
+
+  // Optional fields
+  final String? sapId;
+  final String? highestEducation;
+  final String? college;
+  final String? personalEmail;
+
+  // Profile metadata
+  final Timestamp? createdAt;
+  final Timestamp? updatedAt;
+  final bool profileCompleted;
+
+  // Assigned levels for access control
   final Map<String, String>? assignedLevels;
 
   AppUser({
     required this.uid,
     required this.email,
-    this.role = UserRole.pending, // Default new user to pending
+    required this.name,
+    required this.mobile,
+    required this.designation,
+    this.role = UserRole.pending,
     this.approved = false,
+    this.companyId,
+    this.companyName,
+    this.stateId,
+    this.stateName,
+    this.zoneId,
+    this.zoneName,
+    this.circleId,
+    this.circleName,
+    this.divisionId,
+    this.divisionName,
+    this.subdivisionId,
+    this.subdivisionName,
+    this.substationId,
+    this.substationName,
+    this.sapId,
+    this.highestEducation,
+    this.college,
+    this.personalEmail,
+    this.createdAt,
+    this.updatedAt,
+    this.profileCompleted = false,
     this.assignedLevels,
   });
 
   // Factory constructor to create an AppUser from a Firestore DocumentSnapshot
   factory AppUser.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
     return AppUser(
-      uid: doc.id, // The document ID is the user's UID
-      // Ensure 'email' field is null-safe. If it's null in Firestore, default to empty string.
-      email: (data['email'] as String?) ?? '',
-      role: UserRole.values.firstWhere(
+      uid: doc.id,
+      email: data['email'] ?? '',
+      name: data['name'] ?? '',
+      mobile: data['mobile'] ?? '',
+      designation: Designation.values.firstWhere(
         (e) =>
             e.toString().split('.').last ==
-            (data['role'] ?? 'pending'), // Default to pending if role not set
+            (data['designation'] ?? 'technician'),
+        orElse: () => Designation.technician,
+      ),
+      role: UserRole.values.firstWhere(
+        (e) => e.toString().split('.').last == (data['role'] ?? 'pending'),
         orElse: () => UserRole.pending,
       ),
       approved: data['approved'] ?? false,
-      assignedLevels: data['assignedLevels'] is Map
+      companyId: data['companyId'],
+      companyName: data['companyName'],
+      stateId: data['stateId'],
+      stateName: data['stateName'],
+      zoneId: data['zoneId'],
+      zoneName: data['zoneName'],
+      circleId: data['circleId'],
+      circleName: data['circleName'],
+      divisionId: data['divisionId'],
+      divisionName: data['divisionName'],
+      subdivisionId: data['subdivisionId'],
+      subdivisionName: data['subdivisionName'],
+      substationId: data['substationId'],
+      substationName: data['substationName'],
+      sapId: data['sapId'],
+      highestEducation: data['highestEducation'],
+      college: data['college'],
+      personalEmail: data['personalEmail'],
+      createdAt: data['createdAt'],
+      updatedAt: data['updatedAt'],
+      profileCompleted: data['profileCompleted'] ?? false,
+      assignedLevels: data['assignedLevels'] != null
           ? Map<String, String>.from(data['assignedLevels'])
           : null,
     );
@@ -56,8 +149,32 @@ class AppUser {
   Map<String, dynamic> toFirestore() {
     return {
       'email': email,
-      'role': role.toString().split('.').last, // Store enum name as string
+      'name': name,
+      'mobile': mobile,
+      'designation': designation.toString().split('.').last,
+      'role': role.toString().split('.').last,
       'approved': approved,
+      'companyId': companyId,
+      'companyName': companyName,
+      'stateId': stateId,
+      'stateName': stateName,
+      'zoneId': zoneId,
+      'zoneName': zoneName,
+      'circleId': circleId,
+      'circleName': circleName,
+      'divisionId': divisionId,
+      'divisionName': divisionName,
+      'subdivisionId': subdivisionId,
+      'subdivisionName': subdivisionName,
+      'substationId': substationId,
+      'substationName': substationName,
+      'sapId': sapId,
+      'highestEducation': highestEducation,
+      'college': college,
+      'personalEmail': personalEmail,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt ?? Timestamp.now(),
+      'profileCompleted': profileCompleted,
       'assignedLevels': assignedLevels,
     };
   }
@@ -66,45 +183,109 @@ class AppUser {
   AppUser copyWith({
     String? uid,
     String? email,
+    String? name,
+    String? mobile,
+    Designation? designation,
     UserRole? role,
     bool? approved,
+    String? companyId,
+    String? companyName,
+    String? stateId,
+    String? stateName,
+    String? zoneId,
+    String? zoneName,
+    String? circleId,
+    String? circleName,
+    String? divisionId,
+    String? divisionName,
+    String? subdivisionId,
+    String? subdivisionName,
+    String? substationId,
+    String? substationName,
+    String? sapId,
+    String? highestEducation,
+    String? college,
+    String? personalEmail,
+    Timestamp? createdAt,
+    Timestamp? updatedAt,
+    bool? profileCompleted,
     Map<String, String>? assignedLevels,
   }) {
     return AppUser(
       uid: uid ?? this.uid,
       email: email ?? this.email,
+      name: name ?? this.name,
+      mobile: mobile ?? this.mobile,
+      designation: designation ?? this.designation,
       role: role ?? this.role,
       approved: approved ?? this.approved,
+      companyId: companyId ?? this.companyId,
+      companyName: companyName ?? this.companyName,
+      stateId: stateId ?? this.stateId,
+      stateName: stateName ?? this.stateName,
+      zoneId: zoneId ?? this.zoneId,
+      zoneName: zoneName ?? this.zoneName,
+      circleId: circleId ?? this.circleId,
+      circleName: circleName ?? this.circleName,
+      divisionId: divisionId ?? this.divisionId,
+      divisionName: divisionName ?? this.divisionName,
+      subdivisionId: subdivisionId ?? this.subdivisionId,
+      subdivisionName: subdivisionName ?? this.subdivisionName,
+      substationId: substationId ?? this.substationId,
+      substationName: substationName ?? this.substationName,
+      sapId: sapId ?? this.sapId,
+      highestEducation: highestEducation ?? this.highestEducation,
+      college: college ?? this.college,
+      personalEmail: personalEmail ?? this.personalEmail,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      profileCompleted: profileCompleted ?? this.profileCompleted,
       assignedLevels: assignedLevels ?? this.assignedLevels,
     );
   }
 
-  // **ADD THESE GETTERS FOR HIERARCHY ACCESS**
+  // Convenience getters
+  String get designationDisplayName {
+    switch (designation) {
+      case Designation.director:
+        return 'Director';
+      case Designation.chiefEngineer:
+        return 'Chief Engineer (CE)';
+      case Designation.superintendingEngineer:
+        return 'Superintending Engineer (SE)';
+      case Designation.executiveEngineer:
+        return 'Executive Engineer (EE)';
+      case Designation.assistantEngineerSDO:
+        return 'Assistant Engineer/SDO (AE/SDO)';
+      case Designation.juniorEngineer:
+        return 'Junior Engineer (JE)';
+      case Designation.technician:
+        return 'Technician';
+    }
+  }
 
-  /// Gets the subdivision ID for subdivision-level users
-  String? get subdivisionId => assignedLevels?['subdivisionId'];
+  String get currentPostingDisplay {
+    List<String> hierarchy = [];
+    if (companyName != null) hierarchy.add(companyName!);
+    if (stateName != null) hierarchy.add(stateName!);
+    if (zoneName != null) hierarchy.add(zoneName!);
+    if (circleName != null) hierarchy.add(circleName!);
+    if (divisionName != null) hierarchy.add(divisionName!);
+    if (subdivisionName != null) hierarchy.add(subdivisionName!);
+    if (substationName != null) hierarchy.add(substationName!);
 
-  /// Gets the division ID for division-level users
-  String? get divisionId => assignedLevels?['divisionId'];
+    return hierarchy.isEmpty ? 'Not assigned' : hierarchy.join(' > ');
+  }
 
-  /// Gets the circle ID for circle-level users
-  String? get circleId => assignedLevels?['circleId'];
+  bool get isMandatoryFieldsComplete {
+    return name.isNotEmpty &&
+        mobile.isNotEmpty &&
+        (subdivisionName != null ||
+            substationName !=
+                null); // Must have at least subdivision level posting
+  }
 
-  /// Gets the zone ID for zone-level users
-  String? get zoneId => assignedLevels?['zoneId'];
-
-  /// Gets the state ID for state-level users
-  String? get stateId => assignedLevels?['stateId'];
-
-  /// Gets the company ID for company-level users
-  String? get companyId => assignedLevels?['companyId'];
-
-  /// Gets the substation ID for substation-level users
-  String? get substationId => assignedLevels?['substationId'];
-
-  // **CONVENIENCE GETTERS FOR ROLE-BASED ACCESS**
-
-  /// Returns the appropriate hierarchy ID based on user's role
+  // **EXISTING GETTERS FOR BACKWARD COMPATIBILITY**
   String? get primaryHierarchyId {
     switch (role) {
       case UserRole.substationUser:
@@ -124,11 +305,10 @@ class AppUser {
       case UserRole.admin:
       case UserRole.superAdmin:
       default:
-        return null; // Admin users have access to everything
+        return null;
     }
   }
 
-  /// Returns the hierarchy level name for the user's primary role
   String get primaryHierarchyLevel {
     switch (role) {
       case UserRole.substationUser:
@@ -153,50 +333,14 @@ class AppUser {
     }
   }
 
-  /// Checks if the user has access to a specific hierarchy level
   bool hasAccessTo(String hierarchyType, String hierarchyId) {
     if (role == UserRole.admin || role == UserRole.superAdmin) {
-      return true; // Admin users have access to everything
+      return true;
     }
-
     return assignedLevels?[hierarchyType] == hierarchyId;
   }
 
-  /// Returns all assigned hierarchy levels as a formatted string
-  String get assignedHierarchyDisplay {
-    if (assignedLevels == null || assignedLevels!.isEmpty) {
-      return 'No assignments';
-    }
-
-    return assignedLevels!.entries
-        .map((entry) => '${entry.key}: ${entry.value}')
-        .join(', ');
-  }
-
-  /// Checks if user is approved and has required assignments for their role
   bool get isFullyConfigured {
-    if (!approved) return false;
-
-    switch (role) {
-      case UserRole.pending:
-        return false;
-      case UserRole.admin:
-      case UserRole.superAdmin:
-        return true; // Admin users don't need specific assignments
-      case UserRole.substationUser:
-        return substationId != null;
-      case UserRole.subdivisionManager:
-        return subdivisionId != null;
-      case UserRole.divisionManager:
-        return divisionId != null;
-      case UserRole.circleManager:
-        return circleId != null;
-      case UserRole.zoneManager:
-        return zoneId != null;
-      case UserRole.stateManager:
-        return stateId != null;
-      case UserRole.companyManager:
-        return companyId != null;
-    }
+    return approved && isMandatoryFieldsComplete;
   }
 }

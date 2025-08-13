@@ -3,9 +3,11 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
+import '../services/user_service.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
-import 'substation_dashboard/substation_user_dashboard_screen.dart';
-import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
+import '../screens/substation_dashboard/substation_user_dashboard_screen.dart';
+import '../screens/subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
+import 'user_profile_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -81,73 +83,144 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _handleUserDocument(User firebaseUser) async {
-    final userDocRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(firebaseUser.uid);
-
     try {
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final userDoc = await transaction.get(userDocRef);
+      // Check if user document exists
+      AppUser? existingUser = await UserService.getUser(firebaseUser.uid);
 
-        if (!userDoc.exists) {
-          final newUser = AppUser(
-            uid: firebaseUser.uid,
-            email: firebaseUser.email ?? 'no-email@example.com',
-            role: UserRole.pending,
-            approved: false,
-          );
+      if (existingUser == null) {
+        // First-time login - Create new user document with basic info
+        final newUser = AppUser(
+          uid: firebaseUser.uid,
+          email: firebaseUser.email ?? 'no-email@example.com',
+          name:
+              firebaseUser.displayName ??
+              '', // Get name from Google if available
+          mobile: '', // Will be filled in profile
+          designation: Designation.technician, // Default designation
+          role: UserRole.pending,
+          approved: false,
+          createdAt: Timestamp.now(),
+          profileCompleted: false,
+        );
 
-          transaction.set(userDocRef, newUser.toFirestore());
-          print('Created new user document for ${firebaseUser.email}');
+        await UserService.createUser(newUser);
+        print('Created new user document for ${firebaseUser.email}');
 
-          if (context.mounted) {
-            _showSnackBar('Account created. Awaiting admin approval.');
-          }
-        } else {
-          final appUser = AppUser.fromFirestore(userDoc);
-          await _navigateBasedOnRole(appUser);
+        if (context.mounted) {
+          _showSnackBar('Welcome! Please complete your profile.');
+          // Navigate to profile screen for first-time setup
+          _navigateToProfile(newUser);
         }
-      });
+      } else {
+        // Existing user - check profile completion and approval status
+        await _handleExistingUser(existingUser);
+      }
     } catch (e) {
       print('Error handling user document: $e');
       if (context.mounted) {
         _showSnackBar(
-          'Error creating user profile: ${e.toString()}',
+          'Error accessing user profile: ${e.toString()}',
           isError: true,
         );
       }
     }
   }
 
+  Future<void> _handleExistingUser(AppUser existingUser) async {
+    if (!context.mounted) return;
+
+    // Check if mandatory profile fields are complete
+    if (!existingUser.isMandatoryFieldsComplete ||
+        !existingUser.profileCompleted) {
+      _showSnackBar('Please complete your profile information.');
+      _navigateToProfile(existingUser);
+      return;
+    }
+
+    // Check if user is approved
+    if (!existingUser.approved) {
+      _showSnackBar('Your account is pending admin approval.', isError: true);
+      return;
+    }
+
+    // User is approved and profile is complete - navigate to appropriate dashboard
+    await _navigateBasedOnRole(existingUser);
+  }
+
+  void _navigateToProfile(AppUser user) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => UserProfileScreen(currentUser: user),
+      ),
+    );
+  }
+
   Future<void> _navigateBasedOnRole(AppUser appUser) async {
     if (!context.mounted) return;
 
-    if (appUser.approved) {
-      Widget destinationScreen;
+    Widget destinationScreen;
 
-      switch (appUser.role) {
-        case UserRole.admin:
-          destinationScreen = AdminDashboardScreen(adminUser: appUser);
-          break;
-        case UserRole.substationUser:
-          destinationScreen = SubstationUserDashboardScreen(
-            currentUser: appUser,
-          );
-          break;
-        case UserRole.subdivisionManager:
-          destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
-          break;
-        default:
-          _showSnackBar('Unsupported user role.', isError: true);
-          return;
-      }
+    switch (appUser.role) {
+      case UserRole.admin:
+      case UserRole.superAdmin:
+        destinationScreen = AdminDashboardScreen(adminUser: appUser);
+        break;
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => destinationScreen),
-      );
-    } else {
-      _showSnackBar('Your account is pending admin approval.', isError: true);
+      case UserRole.substationUser:
+        destinationScreen = SubstationUserDashboardScreen(currentUser: appUser);
+        break;
+
+      case UserRole.subdivisionManager:
+        destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
+        break;
+
+      case UserRole.divisionManager:
+        // Add your division dashboard screen here
+        destinationScreen = SubdivisionDashboardScreen(
+          currentUser: appUser,
+        ); // Temporary fallback
+        break;
+
+      case UserRole.circleManager:
+        // Add your circle dashboard screen here
+        destinationScreen = SubdivisionDashboardScreen(
+          currentUser: appUser,
+        ); // Temporary fallback
+        break;
+
+      case UserRole.zoneManager:
+        // Add your zone dashboard screen here
+        destinationScreen = SubdivisionDashboardScreen(
+          currentUser: appUser,
+        ); // Temporary fallback
+        break;
+
+      case UserRole.stateManager:
+        // Add your state dashboard screen here
+        destinationScreen = SubdivisionDashboardScreen(
+          currentUser: appUser,
+        ); // Temporary fallback
+        break;
+
+      case UserRole.companyManager:
+        // Add your company dashboard screen here
+        destinationScreen = SubdivisionDashboardScreen(
+          currentUser: appUser,
+        ); // Temporary fallback
+        break;
+
+      case UserRole.pending:
+        _showSnackBar('Your account is pending admin approval.', isError: true);
+        return;
+
+      default:
+        _showSnackBar('Unsupported user role: ${appUser.role}', isError: true);
+        return;
     }
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => destinationScreen),
+    );
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -214,7 +287,8 @@ class _AuthScreenState extends State<AuthScreen>
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
-                        Icons.factory,
+                        Icons
+                            .electrical_services, // Changed to electrical services icon
                         size: 40,
                         color: colorScheme.primary,
                       ),
@@ -251,9 +325,9 @@ class _AuthScreenState extends State<AuthScreen>
                           width: 24,
                           semanticLabel: 'Google Logo',
                         ),
-                        label: const Text(
-                          'Sign in with Google',
-                          style: TextStyle(
+                        label: Text(
+                          _isLoading ? 'Signing in...' : 'Sign in with Google',
+                          style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -275,7 +349,9 @@ class _AuthScreenState extends State<AuthScreen>
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Your account requires admin approval to access the dashboard.',
+                      _isLoading
+                          ? 'Setting up your account...'
+                          : 'Your account requires profile completion and admin approval.',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
