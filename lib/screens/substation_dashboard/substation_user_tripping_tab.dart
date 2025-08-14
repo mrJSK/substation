@@ -728,48 +728,57 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         // Enhanced Sub-tabs
                         Container(
                           margin: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
                             color: Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
                           ),
                           child: TabBar(
                             labelColor: theme.colorScheme.primary,
-                            unselectedLabelColor: Colors.grey,
+                            unselectedLabelColor: Colors.grey.shade600,
+                            labelStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            unselectedLabelStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
                             indicator: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(8),
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withOpacity(0.1),
                                   blurRadius: 4,
-                                  offset: const Offset(0, 1),
+                                  offset: const Offset(0, 2),
                                 ),
                               ],
                             ),
+                            indicatorSize: TabBarIndicatorSize
+                                .tab, // Make indicator fill the tab
+                            dividerColor:
+                                Colors.transparent, // Remove divider line
                             tabs: [
-                              Tab(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                                 child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     const Icon(Icons.today, size: 18),
-                                    const SizedBox(width: 6),
-                                    Text('Today'),
+                                    const SizedBox(width: 8),
+                                    const Text('Today'),
                                     if (_todayEvents.isNotEmpty) ...[
-                                      const SizedBox(width: 4),
+                                      const SizedBox(width: 6),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 6,
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.red.withOpacity(0.2),
+                                          color: Colors.red.withOpacity(0.15),
                                           borderRadius: BorderRadius.circular(
                                             10,
                                           ),
@@ -787,22 +796,27 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                   ],
                                 ),
                               ),
-                              Tab(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                                 child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     const Icon(Icons.pending_actions, size: 18),
-                                    const SizedBox(width: 6),
-                                    Text('Open'),
+                                    const SizedBox(width: 8),
+                                    const Text('Open'),
                                     if (_openEvents.isNotEmpty) ...[
-                                      const SizedBox(width: 4),
+                                      const SizedBox(width: 6),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 6,
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.orange.withOpacity(0.2),
+                                          color: Colors.orange.withOpacity(
+                                            0.15,
+                                          ),
                                           borderRadius: BorderRadius.circular(
                                             10,
                                           ),

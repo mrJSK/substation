@@ -30,29 +30,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   late TextEditingController _personalEmailController;
 
   // Current selections
-  Designation _selectedDesignation = Designation.technician;
-  String? _selectedCompanyId;
-  String? _selectedStateId;
-  String? _selectedZoneId;
-  String? _selectedCircleId;
-  String? _selectedDivisionId;
-  String? _selectedSubdivisionId;
-  String? _selectedSubstationId;
-
-  // Dropdown data
-  List<Map<String, String>> _companies = [];
-  List<Map<String, String>> _states = [];
-  List<Map<String, String>> _zones = [];
-  List<Map<String, String>> _circles = [];
-  List<Map<String, String>> _divisions = [];
-  List<Map<String, String>> _subdivisions = [];
-  List<Map<String, String>> _substations = [];
+  Designation? _selectedDesignation;
 
   @override
   void initState() {
     super.initState();
     _initializeControllers();
-    _loadHierarchyData();
   }
 
   void _initializeControllers() {
@@ -72,128 +55,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
 
     _selectedDesignation = widget.currentUser.designation;
-    _selectedCompanyId = widget.currentUser.companyId;
-    _selectedStateId = widget.currentUser.stateId;
-    _selectedZoneId = widget.currentUser.zoneId;
-    _selectedCircleId = widget.currentUser.circleId;
-    _selectedDivisionId = widget.currentUser.divisionId;
-    _selectedSubdivisionId = widget.currentUser.subdivisionId;
-    _selectedSubstationId = widget.currentUser.substationId;
-  }
-
-  Future<void> _loadHierarchyData() async {
-    try {
-      // Load companies
-      final companiesSnapshot = await FirebaseFirestore.instance
-          .collection('companies')
-          .orderBy('name')
-          .get();
-      _companies = companiesSnapshot.docs
-          .map((doc) => {'id': doc.id, 'name': doc['name'] as String})
-          .toList();
-
-      // Load other hierarchy data based on selections
-      if (_selectedCompanyId != null) {
-        await _loadStates();
-        if (_selectedStateId != null) {
-          await _loadZones();
-          if (_selectedZoneId != null) {
-            await _loadCircles();
-            if (_selectedCircleId != null) {
-              await _loadDivisions();
-              if (_selectedDivisionId != null) {
-                await _loadSubdivisions();
-                if (_selectedSubdivisionId != null) {
-                  await _loadSubstations();
-                }
-              }
-            }
-          }
-        }
-      }
-
-      setState(() {});
-    } catch (e) {
-      _showErrorSnackBar('Error loading hierarchy data: $e');
-    }
-  }
-
-  Future<void> _loadStates() async {
-    if (_selectedCompanyId == null) return;
-
-    final statesSnapshot = await FirebaseFirestore.instance
-        .collection('states')
-        .where('companyId', isEqualTo: _selectedCompanyId)
-        .orderBy('name')
-        .get();
-    _states = statesSnapshot.docs
-        .map((doc) => {'id': doc.id, 'name': doc['name'] as String})
-        .toList();
-  }
-
-  Future<void> _loadZones() async {
-    if (_selectedStateId == null) return;
-
-    final zonesSnapshot = await FirebaseFirestore.instance
-        .collection('zones')
-        .where('stateId', isEqualTo: _selectedStateId)
-        .orderBy('name')
-        .get();
-    _zones = zonesSnapshot.docs
-        .map((doc) => {'id': doc.id, 'name': doc['name'] as String})
-        .toList();
-  }
-
-  Future<void> _loadCircles() async {
-    if (_selectedZoneId == null) return;
-
-    final circlesSnapshot = await FirebaseFirestore.instance
-        .collection('circles')
-        .where('zoneId', isEqualTo: _selectedZoneId)
-        .orderBy('name')
-        .get();
-    _circles = circlesSnapshot.docs
-        .map((doc) => {'id': doc.id, 'name': doc['name'] as String})
-        .toList();
-  }
-
-  Future<void> _loadDivisions() async {
-    if (_selectedCircleId == null) return;
-
-    final divisionsSnapshot = await FirebaseFirestore.instance
-        .collection('divisions')
-        .where('circleId', isEqualTo: _selectedCircleId)
-        .orderBy('name')
-        .get();
-    _divisions = divisionsSnapshot.docs
-        .map((doc) => {'id': doc.id, 'name': doc['name'] as String})
-        .toList();
-  }
-
-  Future<void> _loadSubdivisions() async {
-    if (_selectedDivisionId == null) return;
-
-    final subdivisionsSnapshot = await FirebaseFirestore.instance
-        .collection('subdivisions')
-        .where('divisionId', isEqualTo: _selectedDivisionId)
-        .orderBy('name')
-        .get();
-    _subdivisions = subdivisionsSnapshot.docs
-        .map((doc) => {'id': doc.id, 'name': doc['name'] as String})
-        .toList();
-  }
-
-  Future<void> _loadSubstations() async {
-    if (_selectedSubdivisionId == null) return;
-
-    final substationsSnapshot = await FirebaseFirestore.instance
-        .collection('substations')
-        .where('subdivisionId', isEqualTo: _selectedSubdivisionId)
-        .orderBy('name')
-        .get();
-    _substations = substationsSnapshot.docs
-        .map((doc) => {'id': doc.id, 'name': doc['name'] as String})
-        .toList();
   }
 
   @override
@@ -210,19 +71,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFFAFAFA),
+      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        title: Text(
+        title: const Text(
           'Profile',
           style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
-        iconTheme: IconThemeData(color: Colors.black87),
+        iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
           if (!_isEditing)
             IconButton(
-              icon: Icon(Icons.edit),
+              icon: const Icon(Icons.edit),
               onPressed: () {
                 setState(() {
                   _isEditing = true;
@@ -245,9 +106,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         ],
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -255,22 +116,24 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     // Profile Header
                     _buildProfileHeader(),
 
-                    SizedBox(height: 24),
+                    const SizedBox(height: 24),
 
                     // Basic Information
                     _buildBasicInformationCard(),
 
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                    // Current Posting
+                    // Current Posting - UPDATED: Auto-populated based on hierarchy
                     _buildCurrentPostingCard(),
 
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
                     // Optional Information
                     _buildOptionalInformationCard(),
 
-                    SizedBox(height: 80), // Space for floating action button
+                    const SizedBox(
+                      height: 80,
+                    ), // Space for floating action button
                   ],
                 ),
               ),
@@ -284,7 +147,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 });
               },
               backgroundColor: Colors.grey,
-              child: Icon(Icons.close, color: Colors.white),
+              child: const Icon(Icons.close, color: Colors.white),
             )
           : null,
     );
@@ -296,7 +159,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: double.infinity,
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           gradient: LinearGradient(
@@ -317,25 +180,25 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 widget.currentUser.name.isNotEmpty
                     ? widget.currentUser.name[0].toUpperCase()
                     : 'U',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Text(
               widget.currentUser.name.isNotEmpty
                   ? widget.currentUser.name
                   : 'User Name',
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
               widget.currentUser.designationDisplayName,
               style: TextStyle(
@@ -344,16 +207,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               ),
             ),
             if (widget.currentUser.currentPostingDisplay != 'Not assigned') ...[
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   widget.currentUser.currentPostingDisplay,
-                  style: TextStyle(fontSize: 12, color: Colors.white),
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -377,7 +243,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           isEditable: false,
         ),
 
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
 
         // Name (Mandatory)
         _buildTextField(
@@ -389,240 +255,455 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               value?.trim().isEmpty == true ? 'Name is required' : null,
         ),
 
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
 
         // Mobile (Mandatory)
-        _buildTextField(
+        // Mobile (Mandatory) - ENHANCED: With input formatting and length restriction
+        TextFormField(
           controller: _mobileController,
-          label: 'Mobile Number *',
-          icon: Icons.phone_outlined,
           enabled: _isEditing,
           keyboardType: TextInputType.phone,
+          maxLength: 10, // Restrict input to 10 characters
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly, // Only allow digits
+            LengthLimitingTextInputFormatter(10), // Limit to 10 digits
+          ],
           validator: (value) {
-            if (value?.trim().isEmpty == true)
+            if (value?.trim().isEmpty == true) {
               return 'Mobile number is required';
-            if (value!.length < 10) return 'Enter a valid mobile number';
+            }
+
+            if (value!.length != 10) {
+              return 'Mobile number must be exactly 10 digits';
+            }
+
+            // Optional: Check if it starts with valid digits (6-9)
+            if (!RegExp(r'^[6-9][0-9]{9}$').hasMatch(value)) {
+              return 'Enter a valid mobile number';
+            }
+
             return null;
+          },
+          decoration: InputDecoration(
+            labelText: 'Mobile Number *',
+            prefixIcon: Icon(Icons.phone_outlined, color: Colors.grey[600]),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Theme.of(context).primaryColor),
+            ),
+            disabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey[200]!),
+            ),
+            filled: !_isEditing,
+            fillColor: _isEditing ? null : Colors.grey[50],
+            counterText: '', // Hide the character counter
+            helperText: _isEditing ? 'Enter 10-digit mobile number' : null,
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Designation (Mandatory) - UPDATED: Only editable by admins
+        _buildDesignationField(),
+      ],
+    );
+  }
+
+  // UPDATED: New method for designation field with role-based editing
+  Widget _buildDesignationField() {
+    if (widget.currentUser.role == UserRole.admin) {
+      // Admin can edit designations
+      return _buildDropdownField<Designation>(
+        label: 'Designation *',
+        value: _selectedDesignation,
+        icon: Icons.work_outline,
+        enabled: _isEditing,
+        items: Designation.values.map((designation) {
+          return DropdownMenuItem<Designation>(
+            value: designation,
+            child: Text(
+              _getDesignationDisplayName(designation),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+            ),
+          );
+        }).toList(),
+        onChanged: _isEditing
+            ? (value) {
+                if (value != null && value is Designation) {
+                  setState(() {
+                    _selectedDesignation = value;
+                  });
+                }
+              }
+            : null,
+      );
+    } else {
+      // Non-admin users see read-only designation
+      return _buildInfoField(
+        label: 'Designation',
+        value: widget.currentUser.designationDisplayName,
+        icon: Icons.work_outline,
+        isEditable: false,
+      );
+    }
+  }
+
+  // UPDATED: Completely new current posting card with auto-populated hierarchy
+  Widget _buildCurrentPostingCard() {
+    return _buildSectionCard(
+      title: 'Current Posting',
+      icon: Icons.location_city,
+      children: [
+        // Display current hierarchy path (read-only unless admin)
+        FutureBuilder<Map<String, String>>(
+          future: _resolveHierarchyNames(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Container(
+                padding: const EdgeInsets.all(16),
+                child: const Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Loading hierarchy...'),
+                  ],
+                ),
+              );
+            }
+
+            if (snapshot.hasError || !snapshot.hasData) {
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Error loading hierarchy information',
+                  style: TextStyle(color: Colors.red.shade700),
+                ),
+              );
+            }
+
+            final hierarchy = snapshot.data!;
+            return _buildHierarchyDisplay(hierarchy);
           },
         ),
 
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
 
-        // Designation (Mandatory)
-        _buildDropdownField<Designation>(
-          label: 'Designation *',
-          value: _selectedDesignation,
-          icon: Icons.work_outline,
-          enabled: _isEditing,
-          items: Designation.values.map((designation) {
-            return DropdownMenuItem<Designation>(
-              value: designation,
-              child: Text(_getDesignationDisplayName(designation)),
-            );
-          }).toList(),
-          onChanged: _isEditing
-              ? (value) {
-                  if (value != null && value is Designation) {
-                    // Safe type check
-                    setState(() {
-                      _selectedDesignation = value;
-                    });
-                  }
-                }
-              : null,
+        // Admin can edit user postings
+        if (widget.currentUser.role == UserRole.admin) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.admin_panel_settings,
+                  color: Colors.blue.shade700,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'As an admin, you can update user postings through the user management screen.',
+                    style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue.shade700, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Your posting is determined by your role and cannot be changed here. Contact your administrator for updates.',
+                    style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 16),
+
+        // Role information (read-only)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  Icons.admin_panel_settings,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'User Role',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.currentUser.role.toString().split('.').last,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildCurrentPostingCard() {
-    return _buildSectionCard(
-      title: 'Current Posting *',
-      icon: Icons.location_city,
-      children: [
-        Text(
-          'Select your current posting in the organizational hierarchy',
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+  // UPDATED: Build the actual hierarchy display
+  Widget _buildHierarchyDisplay(Map<String, String> hierarchy) {
+    final theme = Theme.of(context);
+
+    // Define the hierarchy order and their icons
+    final hierarchyLevels = [
+      {'key': 'company', 'label': 'Company', 'icon': Icons.business},
+      {'key': 'state', 'label': 'State', 'icon': Icons.map},
+      {'key': 'zone', 'label': 'Zone', 'icon': Icons.location_on},
+      {
+        'key': 'circle',
+        'label': 'Circle',
+        'icon': Icons.radio_button_unchecked,
+      },
+      {'key': 'division', 'label': 'Division', 'icon': Icons.segment},
+      {
+        'key': 'subdivision',
+        'label': 'Subdivision',
+        'icon': Icons.account_tree,
+      },
+      {
+        'key': 'substation',
+        'label': 'Substation',
+        'icon': Icons.electrical_services,
+      },
+    ];
+
+    final availableLevels = hierarchyLevels.where((level) {
+      final value = hierarchy[level['key']];
+      return value != null && value.isNotEmpty;
+    }).toList();
+
+    if (availableLevels.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.withOpacity(0.3)),
         ),
-        SizedBox(height: 16),
-
-        // Company
-        _buildHierarchyDropdown(
-          label: 'Company *',
-          value: _selectedCompanyId,
-          items: _companies,
-          onChanged: _isEditing
-              ? (value) async {
-                  setState(() {
-                    _selectedCompanyId = value;
-                    _selectedStateId = null;
-                    _selectedZoneId = null;
-                    _selectedCircleId = null;
-                    _selectedDivisionId = null;
-                    _selectedSubdivisionId = null;
-                    _selectedSubstationId = null;
-                    _states.clear();
-                    _zones.clear();
-                    _circles.clear();
-                    _divisions.clear();
-                    _subdivisions.clear();
-                    _substations.clear();
-                  });
-                  if (value != null) {
-                    await _loadStates();
-                    setState(() {});
-                  }
-                }
-              : null,
+        child: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange.shade700, size: 16),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'No posting information available. Contact your administrator.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
         ),
+      );
+    }
 
-        if (_states.isNotEmpty) ...[
-          SizedBox(height: 16),
-          _buildHierarchyDropdown(
-            label: 'State *',
-            value: _selectedStateId,
-            items: _states,
-            onChanged: _isEditing
-                ? (value) async {
-                    setState(() {
-                      _selectedStateId = value;
-                      _selectedZoneId = null;
-                      _selectedCircleId = null;
-                      _selectedDivisionId = null;
-                      _selectedSubdivisionId = null;
-                      _selectedSubstationId = null;
-                      _zones.clear();
-                      _circles.clear();
-                      _divisions.clear();
-                      _subdivisions.clear();
-                      _substations.clear();
-                    });
-                    if (value != null) {
-                      await _loadZones();
-                      setState(() {});
-                    }
-                  }
-                : null,
-          ),
-        ],
+    return Column(
+      children: availableLevels.map((level) {
+        final value = hierarchy[level['key']]!;
 
-        if (_zones.isNotEmpty) ...[
-          SizedBox(height: 16),
-          _buildHierarchyDropdown(
-            label: 'Zone *',
-            value: _selectedZoneId,
-            items: _zones,
-            onChanged: _isEditing
-                ? (value) async {
-                    setState(() {
-                      _selectedZoneId = value;
-                      _selectedCircleId = null;
-                      _selectedDivisionId = null;
-                      _selectedSubdivisionId = null;
-                      _selectedSubstationId = null;
-                      _circles.clear();
-                      _divisions.clear();
-                      _subdivisions.clear();
-                      _substations.clear();
-                    });
-                    if (value != null) {
-                      await _loadCircles();
-                      setState(() {});
-                    }
-                  }
-                : null,
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade200),
           ),
-        ],
-
-        if (_circles.isNotEmpty) ...[
-          SizedBox(height: 16),
-          _buildHierarchyDropdown(
-            label: 'Circle *',
-            value: _selectedCircleId,
-            items: _circles,
-            onChanged: _isEditing
-                ? (value) async {
-                    setState(() {
-                      _selectedCircleId = value;
-                      _selectedDivisionId = null;
-                      _selectedSubdivisionId = null;
-                      _selectedSubstationId = null;
-                      _divisions.clear();
-                      _subdivisions.clear();
-                      _substations.clear();
-                    });
-                    if (value != null) {
-                      await _loadDivisions();
-                      setState(() {});
-                    }
-                  }
-                : null,
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  level['icon'] as IconData,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      level['label'] as String,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-
-        if (_divisions.isNotEmpty) ...[
-          SizedBox(height: 16),
-          _buildHierarchyDropdown(
-            label: 'Division *',
-            value: _selectedDivisionId,
-            items: _divisions,
-            onChanged: _isEditing
-                ? (value) async {
-                    setState(() {
-                      _selectedDivisionId = value;
-                      _selectedSubdivisionId = null;
-                      _selectedSubstationId = null;
-                      _subdivisions.clear();
-                      _substations.clear();
-                    });
-                    if (value != null) {
-                      await _loadSubdivisions();
-                      setState(() {});
-                    }
-                  }
-                : null,
-          ),
-        ],
-
-        if (_subdivisions.isNotEmpty) ...[
-          SizedBox(height: 16),
-          _buildHierarchyDropdown(
-            label: 'Subdivision *',
-            value: _selectedSubdivisionId,
-            items: _subdivisions,
-            onChanged: _isEditing
-                ? (value) async {
-                    setState(() {
-                      _selectedSubdivisionId = value;
-                      _selectedSubstationId = null;
-                      _substations.clear();
-                    });
-                    if (value != null) {
-                      await _loadSubstations();
-                      setState(() {});
-                    }
-                  }
-                : null,
-          ),
-        ],
-
-        if (_substations.isNotEmpty) ...[
-          SizedBox(height: 16),
-          _buildHierarchyDropdown(
-            label: 'Substation (Optional)',
-            value: _selectedSubstationId,
-            items: _substations,
-            onChanged: _isEditing
-                ? (value) {
-                    setState(() {
-                      _selectedSubstationId = value;
-                    });
-                  }
-                : null,
-          ),
-        ],
-      ],
+        );
+      }).toList(),
     );
+  }
+
+  // UPDATED: Method to resolve hierarchy names from IDs
+  Future<Map<String, String>> _resolveHierarchyNames() async {
+    final hierarchy = <String, String>{};
+
+    try {
+      // Get hierarchy info from user data
+      // Note: Adjust these field names based on your actual user model
+      if (widget.currentUser.companyId != null) {
+        final companyDoc = await FirebaseFirestore.instance
+            .collection('companys')
+            .doc(widget.currentUser.companyId)
+            .get();
+        if (companyDoc.exists) {
+          hierarchy['company'] =
+              companyDoc.data()?['name'] ?? 'Unknown Company';
+        }
+      }
+
+      if (widget.currentUser.stateId != null) {
+        final stateDoc = await FirebaseFirestore.instance
+            .collection('states')
+            .doc(widget.currentUser.stateId)
+            .get();
+        if (stateDoc.exists) {
+          hierarchy['state'] = stateDoc.data()?['name'] ?? 'Unknown State';
+        }
+      }
+
+      if (widget.currentUser.zoneId != null) {
+        final zoneDoc = await FirebaseFirestore.instance
+            .collection('zones')
+            .doc(widget.currentUser.zoneId)
+            .get();
+        if (zoneDoc.exists) {
+          hierarchy['zone'] = zoneDoc.data()?['name'] ?? 'Unknown Zone';
+        }
+      }
+
+      if (widget.currentUser.circleId != null) {
+        final circleDoc = await FirebaseFirestore.instance
+            .collection('circles')
+            .doc(widget.currentUser.circleId)
+            .get();
+        if (circleDoc.exists) {
+          hierarchy['circle'] = circleDoc.data()?['name'] ?? 'Unknown Circle';
+        }
+      }
+
+      if (widget.currentUser.divisionId != null) {
+        final divisionDoc = await FirebaseFirestore.instance
+            .collection('divisions')
+            .doc(widget.currentUser.divisionId)
+            .get();
+        if (divisionDoc.exists) {
+          hierarchy['division'] =
+              divisionDoc.data()?['name'] ?? 'Unknown Division';
+        }
+      }
+
+      if (widget.currentUser.subdivisionId != null) {
+        final subdivisionDoc = await FirebaseFirestore.instance
+            .collection('subdivisions')
+            .doc(widget.currentUser.subdivisionId)
+            .get();
+        if (subdivisionDoc.exists) {
+          hierarchy['subdivision'] =
+              subdivisionDoc.data()?['name'] ?? 'Unknown Subdivision';
+        }
+      }
+
+      if (widget.currentUser.substationId != null) {
+        final substationDoc = await FirebaseFirestore.instance
+            .collection('substations')
+            .doc(widget.currentUser.substationId)
+            .get();
+        if (substationDoc.exists) {
+          hierarchy['substation'] =
+              substationDoc.data()?['name'] ?? 'Unknown Substation';
+        }
+      }
+
+      return hierarchy;
+    } catch (e) {
+      print('Error resolving hierarchy names: $e');
+      return hierarchy;
+    }
   }
 
   Widget _buildOptionalInformationCard() {
@@ -637,7 +718,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           enabled: _isEditing,
         ),
 
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
 
         _buildTextField(
           controller: _highestEducationController,
@@ -646,7 +727,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           enabled: _isEditing,
         ),
 
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
 
         _buildTextField(
           controller: _collegeController,
@@ -655,7 +736,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           enabled: _isEditing,
         ),
 
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
 
         _buildTextField(
           controller: _personalEmailController,
@@ -687,17 +768,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Icon(icon, color: Theme.of(context).primaryColor),
-                SizedBox(width: 12),
+                const SizedBox(width: 12),
                 Text(
                   title,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -705,7 +786,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 ),
               ],
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             ...children,
           ],
         ),
@@ -757,7 +838,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     bool isEditable = true,
   }) {
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: isEditable ? null : Colors.grey[50],
         border: Border.all(color: Colors.grey[300]!),
@@ -766,7 +847,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       child: Row(
         children: [
           Icon(icon, color: Colors.grey[600]),
-          SizedBox(width: 12),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -779,7 +860,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
                   value.isEmpty ? 'Not provided' : value,
                   style: TextStyle(
@@ -800,7 +881,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Widget _buildDropdownField<T>({
     required String label,
-    required T value,
+    required T? value,
     required IconData icon,
     required List<DropdownMenuItem<T>> items,
     required void Function(T?)? onChanged,
@@ -832,48 +913,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  Widget _buildHierarchyDropdown({
-    required String label,
-    required String? value,
-    required List<Map<String, String>> items,
-    required void Function(String?)? onChanged,
-  }) {
-    return DropdownButtonFormField<String>(
-      value: value,
-      items: [
-        DropdownMenuItem<String>(value: null, child: Text('Select $label')),
-        ...items.map((item) {
-          return DropdownMenuItem<String>(
-            value: item['id'],
-            child: Text(item['name']!),
-          );
-        }).toList(),
-      ],
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(Icons.location_city_outlined, color: Colors.grey[600]),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor),
-        ),
-      ),
-      validator: label.contains('*')
-          ? (value) {
-              if (value == null || value.isEmpty) {
-                return '$label is required';
-              }
-              return null;
-            }
-          : null,
-    );
-  }
-
   String _getDesignationDisplayName(Designation designation) {
     switch (designation) {
       case Designation.director:
@@ -893,16 +932,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
+  // UPDATED: Simplified save profile method
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    // Validate mandatory hierarchy selection
-    if (_selectedCompanyId == null || _selectedSubdivisionId == null) {
-      _showErrorSnackBar(
-        'Please select your current posting up to subdivision level',
-      );
       return;
     }
 
@@ -911,58 +943,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     });
 
     try {
-      // Get names for selected IDs
-      String? companyName = _companies.firstWhere(
-        (c) => c['id'] == _selectedCompanyId,
-        orElse: () => {'name': ''},
-      )['name'];
-      String? stateName = _states.firstWhere(
-        (s) => s['id'] == _selectedStateId,
-        orElse: () => {'name': ''},
-      )['name'];
-      String? zoneName = _zones.firstWhere(
-        (z) => z['id'] == _selectedZoneId,
-        orElse: () => {'name': ''},
-      )['name'];
-      String? circleName = _circles.firstWhere(
-        (c) => c['id'] == _selectedCircleId,
-        orElse: () => {'name': ''},
-      )['name'];
-      String? divisionName = _divisions.firstWhere(
-        (d) => d['id'] == _selectedDivisionId,
-        orElse: () => {'name': ''},
-      )['name'];
-      String? subdivisionName = _subdivisions.firstWhere(
-        (s) => s['id'] == _selectedSubdivisionId,
-        orElse: () => {'name': ''},
-      )['name'];
-      String? substationName = _selectedSubstationId != null
-          ? _substations.firstWhere(
-              (s) => s['id'] == _selectedSubstationId,
-              orElse: () => {'name': ''},
-            )['name']
-          : null;
-
       final updatedUser = widget.currentUser.copyWith(
         name: _nameController.text.trim(),
         mobile: _mobileController.text.trim(),
         designation: _selectedDesignation,
-        companyId: _selectedCompanyId,
-        companyName: companyName?.isEmpty == true ? null : companyName,
-        stateId: _selectedStateId,
-        stateName: stateName?.isEmpty == true ? null : stateName,
-        zoneId: _selectedZoneId,
-        zoneName: zoneName?.isEmpty == true ? null : zoneName,
-        circleId: _selectedCircleId,
-        circleName: circleName?.isEmpty == true ? null : circleName,
-        divisionId: _selectedDivisionId,
-        divisionName: divisionName?.isEmpty == true ? null : divisionName,
-        subdivisionId: _selectedSubdivisionId,
-        subdivisionName: subdivisionName?.isEmpty == true
-            ? null
-            : subdivisionName,
-        substationId: _selectedSubstationId,
-        substationName: substationName?.isEmpty == true ? null : substationName,
         sapId: _sapIdController.text.trim().isEmpty
             ? null
             : _sapIdController.text.trim(),

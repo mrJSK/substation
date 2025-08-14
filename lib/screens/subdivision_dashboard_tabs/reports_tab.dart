@@ -1,15 +1,25 @@
 // lib/screens/generate_custom_report_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:excel/excel.dart' hide Border;
+import 'package:csv/csv.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:share_plus/share_plus.dart';
 import 'package:dropdown_search/dropdown_search.dart';
+
+import '../../models/app_state_data.dart';
 import '../../models/bay_model.dart';
+import '../../models/hierarchy_models.dart';
+import '../../models/logsheet_models.dart';
+import '../../models/reading_models.dart';
 import '../../models/tripping_shutdown_model.dart';
+import '../../utils/snackbar_utils.dart';
 
-enum ReportMode { summary, export }
-
-enum ExportDataType { operations, tripping, energy, customReports }
+enum ExportDataType { operations, tripping, energy }
 
 class GenerateCustomReportScreen extends StatefulWidget {
   static const routeName = '/generate-custom-report';
@@ -30,21 +40,40 @@ class GenerateCustomReportScreen extends StatefulWidget {
 
 class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
     with TickerProviderStateMixin {
+  bool _isLoading = false;
+  bool _isGenerating = false;
   late TabController _tabController;
-  ReportMode _currentMode = ReportMode.summary;
 
-  final List<Bay> _availableBays = [];
-  Bay? _selectedBay;
-  final bool _isLoading = false;
-  final bool _isGenerating = false;
+  // Filter selections
+  List<String> _selectedBayTypes = [];
+  List<String> _selectedVoltageLevels = [];
+  List<ReadingField> _selectedReadingFields = [];
+  List<String> _selectedEventTypes = ['Tripping', 'Shutdown'];
+  List<String> _selectedStatuses = ['OPEN', 'CLOSED'];
+  List<String> _selectedEnergyFields = [
+    'Energy_Import_Present',
+    'Energy_Export_Present',
+    'Current',
+    'Voltage',
+    'Power Factor',
+  ];
 
-  final Map<String, dynamic> _statisticalSummary = {};
-  final List<TrippingShutdownEntry> _bayTrippingEvents = [];
+  // Available options
+  List<String> _allBayTypes = [];
+  final List<String> _allVoltageLevels = [
+    '765kV',
+    '400kV',
+    '220kV',
+    '132kV',
+    '33kV',
+    '11kV',
+  ];
+  List<ReadingField> _availableReadingFields = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _fetchInitialData();
   }
 
@@ -57,69 +86,48 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      appBar: _buildAppBar(theme),
       body: _isLoading
           ? _buildLoadingState()
-          : CustomScrollView(
-              slivers: [
-                // _buildSliverAppBar(theme),
-                SliverToBoxAdapter(child: _buildModeToggle(theme)),
-                if (_currentMode == ReportMode.summary)
-                  SliverToBoxAdapter(child: _buildBaySelector(theme)),
-                SliverToBoxAdapter(child: _buildTabBar(theme)),
-                SliverFillRemaining(
+          : Column(
+              children: [
+                _buildHeaderSection(theme),
+                _buildTabBar(theme),
+                Expanded(
                   child: TabBarView(
                     controller: _tabController,
-                    children: _currentMode == ReportMode.summary
-                        ? [
-                            _buildSummaryTab(theme),
-                            _buildOperationsTab(theme),
-                            _buildTrippingTab(theme),
-                            _buildEnergyTab(theme),
-                            _buildCustomReportsTab(theme),
-                          ]
-                        : [
-                            _buildOperationsTab(theme),
-                            _buildTrippingTab(theme),
-                            _buildEnergyTab(theme),
-                            _buildCustomReportsTab(theme),
-                            _buildBulkExportTab(theme),
-                          ],
+                    children: [
+                      _buildOperationsTab(theme),
+                      _buildTrippingTab(theme),
+                      _buildEnergyTab(theme),
+                    ],
                   ),
-                ),
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 80), // Bottom padding
                 ),
               ],
             ),
     );
   }
 
-  // Widget _buildSliverAppBar(ThemeData theme) {
-  //   return SliverAppBar(
-  //     backgroundColor: Colors.white,
-  //     elevation: 0,
-  //     pinned: true,
-  //     expandedHeight: 60,
-  //     flexibleSpace: FlexibleSpaceBar(
-  //       titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-  //       title: Text(
-  //         _currentMode == ReportMode.summary ? 'Bay Analysis' : 'Data Export',
-  //         style: TextStyle(
-  //           color: theme.colorScheme.onSurface,
-  //           fontSize: 18,
-  //           fontWeight: FontWeight.w600,
-  //         ),
-  //       ),
-  //     ),
-  //     leading: IconButton(
-  //       icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
-  //       onPressed: () => Navigator.pop(context),
-  //     ),
-  //   );
-  // }
+  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      title: Text(
+        'Generate Reports',
+        style: TextStyle(
+          color: theme.colorScheme.onSurface,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+        onPressed: () => Navigator.pop(context),
+      ),
+    );
+  }
 
   Widget _buildLoadingState() {
     return const Center(
@@ -128,119 +136,16 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
         children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
-          Text('Loading reports...'),
+          Text('Loading export options...'),
         ],
       ),
     );
   }
 
-  Widget _buildModeToggle(ThemeData theme) {
+  Widget _buildHeaderSection(ThemeData theme) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() {
-                _currentMode = ReportMode.summary;
-                _tabController.dispose();
-                _tabController = TabController(length: 5, vsync: this);
-              }),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: _currentMode == ReportMode.summary
-                      ? theme.colorScheme.primary
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.analytics,
-                      size: 18,
-                      color: _currentMode == ReportMode.summary
-                          ? Colors.white
-                          : theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Statistical Summary',
-                      style: TextStyle(
-                        color: _currentMode == ReportMode.summary
-                            ? Colors.white
-                            : theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() {
-                _currentMode = ReportMode.export;
-                _tabController.dispose();
-                _tabController = TabController(length: 5, vsync: this);
-              }),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: _currentMode == ReportMode.export
-                      ? theme.colorScheme.primary
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.download,
-                      size: 18,
-                      color: _currentMode == ReportMode.export
-                          ? Colors.white
-                          : theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Data Export',
-                      style: TextStyle(
-                        color: _currentMode == ReportMode.export
-                            ? Colors.white
-                            : theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBaySelector(ThemeData theme) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -255,41 +160,92 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Select Bay for Analysis',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 12),
-          DropdownSearch<Bay>(
-            items: _availableBays,
-            popupProps: PopupProps.menu(
-              showSearchBox: true,
-              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
-            ),
-            dropdownDecoratorProps: DropDownDecoratorProps(
-              dropdownSearchDecoration: InputDecoration(
-                labelText: 'Select Bay',
-                prefixIcon: const Icon(Icons.electrical_services),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primary,
+                      theme.colorScheme.primary.withOpacity(0.7),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                filled: true,
-                fillColor: Colors.grey.shade50,
+                child: const Icon(
+                  Icons.download,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Generate Reports',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Export Operations, Tripping, and Energy data',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.secondary.withOpacity(0.3),
               ),
             ),
-            itemAsString: (bay) =>
-                '${bay.name} (${bay.bayType} - ${bay.voltageLevel})',
-            onChanged: (bay) {
-              setState(() => _selectedBay = bay);
-              if (bay != null) {
-                _generateStatisticalSummary();
-              }
-            },
-            selectedItem: _selectedBay,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.date_range,
+                  size: 16,
+                  color: theme.colorScheme.secondary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${DateFormat('MMM dd').format(widget.startDate)} - ${DateFormat('MMM dd, yyyy').format(widget.endDate)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '(From Dashboard)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.secondary.withOpacity(0.7),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -297,22 +253,6 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
   }
 
   Widget _buildTabBar(ThemeData theme) {
-    final summaryTabs = [
-      _buildTabItem('Summary', Icons.summarize, Colors.purple),
-      _buildTabItem('Operations', Icons.settings, Colors.blue),
-      _buildTabItem('Tripping', Icons.warning, Colors.orange),
-      _buildTabItem('Energy', Icons.electrical_services, Colors.green),
-      _buildTabItem('Templates', Icons.description, Colors.indigo),
-    ];
-
-    final exportTabs = [
-      _buildTabItem('Operations', Icons.settings, Colors.blue),
-      _buildTabItem('Tripping', Icons.warning, Colors.orange),
-      _buildTabItem('Energy', Icons.electrical_services, Colors.green),
-      _buildTabItem('Templates', Icons.description, Colors.indigo),
-      _buildTabItem('Bulk Export', Icons.batch_prediction, Colors.red),
-    ];
-
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -328,8 +268,11 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
       ),
       child: TabBar(
         controller: _tabController,
-        isScrollable: true,
-        tabs: _currentMode == ReportMode.summary ? summaryTabs : exportTabs,
+        tabs: [
+          _buildTabItem('Operations', Icons.settings, Colors.blue),
+          _buildTabItem('Tripping', Icons.warning, Colors.orange),
+          _buildTabItem('Energy', Icons.electrical_services, Colors.green),
+        ],
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           color: theme.colorScheme.primary.withOpacity(0.1),
@@ -339,7 +282,6 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
         labelStyle: const TextStyle(fontWeight: FontWeight.w600),
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400),
         padding: const EdgeInsets.all(8),
-        tabAlignment: TabAlignment.start,
       ),
     );
   }
@@ -347,430 +289,31 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
   Widget _buildTabItem(String label, IconData icon, Color color) {
     return Tab(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSummaryTab(ThemeData theme) {
-    if (_selectedBay == null) {
-      return _buildSelectBayMessage(theme);
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      child: Column(
-        children: [
-          _buildStatisticalSummaryCard(theme),
-          const SizedBox(height: 16),
-          _buildTrippingEventsCard(theme),
-          const SizedBox(height: 16),
-          _buildQuickActionsCard(theme),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSelectBayMessage(ThemeData theme) {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.all(32),
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 11),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.electrical_services,
-              size: 64,
-              color: Colors.grey.shade400,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Select a Bay',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Choose a bay from the dropdown above to view detailed statistics and analysis.',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatisticalSummaryCard(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.analytics, color: theme.colorScheme.primary, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                'Statistical Summary',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_statisticalSummary.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text('Loading statistical data...'),
-              ),
-            )
-          else
-            _buildSummaryContent(theme),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryContent(ThemeData theme) {
-    return Column(
-      children: _statisticalSummary.entries.map((entry) {
-        final fieldName = entry.key;
-        final stats = entry.value as Map<String, dynamic>;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                fieldName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatItem(
-                      'Max',
-                      stats['max']?.toString() ?? 'N/A',
-                      stats['maxTimestamp'],
-                      Colors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildStatItem(
-                      'Min',
-                      stats['min']?.toString() ?? 'N/A',
-                      stats['minTimestamp'],
-                      Colors.red,
-                    ),
-                  ),
-                ],
-              ),
-              if (stats['avg'] != null) ...[
-                const SizedBox(height: 8),
-                _buildStatItem(
-                  'Average',
-                  stats['avg'].toStringAsFixed(2),
-                  null,
-                  Colors.blue,
-                ),
-              ],
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildStatItem(
-    String label,
-    String value,
-    Timestamp? timestamp,
-    Color color,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: color,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          if (timestamp != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              DateFormat('MMM dd, HH:mm').format(timestamp.toDate()),
-              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrippingEventsCard(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.warning, color: Colors.orange, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                'Tripping Events',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${_bayTrippingEvents.length}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.orange,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_bayTrippingEvents.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No tripping events found for this period.'),
-              ),
-            )
-          else
-            ..._bayTrippingEvents
-                .take(3)
-                .map((event) => _buildEventItem(event, theme)),
-          if (_bayTrippingEvents.length > 3)
-            Center(
-              child: TextButton(
-                onPressed: () => _showAllTrippingEvents(),
-                child: Text('View all ${_bayTrippingEvents.length} events'),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEventItem(TrippingShutdownEntry event, ThemeData theme) {
-    final isOpen = event.status == 'OPEN';
-    final statusColor = isOpen ? Colors.orange : Colors.green;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: statusColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  event.eventType,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  DateFormat(
-                    'MMM dd, yyyy HH:mm',
-                  ).format(event.startTime.toDate()),
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              event.status,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: statusColor,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActionsCard(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _exportBayDetailedReport(),
-                  icon: const Icon(Icons.download, size: 16),
-                  label: const Text('Export Details'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () =>
-                      setState(() => _currentMode = ReportMode.export),
-                  icon: const Icon(Icons.tune, size: 16),
-                  label: const Text('Advanced Export'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
 
   Widget _buildOperationsTab(ThemeData theme) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          if (_currentMode == ReportMode.export) _buildOperationsFilters(theme),
+          _buildOperationsFilters(theme),
           const SizedBox(height: 16),
           _buildExportButton(theme, 'Operations', ExportDataType.operations),
         ],
@@ -780,10 +323,10 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
 
   Widget _buildTrippingTab(ThemeData theme) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          if (_currentMode == ReportMode.export) _buildTrippingFilters(theme),
+          _buildTrippingFilters(theme),
           const SizedBox(height: 16),
           _buildExportButton(theme, 'Tripping', ExportDataType.tripping),
         ],
@@ -793,99 +336,16 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
 
   Widget _buildEnergyTab(ThemeData theme) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          if (_currentMode == ReportMode.export) _buildEnergyFilters(theme),
+          _buildEnergyFilters(theme),
           const SizedBox(height: 16),
           _buildExportButton(theme, 'Energy', ExportDataType.energy),
         ],
       ),
     );
   }
-
-  Widget _buildCustomReportsTab(ThemeData theme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      child: Column(
-        children: [
-          if (_currentMode == ReportMode.export)
-            _buildCustomReportFilters(theme),
-          const SizedBox(height: 16),
-          _buildExportButton(
-            theme,
-            'Custom Report',
-            ExportDataType.customReports,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBulkExportTab(ThemeData theme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Bulk Export Options',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ListTile(
-                  leading: const Icon(Icons.select_all),
-                  title: const Text('Export All Data Types'),
-                  subtitle: const Text(
-                    'Generate separate files for Operations, Tripping, and Energy',
-                  ),
-                  trailing: ElevatedButton(
-                    onPressed: _exportAllDataTypes,
-                    child: const Text('Export All'),
-                  ),
-                ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.merge_type),
-                  title: const Text('Export Combined Report'),
-                  subtitle: const Text(
-                    'Single file with all data types combined',
-                  ),
-                  trailing: ElevatedButton(
-                    onPressed: _exportCombinedReport,
-                    child: const Text('Export Combined'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Keep all your existing filter and export methods here...
-  // (All the _buildOperationsFilters, _buildTrippingFilters, etc. methods remain the same)
-  // (All the data fetching and processing methods remain the same)
 
   Widget _buildOperationsFilters(ThemeData theme) {
     return Container(
@@ -912,22 +372,203 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
               color: theme.colorScheme.onSurface,
             ),
           ),
-          // Add your filter widgets here
+          const SizedBox(height: 16),
+          DropdownSearch<String>.multiSelection(
+            items: _allBayTypes,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Bay Types',
+                prefixIcon: const Icon(Icons.settings),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedBayTypes = data),
+            selectedItems: _selectedBayTypes,
+          ),
+          const SizedBox(height: 16),
+          DropdownSearch<String>.multiSelection(
+            items: _allVoltageLevels,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Voltage Levels',
+                prefixIcon: const Icon(Icons.flash_on),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedVoltageLevels = data),
+            selectedItems: _selectedVoltageLevels,
+          ),
+          const SizedBox(height: 16),
+          DropdownSearch<ReadingField>.multiSelection(
+            items: _availableReadingFields,
+            popupProps: PopupPropsMultiSelection.menu(
+              showSearchBox: true,
+              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+              itemBuilder: (context, field, isSelected) {
+                return ListTile(
+                  title: Text(field.name),
+                  subtitle: Text(
+                    '${field.dataType.toString().split('.').last}${field.unit != null ? ' (${field.unit})' : ''}',
+                  ),
+                  selected: isSelected,
+                );
+              },
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Reading Fields',
+                prefixIcon: const Icon(Icons.list),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            itemAsString: (field) =>
+                '${field.name}${field.unit != null ? ' (${field.unit})' : ''}',
+            onChanged: (data) => setState(() => _selectedReadingFields = data),
+            selectedItems: _selectedReadingFields,
+          ),
         ],
       ),
     );
   }
 
   Widget _buildTrippingFilters(ThemeData theme) {
-    return Container();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tripping Export Filters',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownSearch<String>.multiSelection(
+            items: const ['Tripping', 'Shutdown'],
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Event Types',
+                prefixIcon: const Icon(Icons.warning),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedEventTypes = data),
+            selectedItems: _selectedEventTypes,
+          ),
+          const SizedBox(height: 16),
+          DropdownSearch<String>.multiSelection(
+            items: const ['OPEN', 'CLOSED'],
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Event Status',
+                prefixIcon: const Icon(Icons.check_circle),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedStatuses = data),
+            selectedItems: _selectedStatuses,
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildEnergyFilters(ThemeData theme) {
-    return Container();
-  }
-
-  Widget _buildCustomReportFilters(ThemeData theme) {
-    return Container();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Energy Export Filters',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          DropdownSearch<String>.multiSelection(
+            items: const [
+              'Energy_Import_Present',
+              'Energy_Export_Present',
+              'Current',
+              'Voltage',
+              'Power Factor',
+              'Frequency',
+              'Active Power',
+              'Reactive Power',
+            ],
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                labelText: 'Energy Fields',
+                prefixIcon: const Icon(Icons.electrical_services),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            onChanged: (data) => setState(() => _selectedEnergyFields = data),
+            selectedItems: _selectedEnergyFields,
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildExportButton(
@@ -935,11 +576,31 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
     String label,
     ExportDataType type,
   ) {
+    bool canExport = true;
+    String? disabledReason;
+
+    switch (type) {
+      case ExportDataType.operations:
+        canExport = _selectedReadingFields.isNotEmpty;
+        disabledReason = canExport ? null : 'Select at least one reading field';
+        break;
+      case ExportDataType.tripping:
+        canExport = _selectedEventTypes.isNotEmpty;
+        disabledReason = canExport ? null : 'Select at least one event type';
+        break;
+      case ExportDataType.energy:
+        canExport = _selectedEnergyFields.isNotEmpty;
+        disabledReason = canExport ? null : 'Select at least one energy field';
+        break;
+    }
+
     return Container(
       width: double.infinity,
       height: 48,
       child: ElevatedButton.icon(
-        onPressed: _isGenerating ? null : () => _generateReport(type),
+        onPressed: (_isGenerating || !canExport)
+            ? null
+            : () => _generateReport(type),
         style: ElevatedButton.styleFrom(
           backgroundColor: theme.colorScheme.primary,
           foregroundColor: Colors.white,
@@ -958,40 +619,455 @@ class _GenerateCustomReportScreenState extends State<GenerateCustomReportScreen>
                 ),
               )
             : const Icon(Icons.download, size: 20),
-        label: Text(
-          _isGenerating ? 'Generating...' : 'Export $label Data',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        label: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _isGenerating ? 'Generating...' : 'Export $label Data',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+            if (disabledReason != null)
+              Text(
+                disabledReason,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 
-  // Add all your existing data methods here
   Future<void> _fetchInitialData() async {
-    // Your existing implementation
+    setState(() => _isLoading = true);
+    try {
+      final appState = Provider.of<AppStateData>(context, listen: false);
+      final currentUserUid = appState.currentUser?.uid;
+      final selectedSubstation = appState.selectedSubstation;
+
+      if (currentUserUid == null || selectedSubstation == null) {
+        if (mounted) {
+          SnackBarUtils.showSnackBar(
+            context,
+            'Please log in and select a substation first.',
+            isError: true,
+          );
+        }
+        return;
+      }
+
+      final readingTemplatesSnapshot = await FirebaseFirestore.instance
+          .collection('readingTemplates')
+          .get();
+
+      final availableReadingTemplates = readingTemplatesSnapshot.docs
+          .map((doc) => ReadingTemplate.fromFirestore(doc))
+          .toList();
+
+      final Set<String> bayTypesSet = {};
+      final Set<ReadingField> readingFieldsSet = {};
+
+      for (final template in availableReadingTemplates) {
+        bayTypesSet.add(template.bayType);
+        readingFieldsSet.addAll(template.readingFields);
+      }
+
+      _allBayTypes = bayTypesSet.toList()..sort();
+      _availableReadingFields = readingFieldsSet.toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error loading data: $e',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  Future<void> _generateStatisticalSummary() async {
-    // Your existing implementation
-  }
-
+  // FIXED: Removed the redundant success message that was preventing sharing dialog
   Future<void> _generateReport(ExportDataType type) async {
-    // Your existing implementation
+    setState(() => _isGenerating = true);
+    try {
+      switch (type) {
+        case ExportDataType.operations:
+          await _generateOperationsReport();
+          break;
+        case ExportDataType.tripping:
+          await _generateTrippingReport();
+          break;
+        case ExportDataType.energy:
+          await _generateEnergyReport();
+          break;
+      }
+
+      // Removed the automatic success message here - it's handled in _saveAndShareCsv
+      // This allows the sharing dialog to open without interference
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to generate report: $e',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
+    }
   }
 
-  Future<void> _exportBayDetailedReport() async {
-    // Your existing implementation
+  Future<void> _generateOperationsReport() async {
+    final appState = Provider.of<AppStateData>(context, listen: false);
+    final selectedSubstation = appState.selectedSubstation;
+    if (selectedSubstation == null) {
+      throw Exception('No substation selected');
+    }
+
+    List<List<dynamic>> rows = [];
+    List<String> headers = [
+      'Timestamp',
+      'Bay Name',
+      'Bay Type',
+      'Voltage Level',
+      'Frequency',
+      'Recorded By',
+    ];
+
+    for (final field in _selectedReadingFields) {
+      headers.add(
+        '${field.name}${field.unit != null ? ' (${field.unit})' : ''}',
+      );
+    }
+
+    rows.add(headers);
+    await _addOperationsDataForSubstation(selectedSubstation, rows);
+    await _saveAndShareCsv(rows, 'operations_report');
   }
 
-  Future<void> _exportAllDataTypes() async {
-    // Your existing implementation
+  Future<void> _generateTrippingReport() async {
+    final appState = Provider.of<AppStateData>(context, listen: false);
+    final selectedSubstation = appState.selectedSubstation;
+    if (selectedSubstation == null) {
+      throw Exception('No substation selected');
+    }
+
+    List<List<dynamic>> rows = [];
+    rows.add([
+      'Bay Name',
+      'Event Type',
+      'Start Time',
+      'End Time',
+      'Status',
+      'Duration (Hours)',
+      'Flags/Cause',
+      'Phase Faults',
+      'Distance',
+      'Shutdown Type',
+      'Shutdown Person',
+      'Created By',
+      'Created At',
+      'Closed By',
+      'Closed At',
+    ]);
+
+    await _addTrippingDataForSubstation(selectedSubstation, rows);
+    await _saveAndShareCsv(rows, 'tripping_report');
   }
 
-  Future<void> _exportCombinedReport() async {
-    // Your existing implementation
+  Future<void> _generateEnergyReport() async {
+    final appState = Provider.of<AppStateData>(context, listen: false);
+    final selectedSubstation = appState.selectedSubstation;
+    if (selectedSubstation == null) {
+      throw Exception('No substation selected');
+    }
+
+    List<List<dynamic>> rows = [];
+    List<String> headers = [
+      'Timestamp',
+      'Bay Name',
+      'Bay Type',
+      'Voltage Level',
+      'Frequency',
+    ];
+    headers.addAll(_selectedEnergyFields);
+    rows.add(headers);
+
+    await _addEnergyDataForSubstation(selectedSubstation, rows);
+    await _saveAndShareCsv(rows, 'energy_report');
   }
 
-  void _showAllTrippingEvents() {
-    // Your existing implementation
+  Future<void> _addOperationsDataForSubstation(
+    Substation substation,
+    List<List<dynamic>> rows,
+  ) async {
+    try {
+      Query baysQuery = FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: substation.id);
+
+      if (_selectedBayTypes.isNotEmpty) {
+        baysQuery = baysQuery.where('bayType', whereIn: _selectedBayTypes);
+      }
+
+      if (_selectedVoltageLevels.isNotEmpty) {
+        baysQuery = baysQuery.where(
+          'voltageLevel',
+          whereIn: _selectedVoltageLevels,
+        );
+      }
+
+      final baysSnapshot = await baysQuery.get();
+      final bays = baysSnapshot.docs
+          .map((doc) => Bay.fromFirestore(doc))
+          .toList();
+
+      if (bays.isEmpty) return;
+
+      final bayIds = bays.map((bay) => bay.id).toList();
+      final baysMap = {for (var bay in bays) bay.id: bay};
+
+      Query logsheetQuery = FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('bayId', whereIn: bayIds);
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+      );
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isLessThanOrEqualTo: Timestamp.fromDate(widget.endDate),
+      );
+
+      final logsheetSnapshot = await logsheetQuery.get();
+      final logsheetEntries = logsheetSnapshot.docs
+          .map((doc) => LogsheetEntry.fromFirestore(doc))
+          .toList();
+
+      for (final entry in logsheetEntries) {
+        final bay = baysMap[entry.bayId];
+        if (bay == null) continue;
+
+        List<dynamic> row = [
+          DateFormat(
+            'yyyy-MM-dd HH:mm:ss',
+          ).format(entry.readingTimestamp.toDate()),
+          bay.name,
+          bay.bayType,
+          bay.voltageLevel,
+          entry.frequency,
+          entry.recordedBy,
+        ];
+
+        for (final field in _selectedReadingFields) {
+          final value = entry.values[field.name];
+          row.add(value?.toString() ?? '');
+        }
+
+        rows.add(row);
+      }
+    } catch (e) {
+      print('Error adding operations data for ${substation.name}: $e');
+    }
+  }
+
+  Future<void> _addTrippingDataForSubstation(
+    Substation substation,
+    List<List<dynamic>> rows,
+  ) async {
+    try {
+      Query trippingQuery = FirebaseFirestore.instance
+          .collection('trippingShutdownEntries')
+          .where('substationId', isEqualTo: substation.id);
+
+      if (_selectedEventTypes.isNotEmpty) {
+        trippingQuery = trippingQuery.where(
+          'eventType',
+          whereIn: _selectedEventTypes,
+        );
+      }
+
+      if (_selectedStatuses.isNotEmpty) {
+        trippingQuery = trippingQuery.where(
+          'status',
+          whereIn: _selectedStatuses,
+        );
+      }
+
+      trippingQuery = trippingQuery.where(
+        'startTime',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+      );
+
+      trippingQuery = trippingQuery.where(
+        'startTime',
+        isLessThanOrEqualTo: Timestamp.fromDate(widget.endDate),
+      );
+
+      final trippingSnapshot = await trippingQuery.get();
+      final trippingEntries = trippingSnapshot.docs
+          .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+          .toList();
+
+      for (final entry in trippingEntries) {
+        final duration = entry.endTime
+            ?.toDate()
+            .difference(entry.startTime.toDate())
+            .inHours;
+
+        rows.add([
+          entry.bayName,
+          entry.eventType,
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.startTime.toDate()),
+          entry.endTime != null
+              ? DateFormat(
+                  'yyyy-MM-dd HH:mm:ss',
+                ).format(entry.endTime!.toDate())
+              : '',
+          entry.status,
+          duration?.toString() ?? '',
+          entry.flagsCause,
+          entry.phaseFaults?.join(', ') ?? '',
+          entry.distance ?? '',
+          entry.shutdownType ?? '',
+          entry.shutdownPersonName ?? '',
+          entry.createdBy,
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.createdAt.toDate()),
+          entry.closedBy ?? '',
+          entry.closedAt != null
+              ? DateFormat(
+                  'yyyy-MM-dd HH:mm:ss',
+                ).format(entry.closedAt!.toDate())
+              : '',
+        ]);
+      }
+    } catch (e) {
+      print('Error adding tripping data for ${substation.name}: $e');
+    }
+  }
+
+  Future<void> _addEnergyDataForSubstation(
+    Substation substation,
+    List<List<dynamic>> rows,
+  ) async {
+    try {
+      Query baysQuery = FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: substation.id);
+
+      if (_selectedBayTypes.isNotEmpty) {
+        baysQuery = baysQuery.where('bayType', whereIn: _selectedBayTypes);
+      }
+
+      if (_selectedVoltageLevels.isNotEmpty) {
+        baysQuery = baysQuery.where(
+          'voltageLevel',
+          whereIn: _selectedVoltageLevels,
+        );
+      }
+
+      final baysSnapshot = await baysQuery.get();
+      final bays = baysSnapshot.docs
+          .map((doc) => Bay.fromFirestore(doc))
+          .toList();
+
+      if (bays.isEmpty) return;
+
+      final bayIds = bays.map((bay) => bay.id).toList();
+      final baysMap = {for (var bay in bays) bay.id: bay};
+
+      Query logsheetQuery = FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('bayId', whereIn: bayIds);
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+      );
+
+      logsheetQuery = logsheetQuery.where(
+        'readingTimestamp',
+        isLessThanOrEqualTo: Timestamp.fromDate(widget.endDate),
+      );
+
+      final logsheetSnapshot = await logsheetQuery.get();
+      final logsheetEntries = logsheetSnapshot.docs
+          .map((doc) => LogsheetEntry.fromFirestore(doc))
+          .toList();
+
+      for (final entry in logsheetEntries) {
+        final bay = baysMap[entry.bayId];
+        if (bay == null) continue;
+
+        List<dynamic> row = [
+          DateFormat(
+            'yyyy-MM-dd HH:mm:ss',
+          ).format(entry.readingTimestamp.toDate()),
+          bay.name,
+          bay.bayType,
+          bay.voltageLevel,
+          entry.frequency,
+        ];
+
+        for (final fieldName in _selectedEnergyFields) {
+          final value = entry.values[fieldName];
+          row.add(value?.toString() ?? '');
+        }
+
+        rows.add(row);
+      }
+    } catch (e) {
+      print('Error adding energy data for ${substation.name}: $e');
+    }
+  }
+
+  // ENHANCED: Better sharing flow with cleaner user feedback
+  Future<void> _saveAndShareCsv(
+    List<List<dynamic>> rows,
+    String fileName,
+  ) async {
+    if (rows.length <= 1) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'No data available to export.',
+        isError: true,
+      );
+      return;
+    }
+
+    try {
+      String csv = const ListToCsvConverter().convert(rows);
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final file = File('${directory.path}/${fileName}_$timestamp.csv');
+      await file.writeAsString(csv);
+
+      // This opens the sharing dialog automatically
+      await Share.shareXFiles([XFile(file.path)], text: 'Data Export');
+
+      // Success message only appears after sharing dialog is handled
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Report with ${rows.length - 1} records ready to share!',
+          isError: false,
+        );
+      }
+    } catch (e) {
+      print("Error saving CSV: $e");
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to generate CSV file: $e',
+          isError: true,
+        );
+      }
+    }
   }
 }

@@ -12,7 +12,7 @@ import 'package:collection/collection.dart';
 
 class TrippingShutdownEntryScreen extends StatefulWidget {
   final String substationId;
-  final String substationName; // Add this parameter
+  final String substationName;
   final AppUser currentUser;
   final TrippingShutdownEntry? entryToEdit;
   final bool isViewOnly;
@@ -20,7 +20,7 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
   const TrippingShutdownEntryScreen({
     super.key,
     required this.substationId,
-    required this.substationName, // Add this required parameter
+    required this.substationName,
     required this.currentUser,
     this.entryToEdit,
     this.isViewOnly = false,
@@ -44,23 +44,29 @@ class _TrippingShutdownEntryScreenState
   Bay? _selectedBay;
   List<Bay> _selectedMultiBays = [];
   Map<String, TextEditingController> _bayFlagsControllers = {};
+
   String? _selectedEventType;
   final List<String> _eventTypes = ['Tripping', 'Shutdown'];
+
   DateTime? _startDate;
   TimeOfDay? _startTime;
   DateTime? _endDate;
   TimeOfDay? _endTime;
+
   final TextEditingController _flagsCauseController = TextEditingController();
   final TextEditingController _reasonForNonFeederController =
       TextEditingController();
   final TextEditingController _distanceController = TextEditingController();
+
   bool _showReasonForNonFeeder = false;
   bool _showHasAutoReclose = false;
   bool _showPhaseFaults = false;
   bool _showDistance = false;
+
   bool _hasAutoReclose = false;
   List<String> _selectedPhaseFaults = [];
   final List<String> _phaseFaultOptions = ['Rph', 'Yph', 'Bph'];
+
   String? _selectedShutdownType;
   final List<String> _shutdownTypes = ['Transmission', 'Distribution'];
   final TextEditingController _shutdownPersonNameController =
@@ -85,7 +91,7 @@ class _TrippingShutdownEntryScreenState
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _initializeFCM(); // Initialize FCM for notifications
+    _ensureFCMTokenStored(); // UPDATED: Use the corrected FCM method
     _initializeForm();
   }
 
@@ -101,8 +107,8 @@ class _TrippingShutdownEntryScreenState
     super.dispose();
   }
 
-  // Initialize FCM for notifications
-  Future<void> _initializeFCM() async {
+  // UPDATED: Fixed FCM token storage to use userId as document ID
+  Future<void> _ensureFCMTokenStored() async {
     try {
       final messaging = FirebaseMessaging.instance;
 
@@ -128,25 +134,29 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // Save FCM token to Firestore
+  // UPDATED: Store FCM token by userId (not by token)
   Future<void> _saveFCMToken(String token) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      await FirebaseFirestore.instance.collection('fcmTokens').doc(token).set({
-        'userId': user.uid,
-        'token': token,
-        'active': true,
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastUsed': FieldValue.serverTimestamp(),
-        'deviceInfo': {
-          'platform': Theme.of(context).platform.toString(),
-          'userAgent': 'Flutter App',
-        },
-      });
+      // Store by userId as document ID (matching Cloud Function expectations)
+      await FirebaseFirestore.instance
+          .collection('fcmTokens')
+          .doc(user.uid) // FIXED: Use userId as document ID
+          .set({
+            'userId': user.uid,
+            'token': token,
+            'active': true,
+            'platform': 'flutter',
+            'createdAt': FieldValue.serverTimestamp(),
+            'lastUsed': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+      print('✅ FCM Token stored for user: ${user.uid}');
     } catch (e) {
-      print('Error saving FCM token: $e');
+      print('❌ Error saving FCM token: $e');
     }
   }
 
@@ -158,6 +168,7 @@ class _TrippingShutdownEntryScreenState
           .where('substationId', isEqualTo: widget.substationId)
           .orderBy('name')
           .get();
+
       _allBays = baysSnapshot.docs
           .map((doc) => Bay.fromFirestore(doc))
           .toList();
@@ -249,9 +260,11 @@ class _TrippingShutdownEntryScreenState
             _selectedBay != null &&
             _selectedBay!.bayType == 'Line';
       }
+
       if (!_showReasonForNonFeeder) _reasonForNonFeederController.clear();
       if (!_showPhaseFaults) _selectedPhaseFaults.clear();
       if (!_showDistance) _distanceController.clear();
+
       bool isShutdown = _selectedEventType == 'Shutdown';
       if (!isShutdown) {
         _selectedShutdownType = null;
@@ -280,6 +293,7 @@ class _TrippingShutdownEntryScreenState
         : (_endTime ?? TimeOfDay.now());
 
     final theme = Theme.of(context);
+
     final DateTime? pickedDate = await showDatePicker(
       context: context,
       initialDate: initialDate,
@@ -348,7 +362,7 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // Enhanced save method with notification functionality
+  // UPDATED: Enhanced save method with corrected notification flow
   Future<void> _saveEvent() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -361,6 +375,7 @@ class _TrippingShutdownEntryScreenState
       );
       return;
     }
+
     if (_endDate != null && _endDate!.isAfter(now)) {
       SnackBarUtils.showSnackBar(
         context,
@@ -369,6 +384,7 @@ class _TrippingShutdownEntryScreenState
       );
       return;
     }
+
     if (_isClosingEvent && (_endDate == null || _endTime == null)) {
       SnackBarUtils.showSnackBar(
         context,
@@ -377,6 +393,7 @@ class _TrippingShutdownEntryScreenState
       );
       return;
     }
+
     if (_selectedEventType == 'Shutdown') {
       if (_selectedShutdownType == null) {
         SnackBarUtils.showSnackBar(
@@ -386,6 +403,7 @@ class _TrippingShutdownEntryScreenState
         );
         return;
       }
+
       if (_shutdownPersonNameController.text.trim().isEmpty) {
         SnackBarUtils.showSnackBar(
           context,
@@ -394,6 +412,7 @@ class _TrippingShutdownEntryScreenState
         );
         return;
       }
+
       if (_shutdownPersonDesignationController.text.trim().isEmpty) {
         SnackBarUtils.showSnackBar(
           context,
@@ -403,8 +422,10 @@ class _TrippingShutdownEntryScreenState
         return;
       }
     }
+
     bool isFlagsCauseMandatoryGlobal =
         _selectedEventType == 'Shutdown' || _isClosingEvent;
+
     if (widget.entryToEdit == null && isFlagsCauseMandatoryGlobal) {
       for (var bay in _selectedMultiBays) {
         final controller = _bayFlagsControllers[bay.id];
@@ -418,6 +439,7 @@ class _TrippingShutdownEntryScreenState
         }
       }
     }
+
     if (_showPhaseFaults && _selectedPhaseFaults.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
@@ -426,6 +448,7 @@ class _TrippingShutdownEntryScreenState
       );
       return;
     }
+
     if (_showDistance && _distanceController.text.trim().isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
@@ -447,6 +470,7 @@ class _TrippingShutdownEntryScreenState
     try {
       final String currentUserId = widget.currentUser.uid;
       final Timestamp nowTimestamp = Timestamp.now();
+
       String status = _endDate != null && _endTime != null ? 'CLOSED' : 'OPEN';
       Timestamp? eventEndTime = _endDate != null && _endTime != null
           ? Timestamp.fromDate(
@@ -459,6 +483,7 @@ class _TrippingShutdownEntryScreenState
               ),
             )
           : null;
+
       String? closedBy = _endDate != null && _endTime != null
           ? currentUserId
           : null;
@@ -467,6 +492,7 @@ class _TrippingShutdownEntryScreenState
           : null;
 
       if (widget.entryToEdit == null) {
+        // Creating new event(s)
         if (_selectedMultiBays.isEmpty) {
           SnackBarUtils.showSnackBar(
             context,
@@ -480,6 +506,7 @@ class _TrippingShutdownEntryScreenState
         for (Bay bay in _selectedMultiBays) {
           final String baySpecificFlagsCause =
               _bayFlagsControllers[bay.id]?.text.trim() ?? '';
+
           final newEntry = TrippingShutdownEntry(
             substationId: widget.substationId,
             bayId: bay.id,
@@ -529,16 +556,17 @@ class _TrippingShutdownEntryScreenState
                 : null,
           );
 
-          // Save with notification data for Cloud Functions
+          // UPDATED: Save with substationName for Cloud Function
           await FirebaseFirestore.instance
               .collection('trippingShutdownEntries')
               .add(
                 newEntry.toFirestore()..addAll({
                   'substationName':
-                      widget.substationName, // Add for notifications
+                      widget.substationName, // Required for Cloud Function
                 }),
               );
         }
+
         if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
@@ -546,6 +574,7 @@ class _TrippingShutdownEntryScreenState
           );
         }
       } else {
+        // Editing existing event
         if (widget.currentUser.role == UserRole.substationUser &&
             !_isClosingEvent) {
           SnackBarUtils.showSnackBar(
@@ -559,7 +588,7 @@ class _TrippingShutdownEntryScreenState
 
         final modificationReason = await _showModificationReasonDialog();
         if (widget.currentUser.role == UserRole.subdivisionManager &&
-            modificationReason!.isEmpty) {
+            (modificationReason == null || modificationReason.isEmpty)) {
           SnackBarUtils.showSnackBar(
             context,
             'A reason is required to modify an existing event.',
@@ -624,7 +653,8 @@ class _TrippingShutdownEntryScreenState
             );
 
         if (widget.currentUser.role == UserRole.subdivisionManager &&
-            modificationReason!.isNotEmpty) {
+            modificationReason != null &&
+            modificationReason.isNotEmpty) {
           await FirebaseFirestore.instance
               .collection('eventModifications')
               .add({
@@ -648,23 +678,24 @@ class _TrippingShutdownEntryScreenState
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       print("Error saving event: $e");
-      if (mounted)
+      if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
           'Failed to save event: $e',
           isError: true,
         );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  // Show notification preview dialog
+  // UPDATED: Enhanced notification preview
   Future<void> _showNotificationPreview() async {
     final theme = Theme.of(context);
     final selectedBay = _selectedMultiBays.first;
 
-    return showDialog(
+    return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -719,17 +750,22 @@ class _TrippingShutdownEntryScreenState
               ),
               const SizedBox(height: 8),
               Text(
-                _selectedEventType == 'Tripping'
-                    ? '${selectedBay.name} at ${widget.substationName} has tripped'
-                    : '${selectedBay.name} at ${widget.substationName} is under shutdown',
+                '${selectedBay.name} at ${widget.substationName} - ${selectedBay.voltageLevel}',
                 style: const TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 12),
-              Text(
-                'This notification will be sent to eligible managers based on their preferences.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'This notification will be sent to subdivision managers, division managers, and higher officials in the hierarchy based on their notification preferences.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                  ),
                 ),
               ),
             ],
@@ -756,6 +792,7 @@ class _TrippingShutdownEntryScreenState
 
     final theme = Theme.of(context);
     TextEditingController reasonController = TextEditingController();
+
     return await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1019,7 +1056,7 @@ class _TrippingShutdownEntryScreenState
           ),
         ),
         actions: [
-          // Notification indicator for new events
+          // UPDATED: Enhanced notification indicator
           if (!isEditingExisting)
             Container(
               margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
@@ -1128,31 +1165,56 @@ class _TrippingShutdownEntryScreenState
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  // Notification Info Card (for new events)
+                  // UPDATED: Enhanced notification info card
                   if (!isEditingExisting)
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        gradient: LinearGradient(
+                          colors: [Colors.blue.shade50, Colors.green.shade50],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue.withOpacity(0.3)),
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            Icons.notifications_active,
-                            color: Colors.blue.shade700,
-                            size: 20,
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade100,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.notifications_active,
+                              color: Colors.blue.shade700,
+                              size: 20,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Text(
-                              'Creating this event will automatically send notifications to subdivision managers and higher officials based on their preferences.',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.blue.shade700,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Hierarchical Notifications Enabled',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Creating this event will automatically send notifications to subdivision, division, circle, zone managers, and admins based on their notification preferences.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue.shade600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -1202,6 +1264,7 @@ class _TrippingShutdownEntryScreenState
                                 _selectedBay = newValue.firstWhereOrNull(
                                   (bay) => true,
                                 );
+
                                 final Map<String, TextEditingController>
                                 newBayFlagsControllers = {};
                                 for (var bay in newValue) {
@@ -1209,6 +1272,7 @@ class _TrippingShutdownEntryScreenState
                                       _bayFlagsControllers[bay.id] ??
                                       TextEditingController();
                                 }
+
                                 _bayFlagsControllers.forEach((id, controller) {
                                   if (!newBayFlagsControllers.containsKey(id)) {
                                     controller.dispose();
@@ -1263,7 +1327,7 @@ class _TrippingShutdownEntryScreenState
                       ),
                       value: _selectedEventType,
                       items: _eventTypes.map((type) {
-                        return DropdownMenuItem(
+                        return DropdownMenuItem<String>(
                           value: type,
                           child: Row(
                             children: [
@@ -1493,7 +1557,7 @@ class _TrippingShutdownEntryScreenState
                             ),
                             value: _selectedShutdownType,
                             items: _shutdownTypes.map((type) {
-                              return DropdownMenuItem(
+                              return DropdownMenuItem<String>(
                                 value: type,
                                 child: Text(type),
                               );

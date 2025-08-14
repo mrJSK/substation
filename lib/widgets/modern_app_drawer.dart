@@ -8,6 +8,7 @@ import '../screens/admin/reading_template_management_screen.dart';
 import '../screens/community/blog_articles_list_screen.dart';
 import '../screens/notification_preferences_screen.dart';
 import '../screens/report_builder_wizard_screen.dart';
+import '../screens/report_template_designer_screen.dart'; // Added for new report build
 import '../screens/saved_sld_list_screen.dart';
 import '../models/hierarchy_models.dart';
 import '../screens/subdivision_dashboard_tabs/chart_configuration_screen.dart';
@@ -73,6 +74,18 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
   void dispose() {
     _animationController.dispose();
     super.dispose();
+  }
+
+  // Add this new method for New Report Build navigation
+  void _navigateToNewReportBuild(BuildContext context) {
+    Navigator.of(context).pop(); // Close the drawer
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) =>
+            ReportTemplateDesignerScreen(currentUserId: widget.user.uid),
+      ),
+    );
   }
 
   // Add this new method for Blog Articles navigation
@@ -473,8 +486,16 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => Navigator.pop(context),
             'color': Colors.blue,
           },
+          // {
+          //   'icon': Icons
+          //       .build_circle_rounded, // NEW: Added New Report Build menu item
+          //   'title': 'New Report Build',
+          //   'subtitle': 'Create custom report templates',
+          //   'onTap': () => _navigateToNewReportBuild(context),
+          //   'color': Colors.green,
+          // },
           {
-            'icon': Icons.article_rounded, // Add blog menu
+            'icon': Icons.article_rounded,
             'title': 'Blog & Articles',
             'subtitle': 'Knowledge sharing hub',
             'onTap': () => _navigateToBlogArticles(context),
@@ -498,8 +519,16 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => Navigator.pop(context),
             'color': Colors.blue,
           },
+          // {
+          //   'icon': Icons
+          //       .build_circle_rounded, // NEW: Added New Report Build menu item
+          //   'title': 'New Report Build',
+          //   'subtitle': 'Create custom report templates',
+          //   'onTap': () => _navigateToNewReportBuild(context),
+          //   'color': Colors.green,
+          // },
           {
-            'icon': Icons.article_rounded, // Add blog menu
+            'icon': Icons.article_rounded,
             'title': 'Blog & Articles',
             'subtitle': 'Knowledge sharing hub',
             'onTap': () => _navigateToBlogArticles(context),
@@ -512,13 +541,13 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => _navigateToProfessionalDirectory(context),
             'color': Colors.indigo,
           },
-          {
-            'icon': Icons.analytics_rounded,
-            'title': 'Custom Reports',
-            'subtitle': 'Build & export reports',
-            'onTap': () => _navigateToCustomReports(context),
-            'color': Colors.purple,
-          },
+          // {
+          //   'icon': Icons.analytics_rounded,
+          //   'title': 'Custom Reports',
+          //   'subtitle': 'Build & export reports',
+          //   'onTap': () => _navigateToCustomReports(context),
+          //   'color': Colors.purple,
+          // },
         ];
 
       case UserRole.circleManager:
@@ -530,8 +559,16 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => Navigator.pop(context),
             'color': Colors.blue,
           },
+          // {
+          //   'icon': Icons
+          //       .build_circle_rounded, // NEW: Added New Report Build menu item
+          //   'title': 'New Report Build',
+          //   'subtitle': 'Create custom report templates',
+          //   'onTap': () => _navigateToNewReportBuild(context),
+          //   'color': Colors.green,
+          // },
           {
-            'icon': Icons.article_rounded, // Add blog menu
+            'icon': Icons.article_rounded,
             'title': 'Blog & Articles',
             'subtitle': 'Knowledge sharing hub',
             'onTap': () => _navigateToBlogArticles(context),
@@ -544,13 +581,13 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => _navigateToProfessionalDirectory(context),
             'color': Colors.indigo,
           },
-          {
-            'icon': Icons.analytics_rounded,
-            'title': 'Custom Reports',
-            'subtitle': 'Build & export reports',
-            'onTap': () => _navigateToCustomReports(context),
-            'color': Colors.purple,
-          },
+          // {
+          //   'icon': Icons.analytics_rounded,
+          //   'title': 'Custom Reports',
+          //   'subtitle': 'Build & export reports',
+          //   'onTap': () => _navigateToCustomReports(context),
+          //   'color': Colors.purple,
+          // },
         ];
 
       case UserRole.divisionManager:
@@ -562,8 +599,16 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => Navigator.pop(context),
             'color': Colors.blue,
           },
+          // {
+          //   'icon': Icons
+          //       .build_circle_rounded, // NEW: Added New Report Build menu item
+          //   'title': 'New Report Build',
+          //   'subtitle': 'Create custom report templates',
+          //   'onTap': () => _navigateToNewReportBuild(context),
+          //   'color': Colors.green,
+          // },
           {
-            'icon': Icons.article_rounded, // Add blog menu
+            'icon': Icons.article_rounded,
             'title': 'Blog & Articles',
             'subtitle': 'Knowledge sharing hub',
             'onTap': () => _navigateToBlogArticles(context),
@@ -576,13 +621,13 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => _navigateToProfessionalDirectory(context),
             'color': Colors.indigo,
           },
-          {
-            'icon': Icons.analytics_rounded,
-            'title': 'Custom Reports',
-            'subtitle': 'Build & export reports',
-            'onTap': () => _navigateToCustomReports(context),
-            'color': Colors.purple,
-          },
+          // {
+          //   'icon': Icons.analytics_rounded,
+          //   'title': 'Custom Reports',
+          //   'subtitle': 'Build & export reports',
+          //   'onTap': () => _navigateToCustomReports(context),
+          //   'color': Colors.purple,
+          // },
         ];
 
       case UserRole.subdivisionManager:
@@ -594,8 +639,16 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => _navigateToNotificationPreferences(context),
             'color': Colors.amber,
           },
+          // {
+          //   'icon': Icons
+          //       .build_circle_rounded, // NEW: Added New Report Build menu item
+          //   'title': 'New Report Build',
+          //   'subtitle': 'Create custom report templates',
+          //   'onTap': () => _navigateToNewReportBuild(context),
+          //   'color': Colors.green,
+          // },
           {
-            'icon': Icons.article_rounded, // Add blog menu
+            'icon': Icons.article_rounded,
             'title': 'Blog & Articles',
             'subtitle': 'Knowledge sharing hub',
             'onTap': () => _navigateToBlogArticles(context),
@@ -608,40 +661,40 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => _navigateToProfessionalDirectory(context),
             'color': Colors.indigo,
           },
-          {
-            'icon': Icons.analytics_rounded,
-            'title': 'Custom Reports',
-            'subtitle': 'Build & export reports',
-            'onTap': () => _navigateToCustomReports(context),
-            'color': Colors.purple,
-          },
-          {
-            'icon': Icons.tune_rounded,
-            'title': 'Charts',
-            'subtitle': 'Configure charts',
-            'onTap': () {
-              Navigator.of(context).pop();
-              if (widget.user.assignedLevels != null &&
-                  widget.user.assignedLevels!.containsKey('subdivisionId')) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ReadingConfigurationScreen(
-                      currentUser: widget.user,
-                      subdivisionId:
-                          widget.user.assignedLevels!['subdivisionId']!,
-                    ),
-                  ),
-                );
-              } else {
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'No subdivision assigned to this user.',
-                  isError: true,
-                );
-              }
-            },
-            'color': Colors.teal,
-          },
+          // {
+          //   'icon': Icons.analytics_rounded,
+          //   'title': 'Custom Reports',
+          //   'subtitle': 'Build & export reports',
+          //   'onTap': () => _navigateToCustomReports(context),
+          //   'color': Colors.purple,
+          // },
+          // {
+          //   'icon': Icons.tune_rounded,
+          //   'title': 'Charts',
+          //   'subtitle': 'Configure charts',
+          //   'onTap': () {
+          //     Navigator.of(context).pop();
+          //     if (widget.user.assignedLevels != null &&
+          //         widget.user.assignedLevels!.containsKey('subdivisionId')) {
+          //       Navigator.of(context).push(
+          //         MaterialPageRoute(
+          //           builder: (context) => ReadingConfigurationScreen(
+          //             currentUser: widget.user,
+          //             subdivisionId:
+          //                 widget.user.assignedLevels!['subdivisionId']!,
+          //           ),
+          //         ),
+          //       );
+          //     } else {
+          //       SnackBarUtils.showSnackBar(
+          //         context,
+          //         'No subdivision assigned to this user.',
+          //         isError: true,
+          //       );
+          //     }
+          //   },
+          //   'color': Colors.teal,
+          // },
           {
             'icon': Icons.history_rounded,
             'title': 'Saved SLDs',
@@ -669,20 +722,28 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
             'onTap': () => Navigator.pop(context),
             'color': Colors.blue,
           },
+          // {
+          //   'icon': Icons
+          //       .build_circle_rounded, // NEW: Added New Report Build menu item
+          //   'title': 'New Report Build',
+          //   'subtitle': 'Create custom report templates',
+          //   'onTap': () => _navigateToNewReportBuild(context),
+          //   'color': Colors.green,
+          // },
           {
-            'icon': Icons.article_rounded, // Add blog menu
+            'icon': Icons.article_rounded,
             'title': 'Blog & Articles',
             'subtitle': 'Knowledge sharing hub',
             'onTap': () => _navigateToBlogArticles(context),
             'color': Colors.deepPurple,
           },
-          {
-            'icon': Icons.analytics_rounded,
-            'title': 'Custom Reports',
-            'subtitle': 'Build & export reports',
-            'onTap': () => _navigateToCustomReports(context),
-            'color': Colors.purple,
-          },
+          // {
+          //   'icon': Icons.analytics_rounded,
+          //   'title': 'Custom Reports',
+          //   'subtitle': 'Build & export reports',
+          //   'onTap': () => _navigateToCustomReports(context),
+          //   'color': Colors.purple,
+          // },
         ];
     }
   }

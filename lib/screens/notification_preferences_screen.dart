@@ -1,4 +1,5 @@
 // lib/screens/notification_preferences_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
@@ -19,19 +20,19 @@ class _NotificationPreferencesScreenState
     extends State<NotificationPreferencesScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
-
   NotificationPreferences? _preferences;
   List<String> _availableSubstations = [];
-  Map<String, String> _substationIdToName = {}; // Added this line
+  Map<String, String> _substationIdToName = {};
 
-  // Voltage level options
-  final List<int> _voltageOptions = [11, 33, 66, 110, 132, 220, 400, 765];
+  // UPDATED: Default mandatory voltages and optional voltages
+  final List<int> _defaultMandatoryVoltages = [132, 220, 400, 765];
+  final List<int> _optionalVoltages = [11, 33, 66, 110];
 
-  // Bay type options
+  // Bay type options - UPDATED to include Transformer and Line as specified
   final List<String> _bayTypeOptions = [
-    'Feeder',
     'Transformer',
     'Line',
+    'Feeder',
     'Busbar',
     'Capacitor Bank',
     'Reactor',
@@ -45,7 +46,6 @@ class _NotificationPreferencesScreenState
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-
     try {
       // Load existing preferences
       final preferencesDoc = await FirebaseFirestore.instance
@@ -56,17 +56,14 @@ class _NotificationPreferencesScreenState
       if (preferencesDoc.exists) {
         _preferences = NotificationPreferences.fromFirestore(preferencesDoc);
       } else {
-        // Create default preferences
-        _preferences = NotificationPreferences(
-          userId: widget.currentUser.uid,
-          subscribedVoltageThresholds: [],
-          subscribedBayTypes: ['all'],
-          subscribedSubstations: ['all'],
+        // Create default preferences with correct defaults
+        _preferences = NotificationPreferences.withDefaults(
+          widget.currentUser.uid,
         );
       }
 
-      // Load available substations with names
-      await _loadAvailableSubstations(); // Updated this line
+      // Load available substations with hierarchical filtering
+      await _loadAvailableSubstations();
     } catch (e) {
       if (mounted) {
         SnackBarUtils.showSnackBar(
@@ -82,51 +79,144 @@ class _NotificationPreferencesScreenState
     }
   }
 
-  // Added this method from the comprehensive code
+  // UPDATED: Complete hierarchical filtering for available substations
   Future<void> _loadAvailableSubstations() async {
     _availableSubstations.clear();
     _substationIdToName.clear();
 
     try {
-      Query substationsQuery = FirebaseFirestore.instance
+      Query<Map<String, dynamic>> substationsQuery = FirebaseFirestore.instance
           .collection('substations')
           .orderBy('name');
 
-      // Filter substations based on user role and assigned levels
+      // Apply hierarchy-based filtering based on user role
       if (widget.currentUser.assignedLevels != null) {
         final assignedLevels = widget.currentUser.assignedLevels!;
 
-        // For subdivision managers and substation users, filter by subdivision
-        if (widget.currentUser.role == UserRole.subdivisionManager ||
-            widget.currentUser.role == UserRole.substationUser) {
-          final subdivisionId = assignedLevels['subdivisionId'];
-          if (subdivisionId != null) {
-            substationsQuery = substationsQuery.where(
-              'subdivisionId',
-              isEqualTo: subdivisionId,
-            );
-          }
-        }
-        // For division managers, filter by division
-        else if (widget.currentUser.role == UserRole.divisionManager) {
-          final divisionId = assignedLevels['divisionId'];
-          if (divisionId != null) {
-            // Get all subdivisions in this division first
-            final subdivisionsSnapshot = await FirebaseFirestore.instance
-                .collection('subdivisions')
-                .where('divisionId', isEqualTo: divisionId)
-                .get();
-
-            final subdivisionIds = subdivisionsSnapshot.docs
-                .map((doc) => doc.id)
-                .toList();
-            if (subdivisionIds.isNotEmpty) {
+        switch (widget.currentUser.role) {
+          case UserRole.subdivisionManager:
+            // Subdivision managers: only their subdivision's substations
+            final subdivisionId = assignedLevels['subdivisionId'];
+            if (subdivisionId != null) {
               substationsQuery = substationsQuery.where(
                 'subdivisionId',
-                whereIn: subdivisionIds,
+                isEqualTo: subdivisionId,
               );
             }
-          }
+            break;
+
+          case UserRole.divisionManager:
+            // Division managers: all substations in all subdivisions under their division
+            final divisionId = assignedLevels['divisionId'];
+            if (divisionId != null) {
+              final subdivisionsSnapshot = await FirebaseFirestore.instance
+                  .collection('subdivisions')
+                  .where('divisionId', isEqualTo: divisionId)
+                  .get();
+
+              final subdivisionIds = subdivisionsSnapshot.docs
+                  .map((doc) => doc.id)
+                  .toList();
+
+              if (subdivisionIds.isNotEmpty) {
+                substationsQuery = substationsQuery.where(
+                  'subdivisionId',
+                  whereIn: subdivisionIds,
+                );
+              }
+            }
+            break;
+
+          case UserRole.circleManager:
+            // Circle managers: all substations in all subdivisions in all divisions under their circle
+            final circleId = assignedLevels['circleId'];
+            if (circleId != null) {
+              // Get all divisions in this circle
+              final divisionsSnapshot = await FirebaseFirestore.instance
+                  .collection('divisions')
+                  .where('circleId', isEqualTo: circleId)
+                  .get();
+
+              final divisionIds = divisionsSnapshot.docs
+                  .map((doc) => doc.id)
+                  .toList();
+
+              if (divisionIds.isNotEmpty) {
+                // Get all subdivisions in these divisions
+                final subdivisionsSnapshot = await FirebaseFirestore.instance
+                    .collection('subdivisions')
+                    .where('divisionId', whereIn: divisionIds)
+                    .get();
+
+                final subdivisionIds = subdivisionsSnapshot.docs
+                    .map((doc) => doc.id)
+                    .toList();
+
+                if (subdivisionIds.isNotEmpty) {
+                  substationsQuery = substationsQuery.where(
+                    'subdivisionId',
+                    whereIn: subdivisionIds,
+                  );
+                }
+              }
+            }
+            break;
+
+          case UserRole.zoneManager:
+            // Zone managers: all substations in their zone hierarchy
+            final zoneId = assignedLevels['zoneId'];
+            if (zoneId != null) {
+              // Get all circles in this zone
+              final circlesSnapshot = await FirebaseFirestore.instance
+                  .collection('circles')
+                  .where('zoneId', isEqualTo: zoneId)
+                  .get();
+
+              final circleIds = circlesSnapshot.docs
+                  .map((doc) => doc.id)
+                  .toList();
+
+              if (circleIds.isNotEmpty) {
+                // Get all divisions in these circles
+                final divisionsSnapshot = await FirebaseFirestore.instance
+                    .collection('divisions')
+                    .where('circleId', whereIn: circleIds)
+                    .get();
+
+                final divisionIds = divisionsSnapshot.docs
+                    .map((doc) => doc.id)
+                    .toList();
+
+                if (divisionIds.isNotEmpty) {
+                  // Get all subdivisions in these divisions
+                  final subdivisionsSnapshot = await FirebaseFirestore.instance
+                      .collection('subdivisions')
+                      .where('divisionId', whereIn: divisionIds)
+                      .get();
+
+                  final subdivisionIds = subdivisionsSnapshot.docs
+                      .map((doc) => doc.id)
+                      .toList();
+
+                  if (subdivisionIds.isNotEmpty) {
+                    substationsQuery = substationsQuery.where(
+                      'subdivisionId',
+                      whereIn: subdivisionIds,
+                    );
+                  }
+                }
+              }
+            }
+            break;
+
+          case UserRole.admin:
+            // Admins: all substations (no filter needed)
+            break;
+
+          default:
+            // For other roles (like substationUser), no substations available for subscription
+            // They only work at specific substations, they don't manage notifications for multiple substations
+            return;
         }
       }
 
@@ -134,15 +224,18 @@ class _NotificationPreferencesScreenState
 
       for (var doc in substationsSnapshot.docs) {
         final substationId = doc.id;
-        final substationData = doc.data() as Map<String, dynamic>;
+        final substationData = doc.data();
         final substationName = substationData['name'] as String?;
 
-        // Only include substations that have proper names
         if (substationName != null && substationName.trim().isNotEmpty) {
           _availableSubstations.add(substationId);
           _substationIdToName[substationId] = substationName.trim();
         }
       }
+
+      print(
+        'Found ${_availableSubstations.length} substations for ${widget.currentUser.role}',
+      );
     } catch (e) {
       print('Error loading substations: $e');
     }
@@ -152,7 +245,6 @@ class _NotificationPreferencesScreenState
     if (_preferences == null) return;
 
     setState(() => _isSaving = true);
-
     try {
       await FirebaseFirestore.instance
           .collection('notificationPreferences')
@@ -241,6 +333,13 @@ class _NotificationPreferencesScreenState
     );
   }
 
+  // UPDATED: Method to update preferences immutably
+  void _updatePreferences(NotificationPreferences newPreferences) {
+    setState(() {
+      _preferences = newPreferences;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -291,19 +390,11 @@ class _NotificationPreferencesScreenState
                   ),
                   value: _preferences?.enableTrippingNotifications ?? true,
                   onChanged: (value) {
-                    setState(() {
-                      _preferences = NotificationPreferences(
-                        userId: _preferences!.userId,
-                        subscribedVoltageThresholds:
-                            _preferences!.subscribedVoltageThresholds,
-                        subscribedBayTypes: _preferences!.subscribedBayTypes,
-                        subscribedSubstations:
-                            _preferences!.subscribedSubstations,
+                    _updatePreferences(
+                      _preferences!.copyWith(
                         enableTrippingNotifications: value,
-                        enableShutdownNotifications:
-                            _preferences!.enableShutdownNotifications,
-                      );
-                    });
+                      ),
+                    );
                   },
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -314,19 +405,11 @@ class _NotificationPreferencesScreenState
                   ),
                   value: _preferences?.enableShutdownNotifications ?? true,
                   onChanged: (value) {
-                    setState(() {
-                      _preferences = NotificationPreferences(
-                        userId: _preferences!.userId,
-                        subscribedVoltageThresholds:
-                            _preferences!.subscribedVoltageThresholds,
-                        subscribedBayTypes: _preferences!.subscribedBayTypes,
-                        subscribedSubstations:
-                            _preferences!.subscribedSubstations,
-                        enableTrippingNotifications:
-                            _preferences!.enableTrippingNotifications,
+                    _updatePreferences(
+                      _preferences!.copyWith(
                         enableShutdownNotifications: value,
-                      );
-                    });
+                      ),
+                    );
                   },
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -334,7 +417,7 @@ class _NotificationPreferencesScreenState
             ),
           ),
 
-          // Voltage Level Filters
+          // UPDATED: Voltage Level Filters with Default and Optional sections
           _buildPreferenceCard(
             title: 'Voltage Level Thresholds',
             icon: Icons.flash_on,
@@ -342,15 +425,20 @@ class _NotificationPreferencesScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Default Mandatory Voltages Section
                 const Text(
-                  'Receive notifications for events at or above these voltage levels:',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                  'Default voltages (recommended):',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green,
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: 8.0,
                   runSpacing: 8.0,
-                  children: _voltageOptions.map((voltage) {
+                  children: _defaultMandatoryVoltages.map((voltage) {
                     bool isSelected =
                         _preferences?.subscribedVoltageThresholds.contains(
                           voltage,
@@ -360,39 +448,105 @@ class _NotificationPreferencesScreenState
                       label: Text('${voltage}kV'),
                       selected: isSelected,
                       onSelected: (selected) {
-                        setState(() {
-                          final thresholds = List<int>.from(
-                            _preferences!.subscribedVoltageThresholds,
-                          );
-                          if (selected) {
-                            thresholds.add(voltage);
-                          } else {
-                            thresholds.remove(voltage);
-                          }
-                          _preferences = NotificationPreferences(
-                            userId: _preferences!.userId,
-                            subscribedVoltageThresholds: thresholds,
-                            subscribedBayTypes:
-                                _preferences!.subscribedBayTypes,
-                            subscribedSubstations:
-                                _preferences!.subscribedSubstations,
-                            enableTrippingNotifications:
-                                _preferences!.enableTrippingNotifications,
-                            enableShutdownNotifications:
-                                _preferences!.enableShutdownNotifications,
-                          );
-                        });
+                        final currentThresholds = List<int>.from(
+                          _preferences!.subscribedVoltageThresholds,
+                        );
+                        if (selected) {
+                          currentThresholds.add(voltage);
+                        } else {
+                          currentThresholds.remove(voltage);
+                        }
+                        _updatePreferences(
+                          _preferences!.copyWith(
+                            subscribedVoltageThresholds: currentThresholds,
+                          ),
+                        );
                       },
-                      selectedColor: theme.colorScheme.primary.withOpacity(0.2),
-                      checkmarkColor: theme.colorScheme.primary,
+                      selectedColor: Colors.green.withOpacity(0.2),
+                      checkmarkColor: Colors.green,
+                      backgroundColor: Colors.green.withOpacity(0.05),
                     );
                   }).toList(),
+                ),
+
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+
+                // Optional Voltages Section
+                const Text(
+                  'Optional voltages (you can enable these):',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  children: _optionalVoltages.map((voltage) {
+                    bool isEnabled =
+                        _preferences?.enabledOptionalVoltages.contains(
+                          voltage,
+                        ) ??
+                        false;
+                    return FilterChip(
+                      label: Text('${voltage}kV'),
+                      selected: isEnabled,
+                      onSelected: (selected) {
+                        if (selected) {
+                          _updatePreferences(
+                            _preferences!.enableOptionalVoltage(voltage),
+                          );
+                        } else {
+                          _updatePreferences(
+                            _preferences!.disableOptionalVoltage(voltage),
+                          );
+                        }
+                      },
+                      selectedColor: Colors.orange.withOpacity(0.2),
+                      checkmarkColor: Colors.orange,
+                      backgroundColor: Colors.orange.withOpacity(0.05),
+                    );
+                  }).toList(),
+                ),
+
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.blue.shade600,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Active: ${_preferences?.allActiveVoltageThresholds.map((v) => '${v}kV').join(', ') ?? 'None'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
 
-          // Bay Type Filters
+          // UPDATED: Bay Type Filters with Transformer and Line highlighted
           _buildPreferenceCard(
             title: 'Bay Types',
             icon: Icons.electrical_services,
@@ -406,25 +560,25 @@ class _NotificationPreferencesScreenState
                 ),
                 const SizedBox(height: 12),
                 CheckboxListTile(
-                  title: const Text('All Bay Types'),
+                  title: const Text(
+                    'All Bay Types',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Includes Transformer, Line, and all others',
+                  ),
                   value:
                       _preferences?.subscribedBayTypes.contains('all') ?? false,
                   onChanged: (value) {
-                    setState(() {
-                      final bayTypes = value == true ? ['all'] : <String>[];
-                      _preferences = NotificationPreferences(
-                        userId: _preferences!.userId,
-                        subscribedVoltageThresholds:
-                            _preferences!.subscribedVoltageThresholds,
-                        subscribedBayTypes: bayTypes,
-                        subscribedSubstations:
-                            _preferences!.subscribedSubstations,
-                        enableTrippingNotifications:
-                            _preferences!.enableTrippingNotifications,
-                        enableShutdownNotifications:
-                            _preferences!.enableShutdownNotifications,
+                    if (value == true) {
+                      _updatePreferences(
+                        _preferences!.copyWith(subscribedBayTypes: ['all']),
                       );
-                    });
+                    } else {
+                      _updatePreferences(
+                        _preferences!.copyWith(subscribedBayTypes: []),
+                      );
+                    }
                   },
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -435,32 +589,49 @@ class _NotificationPreferencesScreenState
                     bool isSelected =
                         _preferences?.subscribedBayTypes.contains(bayType) ??
                         false;
+                    bool isRecommended =
+                        bayType == 'Transformer' || bayType == 'Line';
+
                     return CheckboxListTile(
-                      title: Text(bayType),
+                      title: Row(
+                        children: [
+                          Text(bayType),
+                          if (isRecommended) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Recommended',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.green.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                       value: isSelected,
                       onChanged: (selected) {
-                        setState(() {
-                          final bayTypes = List<String>.from(
-                            _preferences!.subscribedBayTypes,
-                          );
-                          if (selected == true) {
-                            bayTypes.add(bayType);
-                          } else {
-                            bayTypes.remove(bayType);
-                          }
-                          _preferences = NotificationPreferences(
-                            userId: _preferences!.userId,
-                            subscribedVoltageThresholds:
-                                _preferences!.subscribedVoltageThresholds,
-                            subscribedBayTypes: bayTypes,
-                            subscribedSubstations:
-                                _preferences!.subscribedSubstations,
-                            enableTrippingNotifications:
-                                _preferences!.enableTrippingNotifications,
-                            enableShutdownNotifications:
-                                _preferences!.enableShutdownNotifications,
-                          );
-                        });
+                        final bayTypes = List<String>.from(
+                          _preferences!.subscribedBayTypes,
+                        );
+                        if (selected == true) {
+                          bayTypes.add(bayType);
+                        } else {
+                          bayTypes.remove(bayType);
+                        }
+                        _updatePreferences(
+                          _preferences!.copyWith(subscribedBayTypes: bayTypes),
+                        );
                       },
                       contentPadding: const EdgeInsets.only(left: 16),
                     );
@@ -470,7 +641,7 @@ class _NotificationPreferencesScreenState
             ),
           ),
 
-          // Substation Filters - Updated to show names and IDs
+          // UPDATED: Substation Filters with hierarchy information
           _buildPreferenceCard(
             title: 'Substations',
             icon: Icons.account_tree,
@@ -478,31 +649,32 @@ class _NotificationPreferencesScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Receive notifications from these substations:',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                Text(
+                  'Receive notifications from these substations (${widget.currentUser.role} level):',
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                 ),
                 const SizedBox(height: 12),
                 CheckboxListTile(
-                  title: const Text('All Substations'),
+                  title: const Text(
+                    'All Substations',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    'All substations under your ${widget.currentUser.role} authority',
+                  ),
                   value:
                       _preferences?.subscribedSubstations.contains('all') ??
                       false,
                   onChanged: (value) {
-                    setState(() {
-                      final substations = value == true ? ['all'] : <String>[];
-                      _preferences = NotificationPreferences(
-                        userId: _preferences!.userId,
-                        subscribedVoltageThresholds:
-                            _preferences!.subscribedVoltageThresholds,
-                        subscribedBayTypes: _preferences!.subscribedBayTypes,
-                        subscribedSubstations: substations,
-                        enableTrippingNotifications:
-                            _preferences!.enableTrippingNotifications,
-                        enableShutdownNotifications:
-                            _preferences!.enableShutdownNotifications,
+                    if (value == true) {
+                      _updatePreferences(
+                        _preferences!.subscribeToAllSubstations(),
                       );
-                    });
+                    } else {
+                      _updatePreferences(
+                        _preferences!.copyWith(subscribedSubstations: []),
+                      );
+                    }
                   },
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -518,21 +690,22 @@ class _NotificationPreferencesScreenState
                           final substationId = _availableSubstations[index];
                           final substationName =
                               _substationIdToName[substationId] ??
-                              'Unknown Substation'; // Updated this line
+                              'Unknown Substation';
                           bool isSelected =
                               _preferences?.subscribedSubstations.contains(
                                 substationId,
                               ) ??
                               false;
+
                           return CheckboxListTile(
                             title: Text(
-                              substationName, // Updated to show name
+                              substationName,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
                             subtitle: Text(
-                              'ID: ${substationId.length > 8 ? '${substationId.substring(0, 8)}...' : substationId}', // Added subtitle with ID
+                              'ID: ${substationId.length > 8 ? '${substationId.substring(0, 8)}...' : substationId}',
                               style: TextStyle(
                                 fontSize: 10,
                                 color: Colors.grey.shade500,
@@ -541,28 +714,15 @@ class _NotificationPreferencesScreenState
                             ),
                             value: isSelected,
                             onChanged: (selected) {
-                              setState(() {
-                                final substations = List<String>.from(
-                                  _preferences!.subscribedSubstations,
+                              if (selected == true) {
+                                _updatePreferences(
+                                  _preferences!.addSubstation(substationId),
                                 );
-                                if (selected == true) {
-                                  substations.add(substationId);
-                                } else {
-                                  substations.remove(substationId);
-                                }
-                                _preferences = NotificationPreferences(
-                                  userId: _preferences!.userId,
-                                  subscribedVoltageThresholds:
-                                      _preferences!.subscribedVoltageThresholds,
-                                  subscribedBayTypes:
-                                      _preferences!.subscribedBayTypes,
-                                  subscribedSubstations: substations,
-                                  enableTrippingNotifications:
-                                      _preferences!.enableTrippingNotifications,
-                                  enableShutdownNotifications:
-                                      _preferences!.enableShutdownNotifications,
+                              } else {
+                                _updatePreferences(
+                                  _preferences!.removeSubstation(substationId),
                                 );
-                              });
+                              }
                             },
                             contentPadding: const EdgeInsets.only(left: 16),
                           );
@@ -582,7 +742,7 @@ class _NotificationPreferencesScreenState
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'No substations available in your area',
+                              'No substations available in your ${widget.currentUser.role} area',
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontStyle: FontStyle.italic,
