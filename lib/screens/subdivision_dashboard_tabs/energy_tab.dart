@@ -418,7 +418,7 @@ class _EnergyTabState extends State<EnergyTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Energy Analysis Configuration',
+            'Daily Readings and Energy Summary',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,

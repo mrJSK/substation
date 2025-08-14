@@ -103,7 +103,7 @@ class _OperationsTabState extends State<OperationsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Operations Configuration',
+            'View Hourly Readings',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,

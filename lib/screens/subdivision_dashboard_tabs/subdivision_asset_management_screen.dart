@@ -109,7 +109,7 @@ class _SubdivisionAssetManagementScreenState
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Asset Management Configuration',
+                  'Manage Substation',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,

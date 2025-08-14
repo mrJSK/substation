@@ -213,21 +213,24 @@ class _TrippingTabState extends State<TrippingTab>
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      body: Column(
-        children: [
-          _buildConfigurationSection(theme),
-          const SizedBox(height: 16),
-          _buildSearchButton(theme),
-          const SizedBox(height: 16),
-          if (_hasActiveFilters()) _buildActiveFiltersChips(theme),
-          Expanded(child: _buildContent(theme)),
-        ],
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            _buildConfigurationSection(theme),
+            const SizedBox(height: 16),
+            _buildSearchButton(theme),
+            const SizedBox(height: 16),
+            if (_hasActiveFilters()) _buildActiveFiltersChips(theme),
+            _buildContent(theme),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildConfigurationSection(ThemeData theme) {
     return Container(
+      margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -261,7 +264,7 @@ class _TrippingTabState extends State<TrippingTab>
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Tripping & Shutdown Events Configuration',
+                  'Find Trippings & Shutdowns',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -559,7 +562,10 @@ class _TrippingTabState extends State<TrippingTab>
 
   Widget _buildContent(ThemeData theme) {
     if (_isLoading) {
-      return _buildLoadingState();
+      return Container(
+        padding: const EdgeInsets.all(40),
+        child: _buildLoadingState(),
+      );
     }
 
     if (widget.accessibleSubstations.isEmpty) {
@@ -574,7 +580,7 @@ class _TrippingTabState extends State<TrippingTab>
       children: [
         _buildResultsHeader(theme),
         const SizedBox(height: 16),
-        Expanded(child: _buildEventsList(theme)),
+        _buildEventsList(theme),
       ],
     );
   }
@@ -663,105 +669,98 @@ class _TrippingTabState extends State<TrippingTab>
   }
 
   Widget _buildNoSubstationsState(ThemeData theme) {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.all(32),
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+    return Container(
+      margin: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.location_off, size: 64, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          Text(
+            'No Substations Found',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
             ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.location_off, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              'No Substations Found',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'No accessible substations found. Please contact your administrator.',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'No accessible substations found. Please contact your administrator.',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildNoEventsState(ThemeData theme) {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.all(32),
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+    return Container(
+      margin: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.event_available, size: 64, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          Text(
+            'No Events Found',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
             ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.event_available, size: 64, color: Colors.grey.shade400),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _hasActiveFilters()
+                ? 'No tripping or shutdown events found with the applied filters.'
+                : 'No tripping or shutdown events recorded for the selected period.',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            textAlign: TextAlign.center,
+          ),
+          if (_hasActiveFilters()) ...[
             const SizedBox(height: 16),
-            Text(
-              'No Events Found',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
-              ),
+            TextButton(
+              onPressed: _clearAllFilters,
+              child: const Text('Clear Filters'),
             ),
-            const SizedBox(height: 8),
-            Text(
-              _hasActiveFilters()
-                  ? 'No tripping or shutdown events found with the applied filters.'
-                  : 'No tripping or shutdown events recorded for the selected period.',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
-            ),
-            if (_hasActiveFilters()) ...[
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: _clearAllFilters,
-                child: const Text('Clear Filters'),
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildEventsList(ThemeData theme) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: _sortedBayTypes.length,
-      itemBuilder: (context, index) {
-        final bayType = _sortedBayTypes[index];
+    return Column(
+      children: _sortedBayTypes.map((bayType) {
         final entries = _groupedEntriesByBayType[bayType]!;
         return _buildBayTypeGroup(theme, bayType, entries);
-      },
+      }).toList(),
     );
   }
 
@@ -771,7 +770,7 @@ class _TrippingTabState extends State<TrippingTab>
     List<TrippingShutdownEntry> entries,
   ) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
