@@ -31,7 +31,9 @@ class AppUser {
   final String uid;
   final String email; // From Google Sign-in (non-editable)
   final String name; // Mandatory
-  final String mobile; // Mandatory
+  final String
+  cugNumber; // UPDATED: Previously 'mobile', now CUG Number (Mandatory)
+  final String? personalNumber; // NEW: Personal mobile number (Optional)
   final Designation designation; // Mandatory
   final UserRole role;
   final bool approved;
@@ -64,13 +66,14 @@ class AppUser {
   final bool profileCompleted;
 
   // Assigned levels for access control
-  final Map<String, String>? assignedLevels;
+  final Map? assignedLevels;
 
   AppUser({
     required this.uid,
     required this.email,
     required this.name,
-    required this.mobile,
+    required this.cugNumber, // UPDATED: renamed from mobile
+    this.personalNumber, // NEW: personal number field
     required this.designation,
     this.role = UserRole.pending,
     this.approved = false,
@@ -100,13 +103,16 @@ class AppUser {
 
   // Factory constructor to create an AppUser from a Firestore DocumentSnapshot
   factory AppUser.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-
+    Map data = doc.data() as Map;
     return AppUser(
       uid: doc.id,
       email: data['email'] ?? '',
       name: data['name'] ?? '',
-      mobile: data['mobile'] ?? '',
+      cugNumber:
+          data['cugNumber'] ??
+          data['mobile'] ??
+          '', // BACKWARD COMPATIBILITY: Check both fields
+      personalNumber: data['personalNumber'], // NEW field
       designation: Designation.values.firstWhere(
         (e) =>
             e.toString().split('.').last ==
@@ -140,7 +146,7 @@ class AppUser {
       updatedAt: data['updatedAt'],
       profileCompleted: data['profileCompleted'] ?? false,
       assignedLevels: data['assignedLevels'] != null
-          ? Map<String, String>.from(data['assignedLevels'])
+          ? Map.from(data['assignedLevels'])
           : null,
     );
   }
@@ -150,7 +156,8 @@ class AppUser {
     return {
       'email': email,
       'name': name,
-      'mobile': mobile,
+      'cugNumber': cugNumber, // UPDATED: store as cugNumber
+      'personalNumber': personalNumber, // NEW field
       'designation': designation.toString().split('.').last,
       'role': role.toString().split('.').last,
       'approved': approved,
@@ -184,7 +191,8 @@ class AppUser {
     String? uid,
     String? email,
     String? name,
-    String? mobile,
+    String? cugNumber, // UPDATED: renamed from mobile
+    String? personalNumber, // NEW field
     Designation? designation,
     UserRole? role,
     bool? approved,
@@ -209,13 +217,14 @@ class AppUser {
     Timestamp? createdAt,
     Timestamp? updatedAt,
     bool? profileCompleted,
-    Map<String, String>? assignedLevels,
+    Map? assignedLevels,
   }) {
     return AppUser(
       uid: uid ?? this.uid,
       email: email ?? this.email,
       name: name ?? this.name,
-      mobile: mobile ?? this.mobile,
+      cugNumber: cugNumber ?? this.cugNumber, // UPDATED
+      personalNumber: personalNumber ?? this.personalNumber, // NEW
       designation: designation ?? this.designation,
       role: role ?? this.role,
       approved: approved ?? this.approved,
@@ -273,17 +282,20 @@ class AppUser {
     if (divisionName != null) hierarchy.add(divisionName!);
     if (subdivisionName != null) hierarchy.add(subdivisionName!);
     if (substationName != null) hierarchy.add(substationName!);
-
     return hierarchy.isEmpty ? 'Not assigned' : hierarchy.join(' > ');
   }
 
   bool get isMandatoryFieldsComplete {
     return name.isNotEmpty &&
-        mobile.isNotEmpty &&
+        cugNumber.isNotEmpty && // UPDATED: check cugNumber instead of mobile
         (subdivisionName != null ||
             substationName !=
                 null); // Must have at least subdivision level posting
   }
+
+  // **BACKWARD COMPATIBILITY GETTER**
+  @deprecated
+  String get mobile => cugNumber; // For existing code that still uses 'mobile'
 
   // **EXISTING GETTERS FOR BACKWARD COMPATIBILITY**
   String? get primaryHierarchyId {

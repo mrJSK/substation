@@ -62,7 +62,6 @@ class _AuthScreenState extends State<AuthScreen>
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-
       final UserCredential userCredential = await FirebaseAuth.instance
           .signInWithCredential(credential);
       final User? firebaseUser = userCredential.user;
@@ -95,12 +94,12 @@ class _AuthScreenState extends State<AuthScreen>
           name:
               firebaseUser.displayName ??
               '', // Get name from Google if available
-          mobile: '', // Will be filled in profile
+          cugNumber: '', // Will be filled in profile
           designation: Designation.technician, // Default designation
           role: UserRole.pending,
           approved: false,
           createdAt: Timestamp.now(),
-          profileCompleted: false,
+          profileCompleted: false, // Important: Set to false initially
         );
 
         await UserService.createUser(newUser);
@@ -129,10 +128,9 @@ class _AuthScreenState extends State<AuthScreen>
   Future<void> _handleExistingUser(AppUser existingUser) async {
     if (!context.mounted) return;
 
-    // Check if mandatory profile fields are complete
-    if (!existingUser.isMandatoryFieldsComplete ||
-        !existingUser.profileCompleted) {
-      _showSnackBar('Please complete your profile information.');
+    // ✅ FIXED: Check mandatory profile fields completion
+    if (!_isMandatoryProfileComplete(existingUser)) {
+      _showSnackBar('Please complete your mandatory profile fields.');
       _navigateToProfile(existingUser);
       return;
     }
@@ -145,6 +143,24 @@ class _AuthScreenState extends State<AuthScreen>
 
     // User is approved and profile is complete - navigate to appropriate dashboard
     await _navigateBasedOnRole(existingUser);
+  }
+
+  // ✅ NEW: Method to check if mandatory profile fields are complete
+  bool _isMandatoryProfileComplete(AppUser user) {
+    // Check all mandatory fields
+    final bool hasName = user.name.trim().isNotEmpty;
+    final bool hasMobile =
+        user.mobile.trim().isNotEmpty && user.mobile.trim().length == 10;
+    final bool hasDesignation = user.designation != null;
+
+    print('Profile completion check:');
+    print('  - Has name: $hasName (${user.name})');
+    print('  - Has mobile: $hasMobile (${user.mobile})');
+    print('  - Has designation: $hasDesignation (${user.designation})');
+    print('  - Profile completed flag: ${user.profileCompleted}');
+
+    // All mandatory fields must be present AND profileCompleted flag must be true
+    return hasName && hasMobile && hasDesignation && user.profileCompleted;
   }
 
   void _navigateToProfile(AppUser user) {
@@ -165,54 +181,30 @@ class _AuthScreenState extends State<AuthScreen>
       case UserRole.superAdmin:
         destinationScreen = AdminDashboardScreen(adminUser: appUser);
         break;
-
       case UserRole.substationUser:
         destinationScreen = SubstationUserDashboardScreen(currentUser: appUser);
         break;
-
       case UserRole.subdivisionManager:
         destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
         break;
-
       case UserRole.divisionManager:
-        // Add your division dashboard screen here
-        destinationScreen = SubdivisionDashboardScreen(
-          currentUser: appUser,
-        ); // Temporary fallback
+        destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
         break;
-
       case UserRole.circleManager:
-        // Add your circle dashboard screen here
-        destinationScreen = SubdivisionDashboardScreen(
-          currentUser: appUser,
-        ); // Temporary fallback
+        destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
         break;
-
       case UserRole.zoneManager:
-        // Add your zone dashboard screen here
-        destinationScreen = SubdivisionDashboardScreen(
-          currentUser: appUser,
-        ); // Temporary fallback
+        destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
         break;
-
       case UserRole.stateManager:
-        // Add your state dashboard screen here
-        destinationScreen = SubdivisionDashboardScreen(
-          currentUser: appUser,
-        ); // Temporary fallback
+        destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
         break;
-
       case UserRole.companyManager:
-        // Add your company dashboard screen here
-        destinationScreen = SubdivisionDashboardScreen(
-          currentUser: appUser,
-        ); // Temporary fallback
+        destinationScreen = SubdivisionDashboardScreen(currentUser: appUser);
         break;
-
       case UserRole.pending:
         _showSnackBar('Your account is pending admin approval.', isError: true);
         return;
-
       default:
         _showSnackBar('Unsupported user role: ${appUser.role}', isError: true);
         return;
@@ -287,8 +279,7 @@ class _AuthScreenState extends State<AuthScreen>
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
-                        Icons
-                            .electrical_services, // Changed to electrical services icon
+                        Icons.electrical_services,
                         size: 40,
                         color: colorScheme.primary,
                       ),
@@ -362,9 +353,7 @@ class _AuthScreenState extends State<AuthScreen>
                     if (_isLoading) ...[
                       const SizedBox(height: 16),
                       CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          colorScheme.primary,
-                        ),
+                        valueColor: AlwaysStoppedAnimation(colorScheme.primary),
                         strokeWidth: 3,
                       ),
                     ],

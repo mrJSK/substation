@@ -23,7 +23,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   // Controllers for form fields
   late TextEditingController _nameController;
-  late TextEditingController _mobileController;
+  late TextEditingController
+  _cugNumberController; // UPDATED: renamed from mobileController
+  late TextEditingController
+  _personalNumberController; // NEW: personal number controller
   late TextEditingController _sapIdController;
   late TextEditingController _highestEducationController;
   late TextEditingController _collegeController;
@@ -40,7 +43,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   void _initializeControllers() {
     _nameController = TextEditingController(text: widget.currentUser.name);
-    _mobileController = TextEditingController(text: widget.currentUser.mobile);
+    _cugNumberController = TextEditingController(
+      text: widget.currentUser.cugNumber,
+    ); // UPDATED
+    _personalNumberController = TextEditingController(
+      text: widget.currentUser.personalNumber ?? '',
+    ); // NEW
     _sapIdController = TextEditingController(
       text: widget.currentUser.sapId ?? '',
     );
@@ -60,7 +68,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _mobileController.dispose();
+    _cugNumberController.dispose(); // UPDATED
+    _personalNumberController.dispose(); // NEW
     _sapIdController.dispose();
     _highestEducationController.dispose();
     _collegeController.dispose();
@@ -115,25 +124,16 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   children: [
                     // Profile Header
                     _buildProfileHeader(),
-
                     const SizedBox(height: 24),
-
                     // Basic Information
                     _buildBasicInformationCard(),
-
                     const SizedBox(height: 16),
-
-                    // Current Posting - UPDATED: Auto-populated based on hierarchy
+                    // Current Posting
                     _buildCurrentPostingCard(),
-
                     const SizedBox(height: 16),
-
                     // Optional Information
                     _buildOptionalInformationCard(),
-
-                    const SizedBox(
-                      height: 80,
-                    ), // Space for floating action button
+                    const SizedBox(height: 80),
                   ],
                 ),
               ),
@@ -257,35 +257,84 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
         const SizedBox(height: 16),
 
-        // Mobile (Mandatory)
-        // Mobile (Mandatory) - ENHANCED: With input formatting and length restriction
+        // CUG Number (Mandatory) - UPDATED: renamed and updated label
         TextFormField(
-          controller: _mobileController,
+          controller: _cugNumberController,
           enabled: _isEditing,
           keyboardType: TextInputType.phone,
-          maxLength: 10, // Restrict input to 10 characters
+          maxLength: 10,
           inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly, // Only allow digits
-            LengthLimitingTextInputFormatter(10), // Limit to 10 digits
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
           ],
           validator: (value) {
             if (value?.trim().isEmpty == true) {
-              return 'Mobile number is required';
+              return 'CUG number is required';
             }
 
             if (value!.length != 10) {
-              return 'Mobile number must be exactly 10 digits';
+              return 'CUG number must be exactly 10 digits';
             }
 
-            // Optional: Check if it starts with valid digits (6-9)
             if (!RegExp(r'^[6-9][0-9]{9}$').hasMatch(value)) {
-              return 'Enter a valid mobile number';
+              return 'Enter a valid CUG number';
             }
 
             return null;
           },
           decoration: InputDecoration(
-            labelText: 'Mobile Number *',
+            labelText: 'CUG Number *',
+            prefixIcon: Icon(
+              Icons.business_center_outlined,
+              color: Colors.grey[600],
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Theme.of(context).primaryColor),
+            ),
+            disabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey[200]!),
+            ),
+            filled: !_isEditing,
+            fillColor: _isEditing ? null : Colors.grey[50],
+            counterText: '',
+            helperText: _isEditing ? 'Enter 10-digit CUG number' : null,
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Personal Number (Optional) - NEW FIELD
+        TextFormField(
+          controller: _personalNumberController,
+          enabled: _isEditing,
+          keyboardType: TextInputType.phone,
+          maxLength: 10,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
+          ],
+          validator: (value) {
+            // Optional field validation - only validate if not empty
+            if (value != null && value.isNotEmpty) {
+              if (value.length != 10) {
+                return 'Personal number must be exactly 10 digits';
+              }
+
+              if (!RegExp(r'^[6-9][0-9]{9}$').hasMatch(value)) {
+                return 'Enter a valid personal number';
+              }
+            }
+            return null;
+          },
+          decoration: InputDecoration(
+            labelText: 'Personal Number (Optional)',
             prefixIcon: Icon(Icons.phone_outlined, color: Colors.grey[600]),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             enabledBorder: OutlineInputBorder(
@@ -302,23 +351,24 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             ),
             filled: !_isEditing,
             fillColor: _isEditing ? null : Colors.grey[50],
-            counterText: '', // Hide the character counter
-            helperText: _isEditing ? 'Enter 10-digit mobile number' : null,
+            counterText: '',
+            helperText: _isEditing
+                ? 'Enter 10-digit personal mobile number'
+                : null,
           ),
         ),
 
         const SizedBox(height: 16),
 
-        // Designation (Mandatory) - UPDATED: Only editable by admins
+        // Designation (Mandatory)
         _buildDesignationField(),
       ],
     );
   }
 
-  // UPDATED: New method for designation field with role-based editing
+  // Rest of the methods remain the same...
   Widget _buildDesignationField() {
     if (widget.currentUser.role == UserRole.admin) {
-      // Admin can edit designations
       return _buildDropdownField<Designation>(
         label: 'Designation *',
         value: _selectedDesignation,
@@ -344,7 +394,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             : null,
       );
     } else {
-      // Non-admin users see read-only designation
       return _buildInfoField(
         label: 'Designation',
         value: widget.currentUser.designationDisplayName,
@@ -354,13 +403,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  // UPDATED: Completely new current posting card with auto-populated hierarchy
   Widget _buildCurrentPostingCard() {
     return _buildSectionCard(
       title: 'Current Posting',
       icon: Icons.location_city,
       children: [
-        // Display current hierarchy path (read-only unless admin)
         FutureBuilder<Map<String, String>>(
           future: _resolveHierarchyNames(),
           builder: (context, snapshot) {
@@ -402,7 +449,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
         const SizedBox(height: 16),
 
-        // Admin can edit user postings
         if (widget.currentUser.role == UserRole.admin) ...[
           Container(
             padding: const EdgeInsets.all(12),
@@ -453,7 +499,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
         const SizedBox(height: 16),
 
-        // Role information (read-only)
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -506,11 +551,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  // UPDATED: Build the actual hierarchy display
   Widget _buildHierarchyDisplay(Map<String, String> hierarchy) {
     final theme = Theme.of(context);
 
-    // Define the hierarchy order and their icons
     final hierarchyLevels = [
       {'key': 'company', 'label': 'Company', 'icon': Icons.business},
       {'key': 'state', 'label': 'State', 'icon': Icons.map},
@@ -618,13 +661,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  // UPDATED: Method to resolve hierarchy names from IDs
   Future<Map<String, String>> _resolveHierarchyNames() async {
     final hierarchy = <String, String>{};
 
     try {
-      // Get hierarchy info from user data
-      // Note: Adjust these field names based on your actual user model
       if (widget.currentUser.companyId != null) {
         final companyDoc = await FirebaseFirestore.instance
             .collection('companys')
@@ -932,7 +972,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  // UPDATED: Simplified save profile method
+  // UPDATED: Save profile method with both fields
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -945,7 +985,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     try {
       final updatedUser = widget.currentUser.copyWith(
         name: _nameController.text.trim(),
-        mobile: _mobileController.text.trim(),
+        cugNumber: _cugNumberController.text.trim(), // UPDATED: save CUG number
+        personalNumber:
+            _personalNumberController.text
+                .trim()
+                .isEmpty // NEW: save personal number
+            ? null
+            : _personalNumberController.text.trim(),
         designation: _selectedDesignation,
         sapId: _sapIdController.text.trim().isEmpty
             ? null
@@ -971,12 +1017,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       });
 
       _showSuccessSnackBar('Profile updated successfully');
+
+      // Navigate back to auth flow to re-evaluate user status
+      Future.delayed(const Duration(seconds: 1), () {
+        _navigateAfterProfileComplete();
+      });
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
       _showErrorSnackBar('Failed to update profile: $e');
     }
+  }
+
+  void _navigateAfterProfileComplete() {
+    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
   }
 
   void _showSuccessSnackBar(String message) {

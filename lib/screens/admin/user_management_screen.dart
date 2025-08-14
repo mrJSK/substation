@@ -319,7 +319,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     user.assignedLevels!.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
-                    _getAssignmentText(user.assignedLevels!),
+                    _getAssignmentText(
+                      Map<String, dynamic>.from(user.assignedLevels!),
+                    ),
                     style: TextStyle(
                       fontSize: 11,
                       color: theme.colorScheme.onSurface.withOpacity(0.6),
@@ -329,6 +331,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               ],
             ),
           ),
+
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
