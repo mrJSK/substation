@@ -39,7 +39,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     TabData('Operations', Icons.settings, Colors.blue),
     TabData('Energy', Icons.electrical_services, Colors.green),
     TabData('Tripping', Icons.warning, Colors.orange),
-    TabData('Reports', Icons.assessment, Colors.purple),
+    // TabData('Reports', Icons.assessment, Colors.purple),
     TabData('Asset Management', Icons.business, Colors.indigo),
   ];
 
@@ -320,21 +320,17 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       ),
       EnergyTab(
         currentUser: widget.currentUser,
-        initialSelectedSubstationId: null, // Remove fixed selection
-        substationId: '', // Will be set in tab
-        startDate: DateTime.now().subtract(const Duration(days: 7)),
-        endDate: DateTime.now(),
+        accessibleSubstations: accessibleSubstations,
       ),
+
       TrippingTab(
         currentUser: widget.currentUser,
-        substationId: '', // Will be set in tab
-        startDate: DateTime.now().subtract(const Duration(days: 7)),
-        endDate: DateTime.now(),
+        accessibleSubstations: accessibleSubstations,
       ),
-      GenerateCustomReportScreen(
-        startDate: DateTime.now().subtract(const Duration(days: 7)),
-        endDate: DateTime.now(),
-      ),
+      // GenerateCustomReportScreen(
+      //   startDate: DateTime.now().subtract(const Duration(days: 7)),
+      //   endDate: DateTime.now(),
+      // ),
     ];
 
     if (widget.currentUser.role == UserRole.subdivisionManager) {

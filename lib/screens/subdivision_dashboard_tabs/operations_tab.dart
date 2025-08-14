@@ -33,7 +33,10 @@ class _OperationsTabState extends State<OperationsTab> {
   List<String> _selectedBayIds = [];
   DateTime? _startDate;
   DateTime? _endDate;
-  List<Bay> _bays = [];
+
+  // Cache for bays by substation ID to avoid refetching
+  Map<String, List<Bay>> _bayCache = {};
+  Map<String, List<String>> _selectedBayCache = {};
   bool _isBaysLoading = false;
 
   bool _isViewerLoading = false;
@@ -54,6 +57,11 @@ class _OperationsTabState extends State<OperationsTab> {
       _selectedSubstation = widget.accessibleSubstations.first;
       _fetchBaysForSelectedSubstation();
     }
+  }
+
+  List<Bay> get _bays {
+    if (_selectedSubstation == null) return [];
+    return _bayCache[_selectedSubstation!.id] ?? [];
   }
 
   @override
@@ -154,12 +162,24 @@ class _OperationsTabState extends State<OperationsTab> {
                 );
               }).toList(),
               onChanged: (Substation? newValue) {
-                setState(() {
-                  _selectedSubstation = newValue;
-                  _selectedBayIds.clear();
-                  _clearViewerData();
-                });
-                if (newValue != null) {
+                if (newValue != null &&
+                    newValue.id != _selectedSubstation?.id) {
+                  // Save current selection before changing
+                  if (_selectedSubstation != null) {
+                    _selectedBayCache[_selectedSubstation!.id] = List.from(
+                      _selectedBayIds,
+                    );
+                  }
+
+                  setState(() {
+                    _selectedSubstation = newValue;
+                    // Restore previous selection for this substation if available
+                    _selectedBayIds = List.from(
+                      _selectedBayCache[newValue.id] ?? [],
+                    );
+                    _clearViewerData();
+                  });
+
                   _fetchBaysForSelectedSubstation();
                 }
               },
@@ -300,7 +320,9 @@ class _OperationsTabState extends State<OperationsTab> {
               child: Text(
                 _selectedSubstation == null
                     ? 'Please select a substation'
-                    : 'Loading bays for ${_selectedSubstation!.name}...',
+                    : _isBaysLoading
+                    ? 'Loading bays for ${_selectedSubstation!.name}...'
+                    : 'No bays available for ${_selectedSubstation!.name}',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
               ),
             ),
@@ -366,6 +388,11 @@ class _OperationsTabState extends State<OperationsTab> {
                   onDeleted: () {
                     setState(() {
                       _selectedBayIds.remove(bayId);
+                      if (_selectedSubstation != null) {
+                        _selectedBayCache[_selectedSubstation!.id] = List.from(
+                          _selectedBayIds,
+                        );
+                      }
                       _clearViewerData();
                     });
                   },
@@ -935,6 +962,7 @@ class _OperationsTabState extends State<OperationsTab> {
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final theme = Theme.of(context);
             return Dialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -947,9 +975,7 @@ class _OperationsTabState extends State<OperationsTab> {
                     Container(
                       padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
                       decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withOpacity(0.1),
+                        color: theme.colorScheme.primary.withOpacity(0.1),
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(12),
                           topRight: Radius.circular(12),
@@ -963,7 +989,7 @@ class _OperationsTabState extends State<OperationsTab> {
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.primary,
+                                color: theme.colorScheme.primary,
                               ),
                             ),
                           ),
@@ -975,9 +1001,9 @@ class _OperationsTabState extends State<OperationsTab> {
                               child: Icon(
                                 Icons.close,
                                 size: 20,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.7),
+                                color: theme.colorScheme.onSurface.withOpacity(
+                                  0.7,
+                                ),
                               ),
                             ),
                           ),
@@ -1025,9 +1051,7 @@ class _OperationsTabState extends State<OperationsTab> {
                                   style: const TextStyle(fontSize: 13),
                                 ),
                                 style: TextButton.styleFrom(
-                                  foregroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.primary,
+                                  foregroundColor: theme.colorScheme.primary,
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1061,20 +1085,41 @@ class _OperationsTabState extends State<OperationsTab> {
                         itemBuilder: (context, index) {
                           final bay = _bays[index];
                           final isSelected = tempSelected.contains(bay.id);
-                          return Card(
+                          return Container(
                             margin: const EdgeInsets.only(bottom: 8),
-                            elevation: 1,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? theme.colorScheme.primary.withOpacity(0.3)
+                                    : Colors.grey.shade300,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
                             child: CheckboxListTile(
                               title: Text(
                                 '${bay.name} (${bay.bayType})',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? theme.colorScheme.primary
+                                      : null,
                                 ),
                               ),
                               subtitle: Text(
                                 'Voltage: ${bay.voltageLevel}',
-                                style: const TextStyle(fontSize: 12),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isSelected
+                                      ? theme.colorScheme.primary.withOpacity(
+                                          0.7,
+                                        )
+                                      : Colors.grey.shade600,
+                                ),
                               ),
                               value: isSelected,
                               onChanged: (bool? value) {
@@ -1087,6 +1132,7 @@ class _OperationsTabState extends State<OperationsTab> {
                                 });
                               },
                               controlAffinity: ListTileControlAffinity.leading,
+                              activeColor: theme.colorScheme.primary,
                             ),
                           );
                         },
@@ -1110,12 +1156,8 @@ class _OperationsTabState extends State<OperationsTab> {
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onPrimary,
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: theme.colorScheme.onPrimary,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 20,
                                 vertical: 12,
@@ -1137,6 +1179,11 @@ class _OperationsTabState extends State<OperationsTab> {
     if (result != null) {
       setState(() {
         _selectedBayIds = result;
+        if (_selectedSubstation != null) {
+          _selectedBayCache[_selectedSubstation!.id] = List.from(
+            _selectedBayIds,
+          );
+        }
         _clearViewerData();
       });
     }
@@ -1182,7 +1229,6 @@ class _OperationsTabState extends State<OperationsTab> {
       var excel = Excel.createExcel();
       excel.delete('Sheet1');
 
-      // Group data by bay type
       Map<String, List<LogsheetEntry>> dataByBayType = {};
 
       for (var entry in _rawLogsheetEntriesForViewer) {
@@ -1197,25 +1243,21 @@ class _OperationsTabState extends State<OperationsTab> {
       dataByBayType.forEach((bayType, entries) {
         var sheet = excel[bayType];
 
-        // Collect all unique parameters across all entries for this bay type
         Set<String> allParameters = {};
         for (var entry in entries) {
           allParameters.addAll(entry.values.keys);
         }
 
-        // Sort parameters for consistent column order
         List<String> sortedParameters = allParameters.toList()..sort();
 
-        // Create headers: fixed columns + dynamic parameter columns
         List<String> headers = [
           'Date & Time',
           'Bay Name',
           'Bay Type',
           'Voltage Level',
-          ...sortedParameters, // Add all parameters as columns
+          ...sortedParameters,
         ];
 
-        // Set headers
         for (int i = 0; i < headers.length; i++) {
           var cell = sheet.cell(
             CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
@@ -1229,7 +1271,6 @@ class _OperationsTabState extends State<OperationsTab> {
 
         int rowIndex = 1;
 
-        // Sort entries by bay name and then by timestamp for better organization
         entries.sort((a, b) {
           final bayA = _viewerBaysMap[a.bayId]?.name ?? '';
           final bayB = _viewerBaysMap[b.bayId]?.name ?? '';
@@ -1239,12 +1280,10 @@ class _OperationsTabState extends State<OperationsTab> {
           return a.readingTimestamp.compareTo(b.readingTimestamp);
         });
 
-        // Add data rows
         for (var entry in entries) {
           final bay = _viewerBaysMap[entry.bayId];
           final dateTime = entry.readingTimestamp.toDate().toLocal();
 
-          // Create row data
           List<dynamic> rowData = [
             DateFormat('yyyy-MM-dd HH:mm:ss').format(dateTime),
             bay?.name ?? 'Unknown',
@@ -1252,7 +1291,6 @@ class _OperationsTabState extends State<OperationsTab> {
             bay?.voltageLevel ?? 'Unknown',
           ];
 
-          // Add parameter values in the same order as headers
           for (String parameter in sortedParameters) {
             dynamic value = entry.values[parameter];
             String cellValue = '';
@@ -1272,23 +1310,19 @@ class _OperationsTabState extends State<OperationsTab> {
             rowData.add(cellValue);
           }
 
-          // Write row data to Excel
           for (int i = 0; i < rowData.length; i++) {
             var cell = sheet.cell(
               CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
             );
             cell.value = TextCellValue(rowData[i].toString());
 
-            // Alternate row colors for better readability
             if (rowIndex % 2 == 0) {
               cell.cellStyle = CellStyle(
                 backgroundColorHex: ExcelColor.fromHexString('#F5F5F5'),
               );
             }
 
-            // Highlight bay name changes for better visual separation
             if (i == 1 && rowIndex > 1) {
-              // Bay Name column
               var prevBayCell = sheet.cell(
                 CellIndex.indexByColumnRow(
                   columnIndex: 1,
@@ -1306,18 +1340,15 @@ class _OperationsTabState extends State<OperationsTab> {
           rowIndex++;
         }
 
-        // Auto-fit columns with appropriate widths
-        sheet.setColumnWidth(0, 18); // Date & Time
-        sheet.setColumnWidth(1, 15); // Bay Name
-        sheet.setColumnWidth(2, 12); // Bay Type
-        sheet.setColumnWidth(3, 12); // Voltage Level
+        sheet.setColumnWidth(0, 18);
+        sheet.setColumnWidth(1, 15);
+        sheet.setColumnWidth(2, 12);
+        sheet.setColumnWidth(3, 12);
 
-        // Set width for parameter columns
         for (int i = 4; i < headers.length; i++) {
           sheet.setColumnWidth(i, 12);
         }
 
-        // Add summary information at the top
         sheet.insertRowIterables([
           TextCellValue('Bay Type: $bayType'),
           TextCellValue(''),
@@ -1328,7 +1359,6 @@ class _OperationsTabState extends State<OperationsTab> {
           ),
         ], 0);
 
-        // Style the summary row
         for (int i = 0; i < 5; i++) {
           var cell = sheet.cell(
             CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
@@ -1338,9 +1368,6 @@ class _OperationsTabState extends State<OperationsTab> {
             backgroundColorHex: ExcelColor.fromHexString('#FFF3E0'),
           );
         }
-
-        // Move headers to row 1 (since we inserted summary at row 0)
-        // The headers are now automatically in row 1 due to the insert
       });
 
       final directory = await getApplicationDocumentsDirectory();
@@ -1453,13 +1480,17 @@ class _OperationsTabState extends State<OperationsTab> {
 
   Future<void> _fetchBaysForSelectedSubstation() async {
     if (_selectedSubstation == null) {
-      if (mounted) {
-        setState(() {
-          _bays = [];
-          _selectedBayIds = [];
-          _clearViewerData();
-        });
-      }
+      return;
+    }
+
+    // Check cache first
+    if (_bayCache.containsKey(_selectedSubstation!.id)) {
+      setState(() {
+        // Restore bay selection from cache
+        _selectedBayIds = List.from(
+          _selectedBayCache[_selectedSubstation!.id] ?? [],
+        );
+      });
       return;
     }
 
@@ -1474,13 +1505,15 @@ class _OperationsTabState extends State<OperationsTab> {
           .get();
 
       if (mounted) {
+        final bays = baysSnapshot.docs
+            .map((doc) => Bay.fromFirestore(doc))
+            .toList();
+
         setState(() {
-          _bays = baysSnapshot.docs
-              .map((doc) => Bay.fromFirestore(doc))
-              .toList();
-          _selectedBayIds = _selectedBayIds
-              .where((id) => _bays.any((bay) => bay.id == id))
-              .toList();
+          _bayCache[_selectedSubstation!.id] = bays;
+          _selectedBayIds = List.from(
+            _selectedBayCache[_selectedSubstation!.id] ?? [],
+          );
           _isBaysLoading = false;
         });
       }

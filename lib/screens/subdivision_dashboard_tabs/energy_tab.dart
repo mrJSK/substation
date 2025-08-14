@@ -1,11 +1,13 @@
-// lib/screens/subdivision_dashboard_tabs/energy_tab.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:excel/excel.dart' hide Border;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import 'dart:math';
-
+import 'package:permission_handler/permission_handler.dart';
+import 'package:open_filex/open_filex.dart';
 import '../../models/logsheet_models.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
@@ -15,18 +17,12 @@ import '../../models/app_state_data.dart';
 
 class EnergyTab extends StatefulWidget {
   final AppUser currentUser;
-  final String? initialSelectedSubstationId;
-  final DateTime startDate;
-  final DateTime endDate;
-  final String substationId;
+  final List<Substation> accessibleSubstations;
 
   const EnergyTab({
     Key? key,
     required this.currentUser,
-    this.initialSelectedSubstationId,
-    required this.startDate,
-    required this.endDate,
-    required this.substationId,
+    required this.accessibleSubstations,
   }) : super(key: key);
 
   @override
@@ -36,9 +32,13 @@ class EnergyTab extends StatefulWidget {
 class _EnergyTabState extends State<EnergyTab> {
   bool _isLoading = true;
   Substation? _selectedSubstation;
+  DateTime? _startDate;
+  DateTime? _endDate;
+
+  // Cache for data persistence
+  Map<String, List<Bay>> _bayCache = {};
+  Map<String, List<String>> _selectedBayCache = {};
   Map<String, Bay> _baysMap = {};
-  DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
-  DateTime _endDate = DateTime.now();
 
   List<String> _selectedBayIds = [];
   bool _isViewerLoading = false;
@@ -53,25 +53,22 @@ class _EnergyTabState extends State<EnergyTab> {
   Map<String, double> _substationAbstract = {};
   Map<String, Map<String, double>> _busbarAbstract = {};
 
-  @override
-  void initState() {
-    super.initState();
-    _startDate = widget.startDate;
-    _endDate = widget.endDate;
-    _initializeData();
+  List<Bay> get _bays {
+    if (_selectedSubstation == null) return [];
+    return _bayCache[_selectedSubstation!.id] ?? [];
   }
 
   @override
-  void didUpdateWidget(EnergyTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.startDate != widget.startDate ||
-        oldWidget.endDate != widget.endDate) {
-      _startDate = widget.startDate;
-      _endDate = widget.endDate;
-      _clearViewerData();
-      if (_selectedSubstation != null) {
-        _fetchEnergyData();
-      }
+  void initState() {
+    super.initState();
+    _startDate = DateTime.now().subtract(const Duration(days: 7));
+    _endDate = DateTime.now();
+
+    if (widget.accessibleSubstations.isNotEmpty) {
+      _selectedSubstation = widget.accessibleSubstations.first;
+      _initializeData();
+    } else {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -84,17 +81,61 @@ class _EnergyTabState extends State<EnergyTab> {
   }
 
   Future<void> _initializeData() async {
-    final appState = Provider.of<AppStateData>(context, listen: false);
-    _selectedSubstation = appState.selectedSubstation;
-
     if (_selectedSubstation != null) {
+      await _fetchBaysForSelectedSubstation();
       await _fetchEnergyData();
     }
 
     if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchBaysForSelectedSubstation() async {
+    if (_selectedSubstation == null) return;
+
+    // Check cache first
+    if (_bayCache.containsKey(_selectedSubstation!.id)) {
       setState(() {
-        _isLoading = false;
+        _baysMap = {
+          for (var bay in _bayCache[_selectedSubstation!.id]!) bay.id: bay,
+        };
+        _selectedBayIds = List.from(
+          _selectedBayCache[_selectedSubstation!.id] ?? [],
+        );
       });
+      return;
+    }
+
+    try {
+      final baysSnapshot = await FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: _selectedSubstation!.id)
+          .orderBy('name')
+          .get();
+
+      if (mounted) {
+        final bays = baysSnapshot.docs
+            .map((doc) => Bay.fromFirestore(doc))
+            .toList();
+
+        setState(() {
+          _bayCache[_selectedSubstation!.id] = bays;
+          _baysMap = {for (var bay in bays) bay.id: bay};
+          _selectedBayIds = List.from(
+            _selectedBayCache[_selectedSubstation!.id] ?? [],
+          );
+        });
+      }
+    } catch (e) {
+      print('Error fetching bays: $e');
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error loading bays: $e',
+          isError: true,
+        );
+      }
     }
   }
 
@@ -102,53 +143,37 @@ class _EnergyTabState extends State<EnergyTab> {
     if (_selectedSubstation == null) return;
 
     if (mounted) {
-      setState(() {
-        _isLoading = true;
-      });
+      setState(() => _isLoading = true);
     }
 
     try {
-      await _loadBays();
       await _calculateEnergyLosses();
     } catch (e) {
       print('Error fetching data: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Error loading data: $e',
+          'Error loading energy data: $e',
           isError: true,
         );
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
 
-  Future<void> _loadBays() async {
-    final baysSnapshot = await FirebaseFirestore.instance
-        .collection('bays')
-        .where('substationId', isEqualTo: _selectedSubstation!.id)
-        .get();
-
-    _baysMap = {
-      for (var doc in baysSnapshot.docs) doc.id: Bay.fromFirestore(doc),
-    };
-  }
-
   Future<void> _calculateEnergyLosses() async {
     final DateTime queryStartDate = DateTime(
-      _startDate.year,
-      _startDate.month,
-      _startDate.day,
+      _startDate!.year,
+      _startDate!.month,
+      _startDate!.day,
     ).toUtc();
     final DateTime queryEndDate = DateTime(
-      _endDate.year,
-      _endDate.month,
-      _endDate.day,
+      _endDate!.year,
+      _endDate!.month,
+      _endDate!.day,
       23,
       59,
       59,
@@ -357,101 +382,312 @@ class _EnergyTabState extends State<EnergyTab> {
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _selectedSubstation == null
-            ? _buildSelectSubstationMessage(theme)
-            : _buildEnergyContent(theme),
-      ),
-    );
-  }
-
-  Widget _buildSelectSubstationMessage(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.location_off, size: 80, color: Colors.grey[400]),
-            const SizedBox(height: 24),
-            Text(
-              'No Substation Selected',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Please select a substation from the dashboard to view energy data.',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-              textAlign: TextAlign.center,
-            ),
-          ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildConfigurationSection(theme),
+              const SizedBox(height: 16),
+              _buildCalculateButton(theme),
+              const SizedBox(height: 16),
+              if (!_isLoading && _selectedSubstation != null)
+                ..._buildEnergyContent(theme),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildEnergyContent(ThemeData theme) {
-    return SingleChildScrollView(
+  Widget _buildConfigurationSection(ThemeData theme) {
+    return Container(
       padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader(
-            theme,
-            'Bay Energy Losses',
-            Icons.battery_alert,
-            Colors.red,
+          Text(
+            'Energy Analysis Configuration',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
-          const SizedBox(height: 12),
-          _buildBayLossesTable(theme),
-          const SizedBox(height: 24),
-
-          _buildSectionHeader(
-            theme,
-            'Busbar Energy Abstract',
-            Icons.electric_bolt,
-            Colors.purple,
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(flex: 1, child: _buildSubstationSelector(theme)),
+              const SizedBox(width: 16),
+              Expanded(flex: 1, child: _buildDateRangeSelector(theme)),
+            ],
           ),
-          const SizedBox(height: 12),
-          _buildBusbarAbstractTable(theme),
-          const SizedBox(height: 24),
-
-          _buildSectionHeader(
-            theme,
-            'Substation Energy Abstract',
-            Icons.analytics,
-            Colors.green,
-          ),
-          const SizedBox(height: 12),
-          _buildSubstationAbstractTable(theme),
-          const SizedBox(height: 24),
-
-          _buildSectionHeader(
-            theme,
-            'Bay Readings Viewer',
-            Icons.search,
-            Colors.blue,
-          ),
-          const SizedBox(height: 12),
-          _buildBayReadingsViewerSection(theme),
-
-          const SizedBox(height: 150),
         ],
       ),
     );
+  }
+
+  Widget _buildSubstationSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select Substation',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: theme.colorScheme.primary.withOpacity(0.2),
+            ),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<Substation>(
+              value: _selectedSubstation,
+              isExpanded: true,
+              items: widget.accessibleSubstations.map((substation) {
+                return DropdownMenuItem(
+                  value: substation,
+                  child: Text(
+                    substation.name,
+                    style: const TextStyle(fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: (Substation? newValue) {
+                if (newValue != null &&
+                    newValue.id != _selectedSubstation?.id) {
+                  if (_selectedSubstation != null) {
+                    _selectedBayCache[_selectedSubstation!.id] = List.from(
+                      _selectedBayIds,
+                    );
+                  }
+
+                  setState(() {
+                    _selectedSubstation = newValue;
+                    _selectedBayIds = List.from(
+                      _selectedBayCache[newValue.id] ?? [],
+                    );
+                    _clearViewerData();
+                  });
+
+                  _fetchBaysForSelectedSubstation();
+                }
+              },
+              icon: Icon(
+                Icons.keyboard_arrow_down,
+                color: theme.colorScheme.primary,
+                size: 20,
+              ),
+              hint: const Text(
+                'Select Substation',
+                style: TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateRangeSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Date Range',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: _showDateRangePicker,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.secondary.withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.date_range,
+                  size: 16,
+                  color: theme.colorScheme.secondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _startDate != null && _endDate != null
+                        ? '${DateFormat('dd.MMM').format(_startDate!)} - ${DateFormat('dd.MMM').format(_endDate!)}'
+                        : 'Select dates',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: theme.colorScheme.secondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showDateRangePicker() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      initialDateRange: _startDate != null && _endDate != null
+          ? DateTimeRange(start: _startDate!, end: _endDate!)
+          : DateTimeRange(
+              start: DateTime.now().subtract(const Duration(days: 7)),
+              end: DateTime.now(),
+            ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+        _clearViewerData();
+      });
+    }
+  }
+
+  Widget _buildCalculateButton(ThemeData theme) {
+    final bool canCalculate =
+        _selectedSubstation != null && _startDate != null && _endDate != null;
+
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton.icon(
+        onPressed: canCalculate ? _fetchEnergyData : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: theme.colorScheme.primary,
+          foregroundColor: theme.colorScheme.onPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 0,
+        ),
+        icon: _isLoading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.calculate, size: 18),
+        label: Text(
+          _isLoading ? 'Calculating...' : 'Calculate Energy Analysis',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildEnergyContent(ThemeData theme) {
+    return [
+      _buildSectionHeader(
+        theme,
+        'Bay Energy Losses',
+        Icons.battery_alert,
+        Colors.red,
+        hasExport: true,
+        onExport: _exportBayLossesToExcel,
+      ),
+      const SizedBox(height: 12),
+      _buildBayLossesTable(theme),
+      const SizedBox(height: 24),
+
+      _buildSectionHeader(
+        theme,
+        'Busbar Energy Abstract',
+        Icons.electric_bolt,
+        Colors.purple,
+        hasExport: true,
+        onExport: _exportBusbarAbstractToExcel,
+      ),
+      const SizedBox(height: 12),
+      _buildBusbarAbstractTable(theme),
+      const SizedBox(height: 24),
+
+      _buildSectionHeader(
+        theme,
+        'Substation Energy Abstract',
+        Icons.analytics,
+        Colors.green,
+        hasExport: true,
+        onExport: _exportSubstationAbstractToExcel,
+      ),
+      const SizedBox(height: 12),
+      _buildSubstationAbstractTable(theme),
+      const SizedBox(height: 24),
+
+      _buildSectionHeader(
+        theme,
+        'Bay Readings Viewer',
+        Icons.search,
+        Colors.blue,
+      ),
+      const SizedBox(height: 12),
+      _buildBayReadingsViewerSection(theme),
+      const SizedBox(height: 150),
+    ];
   }
 
   Widget _buildSectionHeader(
     ThemeData theme,
     String title,
     IconData icon,
-    Color color,
-  ) {
+    Color color, {
+    bool hasExport = false,
+    VoidCallback? onExport,
+  }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -477,14 +713,31 @@ class _EnergyTabState extends State<EnergyTab> {
             child: Icon(icon, color: color, size: 20),
           ),
           const SizedBox(width: 16),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
+              ),
             ),
           ),
+          if (hasExport && onExport != null)
+            ElevatedButton.icon(
+              onPressed: onExport,
+              icon: const Icon(Icons.download, size: 16),
+              label: const Text('Export Excel', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.withOpacity(0.1),
+                foregroundColor: Colors.green,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1055,22 +1308,42 @@ class _EnergyTabState extends State<EnergyTab> {
           ),
           if (_selectedBayIds.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _selectedBayIds.map((bayId) {
-                final bay = _baysMap[bayId];
-                if (bay == null) return const SizedBox();
-                return Chip(
-                  label: Text('${bay.name} (${bay.bayType})'),
-                  onDeleted: () {
-                    setState(() {
-                      _selectedBayIds.remove(bayId);
-                      _clearViewerData();
-                    });
-                  },
-                );
-              }).toList(),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withOpacity(0.2),
+                ),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _selectedBayIds.map((bayId) {
+                  final bay = _baysMap[bayId];
+                  if (bay == null) return const SizedBox();
+                  return Chip(
+                    label: Text('${bay.name} (${bay.bayType})'),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedBayIds.remove(bayId);
+                        if (_selectedSubstation != null) {
+                          _selectedBayCache[_selectedSubstation!.id] =
+                              List.from(_selectedBayIds);
+                        }
+                        _clearViewerData();
+                      });
+                    },
+                    deleteIconColor: Colors.red,
+                    backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                    side: BorderSide(
+                      color: theme.colorScheme.primary.withOpacity(0.3),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           ],
         ],
@@ -1169,10 +1442,27 @@ class _EnergyTabState extends State<EnergyTab> {
                   ],
                 ),
               ),
+              if (_rawLogsheetEntriesForViewer.isNotEmpty)
+                ElevatedButton.icon(
+                  onPressed: _exportBayReadingsToExcel,
+                  icon: const Icon(Icons.download, size: 16),
+                  label: const Text(
+                    'Export Excel',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.withOpacity(0.1),
+                    foregroundColor: Colors.green,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 16),
-          // Loading state
           if (_isViewerLoading)
             const Padding(
               padding: EdgeInsets.all(32),
@@ -1189,16 +1479,12 @@ class _EnergyTabState extends State<EnergyTab> {
                 ),
               ),
             )
-          // Error state
           else if (_viewerErrorMessage != null)
             _buildErrorMessage(_viewerErrorMessage!)
-          // No data state - FIXED: Check if search completed but no data found
           else if (!_isViewerLoading && _rawLogsheetEntriesForViewer.isEmpty)
             _buildNoReadingsMessage()
-          // Success state - FIXED: Check if we have actual grouped data
           else if (_groupedEntriesForViewer.isNotEmpty)
             _buildBayReadingsTable(theme)
-          // Fallback state
           else
             _buildNoReadingsMessage(),
         ],
@@ -1247,7 +1533,7 @@ class _EnergyTabState extends State<EnergyTab> {
             ),
             const SizedBox(height: 6),
             Text(
-              'No readings exist for the selected bays in the period from ${DateFormat('MMM dd, yyyy').format(_startDate)} to ${DateFormat('MMM dd, yyyy').format(_endDate)}.',
+              'No readings exist for the selected bays in the period from ${DateFormat('MMM dd, yyyy').format(_startDate!)} to ${DateFormat('MMM dd, yyyy').format(_endDate!)}.',
               style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
               textAlign: TextAlign.center,
             ),
@@ -1328,7 +1614,7 @@ class _EnergyTabState extends State<EnergyTab> {
     if (availableBays.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
-        'No bays available. Please ensure data is loaded.',
+        'No bays available. Please select a substation first.',
         isError: true,
       );
       return;
@@ -1341,69 +1627,218 @@ class _EnergyTabState extends State<EnergyTab> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
+            final theme = Theme.of(context);
+            return Dialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              title: const Text('Select Bays', style: TextStyle(fontSize: 16)),
-              content: SizedBox(
+              child: Container(
                 width: double.maxFinite,
-                height: 400,
-                child: ListView.builder(
-                  itemCount: availableBays.length,
-                  itemBuilder: (context, index) {
-                    final bay = availableBays[index];
-                    final isSelected = tempSelected.contains(bay.id);
+                height: 500,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(12),
+                          topRight: Radius.circular(12),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Select Bays',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => Navigator.of(context).pop(),
+                            borderRadius: BorderRadius.circular(4),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.close,
+                                size: 20,
+                                color: theme.colorScheme.onSurface.withOpacity(
+                                  0.7,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${tempSelected.length} of ${availableBays.length} bays selected',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              TextButton.icon(
+                                onPressed: () {
+                                  setDialogState(() {
+                                    if (tempSelected.length ==
+                                        availableBays.length) {
+                                      tempSelected.clear();
+                                    } else {
+                                      tempSelected.clear();
+                                      tempSelected.addAll(
+                                        availableBays.map((bay) => bay.id),
+                                      );
+                                    }
+                                  });
+                                },
+                                icon: Icon(
+                                  tempSelected.length == availableBays.length
+                                      ? Icons.deselect
+                                      : Icons.select_all,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  tempSelected.length == availableBays.length
+                                      ? 'Deselect All'
+                                      : 'Select All',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: theme.colorScheme.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton.icon(
+                                onPressed: tempSelected.isNotEmpty
+                                    ? () {
+                                        setDialogState(() {
+                                          tempSelected.clear();
+                                        });
+                                      }
+                                    : null,
+                                icon: const Icon(Icons.clear, size: 16),
+                                label: const Text(
+                                  'Clear',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.orange,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: availableBays.length,
+                        itemBuilder: (context, index) {
+                          final bay = availableBays[index];
+                          final isSelected = tempSelected.contains(bay.id);
 
-                    return CheckboxListTile(
-                      title: Text(
-                        '${bay.name} (${bay.bayType})',
-                        style: const TextStyle(fontSize: 14),
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? theme.colorScheme.primary.withOpacity(0.3)
+                                    : Colors.grey.shade300,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            child: CheckboxListTile(
+                              title: Text(
+                                '${bay.name} (${bay.bayType})',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? theme.colorScheme.primary
+                                      : null,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Voltage: ${bay.voltageLevel}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isSelected
+                                      ? theme.colorScheme.primary.withOpacity(
+                                          0.7,
+                                        )
+                                      : Colors.grey.shade600,
+                                ),
+                              ),
+                              value: isSelected,
+                              onChanged: (bool? value) {
+                                setDialogState(() {
+                                  if (value == true) {
+                                    if (!tempSelected.contains(bay.id)) {
+                                      tempSelected.add(bay.id);
+                                    }
+                                  } else {
+                                    tempSelected.remove(bay.id);
+                                  }
+                                });
+                              },
+                              controlAffinity: ListTileControlAffinity.leading,
+                              activeColor: theme.colorScheme.primary,
+                            ),
+                          );
+                        },
                       ),
-                      subtitle: Text(
-                        'Voltage: ${bay.voltageLevel}',
-                        style: const TextStyle(fontSize: 12),
+                    ),
+                    const Divider(height: 1),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () =>
+                                Navigator.of(context).pop(tempSelected),
+                            icon: const Icon(Icons.check, size: 16),
+                            label: Text(
+                              'Select (${tempSelected.length})',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: theme.colorScheme.onPrimary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      value: isSelected,
-                      onChanged: (bool? value) {
-                        setDialogState(() {
-                          if (value == true) {
-                            if (!tempSelected.contains(bay.id)) {
-                              tempSelected.add(bay.id);
-                            }
-                          } else {
-                            tempSelected.remove(bay.id);
-                          }
-                        });
-                      },
-                    );
-                  },
+                    ),
+                  ],
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(fontSize: 13)),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setDialogState(() {
-                      tempSelected.clear();
-                    });
-                  },
-                  child: const Text(
-                    'Clear All',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, tempSelected),
-                  child: Text(
-                    'Select (${tempSelected.length})',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
             );
           },
         );
@@ -1413,6 +1848,11 @@ class _EnergyTabState extends State<EnergyTab> {
     if (result != null) {
       setState(() {
         _selectedBayIds = result.toSet().toList();
+        if (_selectedSubstation != null) {
+          _selectedBayCache[_selectedSubstation!.id] = List.from(
+            _selectedBayIds,
+          );
+        }
         _clearViewerData();
       });
     }
@@ -1442,14 +1882,14 @@ class _EnergyTabState extends State<EnergyTab> {
       }
 
       final DateTime queryStartDate = DateTime(
-        _startDate.year,
-        _startDate.month,
-        _startDate.day,
+        _startDate!.year,
+        _startDate!.month,
+        _startDate!.day,
       ).toUtc();
       final DateTime queryEndDate = DateTime(
-        _endDate.year,
-        _endDate.month,
-        _endDate.day,
+        _endDate!.year,
+        _endDate!.month,
+        _endDate!.day,
         23,
         59,
         59,
@@ -1520,12 +1960,464 @@ class _EnergyTabState extends State<EnergyTab> {
   }
 
   bool _shouldShowResults() {
-    // Show results section if:
-    // 1. Currently loading (to show spinner)
-    // 2. Has error message (to show error)
-    // 3. Search completed (regardless of whether data found or not)
     return _isViewerLoading ||
         _viewerErrorMessage != null ||
         (!_isViewerLoading && _selectedBayIds.isNotEmpty);
+  }
+
+  // Excel Export Methods
+  Future<void> _exportBayLossesToExcel() async {
+    await _exportToExcel('Bay_Energy_Losses', _createBayLossesWorkbook);
+  }
+
+  Future<void> _exportBusbarAbstractToExcel() async {
+    await _exportToExcel(
+      'Busbar_Energy_Abstract',
+      _createBusbarAbstractWorkbook,
+    );
+  }
+
+  Future<void> _exportSubstationAbstractToExcel() async {
+    await _exportToExcel(
+      'Substation_Energy_Abstract',
+      _createSubstationAbstractWorkbook,
+    );
+  }
+
+  Future<void> _exportBayReadingsToExcel() async {
+    await _exportToExcel('Bay_Readings', _createBayReadingsWorkbook);
+  }
+
+  Future<void> _exportToExcel(
+    String filePrefix,
+    Excel Function() createWorkbook,
+  ) async {
+    try {
+      if (Platform.isAndroid) {
+        var status = await Permission.storage.status;
+        if (!status.isGranted) {
+          status = await Permission.storage.request();
+          if (!status.isGranted) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Storage permission is required to export data',
+              isError: true,
+            );
+            return;
+          }
+        }
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Generating Excel file...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final excel = createWorkbook();
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName =
+          '${filePrefix}_${_selectedSubstation?.name.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
+      final file = File('${directory.path}/$fileName');
+
+      await file.writeAsBytes(excel.encode()!);
+
+      Navigator.of(context).pop();
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green),
+              SizedBox(width: 8),
+              Text('Export Successful'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('File saved as: $fileName'),
+              const SizedBox(height: 8),
+              Text('Location: ${directory.path}'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.blue.shade700,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Energy analysis data exported successfully with calculations.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                try {
+                  await OpenFilex.open(file.path);
+                } catch (e) {
+                  SnackBarUtils.showSnackBar(
+                    context,
+                    'Could not open file. Please check your file manager.',
+                    isError: true,
+                  );
+                }
+              },
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open File'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      print('Error exporting to Excel: $e');
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to export data: $e',
+        isError: true,
+      );
+    }
+  }
+
+  Excel _createBayLossesWorkbook() {
+    var excel = Excel.createExcel();
+    excel.delete('Sheet1');
+    var sheet = excel['Bay Energy Losses'];
+
+    List<String> headers = [
+      'Bay Name',
+      'Bay Type',
+      'Voltage Level',
+      'Import Energy (kWh)',
+      'Export Energy (kWh)',
+      'Energy Losses (kWh)',
+      'Loss Percentage (%)',
+      'Efficiency (%)',
+    ];
+
+    for (int i = 0; i < headers.length; i++) {
+      var cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+      );
+      cell.value = TextCellValue(headers[i]);
+      cell.cellStyle = CellStyle(
+        bold: true,
+        backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+      );
+    }
+
+    int rowIndex = 1;
+    _bayEnergyData.entries.forEach((entry) {
+      final bay = _baysMap[entry.key]!;
+      final data = entry.value;
+
+      List<dynamic> rowData = [
+        bay.name,
+        bay.bayType,
+        bay.voltageLevel,
+        data['import']?.toStringAsFixed(2) ?? '0.00',
+        data['export']?.toStringAsFixed(2) ?? '0.00',
+        data['losses']?.toStringAsFixed(2) ?? '0.00',
+        data['lossPercentage']?.toStringAsFixed(2) ?? '0.00',
+        data['efficiency']?.toStringAsFixed(2) ?? '0.00',
+      ];
+
+      for (int i = 0; i < rowData.length; i++) {
+        var cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+        );
+        cell.value = TextCellValue(rowData[i].toString());
+
+        if (rowIndex % 2 == 0) {
+          cell.cellStyle = CellStyle(
+            backgroundColorHex: ExcelColor.fromHexString('#F5F5F5'),
+          );
+        }
+      }
+      rowIndex++;
+    });
+
+    for (int i = 0; i < headers.length; i++) {
+      sheet.setColumnWidth(i, 15);
+    }
+
+    return excel;
+  }
+
+  Excel _createBusbarAbstractWorkbook() {
+    var excel = Excel.createExcel();
+    excel.delete('Sheet1');
+    var sheet = excel['Busbar Energy Abstract'];
+
+    List<String> headers = [
+      'Busbar',
+      'Total Import (kWh)',
+      'Total Export (kWh)',
+      'Total Losses (kWh)',
+      'Loss Percentage (%)',
+      'Efficiency (%)',
+      'Active Bays',
+    ];
+
+    for (int i = 0; i < headers.length; i++) {
+      var cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+      );
+      cell.value = TextCellValue(headers[i]);
+      cell.cellStyle = CellStyle(
+        bold: true,
+        backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+      );
+    }
+
+    int rowIndex = 1;
+    _busbarAbstract.entries.forEach((entry) {
+      final busbarName = entry.key;
+      final data = entry.value;
+
+      List<dynamic> rowData = [
+        busbarName,
+        data['totalImport']?.toStringAsFixed(2) ?? '0.00',
+        data['totalExport']?.toStringAsFixed(2) ?? '0.00',
+        data['totalLosses']?.toStringAsFixed(2) ?? '0.00',
+        data['lossPercentage']?.toStringAsFixed(2) ?? '0.00',
+        data['efficiency']?.toStringAsFixed(2) ?? '0.00',
+        data['activeBays']?.toInt().toString() ?? '0',
+      ];
+
+      for (int i = 0; i < rowData.length; i++) {
+        var cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+        );
+        cell.value = TextCellValue(rowData[i].toString());
+
+        if (rowIndex % 2 == 0) {
+          cell.cellStyle = CellStyle(
+            backgroundColorHex: ExcelColor.fromHexString('#F5F5F5'),
+          );
+        }
+      }
+      rowIndex++;
+    });
+
+    for (int i = 0; i < headers.length; i++) {
+      sheet.setColumnWidth(i, 18);
+    }
+
+    return excel;
+  }
+
+  Excel _createSubstationAbstractWorkbook() {
+    var excel = Excel.createExcel();
+    excel.delete('Sheet1');
+    var sheet = excel['Substation Energy Abstract'];
+
+    List<List<String>> data = [
+      ['Metric', 'Value'],
+      [
+        'Total Import Energy',
+        '${_substationAbstract['totalImport']?.toStringAsFixed(2) ?? '0.00'} kWh',
+      ],
+      [
+        'Total Export Energy',
+        '${_substationAbstract['totalExport']?.toStringAsFixed(2) ?? '0.00'} kWh',
+      ],
+      [
+        'Total Energy Losses',
+        '${_substationAbstract['totalLosses']?.toStringAsFixed(2) ?? '0.00'} kWh',
+      ],
+      [
+        'Overall Loss Percentage',
+        '${_substationAbstract['lossPercentage']?.toStringAsFixed(2) ?? '0.00'}%',
+      ],
+      [
+        'Overall Efficiency',
+        '${_substationAbstract['efficiency']?.toStringAsFixed(2) ?? '0.00'}%',
+      ],
+      ['Active Bays', '${_substationAbstract['activeBays']?.toInt() ?? 0}'],
+    ];
+
+    for (int row = 0; row < data.length; row++) {
+      for (int col = 0; col < data[row].length; col++) {
+        var cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row),
+        );
+        cell.value = TextCellValue(data[row][col]);
+
+        if (row == 0) {
+          cell.cellStyle = CellStyle(
+            bold: true,
+            backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+          );
+        } else if (row % 2 == 0) {
+          cell.cellStyle = CellStyle(
+            backgroundColorHex: ExcelColor.fromHexString('#F5F5F5'),
+          );
+        }
+      }
+    }
+
+    sheet.setColumnWidth(0, 25);
+    sheet.setColumnWidth(1, 20);
+
+    return excel;
+  }
+
+  Excel _createBayReadingsWorkbook() {
+    var excel = Excel.createExcel();
+    excel.delete('Sheet1');
+
+    // Group data by bay type
+    Map<String, List<LogsheetEntry>> dataByBayType = {};
+
+    for (var entry in _rawLogsheetEntriesForViewer) {
+      final bay = _viewerBaysMap[entry.bayId];
+      if (bay != null) {
+        final bayType = bay.bayType;
+        dataByBayType.putIfAbsent(bayType, () => []);
+        dataByBayType[bayType]!.add(entry);
+      }
+    }
+
+    dataByBayType.forEach((bayType, entries) {
+      var sheet = excel[bayType];
+
+      Set<String> allParameters = {};
+      for (var entry in entries) {
+        allParameters.addAll(entry.values.keys);
+      }
+
+      List<String> sortedParameters = allParameters.toList()..sort();
+
+      List<String> headers = [
+        'Date & Time',
+        'Bay Name',
+        'Bay Type',
+        'Voltage Level',
+        ...sortedParameters,
+      ];
+
+      for (int i = 0; i < headers.length; i++) {
+        var cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+        );
+        cell.value = TextCellValue(headers[i]);
+        cell.cellStyle = CellStyle(
+          bold: true,
+          backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+        );
+      }
+
+      int rowIndex = 1;
+
+      entries.sort((a, b) {
+        final bayA = _viewerBaysMap[a.bayId]?.name ?? '';
+        final bayB = _viewerBaysMap[b.bayId]?.name ?? '';
+        if (bayA != bayB) {
+          return bayA.compareTo(bayB);
+        }
+        return a.readingTimestamp.compareTo(b.readingTimestamp);
+      });
+
+      for (var entry in entries) {
+        final bay = _viewerBaysMap[entry.bayId];
+        final dateTime = entry.readingTimestamp.toDate().toLocal();
+
+        List<dynamic> rowData = [
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(dateTime),
+          bay?.name ?? 'Unknown',
+          bay?.bayType ?? 'Unknown',
+          bay?.voltageLevel ?? 'Unknown',
+        ];
+
+        for (String parameter in sortedParameters) {
+          dynamic value = entry.values[parameter];
+          String cellValue = '';
+
+          if (value != null) {
+            if (value is Map && value.containsKey('value')) {
+              if (value['value'] is bool) {
+                cellValue = value['value'] as bool ? 'ON' : 'OFF';
+              } else {
+                cellValue = '${value['value']}${value['unit'] ?? ''}';
+              }
+            } else {
+              cellValue = value.toString();
+            }
+          }
+
+          rowData.add(cellValue);
+        }
+
+        for (int i = 0; i < rowData.length; i++) {
+          var cell = sheet.cell(
+            CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+          );
+          cell.value = TextCellValue(rowData[i].toString());
+
+          if (rowIndex % 2 == 0) {
+            cell.cellStyle = CellStyle(
+              backgroundColorHex: ExcelColor.fromHexString('#F5F5F5'),
+            );
+          }
+        }
+        rowIndex++;
+      }
+
+      sheet.setColumnWidth(0, 18);
+      sheet.setColumnWidth(1, 15);
+      sheet.setColumnWidth(2, 12);
+      sheet.setColumnWidth(3, 12);
+
+      for (int i = 4; i < headers.length; i++) {
+        sheet.setColumnWidth(i, 12);
+      }
+    });
+
+    return excel;
   }
 }

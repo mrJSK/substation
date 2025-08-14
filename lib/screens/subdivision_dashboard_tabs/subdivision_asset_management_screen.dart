@@ -1,5 +1,3 @@
-// lib/screens/subdivision_asset_management_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -33,6 +31,8 @@ class _SubdivisionAssetManagementScreenState
     with TickerProviderStateMixin {
   bool _isLoading = true;
   List<Substation> _substationsInSubdivision = [];
+  Substation? _selectedSubstation;
+
   Map<String, int> _bayTypeStats = {};
   Map<String, int> _equipmentTypeStats = {};
   int _totalBays = 0;
@@ -60,7 +60,140 @@ class _SubdivisionAssetManagementScreenState
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
-      body: _isLoading ? _buildLoadingState(theme) : _buildMainContent(theme),
+      body: Column(
+        children: [
+          _buildConfigurationSection(theme),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _isLoading
+                ? _buildLoadingState(theme)
+                : _buildMainContent(theme),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConfigurationSection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.electrical_services,
+                  color: Colors.blue,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Asset Management Configuration',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildSubstationSelector(theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubstationSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select Substation',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: theme.colorScheme.primary.withOpacity(0.2),
+            ),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<Substation>(
+              value: _selectedSubstation,
+              isExpanded: true,
+              items: [
+                DropdownMenuItem<Substation>(
+                  value: null,
+                  child: Text(
+                    'All Substations',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                ..._substationsInSubdivision.map((substation) {
+                  return DropdownMenuItem(
+                    value: substation,
+                    child: Text(
+                      substation.name,
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+              ],
+              onChanged: (Substation? newValue) {
+                setState(() {
+                  _selectedSubstation = newValue;
+                });
+                _calculateStatsForSelectedSubstation();
+              },
+              icon: Icon(
+                Icons.keyboard_arrow_down,
+                color: theme.colorScheme.primary,
+                size: 20,
+              ),
+              hint: const Text(
+                'Select Substation',
+                style: TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -97,12 +230,12 @@ class _SubdivisionAssetManagementScreenState
       onRefresh: _fetchSubdivisionAssets,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16), // Reduced padding
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildStatsSection(theme),
-            const SizedBox(height: 20), // Reduced spacing
+            const SizedBox(height: 20),
             _buildActionCards(theme),
           ],
         ),
@@ -111,7 +244,6 @@ class _SubdivisionAssetManagementScreenState
   }
 
   Widget _buildStatsSection(ThemeData theme) {
-    // If no data, don't show any stats
     if (_totalBays == 0 && _totalEquipment == 0) {
       return Container(
         padding: const EdgeInsets.all(20),
@@ -141,7 +273,9 @@ class _SubdivisionAssetManagementScreenState
               ),
               const SizedBox(height: 4),
               Text(
-                'No bays or equipment found in subdivision substations',
+                _selectedSubstation != null
+                    ? 'No bays or equipment found in ${_selectedSubstation!.name}'
+                    : 'No bays or equipment found in subdivision substations',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
                 textAlign: TextAlign.center,
               ),
@@ -154,19 +288,31 @@ class _SubdivisionAssetManagementScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Overview stats
+        // Overview stats with dynamic title
+        Text(
+          _selectedSubstation != null
+              ? 'Assets in ${_selectedSubstation!.name}'
+              : 'Assets in All Substations',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(
-              child: _buildStatCard(
-                theme: theme,
-                title: 'Total Substations',
-                value: '${_substationsInSubdivision.length}',
-                icon: Icons.electrical_services,
-                color: Colors.blue,
+            if (_selectedSubstation == null)
+              Expanded(
+                child: _buildStatCard(
+                  theme: theme,
+                  title: 'Total Substations',
+                  value: '${_substationsInSubdivision.length}',
+                  icon: Icons.electrical_services,
+                  color: Colors.blue,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
+            if (_selectedSubstation == null) const SizedBox(width: 12),
             Expanded(
               child: _buildStatCard(
                 theme: theme,
@@ -286,9 +432,7 @@ class _SubdivisionAssetManagementScreenState
   }) {
     return Container(
       width: isCompact ? 140 : null,
-      padding: EdgeInsets.all(
-        isCompact ? 12 : 16,
-      ), // Smaller padding for compact cards
+      padding: EdgeInsets.all(isCompact ? 12 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -307,7 +451,7 @@ class _SubdivisionAssetManagementScreenState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                width: isCompact ? 32 : 36, // Smaller for compact
+                width: isCompact ? 32 : 36,
                 height: isCompact ? 32 : 36,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
@@ -321,7 +465,7 @@ class _SubdivisionAssetManagementScreenState
           Text(
             value,
             style: TextStyle(
-              fontSize: isCompact ? 18 : 20, // Smaller for compact
+              fontSize: isCompact ? 18 : 20,
               fontWeight: FontWeight.w700,
               color: theme.colorScheme.onSurface,
             ),
@@ -330,7 +474,7 @@ class _SubdivisionAssetManagementScreenState
           Text(
             title,
             style: TextStyle(
-              fontSize: isCompact ? 11 : 13, // Smaller for compact
+              fontSize: isCompact ? 11 : 13,
               color: Colors.grey.shade600,
             ),
             maxLines: 2,
@@ -342,39 +486,38 @@ class _SubdivisionAssetManagementScreenState
   }
 
   Widget _buildActionCards(ThemeData theme) {
-    final appState = Provider.of<AppStateData>(context);
-    final selectedSubstation = appState.selectedSubstation;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Quick Actions',
           style: TextStyle(
-            fontSize: 16, // Reduced font size
+            fontSize: 16,
             fontWeight: FontWeight.w600,
             color: theme.colorScheme.onSurface,
           ),
         ),
-        const SizedBox(height: 12), // Reduced spacing
+        const SizedBox(height: 12),
         _buildActionCard(
           theme: theme,
           icon: Icons.electrical_services,
           title: 'Manage Bays & Equipment',
-          subtitle: selectedSubstation != null
-              ? 'View and manage assets in ${selectedSubstation.name}'
-              : 'Select a substation from the app bar to manage assets',
+          subtitle: _selectedSubstation != null
+              ? 'View and manage assets in ${_selectedSubstation!.name}'
+              : 'Select a specific substation to manage its assets',
           color: theme.colorScheme.primary,
-          onTap: selectedSubstation != null
-              ? () => _navigateToSubstationDetail(selectedSubstation)
+          onTap: _selectedSubstation != null
+              ? () => _navigateToSubstationDetail(_selectedSubstation!)
               : null,
         ),
-        const SizedBox(height: 12), // Reduced spacing
+        const SizedBox(height: 12),
         _buildActionCard(
           theme: theme,
           icon: Icons.download,
           title: 'Export Master Data',
-          subtitle: 'Generate comprehensive CSV reports of your assets',
+          subtitle: _selectedSubstation != null
+              ? 'Generate CSV report for ${_selectedSubstation!.name}'
+              : 'Generate comprehensive CSV reports of your assets',
           color: Colors.green,
           onTap: () => _navigateToExportScreen(),
         ),
@@ -418,11 +561,11 @@ class _SubdivisionAssetManagementScreenState
               onTap: isDisabled ? null : onTap,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.all(16), // Reduced padding
+                padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
                     Container(
-                      width: 44, // Reduced size
+                      width: 44,
                       height: 44,
                       decoration: BoxDecoration(
                         color: isDisabled
@@ -433,7 +576,7 @@ class _SubdivisionAssetManagementScreenState
                       child: Icon(
                         icon,
                         color: isDisabled ? Colors.grey.shade500 : color,
-                        size: 20, // Reduced icon size
+                        size: 20,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -444,7 +587,7 @@ class _SubdivisionAssetManagementScreenState
                           Text(
                             title,
                             style: TextStyle(
-                              fontSize: 15, // Reduced font size
+                              fontSize: 15,
                               fontWeight: FontWeight.w600,
                               color: isDisabled
                                   ? Colors.grey.shade500
@@ -455,7 +598,7 @@ class _SubdivisionAssetManagementScreenState
                           Text(
                             subtitle,
                             style: TextStyle(
-                              fontSize: 13, // Reduced font size
+                              fontSize: 13,
                               color: isDisabled
                                   ? Colors.grey.shade400
                                   : Colors.grey.shade600,
@@ -467,7 +610,7 @@ class _SubdivisionAssetManagementScreenState
                     ),
                     if (!isDisabled)
                       Container(
-                        width: 28, // Reduced size
+                        width: 28,
                         height: 28,
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.1),
@@ -475,7 +618,7 @@ class _SubdivisionAssetManagementScreenState
                         ),
                         child: Icon(
                           Icons.arrow_forward_ios,
-                          size: 12, // Reduced icon size
+                          size: 12,
                           color: color,
                         ),
                       ),
@@ -538,13 +681,39 @@ class _SubdivisionAssetManagementScreenState
           .map((doc) => Substation.fromFirestore(doc))
           .toList();
 
-      if (_substationsInSubdivision.isNotEmpty) {
-        // Get all substation IDs
-        final substationIds = _substationsInSubdivision
-            .map((s) => s.id)
-            .toList();
+      // Auto-select first substation if available and none selected
+      if (_substationsInSubdivision.isNotEmpty && _selectedSubstation == null) {
+        _selectedSubstation = _substationsInSubdivision.first;
+      }
 
-        // Fetch bays for all substations
+      await _calculateStatsForSelectedSubstation();
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Failed to load assets: $e',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _calculateStatsForSelectedSubstation() async {
+    try {
+      List<String> substationIds;
+
+      if (_selectedSubstation != null) {
+        // Calculate stats for selected substation only
+        substationIds = [_selectedSubstation!.id];
+      } else {
+        // Calculate stats for all substations
+        substationIds = _substationsInSubdivision.map((s) => s.id).toList();
+      }
+
+      if (substationIds.isNotEmpty) {
+        // Fetch bays for selected substations
         final baysSnapshot = await FirebaseFirestore.instance
             .collection('bays')
             .where('substationId', whereIn: substationIds)
@@ -575,10 +744,7 @@ class _SubdivisionAssetManagementScreenState
             final equipmentSnapshot = await FirebaseFirestore.instance
                 .collection('equipmentInstances')
                 .where('bayId', whereIn: chunk)
-                .where(
-                  'status',
-                  isEqualTo: 'active',
-                ) // Only count active equipment
+                .where('status', isEqualTo: 'active')
                 .get();
 
             allEquipment.addAll(
@@ -605,16 +771,10 @@ class _SubdivisionAssetManagementScreenState
         _totalBays = 0;
         _totalEquipment = 0;
       }
+
+      if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Failed to load assets: $e',
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      print('Error calculating stats: $e');
     }
   }
 }

@@ -1,8 +1,11 @@
-// lib/screens/subdivision_dashboard_tabs/tripping_tab.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:excel/excel.dart' hide Border;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../models/user_model.dart';
 import '../../models/tripping_shutdown_model.dart';
@@ -13,16 +16,12 @@ import '../substation_dashboard/tripping_shutdown_entry_screen.dart';
 
 class TrippingTab extends StatefulWidget {
   final AppUser currentUser;
-  final DateTime startDate;
-  final DateTime endDate;
-  final String substationId;
+  final List<Substation> accessibleSubstations;
 
   const TrippingTab({
     super.key,
     required this.currentUser,
-    required this.startDate,
-    required this.endDate,
-    required this.substationId,
+    required this.accessibleSubstations,
   });
 
   @override
@@ -32,21 +31,27 @@ class TrippingTab extends StatefulWidget {
 class _TrippingTabState extends State<TrippingTab>
     with TickerProviderStateMixin {
   bool _isLoading = true;
+
+  // Configuration
+  Substation? _selectedSubstation;
+  DateTime? _startDate;
+  DateTime? _endDate;
+
+  // Cache for data persistence
+  Map<String, List<Bay>> _bayCache = {};
+  Map<String, List<String>> _selectedBayCache = {};
+
+  // Data
   Map<String, List<TrippingShutdownEntry>> _groupedEntriesByBayType = {};
   List<String> _sortedBayTypes = [];
   Map<String, Bay> _baysMap = {};
-  List<Bay> _allBaysInSubdivisionList = [];
-  List<Substation> _substationsInSubdivision = [];
   Map<String, Substation> _substationsMap = {};
-
-  // Cache for substation names (for notifications)
   Map<String, String> _substationNamesCache = {};
 
   // Filter States
-  List<String> _selectedFilterSubstationIds = [];
-  List<String> _selectedFilterVoltageLevels = [];
-  List<String> _selectedFilterBayTypes = [];
   List<String> _selectedFilterBayIds = [];
+  List<String> _selectedFilterBayTypes = [];
+  List<String> _selectedFilterVoltageLevels = [];
 
   late AnimationController _filterAnimationController;
   late AnimationController _fabAnimationController;
@@ -74,9 +79,17 @@ class _TrippingTabState extends State<TrippingTab>
     'Battery',
   ];
 
+  List<Bay> get _bays {
+    if (_selectedSubstation == null) return [];
+    return _bayCache[_selectedSubstation!.id] ?? [];
+  }
+
   @override
   void initState() {
     super.initState();
+    _startDate = DateTime.now().subtract(const Duration(days: 7));
+    _endDate = DateTime.now();
+
     _filterAnimationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -85,7 +98,17 @@ class _TrippingTabState extends State<TrippingTab>
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-    _fetchInitialHierarchyDataAndEvents();
+
+    if (widget.accessibleSubstations.isNotEmpty) {
+      _selectedSubstation = widget.accessibleSubstations.first;
+      _substationsMap = {
+        for (var substation in widget.accessibleSubstations)
+          substation.id: substation,
+      };
+      _initializeData();
+    } else {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -95,21 +118,76 @@ class _TrippingTabState extends State<TrippingTab>
     super.dispose();
   }
 
-  // Helper method to get substation name (with caching)
+  Future<void> _initializeData() async {
+    if (_selectedSubstation != null) {
+      await _fetchBaysForSelectedSubstation();
+      await _fetchTrippingShutdownEvents();
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchBaysForSelectedSubstation() async {
+    if (_selectedSubstation == null) return;
+
+    // Check cache first
+    if (_bayCache.containsKey(_selectedSubstation!.id)) {
+      setState(() {
+        _baysMap = {
+          for (var bay in _bayCache[_selectedSubstation!.id]!) bay.id: bay,
+        };
+        _selectedFilterBayIds = List.from(
+          _selectedBayCache[_selectedSubstation!.id] ?? [],
+        );
+      });
+      return;
+    }
+
+    try {
+      final baysSnapshot = await FirebaseFirestore.instance
+          .collection('bays')
+          .where('substationId', isEqualTo: _selectedSubstation!.id)
+          .orderBy('name')
+          .get();
+
+      if (mounted) {
+        final bays = baysSnapshot.docs
+            .map((doc) => Bay.fromFirestore(doc))
+            .toList();
+
+        setState(() {
+          _bayCache[_selectedSubstation!.id] = bays;
+          _baysMap = {for (var bay in bays) bay.id: bay};
+          _selectedFilterBayIds = List.from(
+            _selectedBayCache[_selectedSubstation!.id] ?? [],
+          );
+        });
+      }
+    } catch (e) {
+      print('Error fetching bays: $e');
+      if (mounted) {
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error loading bays: $e',
+          isError: true,
+        );
+      }
+    }
+  }
+
   Future<String> _getSubstationName(String substationId) async {
-    // Return cached name if available
     if (_substationNamesCache.containsKey(substationId)) {
       return _substationNamesCache[substationId]!;
     }
 
-    // Check if we have it in our substations map
     if (_substationsMap.containsKey(substationId)) {
       final name = _substationsMap[substationId]!.name;
       _substationNamesCache[substationId] = name;
       return name;
     }
 
-    // Fetch from Firestore as fallback
     try {
       final substationDoc = await FirebaseFirestore.instance
           .collection('substations')
@@ -137,20 +215,23 @@ class _TrippingTabState extends State<TrippingTab>
       backgroundColor: const Color(0xFFF8F9FA),
       body: Column(
         children: [
-          _buildHeader(theme),
+          _buildConfigurationSection(theme),
+          const SizedBox(height: 16),
+          _buildSearchButton(theme),
+          const SizedBox(height: 16),
           if (_hasActiveFilters()) _buildActiveFiltersChips(theme),
           Expanded(child: _buildContent(theme)),
         ],
       ),
-      floatingActionButton: _buildFloatingActionButton(theme),
     );
   }
 
-  Widget _buildHeader(ThemeData theme) {
+  Widget _buildConfigurationSection(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -159,57 +240,259 @@ class _TrippingTabState extends State<TrippingTab>
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.warning, color: Colors.orange, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Tripping & Shutdown Events',
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.warning,
+                  color: Colors.orange,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Tripping & Shutdown Events Configuration',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: theme.colorScheme.onSurface,
                   ),
                 ),
-                Text(
-                  '${DateFormat('MMM dd').format(widget.startDate)} - ${DateFormat('MMM dd, yyyy').format(widget.endDate)}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              IconButton(
+                onPressed: _showFilterDialog,
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _hasActiveFilters()
+                        ? theme.colorScheme.primary.withOpacity(0.1)
+                        : Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.filter_list,
+                    color: _hasActiveFilters()
+                        ? theme.colorScheme.primary
+                        : Colors.grey.shade600,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(flex: 1, child: _buildSubstationSelector(theme)),
+              const SizedBox(width: 16),
+              Expanded(flex: 1, child: _buildDateRangeSelector(theme)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubstationSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select Substation',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: theme.colorScheme.primary.withOpacity(0.2),
+            ),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<Substation>(
+              value: _selectedSubstation,
+              isExpanded: true,
+              items: widget.accessibleSubstations.map((substation) {
+                return DropdownMenuItem(
+                  value: substation,
+                  child: Text(
+                    substation.name,
+                    style: const TextStyle(fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: (Substation? newValue) {
+                if (newValue != null &&
+                    newValue.id != _selectedSubstation?.id) {
+                  if (_selectedSubstation != null) {
+                    _selectedBayCache[_selectedSubstation!.id] = List.from(
+                      _selectedFilterBayIds,
+                    );
+                  }
+
+                  setState(() {
+                    _selectedSubstation = newValue;
+                    _selectedFilterBayIds = List.from(
+                      _selectedBayCache[newValue.id] ?? [],
+                    );
+                    _clearFilters();
+                  });
+
+                  _fetchBaysForSelectedSubstation();
+                }
+              },
+              icon: Icon(
+                Icons.keyboard_arrow_down,
+                color: theme.colorScheme.primary,
+                size: 20,
+              ),
+              hint: const Text(
+                'Select Substation',
+                style: TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateRangeSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Date Range',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: _showDateRangePicker,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.secondary.withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.date_range,
+                  size: 16,
+                  color: theme.colorScheme.secondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _startDate != null && _endDate != null
+                        ? '${DateFormat('dd.MMM').format(_startDate!)} - ${DateFormat('dd.MMM').format(_endDate!)}'
+                        : 'Select dates',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: theme.colorScheme.secondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
           ),
-          IconButton(
-            onPressed: _showFilterDialog,
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _hasActiveFilters()
-                    ? theme.colorScheme.primary.withOpacity(0.1)
-                    : Colors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.filter_list,
-                color: _hasActiveFilters()
-                    ? theme.colorScheme.primary
-                    : Colors.grey.shade600,
-                size: 20,
-              ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showDateRangePicker() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      initialDateRange: _startDate != null && _endDate != null
+          ? DateTimeRange(start: _startDate!, end: _endDate!)
+          : DateTimeRange(
+              start: DateTime.now().subtract(const Duration(days: 7)),
+              end: DateTime.now(),
+            ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: Theme.of(context).colorScheme.primary,
             ),
           ),
-        ],
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+      });
+    }
+  }
+
+  Widget _buildSearchButton(ThemeData theme) {
+    final bool canSearch =
+        _selectedSubstation != null && _startDate != null && _endDate != null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: ElevatedButton.icon(
+          onPressed: canSearch ? _fetchTrippingShutdownEvents : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 0,
+          ),
+          icon: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.search, size: 18),
+          label: Text(
+            _isLoading ? 'Searching...' : 'Search Events',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          ),
+        ),
       ),
     );
   }
@@ -233,11 +516,6 @@ class _TrippingTabState extends State<TrippingTab>
             spacing: 8,
             runSpacing: 4,
             children: [
-              ..._selectedFilterSubstationIds.map(
-                (id) => _buildFilterChip(
-                  'Substation: ${_substationsMap[id]?.name ?? 'Unknown'}',
-                ),
-              ),
               ..._selectedFilterVoltageLevels.map(
                 (level) => _buildFilterChip('Voltage: $level'),
               ),
@@ -284,7 +562,7 @@ class _TrippingTabState extends State<TrippingTab>
       return _buildLoadingState();
     }
 
-    if (_substationsInSubdivision.isEmpty) {
+    if (widget.accessibleSubstations.isEmpty) {
       return _buildNoSubstationsState(theme);
     }
 
@@ -292,7 +570,83 @@ class _TrippingTabState extends State<TrippingTab>
       return _buildNoEventsState(theme);
     }
 
-    return _buildEventsList(theme);
+    return Column(
+      children: [
+        _buildResultsHeader(theme),
+        const SizedBox(height: 16),
+        Expanded(child: _buildEventsList(theme)),
+      ],
+    );
+  }
+
+  Widget _buildResultsHeader(ThemeData theme) {
+    final totalEvents = _groupedEntriesByBayType.values
+        .expand((events) => events)
+        .length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(Icons.list_alt, color: Colors.green, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Events for ${_selectedSubstation?.name ?? ''}',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  '$totalEvents events found',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          if (totalEvents > 0)
+            ElevatedButton.icon(
+              onPressed: _exportToExcel,
+              icon: const Icon(Icons.download, size: 16),
+              label: const Text('Export Excel', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.withOpacity(0.1),
+                foregroundColor: Colors.green,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLoadingState() {
@@ -339,7 +693,7 @@ class _TrippingTabState extends State<TrippingTab>
             ),
             const SizedBox(height: 8),
             Text(
-              'No substations found in your subdivision. Please ensure your user is assigned to a subdivision with substations.',
+              'No accessible substations found. Please contact your administrator.',
               style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
@@ -401,7 +755,7 @@ class _TrippingTabState extends State<TrippingTab>
 
   Widget _buildEventsList(ThemeData theme) {
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: _sortedBayTypes.length,
       itemBuilder: (context, index) {
         final bayType = _sortedBayTypes[index];
@@ -618,19 +972,9 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildFloatingActionButton(ThemeData theme) {
-    return FloatingActionButton.extended(
-      onPressed: _createNewEvent,
-      label: const Text('Add Event'),
-      icon: const Icon(Icons.add),
-      backgroundColor: theme.colorScheme.primary,
-    );
-  }
-
   // Helper methods
   bool _hasActiveFilters() {
-    return _selectedFilterSubstationIds.isNotEmpty ||
-        _selectedFilterVoltageLevels.isNotEmpty ||
+    return _selectedFilterVoltageLevels.isNotEmpty ||
         _selectedFilterBayTypes.isNotEmpty ||
         _selectedFilterBayIds.isNotEmpty;
   }
@@ -679,12 +1023,22 @@ class _TrippingTabState extends State<TrippingTab>
     }
   }
 
+  void _clearFilters() {
+    _selectedFilterVoltageLevels.clear();
+    _selectedFilterBayTypes.clear();
+    // Don't clear bay IDs here as they are managed separately
+  }
+
   void _clearAllFilters() {
     setState(() {
-      _selectedFilterSubstationIds.clear();
       _selectedFilterVoltageLevels.clear();
       _selectedFilterBayTypes.clear();
       _selectedFilterBayIds.clear();
+      if (_selectedSubstation != null) {
+        _selectedBayCache[_selectedSubstation!.id] = List.from(
+          _selectedFilterBayIds,
+        );
+      }
     });
     _fetchTrippingShutdownEvents();
   }
@@ -704,7 +1058,7 @@ class _TrippingTabState extends State<TrippingTab>
     }
   }
 
-  // Updated navigation methods with substationName parameter
+  // Navigation methods
   void _viewEventDetails(TrippingShutdownEntry entry) async {
     final substationName = await _getSubstationName(entry.substationId);
 
@@ -712,7 +1066,7 @@ class _TrippingTabState extends State<TrippingTab>
       MaterialPageRoute(
         builder: (context) => TrippingShutdownEntryScreen(
           substationId: entry.substationId,
-          substationName: substationName, // ✅ Added required parameter
+          substationName: substationName,
           currentUser: widget.currentUser,
           entryToEdit: entry,
           isViewOnly: true,
@@ -729,7 +1083,7 @@ class _TrippingTabState extends State<TrippingTab>
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: entry.substationId,
-              substationName: substationName, // ✅ Added required parameter
+              substationName: substationName,
               currentUser: widget.currentUser,
               entryToEdit: entry,
               isViewOnly: false,
@@ -740,16 +1094,17 @@ class _TrippingTabState extends State<TrippingTab>
   }
 
   void _createNewEvent() async {
-    if (_substationsInSubdivision.isEmpty) {
+    if (widget.accessibleSubstations.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
-        'No substations available in your subdivision to create an event.',
+        'No substations available to create an event.',
         isError: true,
       );
       return;
     }
 
-    final defaultSubstation = _substationsInSubdivision.first;
+    final defaultSubstation =
+        _selectedSubstation ?? widget.accessibleSubstations.first;
     final substationName = await _getSubstationName(defaultSubstation.id);
 
     Navigator.of(context)
@@ -757,7 +1112,7 @@ class _TrippingTabState extends State<TrippingTab>
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: defaultSubstation.id,
-              substationName: substationName, // ✅ Added required parameter
+              substationName: substationName,
               currentUser: widget.currentUser,
               isViewOnly: false,
             ),
@@ -766,27 +1121,28 @@ class _TrippingTabState extends State<TrippingTab>
         .then((_) => _fetchTrippingShutdownEvents());
   }
 
-  // Filter dialog method
+  // Filter dialog
   Future<void> _showFilterDialog() async {
     await showDialog(
       context: context,
       builder: (context) => _FilterDialog(
-        selectedSubstationIds: _selectedFilterSubstationIds,
         selectedVoltageLevels: _selectedFilterVoltageLevels,
         selectedBayTypes: _selectedFilterBayTypes,
         selectedBayIds: _selectedFilterBayIds,
-        substationsMap: _substationsMap,
-        substationsInSubdivision: _substationsInSubdivision,
         availableVoltageLevels: _availableVoltageLevels,
         availableBayTypes: _availableBayTypes,
-        allBaysInSubdivisionList: _allBaysInSubdivisionList,
+        allBaysInSubdivisionList: _bays,
         baysMap: _baysMap,
-        onApplyFilters: (substationIds, voltageLevels, bayTypes, bayIds) {
+        onApplyFilters: (voltageLevels, bayTypes, bayIds) {
           setState(() {
-            _selectedFilterSubstationIds = substationIds;
             _selectedFilterVoltageLevels = voltageLevels;
             _selectedFilterBayTypes = bayTypes;
             _selectedFilterBayIds = bayIds;
+            if (_selectedSubstation != null) {
+              _selectedBayCache[_selectedSubstation!.id] = List.from(
+                _selectedFilterBayIds,
+              );
+            }
           });
           _fetchTrippingShutdownEvents();
         },
@@ -794,84 +1150,9 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  // Data fetching methods implementation
-  Future<void> _fetchInitialHierarchyDataAndEvents() async {
-    setState(() => _isLoading = true);
-
-    try {
-      // Get subdivision based on current user
-      String? subdivisionId;
-      if (widget.currentUser.assignedLevels != null &&
-          widget.currentUser.assignedLevels!.containsKey('subdivisionId')) {
-        subdivisionId = widget.currentUser.assignedLevels!['subdivisionId'];
-      }
-
-      if (subdivisionId == null) {
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'No subdivision assigned to your user.',
-            isError: true,
-          );
-        }
-        return;
-      }
-
-      // Fetch substations in subdivision
-      final substationsSnapshot = await FirebaseFirestore.instance
-          .collection('substations')
-          .where('subdivisionId', isEqualTo: subdivisionId)
-          .orderBy('name')
-          .get();
-
-      _substationsInSubdivision = substationsSnapshot.docs
-          .map((doc) => Substation.fromFirestore(doc))
-          .toList();
-
-      _substationsMap = {
-        for (var substation in _substationsInSubdivision)
-          substation.id: substation,
-      };
-
-      // Fetch all bays in subdivision
-      if (_substationsInSubdivision.isNotEmpty) {
-        final substationIds = _substationsInSubdivision
-            .map((s) => s.id)
-            .toList();
-
-        final baysSnapshot = await FirebaseFirestore.instance
-            .collection('bays')
-            .where('substationId', whereIn: substationIds)
-            .orderBy('name')
-            .get();
-
-        _allBaysInSubdivisionList = baysSnapshot.docs
-            .map((doc) => Bay.fromFirestore(doc))
-            .toList();
-
-        _baysMap = {for (var bay in _allBaysInSubdivisionList) bay.id: bay};
-      }
-
-      // Fetch events
-      await _fetchTrippingShutdownEvents();
-    } catch (e) {
-      print('Error fetching initial data: $e');
-      if (mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Error loading data: $e',
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
+  // Data fetching
   Future<void> _fetchTrippingShutdownEvents() async {
-    if (_substationsInSubdivision.isEmpty) {
+    if (_selectedSubstation == null || _startDate == null || _endDate == null) {
       setState(() {
         _groupedEntriesByBayType = {};
         _sortedBayTypes = [];
@@ -879,35 +1160,27 @@ class _TrippingTabState extends State<TrippingTab>
       return;
     }
 
+    setState(() => _isLoading = true);
+
     try {
-      final substationIds = _selectedFilterSubstationIds.isNotEmpty
-          ? _selectedFilterSubstationIds
-          : _substationsInSubdivision.map((s) => s.id).toList();
-
-      if (substationIds.isEmpty) return;
-
-      // Build query
       Query query = FirebaseFirestore.instance.collection(
         'trippingShutdownEntries',
       );
 
-      // Filter by substations
-      query = query.where('substationId', whereIn: substationIds);
+      query = query.where('substationId', isEqualTo: _selectedSubstation!.id);
 
-      // Filter by date range
       query = query
           .where(
             'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate),
+            isGreaterThanOrEqualTo: Timestamp.fromDate(_startDate!),
           )
           .where(
             'startTime',
             isLessThanOrEqualTo: Timestamp.fromDate(
-              widget.endDate.add(const Duration(days: 1)),
+              _endDate!.add(const Duration(days: 1)),
             ),
           );
 
-      // Order by start time (most recent first)
       query = query.orderBy('startTime', descending: true);
 
       final eventsSnapshot = await query.get();
@@ -950,7 +1223,7 @@ class _TrippingTabState extends State<TrippingTab>
       _sortedBayTypes = _groupedEntriesByBayType.keys.toList()..sort();
 
       if (mounted) {
-        setState(() {});
+        setState(() => _isLoading = false);
       }
     } catch (e) {
       print('Error fetching events: $e');
@@ -960,6 +1233,7 @@ class _TrippingTabState extends State<TrippingTab>
           'Error loading events: $e',
           isError: true,
         );
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -969,8 +1243,6 @@ class _TrippingTabState extends State<TrippingTab>
     String eventType,
     String bayName,
   ) async {
-    final theme = Theme.of(context);
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1024,30 +1296,382 @@ class _TrippingTabState extends State<TrippingTab>
       }
     }
   }
+
+  // Excel Export
+  // Excel Export - Updated _exportToExcel method in TrippingTab
+  Future<void> _exportToExcel() async {
+    try {
+      if (Platform.isAndroid) {
+        var status = await Permission.storage.status;
+        if (!status.isGranted) {
+          status = await Permission.storage.request();
+          if (!status.isGranted) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Storage permission is required to export data',
+              isError: true,
+            );
+            return;
+          }
+        }
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Generating Excel file...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      var excel = Excel.createExcel();
+      excel.delete('Sheet1');
+
+      // Collect all events
+      final allEvents = _groupedEntriesByBayType.values
+          .expand((events) => events)
+          .toList();
+
+      // Group by bay type for separate sheets
+      Map<String, List<TrippingShutdownEntry>> eventsByBayType = {};
+      for (var event in allEvents) {
+        final bay = _baysMap[event.bayId];
+        final bayType = bay?.bayType ?? 'Unknown';
+        eventsByBayType.putIfAbsent(bayType, () => []);
+        eventsByBayType[bayType]!.add(event);
+      }
+
+      eventsByBayType.forEach((bayType, events) {
+        var sheet = excel[bayType];
+
+        // Complete list of headers based on the model
+        List<String> headers = [
+          'Event Type',
+          'Bay Name',
+          'Bay Type',
+          'Voltage Level',
+          'Substation',
+          'Start Time',
+          'End Time',
+          'Duration (Hours)',
+          'Status',
+          'Flags/Cause',
+          'Reason for Non-Feeder',
+          'Has Auto Reclose',
+          'Phase Faults',
+          'Distance',
+          'Shutdown Type',
+          'Shutdown Person Name',
+          'Shutdown Person Designation',
+          'Created By',
+          'Created At',
+          'Closed By',
+          'Closed At',
+        ];
+
+        for (int i = 0; i < headers.length; i++) {
+          var cell = sheet.cell(
+            CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+          );
+          cell.value = TextCellValue(headers[i]);
+          cell.cellStyle = CellStyle(
+            bold: true,
+            backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+          );
+        }
+
+        int rowIndex = 1;
+
+        events.sort((a, b) => b.startTime.compareTo(a.startTime));
+
+        for (var event in events) {
+          final bay = _baysMap[event.bayId];
+          final substation = _substationsMap[event.substationId];
+
+          Duration? duration;
+          if (event.endTime != null) {
+            duration = event.endTime!.toDate().difference(
+              event.startTime.toDate(),
+            );
+          }
+
+          List<dynamic> rowData = [
+            event.eventType,
+            event.bayName,
+            bay?.bayType ?? 'Unknown',
+            bay?.voltageLevel ?? 'Unknown',
+            substation?.name ?? 'Unknown',
+            DateFormat(
+              'yyyy-MM-dd HH:mm:ss',
+            ).format(event.startTime.toDate().toLocal()),
+            event.endTime != null
+                ? DateFormat(
+                    'yyyy-MM-dd HH:mm:ss',
+                  ).format(event.endTime!.toDate().toLocal())
+                : 'Ongoing',
+            duration != null
+                ? '${duration.inHours}.${((duration.inMinutes % 60) / 60 * 100).round()}'
+                : 'Ongoing',
+            event.status,
+            event.flagsCause,
+            event.reasonForNonFeeder ?? '',
+            event.hasAutoReclose?.toString() ?? '',
+            event.phaseFaults?.join(', ') ?? '',
+            event.distance ?? '',
+            event.shutdownType ?? '',
+            event.shutdownPersonName ?? '',
+            event.shutdownPersonDesignation ?? '',
+            event.createdBy,
+            DateFormat(
+              'yyyy-MM-dd HH:mm:ss',
+            ).format(event.createdAt.toDate().toLocal()),
+            event.closedBy ?? '',
+            event.closedAt != null
+                ? DateFormat(
+                    'yyyy-MM-dd HH:mm:ss',
+                  ).format(event.closedAt!.toDate().toLocal())
+                : '',
+          ];
+
+          for (int i = 0; i < rowData.length; i++) {
+            var cell = sheet.cell(
+              CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
+            );
+            cell.value = TextCellValue(rowData[i].toString());
+
+            if (rowIndex % 2 == 0) {
+              cell.cellStyle = CellStyle(
+                backgroundColorHex: ExcelColor.fromHexString('#F5F5F5'),
+              );
+            }
+
+            // Color-code status column
+            if (i == 8) {
+              // Status column
+              if (event.status == 'OPEN') {
+                cell.cellStyle = CellStyle(
+                  backgroundColorHex: ExcelColor.fromHexString('#FFF3CD'),
+                );
+              } else {
+                cell.cellStyle = CellStyle(
+                  backgroundColorHex: ExcelColor.fromHexString('#D4EDDA'),
+                );
+              }
+            }
+
+            // Color-code event type column
+            if (i == 0) {
+              // Event Type column
+              if (event.eventType == 'Tripping') {
+                cell.cellStyle = CellStyle(
+                  backgroundColorHex: ExcelColor.fromHexString('#F8D7DA'),
+                );
+              } else if (event.eventType == 'Shutdown') {
+                cell.cellStyle = CellStyle(
+                  backgroundColorHex: ExcelColor.fromHexString('#D1ECF1'),
+                );
+              }
+            }
+          }
+          rowIndex++;
+        }
+
+        // Set column widths for better readability
+        List<double> columnWidths = [
+          12, // Event Type
+          15, // Bay Name
+          12, // Bay Type
+          12, // Voltage Level
+          15, // Substation
+          18, // Start Time
+          18, // End Time
+          12, // Duration
+          10, // Status
+          25, // Flags/Cause
+          20, // Reason for Non-Feeder
+          12, // Has Auto Reclose
+          15, // Phase Faults
+          10, // Distance
+          15, // Shutdown Type
+          20, // Shutdown Person Name
+          25, // Shutdown Person Designation
+          15, // Created By
+          18, // Created At
+          15, // Closed By
+          18, // Closed At
+        ];
+
+        for (int i = 0; i < columnWidths.length && i < headers.length; i++) {
+          sheet.setColumnWidth(i, columnWidths[i]);
+        }
+
+        // Add summary row with metadata
+        sheet.insertRowIterables([
+          TextCellValue('Bay Type: $bayType'),
+          TextCellValue(''),
+          TextCellValue('Total Events: ${events.length}'),
+          TextCellValue(''),
+          TextCellValue(
+            'Open Events: ${events.where((e) => e.status == 'OPEN').length}',
+          ),
+          TextCellValue(''),
+          TextCellValue(
+            'Closed Events: ${events.where((e) => e.status == 'CLOSED').length}',
+          ),
+          TextCellValue(''),
+          TextCellValue(
+            'Date Range: ${DateFormat('yyyy-MM-dd').format(_startDate!)} to ${DateFormat('yyyy-MM-dd').format(_endDate!)}',
+          ),
+        ], 0);
+
+        // Style summary row
+        for (int i = 0; i < 9; i++) {
+          var cell = sheet.cell(
+            CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+          );
+          cell.cellStyle = CellStyle(
+            bold: true,
+            backgroundColorHex: ExcelColor.fromHexString('#FFF3E0'),
+          );
+        }
+      });
+
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName =
+          'tripping_events_complete_${_selectedSubstation?.name.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
+      final file = File('${directory.path}/$fileName');
+
+      await file.writeAsBytes(excel.encode()!);
+
+      Navigator.of(context).pop();
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green),
+              SizedBox(width: 8),
+              Text('Export Successful'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('File saved as: $fileName'),
+              const SizedBox(height: 8),
+              Text('Location: ${directory.path}'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.blue.shade700,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Complete Export Details:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '• All model fields included varied header length columns)\n• Separate sheets by bay type\n• Status and event type color-coding\n• Summary statistics per sheet\n• Proper duration calculations',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                try {
+                  await OpenFilex.open(file.path);
+                } catch (e) {
+                  SnackBarUtils.showSnackBar(
+                    context,
+                    'Could not open file. Please check your file manager.',
+                    isError: true,
+                  );
+                }
+              },
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open File'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      print('Error exporting to Excel: $e');
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to export data: $e',
+        isError: true,
+      );
+    }
+  }
 }
 
-// Custom Filter Dialog Widget (unchanged)
+// Filter Dialog
 class _FilterDialog extends StatefulWidget {
-  final List<String> selectedSubstationIds;
   final List<String> selectedVoltageLevels;
   final List<String> selectedBayTypes;
   final List<String> selectedBayIds;
-  final Map<String, Substation> substationsMap;
-  final List<Substation> substationsInSubdivision;
   final List<String> availableVoltageLevels;
   final List<String> availableBayTypes;
   final List<Bay> allBaysInSubdivisionList;
   final Map<String, Bay> baysMap;
-  final Function(List<String>, List<String>, List<String>, List<String>)
-  onApplyFilters;
+  final Function(List<String>, List<String>, List<String>) onApplyFilters;
 
   const _FilterDialog({
-    required this.selectedSubstationIds,
     required this.selectedVoltageLevels,
     required this.selectedBayTypes,
     required this.selectedBayIds,
-    required this.substationsMap,
-    required this.substationsInSubdivision,
     required this.availableVoltageLevels,
     required this.availableBayTypes,
     required this.allBaysInSubdivisionList,
@@ -1060,7 +1684,6 @@ class _FilterDialog extends StatefulWidget {
 }
 
 class _FilterDialogState extends State<_FilterDialog> {
-  late List<String> tempSelectedSubstationIds;
   late List<String> tempSelectedVoltageLevels;
   late List<String> tempSelectedBayTypes;
   late List<String> tempSelectedBayIds;
@@ -1068,7 +1691,6 @@ class _FilterDialogState extends State<_FilterDialog> {
   @override
   void initState() {
     super.initState();
-    tempSelectedSubstationIds = List.from(widget.selectedSubstationIds);
     tempSelectedVoltageLevels = List.from(widget.selectedVoltageLevels);
     tempSelectedBayTypes = List.from(widget.selectedBayTypes);
     tempSelectedBayIds = List.from(widget.selectedBayIds);
@@ -1076,81 +1698,124 @@ class _FilterDialogState extends State<_FilterDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Filter Events'),
-      content: SizedBox(
+    final theme = Theme.of(context);
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
         width: double.maxFinite,
-        height: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildMultiSelectSection(
-                'Substations',
-                widget.substationsInSubdivision.map((s) => s.id).toList(),
-                tempSelectedSubstationIds,
-                (id) => widget.substationsMap[id]?.name ?? 'Unknown',
-                (selected) =>
-                    setState(() => tempSelectedSubstationIds = selected),
+        height: 500,
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.1),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
+                ),
               ),
-              const SizedBox(height: 16),
-              _buildMultiSelectSection(
-                'Voltage Levels',
-                widget.availableVoltageLevels,
-                tempSelectedVoltageLevels,
-                (level) => level,
-                (selected) =>
-                    setState(() => tempSelectedVoltageLevels = selected),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Filter Events',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.of(context).pop(),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close,
+                        size: 20,
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              _buildMultiSelectSection(
-                'Bay Types',
-                widget.availableBayTypes,
-                tempSelectedBayTypes,
-                (type) => type,
-                (selected) => setState(() => tempSelectedBayTypes = selected),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildMultiSelectSection(
+                      'Voltage Levels',
+                      widget.availableVoltageLevels,
+                      tempSelectedVoltageLevels,
+                      (level) => level,
+                      (selected) =>
+                          setState(() => tempSelectedVoltageLevels = selected),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildMultiSelectSection(
+                      'Bay Types',
+                      widget.availableBayTypes,
+                      tempSelectedBayTypes,
+                      (type) => type,
+                      (selected) =>
+                          setState(() => tempSelectedBayTypes = selected),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildMultiSelectSection(
+                      'Specific Bays',
+                      widget.allBaysInSubdivisionList.map((b) => b.id).toList(),
+                      tempSelectedBayIds,
+                      (id) => widget.baysMap[id]?.name ?? 'Unknown',
+                      (selected) =>
+                          setState(() => tempSelectedBayIds = selected),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-              _buildMultiSelectSection(
-                'Specific Bays',
-                widget.allBaysInSubdivisionList.map((b) => b.id).toList(),
-                tempSelectedBayIds,
-                (id) => widget.baysMap[id]?.name ?? 'Unknown',
-                (selected) => setState(() => tempSelectedBayIds = selected),
+            ),
+            const Divider(height: 1),
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        tempSelectedVoltageLevels.clear();
+                        tempSelectedBayTypes.clear();
+                        tempSelectedBayIds.clear();
+                      });
+                    },
+                    child: const Text('Clear All'),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      widget.onApplyFilters(
+                        tempSelectedVoltageLevels,
+                        tempSelectedBayTypes,
+                        tempSelectedBayIds,
+                      );
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('Apply'),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            setState(() {
-              tempSelectedSubstationIds.clear();
-              tempSelectedVoltageLevels.clear();
-              tempSelectedBayTypes.clear();
-              tempSelectedBayIds.clear();
-            });
-          },
-          child: const Text('Clear All'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            widget.onApplyFilters(
-              tempSelectedSubstationIds,
-              tempSelectedVoltageLevels,
-              tempSelectedBayTypes,
-              tempSelectedBayIds,
-            );
-            Navigator.of(context).pop();
-          },
-          child: const Text('Apply'),
-        ),
-      ],
     );
   }
 
@@ -1164,7 +1829,30 @@ class _FilterDialogState extends State<_FilterDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Row(
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const Spacer(),
+            if (items.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  final newSelected = selected.length == items.length
+                      ? <String>[]
+                      : List<String>.from(items);
+                  onChanged(newSelected);
+                },
+                child: Text(
+                  selected.length == items.length
+                      ? 'Deselect All'
+                      : 'Select All',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
@@ -1174,22 +1862,36 @@ class _FilterDialogState extends State<_FilterDialog> {
           child: Column(
             children: items.take(5).map((item) {
               final isSelected = selected.contains(item);
-              return CheckboxListTile(
-                dense: true,
-                title: Text(
-                  itemToString(item),
-                  style: const TextStyle(fontSize: 14),
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                  ),
                 ),
-                value: isSelected,
-                onChanged: (bool? value) {
-                  final newSelected = List<String>.from(selected);
-                  if (value == true) {
-                    newSelected.add(item);
-                  } else {
-                    newSelected.remove(item);
-                  }
-                  onChanged(newSelected);
-                },
+                child: CheckboxListTile(
+                  dense: true,
+                  title: Text(
+                    itemToString(item),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isSelected
+                          ? FontWeight.w500
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  value: isSelected,
+                  onChanged: (bool? value) {
+                    final newSelected = List<String>.from(selected);
+                    if (value == true) {
+                      newSelected.add(item);
+                    } else {
+                      newSelected.remove(item);
+                    }
+                    onChanged(newSelected);
+                  },
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
               );
             }).toList(),
           ),
