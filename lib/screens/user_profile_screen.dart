@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/user_model.dart';
-import '../services/user_service.dart';
+import '../../services/user_service.dart'; // Fixed import path
+import 'admin/admin_dashboard_screen.dart';
+import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
+import 'substation_dashboard/substation_user_dashboard_screen.dart'; // Fixed import path
 
 class UserProfileScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -23,10 +26,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   // Controllers for form fields
   late TextEditingController _nameController;
-  late TextEditingController
-  _cugNumberController; // UPDATED: renamed from mobileController
-  late TextEditingController
-  _personalNumberController; // NEW: personal number controller
+  late TextEditingController _cugNumberController;
+  late TextEditingController _personalNumberController;
   late TextEditingController _sapIdController;
   late TextEditingController _highestEducationController;
   late TextEditingController _collegeController;
@@ -45,10 +46,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     _nameController = TextEditingController(text: widget.currentUser.name);
     _cugNumberController = TextEditingController(
       text: widget.currentUser.cugNumber,
-    ); // UPDATED
+    );
     _personalNumberController = TextEditingController(
       text: widget.currentUser.personalNumber ?? '',
-    ); // NEW
+    );
     _sapIdController = TextEditingController(
       text: widget.currentUser.sapId ?? '',
     );
@@ -68,8 +69,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _cugNumberController.dispose(); // UPDATED
-    _personalNumberController.dispose(); // NEW
+    _cugNumberController.dispose();
+    _personalNumberController.dispose();
     _sapIdController.dispose();
     _highestEducationController.dispose();
     _collegeController.dispose();
@@ -257,7 +258,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
         const SizedBox(height: 16),
 
-        // CUG Number (Mandatory) - UPDATED: renamed and updated label
+        // CUG Number (Mandatory)
         TextFormField(
           controller: _cugNumberController,
           enabled: _isEditing,
@@ -310,7 +311,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
         const SizedBox(height: 16),
 
-        // Personal Number (Optional) - NEW FIELD
+        // Personal Number (Optional)
         TextFormField(
           controller: _personalNumberController,
           enabled: _isEditing,
@@ -366,9 +367,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  // Rest of the methods remain the same...
   Widget _buildDesignationField() {
-    if (widget.currentUser.role == UserRole.admin) {
+    if (widget.currentUser.role == UserRole.admin ||
+        widget.currentUser.role == UserRole.superAdmin) {
       return _buildDropdownField<Designation>(
         label: 'Designation *',
         value: _selectedDesignation,
@@ -449,7 +450,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
         const SizedBox(height: 16),
 
-        if (widget.currentUser.role == UserRole.admin) ...[
+        if (widget.currentUser.role == UserRole.admin ||
+            widget.currentUser.role == UserRole.superAdmin) ...[
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -535,7 +537,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      widget.currentUser.role.toString().split('.').last,
+                      _getRoleDisplayName(widget.currentUser.role),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -972,7 +974,35 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  // UPDATED: Save profile method with both fields
+  // Helper method for role display names
+  String _getRoleDisplayName(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+        return 'Administrator';
+      case UserRole.superAdmin:
+        return 'Super Admin';
+      case UserRole.companyManager:
+        return 'Company Manager';
+      case UserRole.stateManager:
+        return 'State Manager';
+      case UserRole.zoneManager:
+        return 'Zone Manager';
+      case UserRole.circleManager:
+        return 'Circle Manager';
+      case UserRole.divisionManager:
+        return 'Division Manager';
+      case UserRole.subdivisionManager:
+        return 'Subdivision Manager';
+      case UserRole.substationUser:
+        return 'Substation User';
+      case UserRole.pending:
+        return 'Pending Approval';
+      default:
+        return 'User';
+    }
+  }
+
+  // Save profile method with navigation
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -985,11 +1015,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     try {
       final updatedUser = widget.currentUser.copyWith(
         name: _nameController.text.trim(),
-        cugNumber: _cugNumberController.text.trim(), // UPDATED: save CUG number
-        personalNumber:
-            _personalNumberController.text
-                .trim()
-                .isEmpty // NEW: save personal number
+        cugNumber: _cugNumberController.text.trim(),
+        personalNumber: _personalNumberController.text.trim().isEmpty
             ? null
             : _personalNumberController.text.trim(),
         designation: _selectedDesignation,
@@ -1018,9 +1045,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
       _showSuccessSnackBar('Profile updated successfully');
 
-      // Navigate back to auth flow to re-evaluate user status
+      // Navigate to appropriate dashboard after successful save
       Future.delayed(const Duration(seconds: 1), () {
-        _navigateAfterProfileComplete();
+        _navigateToUserDashboard(updatedUser);
       });
     } catch (e) {
       setState(() {
@@ -1030,8 +1057,47 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  void _navigateAfterProfileComplete() {
-    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+  // Navigate to user dashboard based on role
+  void _navigateToUserDashboard(AppUser user) {
+    if (!mounted) return;
+
+    Widget destinationScreen;
+
+    switch (user.role) {
+      case UserRole.admin:
+      case UserRole.superAdmin:
+        destinationScreen = AdminDashboardScreen(adminUser: user);
+        break;
+      case UserRole.substationUser:
+        destinationScreen = SubstationUserDashboardScreen(currentUser: user);
+        break;
+      case UserRole.subdivisionManager:
+      case UserRole.divisionManager:
+      case UserRole.circleManager:
+      case UserRole.zoneManager:
+      case UserRole.stateManager:
+      case UserRole.companyManager:
+        destinationScreen = SubdivisionDashboardScreen(currentUser: user);
+        break;
+      case UserRole.pending:
+        _showErrorSnackBar('Your account is pending admin approval.');
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/auth', (route) => false);
+        return;
+      default:
+        _showErrorSnackBar('Unsupported user role: ${user.role}');
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/auth', (route) => false);
+        return;
+    }
+
+    // Navigate to dashboard
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => destinationScreen),
+      (route) => false,
+    );
   }
 
   void _showSuccessSnackBar(String message) {

@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
+import 'package:substation_manager/screens/power_pulse/dashboard_screen.dart';
 import '../models/user_model.dart';
 import '../models/app_state_data.dart';
 import '../screens/notification_preferences_screen.dart';
-import '../screens/report_builder_wizard_screen.dart';
-import '../screens/report_template_designer_screen.dart'; // Added for new report build
-import '../screens/saved_sld_list_screen.dart';
 import '../screens/user_profile_screen.dart';
 
 class ModernAppDrawer extends StatelessWidget {
@@ -68,18 +66,6 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
     super.dispose();
   }
 
-  // Add this new method for New Report Build navigation
-  void _navigateToNewReportBuild(BuildContext context) {
-    Navigator.of(context).pop(); // Close the drawer
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) =>
-            ReportTemplateDesignerScreen(currentUserId: widget.user.uid),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -121,7 +107,11 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildHeader(context, theme, isDarkMode),
+                        _buildHeader(
+                          context,
+                          widget.user,
+                          isDarkMode: isDarkMode,
+                        ),
                         _buildContent(context, theme, isDarkMode),
                       ],
                     ),
@@ -135,7 +125,14 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
     );
   }
 
-  Widget _buildHeader(BuildContext context, ThemeData theme, bool isDarkMode) {
+  // UPDATED: Enhanced user-based header
+  Widget _buildHeader(
+    BuildContext context,
+    AppUser user, {
+    bool isDarkMode = false,
+  }) {
+    final theme = Theme.of(context);
+
     return Container(
       padding: const EdgeInsets.only(top: 8, bottom: 16),
       child: Column(
@@ -154,63 +151,114 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
 
           const SizedBox(height: 20),
 
-          // App info
+          // User Profile Section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
+                // User Avatar with Role-based Color
                 Container(
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withOpacity(0.15),
+                    color: _getRoleColor(user.role).withOpacity(0.15),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _getRoleColor(user.role).withOpacity(0.3),
+                      width: 1,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.electrical_services,
-                    color: theme.colorScheme.primary,
-                    size: 28,
+                  child: Center(
+                    child: Text(
+                      user.name.isNotEmpty
+                          ? user.name[0].toUpperCase()
+                          : user.email[0].toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _getRoleColor(user.role),
+                      ),
+                    ),
                   ),
                 ),
 
                 const SizedBox(width: 16),
 
+                // User Info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // User Name
                       Text(
-                        'Substation Manager',
+                        user.name.isNotEmpty ? user.name : 'User',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: isDarkMode ? Colors.white : Colors.black,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
+
                       const SizedBox(height: 4),
+
+                      // Role Badge
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: _getRoleColor(
-                            widget.user.role,
-                          ).withOpacity(0.15),
+                          color: _getRoleColor(user.role).withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _getRoleColor(user.role).withOpacity(0.3),
+                            width: 0.5,
+                          ),
                         ),
                         child: Text(
-                          _getRoleDisplayName(widget.user.role),
+                          _getRoleDisplayName(user.role),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: _getRoleColor(widget.user.role),
+                            color: _getRoleColor(user.role),
                           ),
                         ),
                       ),
+
+                      // Optional: Show user's current posting if available
+                      if (user.currentPostingDisplay != 'Not assigned') ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          user.currentPostingDisplay,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.7)
+                                : Colors.black.withOpacity(0.6),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ],
                     ],
                   ),
                 ),
+
+                // Optional: Status indicator
+                if (!user.approved)
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(
+                      Icons.pending,
+                      color: Colors.orange,
+                      size: 16,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -251,7 +299,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
 
           const SizedBox(height: 20),
 
-          // Settings section - Updated to include Profile
+          // Settings section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
@@ -381,7 +429,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
         onTap: isToggle ? () => appStateData.toggleTheme() : onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(12), // Reduced padding to fit 3 tiles
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isDarkMode
                 ? const Color(0xFF2C2C2E)
@@ -391,7 +439,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
           child: Column(
             children: [
               Container(
-                width: 28, // Slightly smaller icon container
+                width: 28,
                 height: 28,
                 decoration: BoxDecoration(
                   color: isLogout
@@ -402,7 +450,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
                 child: Icon(
                   icon,
                   color: isLogout ? Colors.red : theme.colorScheme.primary,
-                  size: 16, // Smaller icon
+                  size: 16,
                 ),
               ),
 
@@ -411,7 +459,7 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 11, // Smaller text to fit better
+                  fontSize: 11,
                   fontWeight: FontWeight.w500,
                   color: isLogout
                       ? Colors.red
@@ -469,6 +517,28 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
           },
         ];
 
+      case UserRole.companyManager:
+        return [
+          {
+            'icon': Icons.dashboard_rounded,
+            'title': 'Dashboard',
+            'subtitle': 'Company overview',
+            'onTap': () => Navigator.pop(context),
+            'color': Colors.blue,
+          },
+        ];
+
+      case UserRole.stateManager:
+        return [
+          {
+            'icon': Icons.dashboard_rounded,
+            'title': 'Dashboard',
+            'subtitle': 'State overview',
+            'onTap': () => Navigator.pop(context),
+            'color': Colors.blue,
+          },
+        ];
+
       case UserRole.zoneManager:
         return [
           {
@@ -505,11 +575,25 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
       case UserRole.subdivisionManager:
         return [
           {
+            'icon': Icons.dashboard_rounded,
+            'title': 'Dashboard',
+            'subtitle': 'Subdivision overview',
+            'onTap': () => Navigator.pop(context),
+            'color': Colors.blue,
+          },
+          {
             'icon': Icons.notifications_rounded,
             'title': 'Notification Preferences',
             'subtitle': 'Configure event alerts',
             'onTap': () => _navigateToNotificationPreferences(context),
             'color': Colors.amber,
+          },
+          {
+            'icon': Icons.dashboard_rounded,
+            'title': 'PowerPulse',
+            'subtitle': 'Ideas in Power & Transmission',
+            'onTap': () => _navigateToPowerPulseDashboardScreen(context),
+            'color': Colors.blue,
           },
         ];
 
@@ -527,10 +611,9 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
     }
   }
 
-  // Add this new method for Profile navigation
+  // Navigation methods
   void _navigateToProfile(BuildContext context) {
-    Navigator.of(context).pop(); // Close the drawer
-
+    Navigator.of(context).pop();
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => UserProfileScreen(currentUser: widget.user),
@@ -538,145 +621,17 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
     );
   }
 
-  // Add this new method for Professional Directory navigation
-  // void _navigateToProfessionalDirectory(BuildContext context) {
-  //   Navigator.of(context).pop(); // Close the drawer
-
-  //   Navigator.of(context).push(
-  //     MaterialPageRoute(
-  //       builder: (context) =>
-  //           ProfessionalDirectoryScreen(currentUser: widget.user),
-  //     ),
-  //   );
-  // }
-
-  // Add this new method for Custom Reports navigation
-  void _navigateToCustomReports(BuildContext context) {
-    Navigator.of(context).pop(); // Close the drawer
-
+  void _navigateToPowerPulseDashboardScreen(BuildContext context) {
+    Navigator.of(context).pop();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) =>
-            ReportBuilderWizardScreen(currentUser: widget.user),
+        builder: (context) => const PowerPulseDashboardScreen(),
       ),
     );
   }
 
-  Color _getRoleColor(UserRole role) {
-    switch (role) {
-      case UserRole.admin:
-      case UserRole.superAdmin:
-        return Colors.red;
-      case UserRole.subdivisionManager:
-        return Colors.purple;
-      case UserRole.substationUser:
-        return Colors.teal;
-      case UserRole.divisionManager:
-        return Colors.orange;
-      case UserRole.circleManager:
-        return Colors.green;
-      case UserRole.zoneManager:
-        return Colors.cyan;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _getRoleDisplayName(UserRole role) {
-    switch (role) {
-      case UserRole.admin:
-        return 'Administrator';
-      case UserRole.superAdmin:
-        return 'Super Administrator';
-      case UserRole.subdivisionManager:
-        return 'Subdivision Manager';
-      case UserRole.substationUser:
-        return 'Substation User';
-      case UserRole.divisionManager:
-        return 'Division Manager';
-      case UserRole.circleManager:
-        return 'Circle Manager';
-      case UserRole.zoneManager:
-        return 'Zone Manager';
-      default:
-        return role.toString();
-    }
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Sign Out',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: isDarkMode ? Colors.white : Colors.black,
-            ),
-          ),
-          content: Text(
-            'Are you sure you want to sign out?',
-            style: TextStyle(
-              fontSize: 16,
-              color: isDarkMode
-                  ? Colors.white.withOpacity(0.8)
-                  : Colors.black.withOpacity(0.8),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(
-                'Cancel',
-                style: TextStyle(
-                  color: isDarkMode
-                      ? Colors.white.withOpacity(0.6)
-                      : Colors.black.withOpacity(0.6),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                Navigator.pop(context);
-
-                try {
-                  await FirebaseAuth.instance.signOut();
-                  await GoogleSignIn().signOut();
-                } catch (e) {
-                  print('Error during sign out: $e');
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: const Text(
-                'Sign Out',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _navigateToNotificationPreferences(BuildContext context) {
-    Navigator.of(context).pop(); // Close the drawer
-
+    Navigator.of(context).pop();
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) =>
@@ -684,4 +639,127 @@ class _BottomDrawerContentState extends State<_BottomDrawerContent>
       ),
     );
   }
+}
+
+// Helper methods for role colors and display names
+Color _getRoleColor(UserRole role) {
+  switch (role) {
+    case UserRole.admin:
+    case UserRole.superAdmin:
+      return Colors.red;
+    case UserRole.companyManager:
+      return Colors.purple;
+    case UserRole.stateManager:
+      return Colors.indigo;
+    case UserRole.zoneManager:
+      return Colors.cyan;
+    case UserRole.circleManager:
+      return Colors.green;
+    case UserRole.divisionManager:
+      return Colors.orange;
+    case UserRole.subdivisionManager:
+      return Colors.purple;
+    case UserRole.substationUser:
+      return Colors.teal;
+    case UserRole.pending:
+      return Colors.grey;
+    default:
+      return Colors.grey;
+  }
+}
+
+String _getRoleDisplayName(UserRole role) {
+  switch (role) {
+    case UserRole.admin:
+      return 'Administrator';
+    case UserRole.superAdmin:
+      return 'Super Admin';
+    case UserRole.companyManager:
+      return 'Company Manager';
+    case UserRole.stateManager:
+      return 'State Manager';
+    case UserRole.zoneManager:
+      return 'Zone Manager';
+    case UserRole.circleManager:
+      return 'Circle Manager';
+    case UserRole.divisionManager:
+      return 'Division Manager';
+    case UserRole.subdivisionManager:
+      return 'Subdivision Manager';
+    case UserRole.substationUser:
+      return 'Substation User';
+    case UserRole.pending:
+      return 'Pending Approval';
+    default:
+      return 'User';
+  }
+}
+
+void _showLogoutDialog(BuildContext context) {
+  final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+  showDialog(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Sign Out',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : Colors.black,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to sign out?',
+          style: TextStyle(
+            fontSize: 16,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.8)
+                : Colors.black.withOpacity(0.8),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.black.withOpacity(0.6),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              Navigator.pop(context);
+
+              try {
+                await FirebaseAuth.instance.signOut();
+                await GoogleSignIn().signOut();
+              } catch (e) {
+                print('Error during sign out: $e');
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Sign Out',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      );
+    },
+  );
 }

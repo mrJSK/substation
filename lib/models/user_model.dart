@@ -6,8 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 enum UserRole {
   admin,
   superAdmin,
-  stateManager, // new: state-level manager
-  companyManager, // new: company-level user
+  stateManager,
+  companyManager,
   zoneManager,
   circleManager,
   divisionManager,
@@ -19,26 +19,25 @@ enum UserRole {
 // Define designation enum for standardization
 enum Designation {
   director,
-  chiefEngineer, // CE
-  superintendingEngineer, // SE
-  executiveEngineer, // EE
-  assistantEngineerSDO, // SDO/AE
-  juniorEngineer, // JE
+  chiefEngineer,
+  superintendingEngineer,
+  executiveEngineer,
+  assistantEngineerSDO,
+  juniorEngineer,
   technician,
 }
 
 class AppUser {
   final String uid;
-  final String email; // From Google Sign-in (non-editable)
-  final String name; // Mandatory
-  final String
-  cugNumber; // UPDATED: Previously 'mobile', now CUG Number (Mandatory)
-  final String? personalNumber; // NEW: Personal mobile number (Optional)
-  final Designation designation; // Mandatory
+  final String email;
+  final String name;
+  final String cugNumber; // This should never be null
+  final String? personalNumber;
+  final Designation designation;
   final UserRole role;
   final bool approved;
 
-  // Hierarchy information (mandatory - current posting)
+  // Hierarchy information
   final String? companyId;
   final String? companyName;
   final String? stateId;
@@ -72,8 +71,8 @@ class AppUser {
     required this.uid,
     required this.email,
     required this.name,
-    required this.cugNumber, // UPDATED: renamed from mobile
-    this.personalNumber, // NEW: personal number field
+    required this.cugNumber,
+    this.personalNumber,
     required this.designation,
     this.role = UserRole.pending,
     this.approved = false,
@@ -101,49 +100,60 @@ class AppUser {
     this.assignedLevels,
   });
 
-  // Factory constructor to create an AppUser from a Firestore DocumentSnapshot
+  // FIXED: Better null handling in fromFirestore
   factory AppUser.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map;
+
+    // CRITICAL FIX: Ensure cugNumber is never null
+    String cugNumberValue = '';
+    if (data['cugNumber'] != null && data['cugNumber'].toString().isNotEmpty) {
+      cugNumberValue = data['cugNumber'].toString();
+    } else if (data['mobile'] != null && data['mobile'].toString().isNotEmpty) {
+      cugNumberValue = data['mobile'].toString();
+    } else {
+      // Fallback to empty string if both are null
+      cugNumberValue = '';
+    }
+
     return AppUser(
       uid: doc.id,
-      email: data['email'] ?? '',
-      name: data['name'] ?? '',
-      cugNumber:
-          data['cugNumber'] ??
-          data['mobile'] ??
-          '', // BACKWARD COMPATIBILITY: Check both fields
-      personalNumber: data['personalNumber'], // NEW field
+      email: data['email']?.toString() ?? '',
+      name: data['name']?.toString() ?? '',
+      cugNumber: cugNumberValue, // Now guaranteed to be non-null
+      personalNumber: data['personalNumber']?.toString(),
       designation: Designation.values.firstWhere(
         (e) =>
             e.toString().split('.').last ==
-            (data['designation'] ?? 'technician'),
+            (data['designation']?.toString() ?? 'technician'),
         orElse: () => Designation.technician,
       ),
       role: UserRole.values.firstWhere(
-        (e) => e.toString().split('.').last == (data['role'] ?? 'pending'),
+        (e) =>
+            e.toString().split('.').last ==
+            (data['role']?.toString() ?? 'pending'),
         orElse: () => UserRole.pending,
       ),
       approved: data['approved'] ?? false,
-      companyId: data['companyId'],
-      companyName: data['companyName'],
-      stateId: data['stateId'],
-      stateName: data['stateName'],
-      zoneId: data['zoneId'],
-      zoneName: data['zoneName'],
-      circleId: data['circleId'],
-      circleName: data['circleName'],
-      divisionId: data['divisionId'],
-      divisionName: data['divisionName'],
-      subdivisionId: data['subdivisionId'],
-      subdivisionName: data['subdivisionName'],
-      substationId: data['substationId'],
-      substationName: data['substationName'],
-      sapId: data['sapId'],
-      highestEducation: data['highestEducation'],
-      college: data['college'],
-      personalEmail: data['personalEmail'],
-      createdAt: data['createdAt'],
-      updatedAt: data['updatedAt'],
+      companyId: data['companyId']?.toString(),
+      companyName: data['companyName']?.toString(),
+      stateId: data['stateId']?.toString(),
+      stateName: data['stateName']?.toString(),
+      zoneId: data['zoneId']?.toString(),
+      zoneName: data['zoneName']?.toString(),
+      circleId: data['circleId']?.toString(),
+      circleName: data['circleName']?.toString(),
+      divisionId: data['divisionId']?.toString(),
+      divisionName: data['divisionName']?.toString(),
+      subdivisionId: data['subdivisionId']?.toString(),
+      subdivisionName: data['subdivisionName']?.toString(),
+      substationId: data['substationId']?.toString(),
+      substationName: data['substationName']?.toString(),
+      sapId: data['sapId']?.toString(),
+      highestEducation: data['highestEducation']?.toString(),
+      college: data['college']?.toString(),
+      personalEmail: data['personalEmail']?.toString(),
+      createdAt: data['createdAt'] as Timestamp?,
+      updatedAt: data['updatedAt'] as Timestamp?,
       profileCompleted: data['profileCompleted'] ?? false,
       assignedLevels: data['assignedLevels'] != null
           ? Map.from(data['assignedLevels'])
@@ -151,13 +161,12 @@ class AppUser {
     );
   }
 
-  // Method to convert AppUser to a Map for Firestore
   Map<String, dynamic> toFirestore() {
     return {
       'email': email,
       'name': name,
-      'cugNumber': cugNumber, // UPDATED: store as cugNumber
-      'personalNumber': personalNumber, // NEW field
+      'cugNumber': cugNumber,
+      'personalNumber': personalNumber,
       'designation': designation.toString().split('.').last,
       'role': role.toString().split('.').last,
       'approved': approved,
@@ -186,13 +195,12 @@ class AppUser {
     };
   }
 
-  // Helper method for creating a modified copy of an AppUser instance
   AppUser copyWith({
     String? uid,
     String? email,
     String? name,
-    String? cugNumber, // UPDATED: renamed from mobile
-    String? personalNumber, // NEW field
+    String? cugNumber,
+    String? personalNumber,
     Designation? designation,
     UserRole? role,
     bool? approved,
@@ -223,8 +231,8 @@ class AppUser {
       uid: uid ?? this.uid,
       email: email ?? this.email,
       name: name ?? this.name,
-      cugNumber: cugNumber ?? this.cugNumber, // UPDATED
-      personalNumber: personalNumber ?? this.personalNumber, // NEW
+      cugNumber: cugNumber ?? this.cugNumber,
+      personalNumber: personalNumber ?? this.personalNumber,
       designation: designation ?? this.designation,
       role: role ?? this.role,
       approved: approved ?? this.approved,
@@ -287,17 +295,14 @@ class AppUser {
 
   bool get isMandatoryFieldsComplete {
     return name.isNotEmpty &&
-        cugNumber.isNotEmpty && // UPDATED: check cugNumber instead of mobile
-        (subdivisionName != null ||
-            substationName !=
-                null); // Must have at least subdivision level posting
+        cugNumber.isNotEmpty &&
+        (subdivisionName != null || substationName != null);
   }
 
-  // **BACKWARD COMPATIBILITY GETTER**
+  // Backward compatibility getter
   @deprecated
-  String get mobile => cugNumber; // For existing code that still uses 'mobile'
+  String get mobile => cugNumber;
 
-  // **EXISTING GETTERS FOR BACKWARD COMPATIBILITY**
   String? get primaryHierarchyId {
     switch (role) {
       case UserRole.substationUser:

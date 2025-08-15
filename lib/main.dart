@@ -1,19 +1,21 @@
 // lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
-
-import '../firebase_options.dart'; // Ensure this path is correct
-import '../models/app_state_data.dart';
-import '../screens/home_screen.dart'; // This will be the new routing screen
-import '../screens/splash_screen.dart';
-import 'services/fcm_service.dart'; // The initial splash screen
+import 'firebase_options.dart'; // Fixed import path
+import 'models/app_state_data.dart'; // Fixed import path
+import 'screens/home_screen.dart'; // Fixed import path
+import 'screens/splash_screen.dart'; // Fixed import path
+import 'services/fcm_service.dart'; // Fixed import path
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   // Initialize Firebase once at the application start
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // In your main.dart or app initialization
+
+  // Initialize FCM service
   await FCMService.initializeFCM();
 
   runApp(
@@ -47,6 +49,7 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'Substation Manager Pro',
       debugShowCheckedModeBanner: false,
+
       // Define light theme
       theme: ThemeData(
         brightness: Brightness.light,
@@ -176,6 +179,7 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: Colors.white,
       ),
+
       // Define dark theme
       darkTheme: ThemeData(
         brightness: Brightness.dark,
@@ -262,12 +266,12 @@ class _MyAppState extends State<MyApp> {
           linearTrackColor: primaryBlue.withOpacity(0.2),
         ),
         textTheme: TextTheme(
-          headlineSmall: TextStyle(
+          headlineSmall: const TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
             fontSize: 24,
           ),
-          titleMedium: TextStyle(
+          titleMedium: const TextStyle(
             fontWeight: FontWeight.w600,
             color: Colors.white,
             fontSize: 18,
@@ -305,19 +309,18 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: Colors.black,
       ),
-      themeMode: appStateData.themeMode, // Use themeMode from AppStateData
+
+      themeMode: appStateData.themeMode,
+
       // Use a FutureBuilder to wait for AppStateData to be initialized
-      home: FutureBuilder(
-        // The future to await is the initialization of AppStateData
-        // We'll expose a Future from AppStateData for this purpose
-        future: appStateData.isInitialized
-            ? Future.value(true)
-            : null, // Only run if not already initialized
+      home: FutureBuilder<bool>(
+        future: appStateData.isInitialized ? Future.value(true) : null,
         builder: (context, snapshot) {
           // If AppStateData is still loading, show the SplashScreen
           if (!appStateData.isInitialized) {
             return const SplashScreen();
           }
+
           // Once AppStateData is initialized, HomeRouter handles further routing
           return const HomeRouter();
         },
