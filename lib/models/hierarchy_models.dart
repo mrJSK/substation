@@ -1,16 +1,17 @@
 // lib/models/hierarchy_models.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// ---------------------------------------------------------------------------
-///                               Core abstract
+/// Core abstract
 /// ---------------------------------------------------------------------------
+
 abstract class HierarchyItem {
   final String id;
   final String name;
   final String? description;
   final String? createdBy;
   final Timestamp? createdAt;
-
   final String? address;
   final String? landmark;
   final String? contactNumber;
@@ -44,8 +45,9 @@ abstract class HierarchyItem {
 }
 
 /// ---------------------------------------------------------------------------
-///                               Application State
+/// Application State
 /// ---------------------------------------------------------------------------
+
 class AppScreenState extends HierarchyItem {
   AppScreenState({
     required super.id,
@@ -115,8 +117,9 @@ class AppScreenState extends HierarchyItem {
 }
 
 /// ---------------------------------------------------------------------------
-///                               Transmission side
+/// Transmission side
 /// ---------------------------------------------------------------------------
+
 class Company extends HierarchyItem {
   final String stateId;
 
@@ -150,6 +153,36 @@ class Company extends HierarchyItem {
       contactDesignation: data['contactDesignation'],
     );
   }
+
+  factory Company.fromMap(Map<String, dynamic> map) {
+    return Company(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      stateId: map['stateId'] ?? '',
+      address: map['address'],
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'stateId': stateId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   @override
   Map<String, dynamic> toFirestore() => {
@@ -226,6 +259,36 @@ class Zone extends HierarchyItem {
     );
   }
 
+  factory Zone.fromMap(Map<String, dynamic> map) {
+    return Zone(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      companyId: map['companyId'] ?? '',
+      address: map['address'],
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'companyId': companyId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
+
   @override
   Map<String, dynamic> toFirestore() => {
     'name': name,
@@ -300,6 +363,36 @@ class Circle extends HierarchyItem {
       contactDesignation: data['contactDesignation'],
     );
   }
+
+  factory Circle.fromMap(Map<String, dynamic> map) {
+    return Circle(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      zoneId: map['zoneId'] ?? '',
+      address: map['address'],
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'zoneId': zoneId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   @override
   Map<String, dynamic> toFirestore() => {
@@ -376,6 +469,36 @@ class Division extends HierarchyItem {
     );
   }
 
+  factory Division.fromMap(Map<String, dynamic> map) {
+    return Division(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      circleId: map['circleId'] ?? '',
+      address: map['address'],
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'circleId': circleId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
+
   @override
   Map<String, dynamic> toFirestore() => {
     'name': name,
@@ -451,6 +574,36 @@ class Subdivision extends HierarchyItem {
     );
   }
 
+  factory Subdivision.fromMap(Map<String, dynamic> map) {
+    return Subdivision(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      divisionId: map['divisionId'] ?? '',
+      address: map['address'],
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'divisionId': divisionId,
+    'address': address,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
+
   @override
   Map<String, dynamic> toFirestore() => {
     'name': name,
@@ -502,11 +655,13 @@ class Substation extends HierarchyItem {
   final Timestamp? commissioningDate;
   final String? status;
   final String? statusDescription;
-
   // Add these fields to store the hierarchy names
   final String? subdivisionName;
   final String? divisionName;
   final String? circleName;
+
+  @override
+  final String? address;
 
   Substation({
     required super.id,
@@ -532,10 +687,7 @@ class Substation extends HierarchyItem {
     this.subdivisionName,
     this.divisionName,
     this.circleName,
-  });
-
-  @override
-  final String? address;
+  }) : super(address: address);
 
   factory Substation.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -565,6 +717,58 @@ class Substation extends HierarchyItem {
       circleName: data['circleName'],
     );
   }
+
+  factory Substation.fromMap(Map<String, dynamic> map) {
+    return Substation(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      subdivisionId: map['subdivisionId'] ?? '',
+      address: map['address'],
+      cityId: map['cityId'],
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+      voltageLevel: map['voltageLevel'],
+      type: map['type'],
+      operation: map['operation'],
+      sasMake: map['sasMake'],
+      commissioningDate: map['commissioningDate'] as Timestamp?,
+      status: map['status'],
+      statusDescription: map['statusDescription'],
+      subdivisionName: map['subdivisionName'],
+      divisionName: map['divisionName'],
+      circleName: map['circleName'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'subdivisionId': subdivisionId,
+    'address': address,
+    'cityId': cityId,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+    'voltageLevel': voltageLevel,
+    'type': type,
+    'operation': operation,
+    'sasMake': sasMake,
+    'commissioningDate': commissioningDate,
+    'status': status,
+    'statusDescription': statusDescription,
+    'subdivisionName': subdivisionName,
+    'divisionName': divisionName,
+    'circleName': circleName,
+  };
 
   @override
   Map<String, dynamic> toFirestore() => {
@@ -644,8 +848,9 @@ class Substation extends HierarchyItem {
 }
 
 /// ---------------------------------------------------------------------------
-///                               Distribution side
+/// Distribution side
 /// ---------------------------------------------------------------------------
+
 class DistributionZone extends HierarchyItem {
   final String stateName;
 
@@ -679,6 +884,36 @@ class DistributionZone extends HierarchyItem {
       contactDesignation: data['contactDesignation'],
     );
   }
+
+  factory DistributionZone.fromMap(Map<String, dynamic> map) {
+    return DistributionZone(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      address: map['address'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      stateName: map['stateName'] ?? '',
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'address': address,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'stateName': stateName,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   @override
   Map<String, dynamic> toFirestore() => {
@@ -755,6 +990,36 @@ class DistributionCircle extends HierarchyItem {
     );
   }
 
+  factory DistributionCircle.fromMap(Map<String, dynamic> map) {
+    return DistributionCircle(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      address: map['address'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      distributionZoneId: map['distributionZoneId'] ?? '',
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'address': address,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'distributionZoneId': distributionZoneId,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
+
   @override
   Map<String, dynamic> toFirestore() => {
     'name': name,
@@ -829,6 +1094,36 @@ class DistributionDivision extends HierarchyItem {
       contactDesignation: data['contactDesignation'],
     );
   }
+
+  factory DistributionDivision.fromMap(Map<String, dynamic> map) {
+    return DistributionDivision(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      address: map['address'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      distributionCircleId: map['distributionCircleId'] ?? '',
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'address': address,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'distributionCircleId': distributionCircleId,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   @override
   Map<String, dynamic> toFirestore() => {
@@ -907,6 +1202,38 @@ class DistributionSubdivision extends HierarchyItem {
       contactDesignation: data['contactDesignation'],
     );
   }
+
+  factory DistributionSubdivision.fromMap(Map<String, dynamic> map) {
+    return DistributionSubdivision(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      description: map['description'],
+      address: map['address'],
+      createdBy: map['createdBy'],
+      createdAt: map['createdAt'],
+      distributionDivisionId: map['distributionDivisionId'] ?? '',
+      substationIds: List<String>.from(map['substationIds'] ?? []),
+      landmark: map['landmark'],
+      contactNumber: map['contactNumber'],
+      contactPerson: map['contactPerson'],
+      contactDesignation: map['contactDesignation'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'address': address,
+    'createdBy': createdBy,
+    'createdAt': createdAt,
+    'distributionDivisionId': distributionDivisionId,
+    'substationIds': substationIds,
+    'landmark': landmark,
+    'contactNumber': contactNumber,
+    'contactPerson': contactPerson,
+    'contactDesignation': contactDesignation,
+  };
 
   @override
   Map<String, dynamic> toFirestore() => {

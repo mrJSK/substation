@@ -1,10 +1,12 @@
-// lib/widgets/post_card.dart
-import 'dart:convert';
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animated_emoji/animated_emoji.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+
 import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
 
@@ -13,6 +15,7 @@ class PostCard extends StatefulWidget {
   final VoidCallback onTap;
   final bool showRank;
   final int? rank;
+  final bool isCompact;
 
   const PostCard({
     Key? key,
@@ -20,335 +23,223 @@ class PostCard extends StatefulWidget {
     required this.onTap,
     this.showRank = false,
     this.rank,
+    this.isCompact = false,
   }) : super(key: key);
 
   @override
   State<PostCard> createState() => _PostCardState();
 }
 
-class _PostCardState extends State<PostCard> {
-  late Post _post; // Store mutable post in state
+class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
+  late Post _post;
   Vote? _userVote;
   bool _isVoting = false;
+  late AnimationController _voteAnimationController;
+  late Animation<double> _voteScaleAnimation;
+  String? _cachedExcerpt;
 
   @override
   void initState() {
     super.initState();
-    _post = widget.post; // Initialize from widget
+    _post = widget.post;
+    _setupAnimations();
     _loadUserVote();
+    _generateCachedExcerpt();
+  }
+
+  @override
+  void dispose() {
+    _voteAnimationController.dispose();
+    super.dispose();
+  }
+
+  void _setupAnimations() {
+    _voteAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _voteScaleAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(
+        parent: _voteAnimationController,
+        curve: Curves.bounceOut,
+      ),
+    );
   }
 
   Future<void> _loadUserVote() async {
-    final vote = await VoteService.getUserVote(_post.id);
-    if (mounted) {
-      setState(() {
-        _userVote = vote;
-      });
+    try {
+      final vote = await VoteService.getUserVote(postId: _post.id);
+      if (mounted) {
+        setState(() {
+          _userVote = vote;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading user vote: $e');
     }
   }
 
-  // Generate human-readable excerpt from JSON blocks
+  void _generateCachedExcerpt() {
+    _cachedExcerpt = _generateExcerpt(_post.bodyPlain);
+  }
+
   String _generateExcerpt(String bodyPlain) {
     if (bodyPlain.isEmpty) return 'No content available';
 
     try {
-      // Parse the JSON blocks
       final json = jsonDecode(bodyPlain) as List<dynamic>;
-
-      // Extract text from blocks to create readable excerpt
-      StringBuffer excerpt = StringBuffer();
+      final excerptBuffer = StringBuffer();
+      int wordCount = 0;
+      const maxWords = 35;
 
       for (var blockJson in json) {
+        if (wordCount >= maxWords) break;
+
         final type = ContentBlockType.values[blockJson['type'] as int];
-        final text = blockJson['text'] as String? ?? '';
+        final text = (blockJson['text'] as String? ?? '').trim();
         final listItems = List<String>.from(blockJson['listItems'] ?? []);
+        final flowchartData =
+            blockJson['flowchartData'] as Map<String, dynamic>?;
 
         switch (type) {
           case ContentBlockType.heading:
           case ContentBlockType.subHeading:
           case ContentBlockType.paragraph:
             if (text.isNotEmpty) {
-              excerpt.write(text);
-              excerpt.write(' ');
+              final words = text.split(RegExp(r'\s+'));
+              final wordsToAdd = (maxWords - wordCount).clamp(0, words.length);
+              excerptBuffer.write(words.take(wordsToAdd).join(' '));
+              wordCount += wordsToAdd;
+              if (wordCount < maxWords) excerptBuffer.write(' ');
             }
             break;
           case ContentBlockType.bulletedList:
+          case ContentBlockType.numberedList:
             for (var item in listItems) {
-              if (item.isNotEmpty) {
-                excerpt.write('• $item ');
+              if (wordCount >= maxWords) break;
+              if (item.trim().isNotEmpty) {
+                final words = item.trim().split(RegExp(r'\s+'));
+                final wordsToAdd = (maxWords - wordCount).clamp(
+                  0,
+                  words.length,
+                );
+                excerptBuffer.write('• ${words.take(wordsToAdd).join(' ')} ');
+                wordCount += wordsToAdd;
               }
             }
             break;
           case ContentBlockType.link:
-            if (text.isNotEmpty) {
-              excerpt.write(text);
-              excerpt.write(' ');
+            if (text.isNotEmpty && wordCount < maxWords) {
+              excerptBuffer.write('🔗 $text ');
+              wordCount += text.split(RegExp(r'\s+')).length;
             }
             break;
           case ContentBlockType.image:
-            excerpt.write('[Image] ');
+            if (wordCount < maxWords) {
+              excerptBuffer.write('📷 Image ');
+              wordCount += 1;
+            }
             break;
           case ContentBlockType.file:
-            excerpt.write('[File: ${text.isNotEmpty ? text : 'Attachment'}] ');
+            if (wordCount < maxWords) {
+              final fileName = text.isNotEmpty ? text : 'Attachment';
+              excerptBuffer.write('📎 $fileName ');
+              wordCount += fileName.split(RegExp(r'\s+')).length;
+            }
+            break;
+          case ContentBlockType.flowchart:
+            if (wordCount < maxWords) {
+              final description =
+                  flowchartData?['description']?.toString() ?? 'Flowchart';
+              excerptBuffer.write('📊 $description ');
+              wordCount += description.split(RegExp(r'\s+')).length;
+            }
             break;
         }
-
-        // Stop if we have enough text for preview
-        if (excerpt.length > 300) break;
       }
 
-      String result = excerpt.toString().trim();
+      String result = excerptBuffer.toString().trim();
       if (result.isEmpty) return 'No readable content available';
-
-      // Truncate if too long
-      return result.length > 200 ? '${result.substring(0, 200)}...' : result;
+      return wordCount >= maxWords ? '$result...' : result;
     } catch (e) {
-      // Fallback: if JSON parsing fails, try to show plain text excerpt
-      print('Error parsing bodyPlain JSON: $e');
-      return bodyPlain.length > 200
-          ? '${bodyPlain.substring(0, 200)}...'
+      debugPrint('Error parsing bodyPlain JSON: $e');
+      return bodyPlain.length > 150
+          ? '${bodyPlain.substring(0, 150)}...'
           : bodyPlain;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+    return Semantics(
+      label: 'Post: ${_post.title}',
+      child: widget.isCompact ? _buildCompactCard() : _buildFullCard(),
+    );
+  }
+
+  Widget _buildFullCard() {
+    return Card(
+      elevation: 2,
+      shadowColor: Colors.black.withOpacity(0.1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          widget.onTap();
+          AnalyticsService.logPostView(_post.id);
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(),
+              const SizedBox(height: 16),
+              _buildContent(),
+              const SizedBox(height: 16),
+              _buildFooter(),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCompactCard() {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          widget.onTap();
+          AnalyticsService.logPostView(_post.id);
+        },
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Rank indicator (for top posts)
               if (widget.showRank && widget.rank != null) ...[
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: _getRankColor(widget.rank!),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${widget.rank}',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
+                _buildRankBadge(),
                 const SizedBox(width: 12),
               ],
-
-              // Main content
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Scope badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _post.scope.isPublic
-                            ? Colors.blue[50]
-                            : Colors.orange,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _post.scope.isPublic
-                              ? Colors.blue[200]!
-                              : Colors.orange[200]!,
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Text(
-                        _post.scope.displayName,
-                        style: GoogleFonts.montserrat(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: _post.scope.isPublic
-                              ? Colors.blue[700]
-                              : Colors.orange[700],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Title
-                    Text(
-                      _post.title,
-                      style: GoogleFonts.lora(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                        color: Colors.black87,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    _buildHeader(compact: true),
                     const SizedBox(height: 8),
-
-                    // Excerpt - shows human-readable content
-                    Text(
-                      _generateExcerpt(_post.bodyPlain),
-                      style: GoogleFonts.lora(
-                        fontSize: 16,
-                        height: 1.5,
-                        color: Colors.grey[700],
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Bottom row
-                    Row(
-                      children: [
-                        // Author avatar
-                        CircleAvatar(
-                          backgroundColor: Colors.blue[100],
-                          radius: 16,
-                          child: Text(
-                            (_post.authorName ?? 'U')[0].toUpperCase(),
-                            style: GoogleFonts.montserrat(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.blue[600],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Author info
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _post.authorName ?? 'Unknown',
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Row(
-                                children: [
-                                  Text(
-                                    _formatTimestamp(_post.createdAt),
-                                    style: GoogleFonts.montserrat(
-                                      fontSize: 11,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  Text(
-                                    ' • ${_post.readingTime}',
-                                    style: GoogleFonts.montserrat(
-                                      fontSize: 11,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // Engagement metrics
-                        Row(
-                          children: [
-                            // Vote buttons - UPDATED with animated emojis
-                            _buildVoteButton(
-                              isUpvote: true,
-                              isSelected: _userVote?.value == 1,
-                              onTap: () => _vote(1),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '${_post.score}',
-                              style: GoogleFonts.montserrat(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: _getScoreColor(),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            _buildVoteButton(
-                              isUpvote: false,
-                              isSelected: _userVote?.value == -1,
-                              onTap: () => _vote(-1),
-                            ),
-                            const SizedBox(width: 16),
-
-                            // Comment count
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.chat_bubble_outline,
-                                  size: 16,
-                                  color: Colors.grey[600],
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${_post.commentCount}',
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                    _buildTitle(compact: true),
+                    const SizedBox(height: 12),
+                    _buildCompactFooter(),
                   ],
                 ),
               ),
-
-              // Header image (if exists)
               if (_post.imageUrl != null) ...[
-                const SizedBox(width: 16),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    _post.imageUrl!,
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 80,
-                        height: 80,
-                        color: Colors.grey[200],
-                        child: Icon(
-                          Icons.image_not_supported,
-                          color: Colors.grey[400],
-                          size: 24,
-                        ),
-                      );
-                    },
-                  ),
-                ),
+                const SizedBox(width: 12),
+                _buildThumbnail(),
               ],
             ],
           ),
@@ -357,40 +248,484 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  // UPDATED: Vote button with animated thumbs up/down
+  Widget _buildHeader({bool compact = false}) {
+    return Row(
+      children: [
+        if (widget.showRank && widget.rank != null && !compact) ...[
+          _buildRankBadge(),
+          const SizedBox(width: 12),
+        ],
+        _buildScopeBadge(),
+        if (_post.flair != null) ...[
+          const SizedBox(width: 8),
+          _buildFlairBadge(),
+        ],
+        if (!compact) ...[const Spacer(), _buildMenuButton()],
+      ],
+    );
+  }
+
+  Widget _buildRankBadge() {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: _getRankGradient(widget.rank!),
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: _getRankColor(widget.rank!).withOpacity(0.3),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          '${widget.rank}',
+          style: GoogleFonts.montserrat(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScopeBadge() {
+    final isPublic = _post.scope.isPublic;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: isPublic ? Colors.blue[50] : Colors.orange,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isPublic ? Colors.blue[700]! : Colors.orange!,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isPublic ? Icons.public : Icons.location_on,
+            size: 12,
+            color: isPublic ? Colors.blue[700] : Colors.orange,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            _post.scope.displayName,
+            style: GoogleFonts.montserrat(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isPublic ? Colors.blue[700] : Colors.orange,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlairBadge() {
+    final flair = _post.flair;
+    if (flair == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: _getFlairColor(flair).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _getFlairColor(flair), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (flair.emoji != null) ...[
+            Text(flair.emoji!, style: const TextStyle(fontSize: 12)),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            flair.name,
+            style: GoogleFonts.montserrat(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: _getFlairColor(flair),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuButton() {
+    return PopupMenuButton<String>(
+      icon: Icon(Icons.more_horiz, color: Colors.grey[600]),
+      onSelected: _handleMenuAction,
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'share',
+          child: Row(
+            children: [
+              Icon(Icons.share, size: 18),
+              SizedBox(width: 8),
+              Text('Share'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'bookmark',
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_border, size: 18),
+              SizedBox(width: 8),
+              Text('Bookmark'),
+            ],
+          ),
+        ),
+        if (AuthService.currentUser?.uid == _post.authorId)
+          const PopupMenuItem(
+            value: 'delete',
+            child: Row(
+              children: [
+                Icon(Icons.delete_outline, size: 18),
+                SizedBox(width: 8),
+                Text('Delete'),
+              ],
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'report',
+          child: Row(
+            children: [
+              Icon(Icons.flag_outlined, size: 18),
+              SizedBox(width: 8),
+              Text('Report'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTitle(),
+        const SizedBox(height: 12),
+        if (_cachedExcerpt != null && _cachedExcerpt!.isNotEmpty) ...[
+          _buildExcerpt(),
+          const SizedBox(height: 12),
+        ],
+        if (_post.imageUrl != null) _buildHeroImage(),
+      ],
+    );
+  }
+
+  Widget _buildTitle({bool compact = false}) {
+    return Text(
+      _post.title,
+      style: GoogleFonts.lora(
+        fontSize: compact ? 16 : 22,
+        fontWeight: FontWeight.w700,
+        height: 1.3,
+        color: Colors.black87,
+      ),
+      maxLines: compact ? 2 : 3,
+      overflow: TextOverflow.ellipsis,
+      semanticsLabel: _post.title,
+    );
+  }
+
+  Widget _buildExcerpt() {
+    return Text(
+      _cachedExcerpt!,
+      style: GoogleFonts.lora(
+        fontSize: 16,
+        height: 1.6,
+        color: Colors.grey[700],
+      ),
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      semanticsLabel: _cachedExcerpt,
+    );
+  }
+
+  Widget _buildHeroImage() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: CachedNetworkImage(
+        imageUrl: _post.imageUrl!,
+        height: 200,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => Container(
+          height: 200,
+          color: Colors.grey[100],
+          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+        errorWidget: (context, url, error) => Container(
+          height: 200,
+          color: Colors.grey[100],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.image_not_supported,
+                color: Colors.grey[400],
+                size: 32,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Image unavailable',
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnail() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: CachedNetworkImage(
+        imageUrl: _post.imageUrl!,
+        width: 64,
+        height: 64,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => Container(
+          width: 64,
+          height: 64,
+          color: Colors.grey[200],
+          child: const Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        errorWidget: (context, url, error) => Container(
+          width: 64,
+          height: 64,
+          color: Colors.grey[200],
+          child: Icon(Icons.image_not_supported, color: Colors.grey, size: 20),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooter() {
+    return Row(
+      children: [_buildAuthorInfo(), const Spacer(), _buildEngagementMetrics()],
+    );
+  }
+
+  Widget _buildCompactFooter() {
+    return Row(
+      children: [
+        _buildAuthorInfo(compact: true),
+        const Spacer(),
+        _buildCompactMetrics(),
+      ],
+    );
+  }
+
+  Widget _buildAuthorInfo({bool compact = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          backgroundColor: Colors.blue[100],
+          radius: compact ? 12 : 16,
+          child: Text(
+            (_post.authorName ?? 'U').characters.first.toUpperCase(),
+            style: GoogleFonts.montserrat(
+              fontSize: compact ? 10 : 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.blue[600],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _post.authorName ?? 'Unknown',
+              style: GoogleFonts.montserrat(
+                fontSize: compact ? 11 : 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            if (!compact)
+              Row(
+                children: [
+                  Text(
+                    _formatTimestamp(_post.createdAt),
+                    style: GoogleFonts.montserrat(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  Text(
+                    ' • ${_post.readingTime}',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEngagementMetrics() {
+    return Row(
+      children: [
+        _buildVoteSection(),
+        const SizedBox(width: 16),
+        _buildCommentSection(),
+      ],
+    );
+  }
+
+  Widget _buildCompactMetrics() {
+    return Row(
+      children: [
+        Icon(Icons.thumb_up_outlined, size: 14, color: Colors.grey[600]),
+        const SizedBox(width: 4),
+        Text(
+          '${_post.score}',
+          style: GoogleFonts.montserrat(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: _getScoreColor(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Icon(Icons.chat_bubble_outline, size: 14, color: Colors.grey[600]),
+        const SizedBox(width: 4),
+        Text(
+          '${_post.commentCount}',
+          style: GoogleFonts.montserrat(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVoteSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[300]!, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildVoteButton(
+            isUpvote: true,
+            isSelected: _userVote?.value == 1,
+            onTap: () => _vote(1),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '${_post.score}',
+              style: GoogleFonts.montserrat(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _getScoreColor(),
+              ),
+            ),
+          ),
+          _buildVoteButton(
+            isUpvote: false,
+            isSelected: _userVote?.value == -1,
+            onTap: () => _vote(-1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentSection() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[300]!, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 6),
+          Text(
+            '${_post.commentCount}',
+            style: GoogleFonts.montserrat(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildVoteButton({
     required bool isUpvote,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    // Choose emoji based on vote type and selection state
-    AnimatedEmojiData emojiData;
-    Color? backgroundColor;
-    Color? borderColor;
+    final AnimatedEmojiData emojiData = isUpvote
+        ? AnimatedEmojis.thumbsUp
+        : AnimatedEmojis.thumbsDown;
 
-    if (isUpvote) {
-      emojiData = AnimatedEmojis.thumbsUp;
-      backgroundColor = isSelected ? Colors.green[50] : Colors.grey;
-      borderColor = isSelected ? Colors.green : Colors.grey[200];
-    } else {
-      emojiData = AnimatedEmojis.thumbsDown;
-      backgroundColor = isSelected ? Colors.red[50] : Colors.grey[50];
-      borderColor = isSelected ? Colors.red : Colors.grey[200];
-    }
+    final Color backgroundColor = isSelected
+        ? (isUpvote ? Colors.green[100]! : Colors.red!)
+        : Colors.transparent;
 
-    return GestureDetector(
-      onTap: _isVoting ? null : onTap,
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor!, width: 1),
-        ),
-        child: AnimatedEmoji(
-          emojiData,
-          size: 18,
-          repeat: isSelected, // Only animate when selected
+    return ScaleTransition(
+      scale: _voteScaleAnimation,
+      child: GestureDetector(
+        onTap: _isVoting
+            ? null
+            : () {
+                HapticFeedback.lightImpact();
+                _voteAnimationController.forward().then((_) {
+                  _voteAnimationController.reverse();
+                });
+                onTap();
+              },
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: AnimatedEmoji(emojiData, size: 18, repeat: isSelected),
         ),
       ),
     );
@@ -405,26 +740,22 @@ class _PostCardState extends State<PostCard> {
 
     if (_isVoting) return;
 
-    setState(() {
-      _isVoting = true;
-    });
+    setState(() => _isVoting = true);
 
-    // Declare and initialize BEFORE try so they are in scope for catch
-    Vote? prevVote = _userVote;
-    int prevScore = _post.score;
+    final Vote? prevVote = _userVote;
+    final int prevScore = _post.score;
 
     try {
       final newValue = (_userVote?.value == value) ? 0 : value;
 
+      // Optimistic UI update
       setState(() {
         if (newValue == 0) {
-          // Removing existing vote
           _userVote = null;
           _post = _post.copyWith(score: prevScore - (prevVote?.value ?? 0));
         } else {
-          // Applying/updating vote
           _userVote = Vote(
-            id: Vote.generateId(_post.id, currentUser.uid),
+            id: Vote.generateId(postId: _post.id, userId: currentUser.uid),
             postId: _post.id,
             userId: currentUser.uid,
             value: newValue,
@@ -435,13 +766,17 @@ class _PostCardState extends State<PostCard> {
         }
       });
 
-      // Persist
-      await VoteService.setVote(_post.id, newValue);
+      await VoteService.setVote(postId: _post.id, value: newValue);
+      await AnalyticsService.logVote(_post.id, newValue);
 
-      // Analytics
-      AnalyticsService.logVote(_post.id, newValue);
+      // Cache updated post
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'post_${_post.id}',
+        jsonEncode({..._post.toJson(), 'id': _post.id, 'score': _post.score}),
+      );
     } catch (e) {
-      // Rollback using the variables defined outside try
+      // Rollback on error
       setState(() {
         _userVote = prevVote;
         _post = _post.copyWith(score: prevScore);
@@ -449,30 +784,121 @@ class _PostCardState extends State<PostCard> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to vote. Please try again.')),
+          SnackBar(
+            content: const Text('Failed to vote. Please try again.'),
+            backgroundColor: Colors.red[400],
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isVoting = false;
-        });
+        setState(() => _isVoting = false);
       }
     }
   }
 
-  void _showLoginPrompt() {
+  void _handleMenuAction(String action) {
+    switch (action) {
+      case 'share':
+        _sharePost();
+        break;
+      case 'bookmark':
+        _bookmarkPost();
+        break;
+      case 'delete':
+        _deletePost();
+        break;
+      case 'report':
+        _reportPost();
+        break;
+    }
+  }
+
+  void _sharePost() {
+    HapticFeedback.mediumImpact();
+    // Implement share functionality, e.g., using share_plus package
+    // Share.share('Check out this post: ${_post.title} - ${_post.bodyPlain.substring(0, 50)}...');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Share functionality not implemented yet.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _bookmarkPost() {
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Post bookmarked!'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _deletePost() async {
+    final currentUser = AuthService.currentUser;
+    if (currentUser == null || currentUser.uid != _post.authorId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only the post author can delete this post.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          'Sign in required',
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.w600),
-        ),
-        content: Text(
-          'Please sign in to vote and interact with posts.',
-          style: GoogleFonts.montserrat(),
-        ),
+        title: const Text('Delete Post'),
+        content: const Text('Are you sure you want to delete this post?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await PostService.deletePost(_post.id);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Post deleted successfully.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Failed to delete post.'),
+                      backgroundColor: Colors.red[400],
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _reportPost() {
+    HapticFeedback.heavyImpact();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Report Post'),
+        content: const Text('Are you sure you want to report this post?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -481,8 +907,50 @@ class _PostCardState extends State<PostCard> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Post reported. Thank you for your feedback.'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            child: const Text('Report'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLoginPrompt() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Sign in required',
+          style: GoogleFonts.montserrat(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Please sign in to vote and interact with posts.',
+          style: GoogleFonts.lora(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
               _triggerAuth();
             },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue[600],
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             child: const Text('Sign In'),
           ),
         ],
@@ -493,33 +961,52 @@ class _PostCardState extends State<PostCard> {
   void _triggerAuth() async {
     try {
       await AuthService.signInAnonymously();
-      _loadUserVote(); // Reload vote state after auth
+      await _loadUserVote();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to sign in. Please try again.')),
+          SnackBar(
+            content: const Text('Failed to sign in. Please try again.'),
+            backgroundColor: Colors.red[400],
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
   }
 
-  Color _getRankColor(int rank) {
+  List<Color> _getRankGradient(int rank) {
     if (rank <= 3) {
-      return Colors.orange[600]!; // Gold/bronze for top 3
+      return [Colors.orange[400]!, Colors.orange!];
     } else if (rank <= 10) {
-      return Colors.blue[600]!; // Blue for top 10
+      return [Colors.blue[400]!, Colors.blue!];
     } else {
-      return Colors.grey[600]!; // Grey for others
+      return [Colors.grey!, Colors.grey!];
     }
+  }
+
+  Color _getRankColor(int rank) {
+    if (rank <= 3) return Colors.orange[700]!;
+    if (rank <= 10) return Colors.blue!;
+    return Colors.grey!;
   }
 
   Color _getScoreColor() {
-    if (_post.score > 0) {
-      return Colors.green[600]!;
-    } else if (_post.score < 0) {
-      return Colors.red[600]!;
-    } else {
-      return Colors.grey!;
+    if (_post.score > 0) return Colors.green[700]!;
+    if (_post.score < 0) return Colors.red!;
+    return Colors.grey!;
+  }
+
+  Color _getFlairColor(Flair flair) {
+    switch (flair.name.toLowerCase()) {
+      case 'urgent':
+        return Colors.red[700]!;
+      case 'question':
+        return Colors.blue!;
+      case 'announcement':
+        return Colors.green[700]!;
+      default:
+        return Colors.purple!;
     }
   }
 
@@ -528,109 +1015,18 @@ class _PostCardState extends State<PostCard> {
     final now = DateTime.now();
     final difference = now.difference(date);
 
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
+    if (difference.inMinutes < 1) {
+      return 'now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m';
     } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
+      return '${difference.inHours}h';
     } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
+      return '${difference.inDays}d';
+    } else if (difference.inDays < 30) {
+      return '${(difference.inDays / 7).floor()}w';
     } else {
-      return '${date.day}/${date.month}/${date.year}';
+      return '${date.day}/${date.month}/${date.year % 100}';
     }
   }
-}
-
-/// Variant for compact list view (optional)
-class CompactPostCard extends StatelessWidget {
-  final Post post;
-  final VoidCallback onTap;
-
-  const CompactPostCard({Key? key, required this.post, required this.onTap})
-    : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[200]!),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title
-            Text(
-              post.title,
-              style: GoogleFonts.lora(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-
-            // Meta info
-            Row(
-              children: [
-                Text(
-                  post.authorName ?? 'Unknown',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                Text(' • ', style: TextStyle(color: Colors.grey[600])),
-                Text(
-                  _formatTimestamp(post.createdAt),
-                  style: GoogleFonts.montserrat(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const Spacer(),
-                // Quick metrics
-                Text(
-                  '${post.score} votes • ${post.commentCount} comments',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 11,
-                    color: Colors.grey[500],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatTimestamp(Timestamp timestamp) {
-    final date = timestamp.toDate();
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
-}
-
-// ContentBlock enum for parsing
-enum ContentBlockType {
-  heading,
-  subHeading,
-  paragraph,
-  bulletedList,
-  image,
-  link,
-  file,
 }
