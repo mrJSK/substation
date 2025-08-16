@@ -7,6 +7,7 @@ import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:graphite/graphite.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
+import 'flowchart_create_screen.dart';
 
 class PostCreateScreen extends StatefulWidget {
   final Post? editingPost;
@@ -216,16 +218,26 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     });
   }
 
-  void _addFlowchart() {
-    setState(() {
-      _contentBlocks.add(
-        ContentBlock(
-          ContentBlockType.flowchart,
-          flowchartData: {'description': ''},
-        ),
-      );
-      _saveDraft();
-    });
+  void _addFlowchart() async {
+    // Navigate to FlowchartCreateScreen and wait for result
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const FlowchartCreateScreen()),
+    );
+
+    // If user saved a flowchart, add it to content blocks
+    if (result != null) {
+      setState(() {
+        _contentBlocks.add(
+          ContentBlock(
+            ContentBlockType.flowchart,
+            flowchartData: result, // This contains the flowchart data
+            text: result['title'] ?? 'Flowchart', // Use title as display text
+          ),
+        );
+        _saveDraft();
+      });
+    }
   }
 
   void _addListItem(ContentBlock block) {
@@ -785,6 +797,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         padding: const EdgeInsets.only(right: 16),
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
+                      confirmDismiss: (direction) async {
+                        // Show confirmation dialog
+                        return await _showDeleteConfirmationDialog(block);
+                      },
                       onDismissed: (_) {
                         setState(() {
                           block.dispose();
@@ -797,6 +813,91 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                     );
                   },
                 ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _showDeleteConfirmationDialog(ContentBlock block) async {
+    // Get block type name for the dialog
+    String blockTypeName;
+    switch (block.type) {
+      case ContentBlockType.heading:
+        blockTypeName = 'Heading';
+        break;
+      case ContentBlockType.subHeading:
+        blockTypeName = 'Sub-heading';
+        break;
+      case ContentBlockType.paragraph:
+        blockTypeName = 'Paragraph';
+        break;
+      case ContentBlockType.bulletedList:
+        blockTypeName = 'Bulleted list';
+        break;
+      case ContentBlockType.numberedList:
+        blockTypeName = 'Numbered list';
+        break;
+      case ContentBlockType.image:
+        blockTypeName = 'Image';
+        break;
+      case ContentBlockType.link:
+        blockTypeName = 'Link';
+        break;
+      case ContentBlockType.file:
+        blockTypeName = 'File';
+        break;
+      case ContentBlockType.flowchart:
+        blockTypeName = 'Flowchart';
+        break;
+    }
+
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            Icon(Icons.delete_outline, color: Colors.red[600], size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Delete $blockTypeName?',
+              style: GoogleFonts.lora(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete this $blockTypeName? This action cannot be undone.',
+          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[700]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[600],
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.lora(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1021,29 +1122,88 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
+  void _editFlowchart(ContentBlock block) async {
+    // Navigate to FlowchartCreateScreen with existing flowchart data for editing
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            FlowchartCreateScreen(existingFlowchart: block.flowchartData),
+      ),
+    );
+
+    // If user saved changes, update the content block
+    if (result != null) {
+      setState(() {
+        block.flowchartData = result;
+        block.text = result['title'] ?? 'Flowchart';
+        _saveDraft();
+      });
+    }
+  }
+
   Widget _flowchartField(ContentBlock block) {
+    final flowchartData = block.flowchartData ?? {};
+    final title = flowchartData['title'] ?? 'Untitled Flowchart';
+    final description = flowchartData['description'] ?? '';
+    final nodeCount = flowchartData['nodeCount'] ?? 0;
+
     return _blockShell(
-      TextField(
-        controller: block.controller,
-        maxLines: null,
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          hintText: 'Flowchart description (e.g. A → B → C)…',
-          prefixIcon: Icon(
-            Icons.account_tree,
-            color: Colors.grey[600],
-            size: 20,
+      InkWell(
+        onTap: () => _editFlowchart(block),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.account_tree, color: Colors.blue, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.lora(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    if (description.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        description,
+                        style: GoogleFonts.lora(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    Text(
+                      '$nodeCount nodes',
+                      style: GoogleFonts.lora(
+                        fontSize: 12,
+                        color: Colors.blue[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.edit, color: Colors.grey, size: 20),
+            ],
           ),
         ),
-        style: GoogleFonts.lora(
-          fontSize: 15,
-          height: 1.5,
-          color: Colors.black87,
-        ),
-        onChanged: (v) {
-          block.flowchartData = {'description': v};
-          _saveDraft();
-        },
       ),
     );
   }
@@ -1290,31 +1450,181 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           ),
         );
       case ContentBlockType.flowchart:
+        final flowchartData = block.flowchartData ?? {};
+        final title = flowchartData['title'] ?? 'Flowchart';
+        final description = flowchartData['description'] ?? '';
+        final nodeCount = flowchartData['nodeCount'] ?? 0;
+
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue!),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.account_tree, color: Colors.grey, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    block.flowchartData?['description'] ?? 'Flowchart',
+                // Header
+                Row(
+                  children: [
+                    Icon(Icons.account_tree, color: Colors.blue, size: 24),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: GoogleFonts.lora(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Description
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    description,
                     style: GoogleFonts.lora(
-                      fontSize: 15,
-                      color: Colors.black87,
+                      fontSize: 14,
+                      color: Colors.grey[700],
                     ),
                   ),
+                ],
+
+                const SizedBox(height: 16),
+
+                // Actual flowchart preview
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey!),
+                  ),
+                  child: _buildFlowchartPreview(block.flowchartData),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Footer info
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Preview mode - Tap to edit flowchart',
+                      style: GoogleFonts.lora(
+                        fontSize: 12,
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '$nodeCount nodes',
+                      style: GoogleFonts.lora(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         );
+    }
+  }
+
+  Widget _buildFlowchartPreview(Map<String, dynamic>? flowchartData) {
+    if (flowchartData == null) {
+      return Center(
+        child: Text(
+          'No flowchart data available',
+          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+        ),
+      );
+    }
+
+    if (flowchartData['nodes'] == null) {
+      return Center(
+        child: Text(
+          'No flowchart nodes available',
+          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+        ),
+      );
+    }
+
+    try {
+      final nodesList = flowchartData['nodes'] as String;
+      final nodes = nodeInputFromJson(nodesList);
+
+      if (nodes.isEmpty) {
+        return Center(
+          child: Text(
+            'No nodes to display',
+            style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+          ),
+        );
+      }
+
+      return InteractiveViewer(
+        minScale: 0.5,
+        maxScale: 2.0,
+        constrained: false,
+        child: SizedBox(
+          width: double.infinity,
+          height: 180, // Smaller height for preview mode
+          child: DirectGraph(
+            list: nodes,
+            defaultCellSize: const Size(100, 50),
+            cellPadding: const EdgeInsets.all(16),
+            orientation: MatrixOrientation.Vertical,
+            centered: true,
+            nodeBuilder: (context, node) => Container(
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                border: Border.all(color: Colors.blue!),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(
+                    node.id,
+                    style: GoogleFonts.lora(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error, color: Colors.red, size: 24),
+            const SizedBox(height: 8),
+            Text(
+              'Error displaying flowchart',
+              style: GoogleFonts.lora(fontSize: 14, color: Colors.red),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -1461,8 +1771,19 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               .where((text) => text.isNotEmpty) // Filter out empty items
               .toList();
         } else if (block.type == ContentBlockType.flowchart) {
-          block.flowchartData = {'description': block.controller.text.trim()};
+          // ✅ FIXED: Don't overwrite flowchartData - keep the full data from FlowchartCreateScreen
+          // The flowchartData already contains title, description, nodes, nodeCount, createdAt
+          if (block.flowchartData != null) {
+            block.text = block.flowchartData!['title'] ?? 'Flowchart';
+          }
+          // Add debug print to verify flowchart data
+          debugPrint('Flowchart data being saved: ${block.flowchartData}');
+        } else if (block.type == ContentBlockType.link) {
+          // Handle link blocks properly
+          block.text = block.controller.text.trim();
+          // URL is already set from the link field
         } else {
+          // For heading, subheading, paragraph, file blocks
           block.text = block.controller.text.trim();
         }
       }
@@ -1494,6 +1815,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             }
             break;
           case ContentBlockType.flowchart:
+            // ✅ FIXED: Use the complete flowchartData
             json['flowchartData'] = block.flowchartData ?? {'description': ''};
             break;
           default:
@@ -1502,6 +1824,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
 
         return json;
       }).toList();
+
+      // Add debug print to verify complete data structure
+      debugPrint('Complete bodyBlocksJson being saved: $bodyBlocksJson');
 
       final input = CreatePostInput(
         title: _titleController.text.trim(),
@@ -1696,16 +2021,18 @@ class ContentBlock {
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{'type': type.index, 'text': text};
 
-    // Only add serializable data
     if (listItems.isNotEmpty) {
       json['listItems'] = listItems;
     }
+
     if (url != null) {
       json['url'] = url;
     }
+
     if (file != null) {
       json['filePath'] = file!.path;
     }
+
     if (flowchartData != null) {
       json['flowchartData'] = flowchartData;
     }

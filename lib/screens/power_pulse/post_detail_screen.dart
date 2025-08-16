@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:graphite/core/typings.dart';
+import 'package:graphite/graphite.dart';
 import 'package:path/path.dart' as path;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -14,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Use prefix for models to avoid conflicts
 import '../../models/power_pulse/powerpulse_models.dart' as models;
 import '../../services/power_pulse_service/powerpulse_services.dart';
+import 'flowchart_create_screen.dart';
 import 'post_create_screen.dart' hide ContentBlock;
 
 class PostDetailScreen extends StatefulWidget {
@@ -761,58 +764,199 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         );
       case models.ContentBlockType.flowchart:
-        final description = block.flowchartData?['description'] ?? 'Flowchart';
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.teal[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.teal!),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.account_tree, color: Colors.teal[700], size: 20),
-                    const SizedBox(width: 8),
+          child: GestureDetector(
+            onTap: () => _viewFlowchart(block),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      Icon(Icons.account_tree, color: Colors.blue, size: 24),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          block.flowchartData?['title'] ?? 'Flowchart',
+                          style: GoogleFonts.lora(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        Icons.open_in_full,
+                        color: Colors.blue[600],
+                        size: 20,
+                      ),
+                    ],
+                  ),
+
+                  // Description
+                  if (block.flowchartData?['description'] != null &&
+                      block.flowchartData!['description']
+                          .toString()
+                          .isNotEmpty) ...[
+                    const SizedBox(height: 8),
                     Text(
-                      'Flowchart',
+                      block.flowchartData!['description'],
                       style: GoogleFonts.lora(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.teal[700],
+                        fontSize: 14,
+                        color: Colors.grey[700],
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  description,
-                  style: GoogleFonts.lora(fontSize: 14, color: Colors.black87),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  height: 200,
-                  width: double.infinity,
-                  color: Colors.grey[100],
-                  child: Center(
-                    child: Text(
-                      'Flowchart Preview (Placeholder)',
-                      style: GoogleFonts.lora(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
+
+                  const SizedBox(height: 16),
+
+                  // Actual flowchart preview
+                  Container(
+                    height: 300,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
                     ),
+                    child: _buildFlowchartPreview(block.flowchartData),
                   ),
-                ),
-              ],
+
+                  const SizedBox(height: 12),
+
+                  // Footer info
+                  Row(
+                    children: [
+                      Icon(Icons.visibility, color: Colors.blue, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Tap to view full flowchart',
+                        style: GoogleFonts.lora(
+                          fontSize: 12,
+                          color: Colors.blue,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${block.flowchartData?['nodeCount'] ?? 0} nodes',
+                        style: GoogleFonts.lora(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
     }
+  }
+
+  Widget _buildFlowchartPreview(Map<String, dynamic>? flowchartData) {
+    if (flowchartData == null || flowchartData['nodes'] == null) {
+      return Center(
+        child: Text(
+          'No flowchart data available',
+          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
+        ),
+      );
+    }
+
+    try {
+      final nodesList = flowchartData['nodes'] as String;
+      final nodes = nodeInputFromJson(nodesList);
+
+      if (nodes.isEmpty) {
+        return Center(
+          child: Text(
+            'No nodes to display',
+            style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+          ),
+        );
+      }
+
+      return InteractiveViewer(
+        minScale: 0.5,
+        maxScale: 2.0,
+        constrained: false,
+        child: SizedBox(
+          width: double.infinity,
+          height: 280, // Fixed height for consistent preview
+          child: DirectGraph(
+            list: nodes,
+            defaultCellSize: const Size(100, 50),
+            cellPadding: const EdgeInsets.all(16),
+            orientation: MatrixOrientation.Vertical,
+            centered: true,
+            nodeBuilder: (context, node) => Container(
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                border: Border.all(color: Colors.blue!),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(
+                    node.id,
+                    style: GoogleFonts.lora(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error, color: Colors.red, size: 24),
+            const SizedBox(height: 8),
+            Text(
+              'Error displaying flowchart',
+              style: GoogleFonts.lora(fontSize: 14, color: Colors.red),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _viewFlowchart(models.ContentBlock block) {
+    if (block.flowchartData == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FlowchartPreviewScreen(
+          title: block.flowchartData!['title'] ?? 'Flowchart',
+          description: block.flowchartData!['description'] ?? '',
+          nodes: block.flowchartData!['nodes'] != null
+              ? nodeInputFromJson(block.flowchartData!['nodes'] as String)
+              : [],
+        ),
+      ),
+    );
   }
 
   Widget _buildVoteSection() {
