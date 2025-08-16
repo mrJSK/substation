@@ -1,4 +1,3 @@
-// lib/screens/post_detail_screen.dart
 import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -16,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
 import '../../widgets/post_card/flowchart_preview_widget.dart';
+// import 'comment_thread_screen.dart';
 import 'flowchart_create_screen.dart';
 import 'post_create_screen.dart';
 
@@ -75,10 +75,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         return;
       }
 
-      // Cache post
       await prefs.setString('post_${widget.postId}', jsonEncode(post.toJson()));
 
-      // Use the contentBlocks getter from the updated Post model
       List<ContentBlock> contentBlocks = post.contentBlocks;
 
       if (mounted) {
@@ -272,7 +270,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         slivers: [
           _buildPostHeader(),
           _buildPostContent(),
-          _buildVoteSection(),
+          _buildActionBar(),
           _buildCommentsSection(),
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
@@ -307,7 +305,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            // Display excerpt if available
             if (_post!.excerpt.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(16),
@@ -800,7 +797,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
                   Row(
                     children: [
                       Icon(
@@ -826,7 +822,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ],
                   ),
-                  // Description
                   if (block.flowchartData?['description'] != null &&
                       block.flowchartData!['description']
                           .toString()
@@ -841,14 +836,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  // Use the shared FlowchartPreviewWidget
                   FlowchartPreviewWidget(
                     flowchartData: block.flowchartData,
                     height: 300,
                     onTap: () => _viewFlowchart(block),
                   ),
                   const SizedBox(height: 12),
-                  // Footer info
                   Row(
                     children: [
                       Icon(Icons.visibility, color: Colors.blue[600], size: 16),
@@ -881,7 +874,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   void _viewFlowchart(ContentBlock block) {
     if (block.flowchartData == null) return;
-
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -896,11 +888,68 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildVoteSection() {
+  Widget _buildActionBar() {
     return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: EnhancedVoteBar(post: _post!),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(child: EnhancedVoteBar(post: _post!)),
+            const SizedBox(width: 16),
+            Container(height: 40, width: 1, color: Colors.grey[300]),
+            const SizedBox(width: 16),
+            Row(
+              children: [
+                Icon(Icons.comment_outlined, color: Colors.grey[600], size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  '${_post!.commentCount}',
+                  style: GoogleFonts.lora(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _addComment,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(
+                    'Add Comment',
+                    style: GoogleFonts.lora(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[600],
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -944,19 +993,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: _addComment,
-              icon: Icon(Icons.add_comment, color: Colors.blue[600]),
-              label: Text(
-                'Add a comment',
-                style: GoogleFonts.lora(
-                  fontSize: 14,
-                  color: Colors.blue[600],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
             StreamBuilder<List<Comment>>(
               stream: PostService.streamComments(widget.postId),
               builder: (context, snapshot) {
@@ -978,8 +1014,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     icon: Icons.chat_bubble_outline,
                     title: 'No comments yet',
                     subtitle: 'Be the first to share your thoughts!',
-                    actionText: 'Add Comment',
-                    onAction: _addComment,
                   );
                 }
                 return _buildCommentTree(comments);
@@ -992,16 +1026,675 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildCommentTree(List<Comment> comments) {
-    final rootComments = comments.where((c) => c.parentId == null).toList();
-    return Column(
-      children: rootComments.map((comment) {
+    List<Widget> buildFlatComments(List<Comment> commentsList) {
+      return commentsList.map((comment) {
         final replies = comments
             .where((c) => c.parentId == comment.id)
             .toList();
-        return _buildCommentItem(comment, replies, depth: 0);
-      }).toList(),
+        final parentComment = comment.parentId != null
+            ? comments.firstWhere(
+                (c) => c.id == comment.parentId,
+                orElse: () => Comment(
+                  id: '',
+                  postId: '',
+                  authorId: '',
+                  bodyDelta: '',
+                  bodyPlain: '',
+                  score: 0,
+                  createdAt: Timestamp.now(),
+                ),
+              )
+            : null;
+
+        return Container(
+          margin: EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.blue[600],
+                    radius: 16,
+                    child: Text(
+                      (comment.authorName ?? 'U').substring(0, 1).toUpperCase(),
+                      style: GoogleFonts.lora(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              comment.authorName ?? 'Unknown',
+                              style: GoogleFonts.lora(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            if (comment.authorDesignation != null) ...[
+                              Text(
+                                ' • ',
+                                style: GoogleFonts.lora(
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              Text(
+                                comment.authorDesignation!,
+                                style: GoogleFonts.lora(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          _formatTimestamp(comment.createdAt),
+                          style: GoogleFonts.lora(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Show @mention for replies
+              if (parentComment != null && parentComment.id.isNotEmpty) ...[
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Replying to @${parentComment.authorName ?? "Unknown"}',
+                    style: GoogleFonts.lora(
+                      fontSize: 12,
+                      color: Colors.blue[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              // Comment text with @mentions highlighted
+              RichText(text: _buildCommentTextWithMentions(comment.bodyPlain)),
+
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  EnhancedCommentVoteBar(comment: comment),
+                  const SizedBox(width: 16),
+                  TextButton.icon(
+                    onPressed: () => _addCommentWithMention(comment, comments),
+                    icon: Icon(Icons.reply, color: Colors.grey[600], size: 16),
+                    label: Text(
+                      'Reply',
+                      style: GoogleFonts.lora(fontSize: 12, color: Colors.grey),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size(0, 0),
+                    ),
+                  ),
+                  if (replies.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => _showReplies(comment, replies, comments),
+                      child: Text(
+                        '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
+                        style: GoogleFonts.lora(
+                          fontSize: 12,
+                          color: Colors.blue[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        minimumSize: Size(0, 0),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        );
+      }).toList();
+    }
+
+    // Show all comments in flat structure, sorted by timestamp
+    final sortedComments = List<Comment>.from(comments)
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    return Column(children: buildFlatComments(sortedComments));
+  }
+
+  void _addCommentWithMention(
+    Comment parentComment,
+    List<Comment> allComments,
+  ) {
+    final currentUser = AuthService.currentUser;
+    if (currentUser == null) {
+      _showLoginPrompt();
+      return;
+    }
+
+    final controller = TextEditingController();
+    controller.text = '@${parentComment.authorName ?? "user"} ';
+    controller.selection = TextSelection.fromPosition(
+      TextPosition(offset: controller.text.length),
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            top: 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Reply to ${parentComment.authorName ?? "Unknown"}',
+                style: GoogleFonts.lora(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+              SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                minLines: 2,
+                maxLines: 5,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Write your reply...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  helperText: 'Use @username to mention someone',
+                ),
+              ),
+              SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[600],
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () async {
+                    final text = controller.text.trim();
+                    if (text.isEmpty) return;
+                    Navigator.pop(ctx);
+                    try {
+                      await CommentService.addComment(
+                        CreateCommentInput(
+                          postId: widget.postId,
+                          bodyPlain: text,
+                          bodyDelta: text,
+                          parentId: parentComment.id,
+                        ),
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Reply added!',
+                              style: GoogleFonts.lora(),
+                            ),
+                            backgroundColor: Colors.green[600],
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Failed to add reply: $e',
+                              style: GoogleFonts.lora(),
+                            ),
+                            backgroundColor: Colors.red[600],
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: Text('Reply', style: GoogleFonts.lora()),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
+
+  TextSpan _buildCommentTextWithMentions(String text) {
+    final mentionRegex = RegExp(r'@(\w+)');
+    final spans = <TextSpan>[];
+    int lastIndex = 0;
+
+    for (final match in mentionRegex.allMatches(text)) {
+      // Add text before mention
+      if (match.start > lastIndex) {
+        spans.add(
+          TextSpan(
+            text: text.substring(lastIndex, match.start),
+            style: GoogleFonts.lora(
+              fontSize: 14,
+              color: Colors.black87,
+              height: 1.5,
+            ),
+          ),
+        );
+      }
+
+      // Add mention with special styling
+      spans.add(
+        TextSpan(
+          text: match.group(0),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: Colors.blue[700],
+            fontWeight: FontWeight.w600,
+            height: 1.5,
+          ),
+        ),
+      );
+
+      lastIndex = match.end;
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      spans.add(
+        TextSpan(
+          text: text.substring(lastIndex),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: Colors.black87,
+            height: 1.5,
+          ),
+        ),
+      );
+    }
+
+    return TextSpan(children: spans);
+  }
+
+  void _showReplies(
+    Comment parentComment,
+    List<Comment> replies,
+    List<Comment> allComments,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          maxChildSize: 0.9,
+          minChildSize: 0.3,
+          expand: false,
+          builder: (context, scrollController) {
+            return Column(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey[200]!),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        '${replies.length} ${replies.length == 1 ? 'Reply' : 'Replies'}',
+                        style: GoogleFonts.lora(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: EdgeInsets.all(16),
+                    itemCount: replies.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return Container(
+                          margin: EdgeInsets.only(bottom: 16),
+                          padding: EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue!),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Original Comment',
+                                style: GoogleFonts.lora(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[700],
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                parentComment.bodyPlain,
+                                style: GoogleFonts.lora(
+                                  fontSize: 14,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                '- ${parentComment.authorName ?? "Unknown"}',
+                                style: GoogleFonts.lora(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      final reply = replies[index - 1];
+                      return Container(
+                        margin: EdgeInsets.only(bottom: 12),
+                        padding: EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: Colors.blue[600],
+                                  radius: 14,
+                                  child: Text(
+                                    (reply.authorName ?? 'U')
+                                        .substring(0, 1)
+                                        .toUpperCase(),
+                                    style: GoogleFonts.lora(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  reply.authorName ?? 'Unknown',
+                                  style: GoogleFonts.lora(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Spacer(),
+                                Text(
+                                  _formatTimestamp(reply.createdAt),
+                                  style: GoogleFonts.lora(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 8),
+                            RichText(
+                              text: _buildCommentTextWithMentions(
+                                reply.bodyPlain,
+                              ),
+                            ),
+                            SizedBox(height: 8),
+                            Row(
+                              children: [
+                                EnhancedCommentVoteBar(comment: reply),
+                                Spacer(),
+                                TextButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _addCommentWithMention(reply, allComments);
+                                  },
+                                  icon: Icon(Icons.reply, size: 14),
+                                  label: Text(
+                                    'Reply',
+                                    style: GoogleFonts.lora(fontSize: 12),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Updated _addComment to automatically add @mention
+  void _addComment({String? parentId}) {
+    final currentUser = AuthService.currentUser;
+    if (currentUser == null) {
+      _showLoginPrompt();
+      return;
+    }
+
+    final controller = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StreamBuilder<List<Comment>>(
+          stream: PostService.streamComments(widget.postId),
+          builder: (context, snapshot) {
+            final comments = snapshot.data ?? [];
+
+            // Auto-add @mention for replies
+            if (parentId != null && comments.isNotEmpty) {
+              final parentComment = comments.firstWhere(
+                (c) => c.id == parentId,
+                orElse: () => Comment(
+                  id: '',
+                  postId: '',
+                  authorId: '',
+                  bodyDelta: '',
+                  bodyPlain: '',
+                  score: 0,
+                  createdAt: Timestamp.now(),
+                ),
+              );
+              if (parentComment.id.isNotEmpty && controller.text.isEmpty) {
+                controller.text = '@${parentComment.authorName ?? "user"} ';
+                controller.selection = TextSelection.fromPosition(
+                  TextPosition(offset: controller.text.length),
+                );
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+                top: 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    parentId == null ? 'Add a Comment' : 'Reply',
+                    style: GoogleFonts.lora(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    minLines: 2,
+                    maxLines: 5,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText:
+                          'Write your ${parentId == null ? 'comment' : 'reply'}...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      helperText: parentId != null
+                          ? 'Use @username to mention someone'
+                          : null,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue[600],
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () async {
+                        final text = controller.text.trim();
+                        if (text.isEmpty) return;
+                        Navigator.pop(ctx);
+                        try {
+                          await CommentService.addComment(
+                            CreateCommentInput(
+                              postId: widget.postId,
+                              bodyPlain: text,
+                              bodyDelta: text,
+                              parentId: parentId,
+                            ),
+                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Comment added!',
+                                  style: GoogleFonts.lora(),
+                                ),
+                                backgroundColor: Colors.green[600],
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Failed to add comment: $e',
+                                  style: GoogleFonts.lora(),
+                                ),
+                                backgroundColor: Colors.red[600],
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      child: Text('Post', style: GoogleFonts.lora()),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // void _showThreadView(Comment parentComment, List<Comment> replies) {
+  //   Navigator.push(
+  //     context,
+  //     MaterialPageRoute(
+  //       builder: (context) => CommentThreadScreen(
+  //         parentComment: parentComment,
+  //         replies: replies,
+  //         postId: widget.postId,
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Widget _buildCommentItem(
     Comment comment,
@@ -1167,8 +1860,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
-    String? actionText,
-    VoidCallback? onAction,
   }) {
     return Center(
       child: Padding(
@@ -1193,21 +1884,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
-            if (actionText != null && onAction != null) ...[
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.add),
-                label: Text(actionText),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[600],
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -1387,23 +2063,109 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _addComment({String? parentId}) {
-    final currentUser = AuthService.currentUser;
-    if (currentUser == null) {
-      _showLoginPrompt();
-      return;
-    }
-    // Placeholder for comment creation UI
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Comment creation UI to be implemented',
-          style: GoogleFonts.lora(),
-        ),
-        action: SnackBarAction(label: 'OK', onPressed: () {}),
-      ),
-    );
-  }
+  // void _addComment({String? parentId}) {
+  //   final currentUser = AuthService.currentUser;
+  //   if (currentUser == null) {
+  //     _showLoginPrompt();
+  //     return;
+  //   }
+  //   final controller = TextEditingController();
+  //   showModalBottomSheet(
+  //     context: context,
+  //     isScrollControlled: true,
+  //     shape: RoundedRectangleBorder(
+  //       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+  //     ),
+  //     builder: (ctx) {
+  //       return Padding(
+  //         padding: EdgeInsets.only(
+  //           left: 24,
+  //           right: 24,
+  //           bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+  //           top: 24,
+  //         ),
+  //         child: Column(
+  //           mainAxisSize: MainAxisSize.min,
+  //           crossAxisAlignment: CrossAxisAlignment.start,
+  //           children: [
+  //             Text(
+  //               parentId == null ? 'Add a Comment' : 'Reply',
+  //               style: GoogleFonts.lora(
+  //                 fontWeight: FontWeight.bold,
+  //                 fontSize: 18,
+  //               ),
+  //             ),
+  //             SizedBox(height: 16),
+  //             TextField(
+  //               controller: controller,
+  //               minLines: 2,
+  //               maxLines: 5,
+  //               autofocus: true,
+  //               decoration: InputDecoration(
+  //                 hintText: 'Write your comment...',
+  //                 border: OutlineInputBorder(
+  //                   borderRadius: BorderRadius.circular(8),
+  //                 ),
+  //               ),
+  //             ),
+  //             SizedBox(height: 16),
+  //             Align(
+  //               alignment: Alignment.centerRight,
+  //               child: ElevatedButton(
+  //                 style: ElevatedButton.styleFrom(
+  //                   backgroundColor: Colors.blue[600],
+  //                   foregroundColor: Colors.white,
+  //                   shape: RoundedRectangleBorder(
+  //                     borderRadius: BorderRadius.circular(8),
+  //                   ),
+  //                 ),
+  //                 onPressed: () async {
+  //                   final text = controller.text.trim();
+  //                   if (text.isEmpty) return;
+  //                   Navigator.pop(ctx);
+  //                   try {
+  //                     await CommentService.addComment(
+  //                       CreateCommentInput(
+  //                         postId: widget.postId,
+  //                         bodyPlain: text,
+  //                         bodyDelta: text,
+  //                         parentId: parentId,
+  //                       ),
+  //                     );
+  //                     if (mounted) {
+  //                       ScaffoldMessenger.of(context).showSnackBar(
+  //                         SnackBar(
+  //                           content: Text(
+  //                             'Comment added!',
+  //                             style: GoogleFonts.lora(),
+  //                           ),
+  //                           backgroundColor: Colors.green[600],
+  //                         ),
+  //                       );
+  //                     }
+  //                   } catch (e) {
+  //                     if (mounted) {
+  //                       ScaffoldMessenger.of(context).showSnackBar(
+  //                         SnackBar(
+  //                           content: Text(
+  //                             'Failed to add comment: $e',
+  //                             style: GoogleFonts.lora(),
+  //                           ),
+  //                           backgroundColor: Colors.red[600],
+  //                         ),
+  //                       );
+  //                     }
+  //                   }
+  //                 },
+  //                 child: Text('Post', style: GoogleFonts.lora()),
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //       );
+  //     },
+  //   );
+  // }
 
   Future<void> _launchURL(String url) async {
     try {
@@ -1414,12 +2176,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         throw 'Could not launch $url';
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not open link: $e', style: GoogleFonts.lora()),
-          backgroundColor: Colors.red[600],
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open link: $e', style: GoogleFonts.lora()),
+            backgroundColor: Colors.red[600],
+          ),
+        );
+      }
     }
   }
 
@@ -1456,7 +2220,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // Implement sign-in navigation
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue[600],
@@ -1527,35 +2290,29 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _buildVoteButton(isUpvote: true),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: _getScoreBackgroundColor(),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${_post.score}',
-              style: GoogleFonts.lora(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: _getScoreColor(),
-              ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildVoteButton(isUpvote: true),
+        const SizedBox(width: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: _getScoreBackgroundColor(),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '${_post.score}',
+            style: GoogleFonts.lora(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: _getScoreColor(),
             ),
           ),
-          _buildVoteButton(isUpvote: false),
-        ],
-      ),
+        ),
+        const SizedBox(width: 12),
+        _buildVoteButton(isUpvote: false),
+      ],
     );
   }
 
@@ -1568,24 +2325,24 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
       child: GestureDetector(
         onTap: _isVoting ? null : () => _vote(isUpvote ? 1 : -1),
         child: Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: isSelected
                 ? (isUpvote ? Colors.green[50] : Colors.red[50])
                 : Colors.white,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isSelected
-                  ? (isUpvote ? Colors.green[600]! : Colors.red!)
-                  : Colors.grey!,
+                  ? (isUpvote ? Colors.green[600]! : Colors.red[600]!)
+                  : Colors.grey[400]!,
             ),
           ),
           child: Icon(
             icon,
-            size: 24,
+            size: 20,
             color: isSelected
                 ? (isUpvote ? Colors.green[600] : Colors.red[600])
-                : Colors.grey,
+                : Colors.grey[600],
           ),
         ),
       ),
@@ -1594,14 +2351,14 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
 
   Color _getScoreBackgroundColor() {
     if (_post.score > 0) return Colors.green[50]!;
-    if (_post.score < 0) return Colors.red!;
-    return Colors.grey!;
+    if (_post.score < 0) return Colors.red[50]!;
+    return Colors.grey[100]!;
   }
 
   Color _getScoreColor() {
-    if (_post.score > 0) return Colors.green!;
-    if (_post.score < 0) return Colors.red!;
-    return Colors.grey!;
+    if (_post.score > 0) return Colors.green[700]!;
+    if (_post.score < 0) return Colors.red[700]!;
+    return Colors.grey[600]!;
   }
 
   Future<void> _vote(int value) async {
@@ -1685,7 +2442,6 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // Implement sign-in navigation
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue[600],
@@ -1765,8 +2521,10 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
             onTap: _isVoting ? null : () => _vote(1),
             child: Icon(
               Icons.arrow_upward,
-              size: 20,
-              color: _userVote?.value == 1 ? Colors.green[600] : Colors.grey,
+              size: 18,
+              color: _userVote?.value == 1
+                  ? Colors.green[600]
+                  : Colors.grey[600],
             ),
           ),
         ),
@@ -1779,8 +2537,8 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
             color: _comment.score > 0
                 ? Colors.green[700]
                 : _comment.score < 0
-                ? Colors.red
-                : Colors.grey,
+                ? Colors.red[700]
+                : Colors.grey[600],
           ),
         ),
         const SizedBox(width: 8),
@@ -1790,8 +2548,10 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
             onTap: _isVoting ? null : () => _vote(-1),
             child: Icon(
               Icons.arrow_downward,
-              size: 20,
-              color: _userVote?.value == -1 ? Colors.red[600] : Colors.grey,
+              size: 18,
+              color: _userVote?.value == -1
+                  ? Colors.red[600]
+                  : Colors.grey[600],
             ),
           ),
         ),
@@ -1885,7 +2645,6 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // Implement sign-in navigation
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue[600],
@@ -1902,7 +2661,6 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
   }
 }
 
-// Placeholder for FlowchartPreviewScreen
 class FlowchartPreviewScreen extends StatelessWidget {
   final String title;
   final String description;

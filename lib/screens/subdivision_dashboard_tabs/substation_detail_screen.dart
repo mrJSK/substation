@@ -748,7 +748,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: 160, // Add substantial bottom padding for two FABs
+      ),
       children: [
         // Bays grouped by voltage level
         ...baysByVoltage.entries.map((entry) {
