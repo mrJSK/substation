@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/power_pulse/powerpulse_models.dart';
+import '../../services/power_pulse_service/excel_download_service.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
 import '../../widgets/post_card/flowchart_preview_widget.dart';
 // import 'comment_thread_screen.dart';
@@ -716,11 +717,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               decoration: BoxDecoration(
                 color: Colors.blue[50],
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue[600]!),
+                border: Border.all(color: Colors.blue!),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.link, color: Colors.blue[600], size: 20),
+                  Icon(Icons.link, color: Colors.blue, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -746,11 +747,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             decoration: BoxDecoration(
               color: Colors.grey[50],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[300]!),
+              border: Border.all(color: Colors.grey!),
             ),
             child: Row(
               children: [
-                Icon(Icons.attach_file, color: Colors.grey[600], size: 24),
+                Icon(Icons.attach_file, color: Colors.grey, size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -792,7 +793,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               decoration: BoxDecoration(
                 color: Colors.blue[50],
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue[600]!),
+                border: Border.all(color: Colors.blue!),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -869,6 +870,178 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
+      case ContentBlockType.excelTable:
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          child: GestureDetector(
+            onTap: () => _downloadExcel(block.excelData!),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.table_chart,
+                        color: Colors.green[600],
+                        size: 24,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          block.excelData?['title'] ?? block.text,
+                          style: GoogleFonts.lora(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _downloadExcel(block.excelData!),
+                        icon: Icon(Icons.download, size: 16),
+                        label: Text('Download Excel'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green[600],
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _buildExcelPreview(block.excelData!),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.green[600],
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Tap to download Excel file',
+                        style: GoogleFonts.lora(
+                          fontSize: 12,
+                          color: Colors.green[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${block.excelData?['rows'] ?? 0}×${block.excelData?['columns'] ?? 0} table',
+                        style: GoogleFonts.lora(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+    }
+  }
+
+  Widget _buildExcelPreview(Map<String, dynamic> excelData) {
+    final data = excelData['data'] as List<dynamic>? ?? [];
+    final rows = (excelData['rows'] ?? 0) as int;
+    final columns = (excelData['columns'] ?? 0) as int;
+
+    return Container(
+      height: 200,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.vertical,
+        child: Column(
+          children: List.generate(
+            rows > 5 ? 5 : rows,
+            (i) => Row(
+              children: List.generate(
+                columns > 5 ? 5 : columns,
+                (j) => Container(
+                  width: 80,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Center(
+                    child: Text(
+                      i < data.length && j < (data[i] as List).length
+                          ? (data[i] as List)[j].toString()
+                          : '',
+                      style: GoogleFonts.lora(fontSize: 10),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _downloadExcel(Map<String, dynamic> excelData) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Creating Excel file...'),
+            ],
+          ),
+        ),
+      );
+
+      // You'll need to implement this service from the previous Excel implementation
+      final filePath = await ExcelDownloadService.createAndDownloadExcel(
+        excelData,
+      );
+      Navigator.pop(context); // Close loading dialog
+
+      if (filePath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Excel file downloaded: $filePath'),
+            backgroundColor: Colors.green[600],
+            action: SnackBarAction(
+              label: 'Open',
+              onPressed: () {
+                // Implement file opening logic
+              },
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to create Excel file'),
+            backgroundColor: Colors.red[600],
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red[600]),
+      );
     }
   }
 

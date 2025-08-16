@@ -94,6 +94,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       final excerptBuffer = StringBuffer();
       int wordCount = 0;
       const maxWords = 35;
+
       for (var blockJson in json) {
         if (wordCount >= maxWords) break;
         final type = ContentBlockType.values[blockJson['type'] as int];
@@ -101,6 +102,8 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         final listItems = List<String>.from(blockJson['listItems'] ?? []);
         final flowchartData =
             blockJson['flowchartData'] as Map<String, dynamic>?;
+        final excelData =
+            blockJson['excelData'] as Map<String, dynamic>?; // Add this line
 
         switch (type) {
           case ContentBlockType.heading:
@@ -156,8 +159,51 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               wordCount += description.split(RegExp(r'\s+')).length;
             }
             break;
+          case ContentBlockType.excelTable:
+            if (wordCount < maxWords) {
+              // Get table info from excelData
+              final title = excelData?['title']?.toString() ?? 'Excel Table';
+              final rows = excelData?['rows'] ?? 0;
+              final columns = excelData?['columns'] ?? 0;
+
+              // Create a descriptive excerpt for the Excel table
+              String tableDescription;
+              if (rows > 0 && columns > 0) {
+                tableDescription = '📊 $title (${rows}×${columns} table)';
+              } else {
+                tableDescription = '📊 $title';
+              }
+
+              // Optionally include some cell data if available and space permits
+              final data = excelData?['data'] as List<dynamic>?;
+              if (data != null && data.isNotEmpty && wordCount < maxWords - 3) {
+                // Try to include first row content as sample
+                final firstRow = data[0] as List<dynamic>?;
+                if (firstRow != null && firstRow.isNotEmpty) {
+                  final firstCellText = firstRow[0]?.toString()?.trim();
+                  if (firstCellText != null && firstCellText.isNotEmpty) {
+                    final cellWords = firstCellText.split(RegExp(r'\s+'));
+                    final availableWords =
+                        maxWords -
+                        wordCount -
+                        3; // Reserve space for table description
+                    if (availableWords > 0) {
+                      final sampleWords = cellWords
+                          .take(availableWords.clamp(0, 3))
+                          .join(' ');
+                      tableDescription += ' - $sampleWords...';
+                    }
+                  }
+                }
+              }
+
+              excerptBuffer.write('$tableDescription ');
+              wordCount += tableDescription.split(RegExp(r'\s+')).length;
+            }
+            break;
         }
       }
+
       String result = excerptBuffer.toString().trim();
       if (result.isEmpty) return 'No readable content available';
       return wordCount >= maxWords ? '$result...' : result;

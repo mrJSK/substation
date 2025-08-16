@@ -15,6 +15,7 @@ import '../../models/hierarchy_models.dart';
 import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
 import '../../widgets/post_card/flowchart_preview_widget.dart';
+import 'excel_table_builder_screen.dart';
 import 'flowchart_create_screen.dart';
 
 class PostCreateScreen extends StatefulWidget {
@@ -655,6 +656,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       'Add a flow-chart description',
                       _addFlowchart,
                     ),
+                    // ADD THIS NEW OPTION HERE:
+                    _contentOption(
+                      Icons.table_chart,
+                      'Excel Table',
+                      'Create an interactive table',
+                      _addExcelTable,
+                    ),
                     _contentOption(
                       Icons.image,
                       'Image',
@@ -681,6 +689,30 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
         ),
       ),
     );
+  }
+
+  void _addExcelTable() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ExcelTableBuilderScreen()),
+    );
+
+    if (result != null) {
+      setState(() {
+        _contentBlocks.add(
+          ContentBlock(
+            type: ContentBlockType.excelTable,
+            excelData: result,
+            text: result['title'] ?? 'Excel Table',
+          ),
+        );
+        _blockControllers.add(
+          TextEditingController(text: result['title'] ?? 'Excel Table'),
+        );
+        _listControllers.add([]);
+        _saveDraft();
+      });
+    }
   }
 
   ListTile _contentOption(
@@ -908,6 +940,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
       case ContentBlockType.flowchart:
         blockTypeName = 'Flowchart';
         break;
+      case ContentBlockType.excelTable:
+        blockTypeName = 'Excel Table';
+        break;
     }
 
     return await showDialog<bool>(
@@ -937,13 +972,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(
               'Cancel',
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
+              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
             ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red[600],
+              backgroundColor: Colors.red,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -960,6 +995,82 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
         ],
       ),
     );
+  }
+
+  Widget _excelTableField(ContentBlock block, int index) {
+    final excelData = block.excelData ?? {};
+    final rows = excelData['rows'] ?? 0;
+    final columns = excelData['columns'] ?? 0;
+    final title = excelData['title'] ?? 'Excel Table';
+
+    return _blockShell(
+      InkWell(
+        onTap: () => _editExcelTable(block, index),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.table_chart,
+                  color: Colors.green[600],
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.lora(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${rows}×${columns} table with merged cells',
+                      style: GoogleFonts.lora(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.edit, color: Colors.grey, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Add this method if not already present
+  void _editExcelTable(ContentBlock block, int index) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            ExcelTableBuilderScreen(existingData: block.excelData),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        block.excelData = result;
+        block.text = result['title'] ?? 'Excel Table';
+        _saveDraft();
+      });
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────────────
@@ -994,6 +1105,8 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
         return _fileField(block);
       case ContentBlockType.flowchart:
         return _flowchartField(block, index);
+      case ContentBlockType.excelTable:
+        return _excelTableField(block, index);
     }
   }
 
@@ -1622,6 +1735,99 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         fontSize: 12,
                         color: Colors.grey[600],
                       ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      case ContentBlockType.excelTable:
+        final excelData = block.excelData ?? {};
+        final title = excelData['title'] ?? 'Excel Table';
+        final rows = excelData['rows'] ?? 0;
+        final columns = excelData['columns'] ?? 0;
+        final data = excelData['data'] as List<dynamic>? ?? [];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.green[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.table_chart, color: Colors.green, size: 24),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: GoogleFonts.lora(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Table preview
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Column(
+                    children: List.generate(
+                      rows > 5 ? 5 : rows,
+                      (i) => Row(
+                        children: List.generate(
+                          columns > 5 ? 5 : columns,
+                          (j) => Container(
+                            width: 80,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: Center(
+                              child: Text(
+                                i < data.length && j < (data[i] as List).length
+                                    ? (data[i] as List)[j].toString()
+                                    : '',
+                                style: GoogleFonts.lora(fontSize: 10),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.green[600],
+                      size: 16,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Preview mode - Tap to edit table',
+                      style: GoogleFonts.lora(
+                        fontSize: 12,
+                        color: Colors.green,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${rows}×${columns} table',
+                      style: GoogleFonts.lora(fontSize: 12, color: Colors.grey),
                     ),
                   ],
                 ),

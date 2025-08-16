@@ -81,6 +81,7 @@ enum ContentBlockType {
   link,
   file,
   flowchart, // Added for flowchart support
+  excelTable,
 }
 
 class ContentBlock {
@@ -90,6 +91,7 @@ class ContentBlock {
   File? file;
   String? url;
   Map<String, dynamic>? flowchartData; // Added for flowchart JSON
+  Map<String, dynamic>? excelData; // Add this field for Excel table support
 
   ContentBlock({
     required this.type,
@@ -98,6 +100,7 @@ class ContentBlock {
     this.file,
     this.url,
     this.flowchartData,
+    this.excelData, // Add to constructor
   });
 
   factory ContentBlock.paragraph(String text) {
@@ -121,7 +124,6 @@ class ContentBlock {
       }
 
       final type = ContentBlockType.values[typeIndex];
-
       return ContentBlock(
         type: type,
         text: json['text']?.toString() ?? '',
@@ -135,10 +137,14 @@ class ContentBlock {
         flowchartData: json['flowchartData'] != null
             ? Map<String, dynamic>.from(json['flowchartData'])
             : null,
+        excelData:
+            json['excelData'] !=
+                null // Add this
+            ? Map<String, dynamic>.from(json['excelData'])
+            : null,
       );
     } catch (e) {
       debugPrint('Error parsing ContentBlock: $e, JSON: $json');
-      // Return a safe fallback
       return ContentBlock(
         type: ContentBlockType.paragraph,
         text: json['text']?.toString() ?? 'Error loading content',
@@ -166,6 +172,11 @@ class ContentBlock {
       json['flowchartData'] = flowchartData;
     }
 
+    if (excelData != null && excelData!.isNotEmpty) {
+      // Add this
+      json['excelData'] = excelData;
+    }
+
     return json;
   }
 
@@ -183,7 +194,6 @@ class ContentBlock {
         return listItems.fold(0, (sum, item) => sum + _countWords(item));
 
       case ContentBlockType.flowchart:
-        // Count words in flowchart title and description
         int count = 0;
         if (flowchartData != null) {
           count += _countWords(flowchartData!['title']?.toString() ?? '');
@@ -194,6 +204,24 @@ class ContentBlock {
       case ContentBlockType.image:
       case ContentBlockType.file:
         return 0; // Media doesn't contribute to reading time
+
+      case ContentBlockType.excelTable:
+        // Count words in Excel table cells
+        if (excelData == null) return 0;
+        final data = excelData!['data'] as List<dynamic>?;
+        if (data == null) return 0;
+
+        int totalWords = 0;
+        for (var row in data) {
+          if (row is List) {
+            for (var cell in row) {
+              if (cell is String && cell.trim().isNotEmpty) {
+                totalWords += _countWords(cell);
+              }
+            }
+          }
+        }
+        return totalWords;
     }
   }
 
@@ -471,6 +499,7 @@ class Post {
               if (wordCount < maxWords) excerptBuffer.write(' ');
             }
             break;
+
           case ContentBlockType.bulletedList:
           case ContentBlockType.numberedList:
             for (var item in block.listItems) {
@@ -486,18 +515,21 @@ class Post {
               }
             }
             break;
+
           case ContentBlockType.link:
             if (block.text.isNotEmpty && wordCount < maxWords) {
               excerptBuffer.write('🔗 ${block.text} ');
               wordCount += block.text.split(RegExp(r'\s+')).length;
             }
             break;
+
           case ContentBlockType.image:
             if (wordCount < maxWords) {
               excerptBuffer.write('📷 Image ');
               wordCount += 1;
             }
             break;
+
           case ContentBlockType.file:
             if (wordCount < maxWords) {
               final fileName = block.text.isNotEmpty
@@ -507,10 +539,46 @@ class Post {
               wordCount += fileName.split(RegExp(r'\s+')).length;
             }
             break;
+
           case ContentBlockType.flowchart:
             if (wordCount < maxWords) {
               excerptBuffer.write('📊 Flowchart ');
               wordCount += 1;
+            }
+            break;
+
+          case ContentBlockType.excelTable:
+            if (block.excelData != null && wordCount < maxWords) {
+              final tableTitle =
+                  block.excelData!['title']?.toString() ?? 'Excel Table';
+              excerptBuffer.write('📊 $tableTitle ');
+              wordCount += tableTitle.split(RegExp(r'\s+')).length;
+
+              // Add some cell content to excerpt if space available
+              final data = block.excelData!['data'] as List<dynamic>?;
+              if (data != null && wordCount < maxWords) {
+                for (var row in data) {
+                  if (wordCount >= maxWords) break;
+                  if (row is List) {
+                    for (var cell in row) {
+                      if (wordCount >= maxWords) break;
+                      if (cell is String && cell.trim().isNotEmpty) {
+                        final words = cell.trim().split(RegExp(r'\s+'));
+                        final wordsToAdd = (maxWords - wordCount).clamp(
+                          0,
+                          words.length,
+                        );
+                        if (wordsToAdd > 0) {
+                          excerptBuffer.write(
+                            '${words.take(wordsToAdd).join(' ')} ',
+                          );
+                          wordCount += wordsToAdd;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
             break;
         }

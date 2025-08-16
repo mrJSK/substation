@@ -19,8 +19,10 @@ class PowerPulseServiceException implements Exception {
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   static Stream<User?> get authStateChanges => _auth.authStateChanges();
   static User? get currentUser => _auth.currentUser;
+
   static Future<UserCredential> signInAnonymously() async {
     try {
       return await _auth.signInAnonymously();
@@ -82,8 +84,10 @@ class PostService {
 
   static Future<String> createPost(CreatePostInput input) async {
     final user = AuthService.currentUser;
-    if (user == null)
+    if (user == null) {
       throw PowerPulseServiceException('User not authenticated');
+    }
+
     final appUser = await AuthService.getCurrentAppUser();
     final now = Timestamp.now();
     final readingTime = _calculateReadingTimeFromBlocks(input.contentBlocks);
@@ -132,11 +136,13 @@ class PostService {
 
       final prefs = await _prefs;
       await prefs.setString('post_${docRef.id}', jsonEncode(cacheData));
+
       await AnalyticsService.logPostCreated(
         docRef.id,
         input.scope.type.toString().split('.').last,
         flair: input.flair?.name,
       );
+
       return docRef.id;
     } catch (e) {
       throw PowerPulseServiceException('Failed to create post: $e');
@@ -145,18 +151,23 @@ class PostService {
 
   static Future<void> updatePost(String postId, CreatePostInput input) async {
     final user = AuthService.currentUser;
-    if (user == null)
+    if (user == null) {
       throw PowerPulseServiceException('User not authenticated');
+    }
+
     final postDoc = _firestore.collection(_collection).doc(postId);
     final postSnapshot = await postDoc.get();
-    if (!postSnapshot.exists)
+    if (!postSnapshot.exists) {
       throw PowerPulseServiceException('Post not found');
+    }
+
     final existingPost = Post.fromFirestore(postSnapshot);
     if (existingPost.authorId != user.uid) {
       throw PowerPulseServiceException(
         'User is not authorized to update this post',
       );
     }
+
     final appUser = await AuthService.getCurrentAppUser();
     final readingTime = _calculateReadingTimeFromBlocks(input.contentBlocks);
     final now = Timestamp.now();
@@ -179,7 +190,9 @@ class PostService {
       if (existingPost.imageUrl != null && input.imageUrl != null) {
         try {
           await StorageService.deleteImage(existingPost.imageUrl!);
-        } catch (e) {}
+        } catch (e) {
+          // Ignore deletion errors
+        }
       }
     }
 
@@ -204,6 +217,7 @@ class PostService {
         'authorDesignation': appUser?.designationDisplayName,
         'readingTime': readingTime,
       };
+
       final prefs = await _prefs;
       await prefs.setString('post_$postId', jsonEncode(cacheData));
     } catch (e) {
@@ -211,12 +225,81 @@ class PostService {
     }
   }
 
+  /// Enhanced reading time calculation that handles Excel tables
   static String _calculateReadingTimeFromBlocks(List<ContentBlock> blocks) {
-    final wordCount = blocks.fold(0, (sum, block) => sum + block.wordCount);
-    final minutes = (wordCount / 200).ceil();
+    int totalWordCount = 0;
+
+    for (final block in blocks) {
+      switch (block.type) {
+        case ContentBlockType.heading:
+        case ContentBlockType.subHeading:
+        case ContentBlockType.paragraph:
+        case ContentBlockType.link:
+          totalWordCount += _countWords(block.text);
+          break;
+
+        case ContentBlockType.bulletedList:
+        case ContentBlockType.numberedList:
+          totalWordCount += block.listItems.fold(
+            0,
+            (sum, item) => sum + _countWords(item),
+          );
+          break;
+
+        case ContentBlockType.flowchart:
+          if (block.flowchartData != null) {
+            totalWordCount += _countWords(
+              block.flowchartData!['title']?.toString() ?? '',
+            );
+            totalWordCount += _countWords(
+              block.flowchartData!['description']?.toString() ?? '',
+            );
+          }
+          break;
+
+        case ContentBlockType.excelTable:
+          // Count words in Excel table cells
+          if (block.excelData != null) {
+            final data = block.excelData!['data'] as List<dynamic>?;
+            if (data != null) {
+              for (var row in data) {
+                if (row is List) {
+                  for (var cell in row) {
+                    if (cell is String && cell.trim().isNotEmpty) {
+                      totalWordCount += _countWords(cell);
+                    }
+                  }
+                }
+              }
+            }
+            // Add title words if present
+            totalWordCount += _countWords(
+              block.excelData!['title']?.toString() ?? '',
+            );
+          }
+          break;
+
+        case ContentBlockType.image:
+        case ContentBlockType.file:
+          // Media doesn't contribute to reading time
+          break;
+      }
+    }
+
+    final minutes = (totalWordCount / 200).ceil();
     return minutes == 0 ? '1 min read' : '$minutes min read';
   }
 
+  static int _countWords(String text) {
+    if (text.trim().isEmpty) return 0;
+    return text
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .length;
+  }
+
+  /// Legacy method for backward compatibility
   static String _calculateReadingTime(String text) {
     final wordCount = text.split(RegExp(r'\s+')).length;
     final minutes = (wordCount / 200).ceil();
@@ -262,6 +345,7 @@ class PostService {
 
   static Stream<List<Post>> streamTopPosts({int limit = 20, String? zoneId}) {
     Query<Map<String, dynamic>> query = _firestore.collection(_collection);
+
     if (zoneId != null) {
       query = query
           .where('scope.type', isEqualTo: 'zone')
@@ -269,6 +353,7 @@ class PostService {
     } else {
       query = query.where('scope.type', isEqualTo: 'public');
     }
+
     return query
         .orderBy('score', descending: true)
         .orderBy('createdAt', descending: true)
@@ -291,6 +376,7 @@ class PostService {
   ) {
     final data = doc.data()!;
     final cache = <String, dynamic>{};
+
     data.forEach((key, value) {
       if (value is Timestamp) {
         cache[key] = value.millisecondsSinceEpoch;
@@ -298,11 +384,13 @@ class PostService {
         cache[key] = value;
       }
     });
+
     cache['id'] = doc.id;
     cache['bodyDelta'] = cache['bodyDelta']?.toString() ?? '';
     cache['bodyPlain'] = cache['bodyPlain']?.toString() ?? '';
     cache['excerpt'] = cache['excerpt']?.toString() ?? '';
     cache['readingTime'] = cache['readingTime']?.toString() ?? '1 min read';
+
     return cache;
   }
 
@@ -310,11 +398,15 @@ class PostService {
     try {
       final prefs = await _prefs;
       final cachedPost = prefs.getString('post_$postId');
+
       if (cachedPost != null) {
         try {
           return Post.fromJson(jsonDecode(cachedPost) as Map<String, dynamic>);
-        } catch (e) {}
+        } catch (e) {
+          // Cache corrupted, continue to fetch from Firestore
+        }
       }
+
       final doc = await _firestore.collection(_collection).doc(postId).get();
       if (doc.exists) {
         final post = Post.fromFirestore(doc);
@@ -366,7 +458,9 @@ class PostService {
 
   static Future<List<Post>> searchPosts(String query, {int limit = 20}) async {
     if (query.trim().isEmpty) return [];
+
     try {
+      // Basic text search - you might want to implement full-text search
       final snapshot = await _firestore
           .collection(_collection)
           .where('title', isGreaterThanOrEqualTo: query)
@@ -375,6 +469,7 @@ class PostService {
           .orderBy('createdAt', descending: true)
           .limit(limit)
           .get();
+
       final prefs = await _prefs;
       return snapshot.docs.map((doc) {
         final post = Post.fromFirestore(doc);
@@ -389,18 +484,52 @@ class PostService {
 
   static Future<void> deletePost(String postId) async {
     final user = AuthService.currentUser;
-    if (user == null)
+    if (user == null) {
       throw PowerPulseServiceException('User not authenticated');
+    }
+
     final post = await getPost(postId);
-    if (post == null) throw PowerPulseServiceException('Post not found');
-    if (post.authorId != user.uid)
+    if (post == null) {
+      throw PowerPulseServiceException('Post not found');
+    }
+
+    if (post.authorId != user.uid) {
       throw PowerPulseServiceException('Not authorized to delete this post');
+    }
+
     try {
       final batch = _firestore.batch();
+
+      // Delete the post
       batch.delete(_firestore.collection(_collection).doc(postId));
-      if (post.imageUrl != null)
+
+      // Delete associated image if exists
+      if (post.imageUrl != null) {
         await StorageService.deleteImage(post.imageUrl!);
+      }
+
+      // Delete associated comments and votes
+      final commentsSnapshot = await _firestore
+          .collection('comments')
+          .where('postId', isEqualTo: postId)
+          .get();
+
+      for (final commentDoc in commentsSnapshot.docs) {
+        batch.delete(commentDoc.reference);
+      }
+
+      final votesSnapshot = await _firestore
+          .collection('votes')
+          .where('postId', isEqualTo: postId)
+          .get();
+
+      for (final voteDoc in votesSnapshot.docs) {
+        batch.delete(voteDoc.reference);
+      }
+
       await batch.commit();
+
+      // Clear cache
       final prefs = await _prefs;
       await prefs.remove('post_$postId');
     } catch (e) {
@@ -432,6 +561,7 @@ class PostService {
   ) {
     final data = doc.data()!;
     final cache = <String, dynamic>{};
+
     data.forEach((key, value) {
       if (value is Timestamp) {
         cache[key] = value.millisecondsSinceEpoch;
@@ -439,9 +569,11 @@ class PostService {
         cache[key] = value;
       }
     });
+
     cache['id'] = doc.id;
     cache['bodyDelta'] = cache['bodyDelta']?.toString() ?? '';
     cache['bodyPlain'] = cache['bodyPlain']?.toString() ?? '';
+
     return cache;
   }
 }
@@ -454,10 +586,13 @@ class CommentService {
 
   static Future<String> addComment(CreateCommentInput input) async {
     final user = AuthService.currentUser;
-    if (user == null)
+    if (user == null) {
       throw PowerPulseServiceException('User not authenticated');
+    }
+
     final appUser = await AuthService.getCurrentAppUser();
     final now = Timestamp.now();
+
     final commentData = {
       'postId': input.postId,
       'authorId': user.uid,
@@ -469,14 +604,19 @@ class CommentService {
       'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
       'authorDesignation': appUser?.designationDisplayName,
     };
+
     try {
       final batch = _firestore.batch();
       final commentRef = _firestore.collection(_collection).doc();
+
       batch.set(commentRef, commentData);
       batch.update(_firestore.collection('posts').doc(input.postId), {
         'commentCount': FieldValue.increment(1),
       });
+
       await batch.commit();
+
+      // Cache the comment
       final cacheData = {
         'id': commentRef.id,
         'postId': input.postId,
@@ -489,8 +629,10 @@ class CommentService {
         'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
         'authorDesignation': appUser?.designationDisplayName,
       };
+
       final prefs = await _prefs;
       await prefs.setString('comment_${commentRef.id}', jsonEncode(cacheData));
+
       await AnalyticsService.logComment(input.postId);
       return commentRef.id;
     } catch (e) {
@@ -502,13 +644,17 @@ class CommentService {
     try {
       final prefs = await _prefs;
       final cachedComment = prefs.getString('comment_$commentId');
+
       if (cachedComment != null) {
         try {
           return Comment.fromJson(
             jsonDecode(cachedComment) as Map<String, dynamic>,
           );
-        } catch (e) {}
+        } catch (e) {
+          // Cache corrupted, continue to fetch from Firestore
+        }
       }
+
       final doc = await _firestore.collection(_collection).doc(commentId).get();
       if (doc.exists) {
         final comment = Comment.fromFirestore(doc);
@@ -524,19 +670,43 @@ class CommentService {
 
   static Future<void> deleteComment(String commentId) async {
     final user = AuthService.currentUser;
-    if (user == null)
+    if (user == null) {
       throw PowerPulseServiceException('User not authenticated');
+    }
+
     final comment = await getComment(commentId);
-    if (comment == null) throw PowerPulseServiceException('Comment not found');
-    if (comment.authorId != user.uid)
+    if (comment == null) {
+      throw PowerPulseServiceException('Comment not found');
+    }
+
+    if (comment.authorId != user.uid) {
       throw PowerPulseServiceException('Not authorized to delete this comment');
+    }
+
     try {
       final batch = _firestore.batch();
+
+      // Delete the comment
       batch.delete(_firestore.collection(_collection).doc(commentId));
+
+      // Decrement comment count
       batch.update(_firestore.collection('posts').doc(comment.postId), {
         'commentCount': FieldValue.increment(-1),
       });
+
+      // Delete associated votes
+      final votesSnapshot = await _firestore
+          .collection('votes')
+          .where('commentId', isEqualTo: commentId)
+          .get();
+
+      for (final voteDoc in votesSnapshot.docs) {
+        batch.delete(voteDoc.reference);
+      }
+
       await batch.commit();
+
+      // Clear cache
       final prefs = await _prefs;
       await prefs.remove('comment_$commentId');
     } catch (e) {
@@ -555,22 +725,37 @@ class VoteService {
     required int value,
   }) async {
     final user = AuthService.currentUser;
-    if (user == null)
+    if (user == null) {
       throw PowerPulseServiceException('User not authenticated');
-    if (postId == null && commentId == null)
+    }
+
+    if (postId == null && commentId == null) {
       throw PowerPulseServiceException(
         'Either postId or commentId must be provided',
       );
+    }
+
     final voteId = postId != null
         ? Vote.generateId(postId: postId, userId: user.uid)
         : Vote.generateId(commentId: commentId!, userId: user.uid);
+
     final parentId = postId ?? commentId!;
     final parentCollection = postId != null ? 'posts' : 'comments';
+
     try {
+      // Get current vote to calculate score delta
+      final currentVote = await getUserVote(
+        postId: postId,
+        commentId: commentId,
+      );
+
       final batch = _firestore.batch();
+
       if (value == 0) {
+        // Remove vote
         batch.delete(_firestore.collection(_collection).doc(voteId));
       } else {
+        // Set vote
         final voteData = {
           if (postId != null) 'postId': postId,
           if (commentId != null) 'commentId': commentId,
@@ -580,14 +765,15 @@ class VoteService {
         };
         batch.set(_firestore.collection(_collection).doc(voteId), voteData);
       }
-      final currentVote = await getUserVote(
-        postId: postId,
-        commentId: commentId,
-      );
+
+      // Update score
       final scoreDelta = value - (currentVote?.value ?? 0);
-      batch.update(_firestore.collection(parentCollection).doc(parentId), {
-        'score': FieldValue.increment(scoreDelta),
-      });
+      if (scoreDelta != 0) {
+        batch.update(_firestore.collection(parentCollection).doc(parentId), {
+          'score': FieldValue.increment(scoreDelta),
+        });
+      }
+
       await batch.commit();
       await AnalyticsService.logVote(parentId, value);
     } catch (e) {
@@ -599,10 +785,12 @@ class VoteService {
     final user = AuthService.currentUser;
     if (user == null) return null;
     if (postId == null && commentId == null) return null;
+
     try {
       final voteId = postId != null
           ? Vote.generateId(postId: postId, userId: user.uid)
           : Vote.generateId(commentId: commentId!, userId: user.uid);
+
       final doc = await _firestore.collection(_collection).doc(voteId).get();
       if (doc.exists) {
         return Vote.fromFirestore(doc);
@@ -617,9 +805,11 @@ class VoteService {
     final user = AuthService.currentUser;
     if (user == null) return Stream.value(null);
     if (postId == null && commentId == null) return Stream.value(null);
+
     final voteId = postId != null
         ? Vote.generateId(postId: postId, userId: user.uid)
         : Vote.generateId(commentId: commentId!, userId: user.uid);
+
     return _firestore
         .collection(_collection)
         .doc(voteId)
@@ -630,6 +820,7 @@ class VoteService {
 
 class HierarchyService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   static Future<List<Zone>> getZones() async {
     try {
       final snapshot = await _firestore
@@ -726,16 +917,21 @@ class HierarchyService {
 
 class StorageService {
   static final FirebaseStorage _storage = FirebaseStorage.instance;
+
   static Future<String> uploadImage(File imageFile, String folder) async {
     try {
       final user = AuthService.currentUser;
-      if (user == null)
+      if (user == null) {
         throw PowerPulseServiceException('User not authenticated');
+      }
+
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${imageFile.path.split('/').last}';
       final ref = _storage.ref().child('$folder/${user.uid}/$fileName');
+
       final uploadTask = ref.putFile(imageFile);
       final snapshot = await uploadTask.whenComplete(() {});
+
       return await snapshot.ref.getDownloadURL();
     } catch (e) {
       throw PowerPulseServiceException('Error uploading image: $e');
@@ -746,6 +942,26 @@ class StorageService {
     return uploadImage(imageFile, 'posts');
   }
 
+  static Future<String> uploadFile(File file, String folder) async {
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) {
+        throw PowerPulseServiceException('User not authenticated');
+      }
+
+      final fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+      final ref = _storage.ref().child('$folder/${user.uid}/$fileName');
+
+      final uploadTask = ref.putFile(file);
+      final snapshot = await uploadTask.whenComplete(() {});
+
+      return await snapshot.ref.getDownloadURL();
+    } catch (e) {
+      throw PowerPulseServiceException('Error uploading file: $e');
+    }
+  }
+
   static Future<void> deleteImage(String imageUrl) async {
     try {
       final ref = _storage.refFromURL(imageUrl);
@@ -754,15 +970,61 @@ class StorageService {
       throw PowerPulseServiceException('Error deleting image: $e');
     }
   }
+
+  static Future<void> deleteFile(String fileUrl) async {
+    try {
+      final ref = _storage.refFromURL(fileUrl);
+      await ref.delete();
+    } catch (e) {
+      throw PowerPulseServiceException('Error deleting file: $e');
+    }
+  }
 }
 
 class AnalyticsService {
-  static Future<void> logPostView(String postId) async {}
+  static Future<void> logPostView(String postId) async {
+    // TODO: Implement analytics logging
+    try {
+      // Add your analytics implementation here
+      // Example: FirebaseAnalytics.instance.logEvent(...)
+    } catch (e) {
+      // Don't throw errors for analytics
+    }
+  }
+
   static Future<void> logPostCreated(
     String postId,
     String scope, {
     String? flair,
-  }) async {}
-  static Future<void> logVote(String id, int value) async {}
-  static Future<void> logComment(String postId) async {}
+  }) async {
+    try {
+      // Add your analytics implementation here
+    } catch (e) {
+      // Don't throw errors for analytics
+    }
+  }
+
+  static Future<void> logVote(String id, int value) async {
+    try {
+      // Add your analytics implementation here
+    } catch (e) {
+      // Don't throw errors for analytics
+    }
+  }
+
+  static Future<void> logComment(String postId) async {
+    try {
+      // Add your analytics implementation here
+    } catch (e) {
+      // Don't throw errors for analytics
+    }
+  }
+
+  static Future<void> logExcelDownload(String postId, String tableTitle) async {
+    try {
+      // Add your analytics implementation here for Excel downloads
+    } catch (e) {
+      // Don't throw errors for analytics
+    }
+  }
 }
