@@ -80,21 +80,22 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   void _generateCachedExcerpt() {
-    _cachedExcerpt = _generateExcerpt(_post.bodyPlain);
+    if (_post.excerpt != null && _post.excerpt!.isNotEmpty) {
+      _cachedExcerpt = _post.excerpt!;
+    } else {
+      _cachedExcerpt = _generateExcerpt(_post.bodyPlain);
+    }
   }
 
   String _generateExcerpt(String bodyPlain) {
     if (bodyPlain.isEmpty) return 'No content available';
-
     try {
       final json = jsonDecode(bodyPlain) as List<dynamic>;
       final excerptBuffer = StringBuffer();
       int wordCount = 0;
       const maxWords = 35;
-
       for (var blockJson in json) {
         if (wordCount >= maxWords) break;
-
         final type = ContentBlockType.values[blockJson['type'] as int];
         final text = (blockJson['text'] as String? ?? '').trim();
         final listItems = List<String>.from(blockJson['listItems'] ?? []);
@@ -157,7 +158,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
             break;
         }
       }
-
       String result = excerptBuffer.toString().trim();
       if (result.isEmpty) return 'No readable content available';
       return wordCount >= maxWords ? '$result...' : result;
@@ -177,6 +177,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     );
   }
 
+  // Full card UI
   Widget _buildFullCard() {
     return Card(
       elevation: 2,
@@ -206,6 +207,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     );
   }
 
+  // Compact card UI
   Widget _buildCompactCard() {
     return Card(
       elevation: 1,
@@ -248,6 +250,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     );
   }
 
+  // Header, flair, scope, menu
   Widget _buildHeader({bool compact = false}) {
     return Row(
       children: [
@@ -305,7 +308,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         color: isPublic ? Colors.blue[50] : Colors.orange,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isPublic ? Colors.blue[700]! : Colors.orange!,
+          color: isPublic ? Colors.blue! : Colors.orange!,
           width: 1,
         ),
       ),
@@ -334,7 +337,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   Widget _buildFlairBadge() {
     final flair = _post.flair;
     if (flair == null) return const SizedBox.shrink();
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -635,9 +637,9 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   Widget _buildVoteSection() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: Colors.grey,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
+        border: Border.all(color: Colors.grey!, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -674,12 +676,12 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
+        border: Border.all(color: Colors.grey!, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey[600]),
+          Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
           const SizedBox(width: 6),
           Text(
             '${_post.commentCount}',
@@ -702,11 +704,9 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     final AnimatedEmojiData emojiData = isUpvote
         ? AnimatedEmojis.thumbsUp
         : AnimatedEmojis.thumbsDown;
-
     final Color backgroundColor = isSelected
         ? (isUpvote ? Colors.green[100]! : Colors.red!)
         : Colors.transparent;
-
     return ScaleTransition(
       scale: _voteScaleAnimation,
       child: GestureDetector(
@@ -737,14 +737,12 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       _showLoginPrompt();
       return;
     }
-
     if (_isVoting) return;
 
     setState(() => _isVoting = true);
 
     final Vote? prevVote = _userVote;
     final int prevScore = _post.score;
-
     try {
       final newValue = (_userVote?.value == value) ? 0 : value;
 
@@ -776,12 +774,10 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         jsonEncode({..._post.toJson(), 'id': _post.id, 'score': _post.score}),
       );
     } catch (e) {
-      // Rollback on error
       setState(() {
         _userVote = prevVote;
         _post = _post.copyWith(score: prevScore);
       });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -792,9 +788,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isVoting = false);
-      }
+      if (mounted) setState(() => _isVoting = false);
     }
   }
 
@@ -817,8 +811,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
 
   void _sharePost() {
     HapticFeedback.mediumImpact();
-    // Implement share functionality, e.g., using share_plus package
-    // Share.share('Check out this post: ${_post.title} - ${_post.bodyPlain.substring(0, 50)}...');
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Share functionality not implemented yet.'),
@@ -979,20 +971,20 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     if (rank <= 3) {
       return [Colors.orange[400]!, Colors.orange!];
     } else if (rank <= 10) {
-      return [Colors.blue[400]!, Colors.blue!];
+      return [Colors.blue!, Colors.blue!];
     } else {
       return [Colors.grey!, Colors.grey!];
     }
   }
 
   Color _getRankColor(int rank) {
-    if (rank <= 3) return Colors.orange[700]!;
+    if (rank <= 3) return Colors.orange!;
     if (rank <= 10) return Colors.blue!;
     return Colors.grey!;
   }
 
   Color _getScoreColor() {
-    if (_post.score > 0) return Colors.green[700]!;
+    if (_post.score > 0) return Colors.green!;
     if (_post.score < 0) return Colors.red!;
     return Colors.grey!;
   }
@@ -1004,7 +996,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       case 'question':
         return Colors.blue!;
       case 'announcement':
-        return Colors.green[700]!;
+        return Colors.green!;
       default:
         return Colors.purple!;
     }
@@ -1014,7 +1006,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     final date = timestamp.toDate();
     final now = DateTime.now();
     final difference = now.difference(date);
-
     if (difference.inMinutes < 1) {
       return 'now';
     } else if (difference.inMinutes < 60) {

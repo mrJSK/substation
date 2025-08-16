@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// ---------------------------------------------------------------------------
 /// Post Scope Model
@@ -68,7 +69,7 @@ class Flair {
 }
 
 /// ---------------------------------------------------------------------------
-/// Content Block Models (for post content structure) - Moved up for reference
+/// Content Block Models (for post content structure) - Enhanced
 /// ---------------------------------------------------------------------------
 enum ContentBlockType {
   heading,
@@ -107,79 +108,113 @@ class ContentBlock {
     return ContentBlock(
       type: ContentBlockType.flowchart,
       flowchartData: data,
-      text: 'Flowchart',
+      text: data['title']?.toString() ?? 'Flowchart',
     );
   }
 
+  // ✅ Enhanced fromJson with better error handling
   factory ContentBlock.fromJson(Map<String, dynamic> json) {
-    final type = ContentBlockType.values[json['type'] as int? ?? 0];
-    return ContentBlock(
-      type: type,
-      text: json['text'] as String? ?? '',
-      listItems: List<String>.from(json['listItems'] ?? []),
-      url: json['url'] as String?,
-      file: json['filePath'] != null ? File(json['filePath'] as String) : null,
-      flowchartData: json['flowchartData'] != null
-          ? Map<String, dynamic>.from(json['flowchartData'])
-          : null,
-    );
+    try {
+      final typeIndex = json['type'] as int? ?? 0;
+      if (typeIndex >= ContentBlockType.values.length) {
+        throw FormatException('Invalid content block type: $typeIndex');
+      }
+
+      final type = ContentBlockType.values[typeIndex];
+
+      return ContentBlock(
+        type: type,
+        text: json['text']?.toString() ?? '',
+        listItems: json['listItems'] != null
+            ? List<String>.from(json['listItems'])
+            : [],
+        url: json['url']?.toString(),
+        file: json['filePath'] != null
+            ? File(json['filePath'].toString())
+            : null,
+        flowchartData: json['flowchartData'] != null
+            ? Map<String, dynamic>.from(json['flowchartData'])
+            : null,
+      );
+    } catch (e) {
+      debugPrint('Error parsing ContentBlock: $e, JSON: $json');
+      // Return a safe fallback
+      return ContentBlock(
+        type: ContentBlockType.paragraph,
+        text: json['text']?.toString() ?? 'Error loading content',
+      );
+    }
   }
 
+  // ✅ Enhanced toJson with comprehensive data
   Map<String, dynamic> toJson() {
-    return {
-      'type': type.index,
-      'text': text,
-      'listItems': listItems,
-      'url': url,
-      'filePath': file?.path,
-      'flowchartData': flowchartData,
-    };
+    final json = <String, dynamic>{'type': type.index, 'text': text};
+
+    if (listItems.isNotEmpty) {
+      json['listItems'] = listItems;
+    }
+
+    if (url != null && url!.isNotEmpty) {
+      json['url'] = url;
+    }
+
+    if (file != null) {
+      json['filePath'] = file!.path;
+    }
+
+    if (flowchartData != null && flowchartData!.isNotEmpty) {
+      json['flowchartData'] = flowchartData;
+    }
+
+    return json;
   }
 
+  // ✅ Enhanced word count calculation
   int get wordCount {
     switch (type) {
       case ContentBlockType.heading:
       case ContentBlockType.subHeading:
       case ContentBlockType.paragraph:
       case ContentBlockType.link:
-        return text
-            .split(RegExp(r'\s+'))
-            .where((word) => word.isNotEmpty)
-            .length;
+        return _countWords(text);
+
       case ContentBlockType.bulletedList:
       case ContentBlockType.numberedList:
-        return listItems.fold(
-          0,
-          (sum, item) =>
-              sum +
-              item
-                  .split(RegExp(r'\s+'))
-                  .where((word) => word.isNotEmpty)
-                  .length,
-        );
+        return listItems.fold(0, (sum, item) => sum + _countWords(item));
+
+      case ContentBlockType.flowchart:
+        // Count words in flowchart title and description
+        int count = 0;
+        if (flowchartData != null) {
+          count += _countWords(flowchartData!['title']?.toString() ?? '');
+          count += _countWords(flowchartData!['description']?.toString() ?? '');
+        }
+        return count;
+
       case ContentBlockType.image:
       case ContentBlockType.file:
-      case ContentBlockType.flowchart:
-        return 0; // Media and flowcharts don't contribute to word count
+        return 0; // Media doesn't contribute to reading time
     }
   }
 
+  int _countWords(String text) =>
+      text.split(RegExp(r'\s+')).where((word) => word.trim().isNotEmpty).length;
+
   @override
-  String toString() {
-    return 'ContentBlock(type: $type, text: $text, listItems: $listItems, flowchartData: $flowchartData)';
-  }
+  String toString() =>
+      'ContentBlock(type: $type, text: ${text.length > 50 ? '${text.substring(0, 50)}...' : text})';
 }
 
 /// ---------------------------------------------------------------------------
-/// Post Model
+/// Post Model - Enhanced
 /// ---------------------------------------------------------------------------
 class Post {
   final String id;
   final String authorId;
   final String title;
-  final String bodyDelta; // String for Quill Delta JSON
-  final String bodyPlain; // JSON content blocks OR plain text (legacy)
-  final String? excerpt; // Summary for UI display
+  final String bodyDelta; // Rich text editor JSON
+  final String bodyPlain; // JSON serialized ContentBlocks
+  final String excerpt; // Summary for previews (made required)
   final PostScope scope;
   final Flair? flair;
   final int score;
@@ -197,7 +232,7 @@ class Post {
     required this.title,
     required this.bodyDelta,
     required this.bodyPlain,
-    this.excerpt,
+    required this.excerpt, // ✅ Make required
     required this.scope,
     this.flair,
     this.score = 0,
@@ -210,6 +245,46 @@ class Post {
     required this.readingTime,
   });
 
+  // ✅ New method to get parsed content blocks
+  List<ContentBlock> get contentBlocks {
+    if (bodyPlain.isEmpty) return [];
+
+    if (_isValidJson(bodyPlain)) {
+      try {
+        final json = jsonDecode(bodyPlain) as List<dynamic>;
+        return json
+            .map((e) => ContentBlock.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } catch (e) {
+        debugPrint('Failed to parse content blocks: $e');
+        return [ContentBlock.paragraph(bodyPlain)];
+      }
+    } else {
+      // Legacy support - convert plain text to paragraph block
+      return [ContentBlock.paragraph(bodyPlain)];
+    }
+  }
+
+  // ✅ Helper method to calculate reading time from content blocks
+  String get calculatedReadingTime {
+    int wordCount = contentBlocks.fold(
+      0,
+      (sum, block) => sum + block.wordCount,
+    );
+
+    // Add words from excerpt if content blocks are empty
+    if (wordCount == 0 && excerpt.isNotEmpty) {
+      wordCount = excerpt
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .length;
+    }
+
+    final minutes = (wordCount / 200).ceil(); // ~200 words per minute
+    return minutes == 0 ? '1 min read' : '$minutes min read';
+  }
+
+  // ✅ Updated factory methods
   factory Post.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Post(
@@ -218,7 +293,7 @@ class Post {
       title: data['title'] ?? '',
       bodyDelta: data['bodyDelta'] ?? '',
       bodyPlain: data['bodyPlain'] ?? '',
-      excerpt: data['excerpt']?.toString().trim(),
+      excerpt: data['excerpt']?.toString() ?? '', // ✅ Handle excerpt properly
       scope: PostScope.fromMap(data['scope'] ?? {}),
       flair: data['flair'] != null ? Flair.fromJson(data['flair']) : null,
       score: data['score']?.toInt() ?? 0,
@@ -237,19 +312,9 @@ class Post {
       id: json['id'] ?? '',
       authorId: json['authorId'] ?? '',
       title: json['title'] ?? '',
-      // Force bodyDelta to String
-      bodyDelta: (json['bodyDelta'] is String)
-          ? json['bodyDelta'] as String
-          : json['bodyDelta'] == null
-          ? ''
-          : jsonEncode(json['bodyDelta']),
-      // Force bodyPlain to String
-      bodyPlain: (json['bodyPlain'] is String)
-          ? json['bodyPlain'] as String
-          : json['bodyPlain'] == null
-          ? ''
-          : jsonEncode(json['bodyPlain']),
-      excerpt: json['excerpt'],
+      bodyDelta: _ensureString(json['bodyDelta']),
+      bodyPlain: _ensureString(json['bodyPlain']),
+      excerpt: json['excerpt']?.toString() ?? '', // ✅ Handle excerpt
       scope: PostScope.fromJson(json['scope'] ?? {}),
       flair: json['flair'] != null ? Flair.fromJson(json['flair']) : null,
       score: json['score']?.toInt() ?? 0,
@@ -265,6 +330,14 @@ class Post {
       authorDesignation: json['authorDesignation'],
       readingTime: json['readingTime'] ?? '1 min read',
     );
+  }
+
+  // ✅ Helper method to ensure string type
+  static String _ensureString(dynamic value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    if (value is List || value is Map) return jsonEncode(value);
+    return value.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -294,7 +367,7 @@ class Post {
       'title': title,
       'bodyDelta': bodyDelta,
       'bodyPlain': bodyPlain,
-      'excerpt': excerpt?.trim(),
+      'excerpt': excerpt.trim(),
       'scope': scope.toMap(),
       'flair': flair?.toJson(),
       'score': score,
@@ -346,35 +419,11 @@ class Post {
     );
   }
 
-  String get calculatedReadingTime {
-    // Renamed from readingTime to avoid conflict
-    int wordCount = 0;
-    if (_isValidJson(bodyPlain)) {
-      try {
-        final json = jsonDecode(bodyPlain) as List;
-        wordCount = _calculateWordCountFromBlocks(json);
-      } catch (e) {
-        wordCount = bodyPlain
-            .split(RegExp(r'\s+'))
-            .where((word) => word.isNotEmpty)
-            .length;
-      }
-    } else {
-      wordCount = bodyPlain
-          .split(RegExp(r'\s+'))
-          .where((word) => word.isNotEmpty)
-          .length;
-    }
-
-    final minutes = (wordCount / 200).ceil(); // ~200 words per minute
-    return minutes == 0 ? '1 min read' : '$minutes min read';
-  }
-
   String get displayExcerpt {
-    if (excerpt != null && excerpt!.trim().isNotEmpty) {
-      return excerpt!.length > 200
-          ? '${excerpt!.substring(0, 200).trim()}...'
-          : excerpt!.trim();
+    if (excerpt.trim().isNotEmpty) {
+      return excerpt.length > 200
+          ? '${excerpt.substring(0, 200).trim()}...'
+          : excerpt.trim();
     }
 
     return _generateExcerptFromContent();
@@ -384,19 +433,6 @@ class Post {
     str = str.trim();
     return (str.startsWith('[') && str.endsWith(']')) ||
         (str.startsWith('{') && str.endsWith('}'));
-  }
-
-  int _calculateWordCountFromBlocks(List blocks) {
-    int totalWords = 0;
-    for (var blockJson in blocks) {
-      try {
-        final block = ContentBlock.fromJson(blockJson as Map<String, dynamic>);
-        totalWords += block.wordCount;
-      } catch (e) {
-        continue;
-      }
-    }
-    return totalWords;
   }
 
   String _generateExcerptFromContent() {
@@ -553,18 +589,8 @@ class Comment {
       id: json['id'] ?? '',
       postId: json['postId'] ?? '',
       authorId: json['authorId'] ?? '',
-      // Force bodyDelta to String
-      bodyDelta: (json['bodyDelta'] is String)
-          ? json['bodyDelta'] as String
-          : json['bodyDelta'] == null
-          ? ''
-          : jsonEncode(json['bodyDelta']),
-      // Force bodyPlain to String
-      bodyPlain: (json['bodyPlain'] is String)
-          ? json['bodyPlain'] as String
-          : json['bodyPlain'] == null
-          ? ''
-          : jsonEncode(json['bodyPlain']),
+      bodyDelta: Post._ensureString(json['bodyDelta']),
+      bodyPlain: Post._ensureString(json['bodyPlain']),
       parentId: json['parentId'],
       score: json['score']?.toInt() ?? 0,
       createdAt: json['createdAt'] != null
@@ -762,28 +788,34 @@ class FeedItem {
 }
 
 /// ---------------------------------------------------------------------------
-/// Create Post Input Model
+/// Create Post Input Model - Enhanced
 /// ---------------------------------------------------------------------------
 class CreatePostInput {
   final String title;
-  final String bodyDelta; // String for Quill Delta JSON
-  final String bodyPlain; // JSON content blocks
-  final String? excerpt;
+  final String bodyDelta; // Rich text editor content (Quill Delta JSON)
+  final List<ContentBlock> contentBlocks; // ✅ Structured content blocks
+  final String excerpt; // Summary/preview text
   final PostScope scope;
   final Flair? flair;
   final String? imageUrl;
 
   CreatePostInput({
     required this.title,
-    required this.bodyDelta,
-    required this.bodyPlain,
-    this.excerpt,
+    this.bodyDelta = '', // Default empty for now
+    required this.contentBlocks, // ✅ Direct content blocks
+    required this.excerpt,
     required this.scope,
     this.flair,
     this.imageUrl,
   });
 
-  bool get isValid => title.trim().isNotEmpty && bodyPlain.trim().isNotEmpty;
+  bool get isValid =>
+      title.trim().isNotEmpty &&
+      (contentBlocks.isNotEmpty || excerpt.trim().isNotEmpty);
+
+  // Helper method to serialize content blocks
+  String get serializedContentBlocks =>
+      jsonEncode(contentBlocks.map((block) => block.toJson()).toList());
 }
 
 /// ---------------------------------------------------------------------------
@@ -818,7 +850,7 @@ class PostMigrationHelper {
         {
           'type': ContentBlockType.paragraph.index,
           'text': plainTextContent,
-          'listItems': [],
+          'listItems': <String>[],
           'url': null,
           'filePath': null,
           'flowchartData': null,

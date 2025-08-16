@@ -13,11 +13,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Use prefix for models to avoid conflicts
-import '../../models/power_pulse/powerpulse_models.dart' as models;
+import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
+import '../../widgets/post_card/flowchart_preview_widget.dart';
 import 'flowchart_create_screen.dart';
-import 'post_create_screen.dart' hide ContentBlock;
+import 'post_create_screen.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -29,8 +29,8 @@ class PostDetailScreen extends StatefulWidget {
 }
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
-  models.Post? _post;
-  List<models.ContentBlock> _contentBlocks = [];
+  Post? _post;
+  List<ContentBlock> _contentBlocks = [];
   bool _isLoading = true;
   String? _error;
   final ScrollController _scrollController = ScrollController();
@@ -57,12 +57,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final prefs = await SharedPreferences.getInstance();
       final cachedPost = prefs.getString('post_${widget.postId}');
 
-      models.Post? post;
+      Post? post;
       if (cachedPost != null) {
         try {
-          post = models.Post.fromJson(
-            jsonDecode(cachedPost) as Map<String, dynamic>,
-          );
+          post = Post.fromJson(jsonDecode(cachedPost) as Map<String, dynamic>);
         } catch (e) {
           debugPrint('Failed to parse cached post: $e');
         }
@@ -80,25 +78,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // Cache post
       await prefs.setString('post_${widget.postId}', jsonEncode(post.toJson()));
 
-      List<models.ContentBlock> contentBlocks = [];
-      if (post.bodyPlain.isNotEmpty) {
-        if (_isValidJson(post.bodyPlain)) {
-          try {
-            final json = jsonDecode(post.bodyPlain) as List<dynamic>;
-            contentBlocks = json
-                .map(
-                  (e) =>
-                      models.ContentBlock.fromJson(e as Map<String, dynamic>),
-                )
-                .toList();
-          } catch (e) {
-            debugPrint('Failed to parse content blocks: $e');
-            contentBlocks = [models.ContentBlock.paragraph(post.bodyPlain)];
-          }
-        } else {
-          contentBlocks = [models.ContentBlock.paragraph(post.bodyPlain)];
-        }
-      }
+      // Use the contentBlocks getter from the updated Post model
+      List<ContentBlock> contentBlocks = post.contentBlocks;
 
       if (mounted) {
         setState(() {
@@ -117,12 +98,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
       }
     }
-  }
-
-  bool _isValidJson(String str) {
-    str = str.trim();
-    return (str.startsWith('[') && str.endsWith(']')) ||
-        (str.startsWith('{') && str.endsWith('}'));
   }
 
   @override
@@ -289,7 +264,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     return RefreshIndicator(
-      color: Colors.blue,
+      color: Colors.blue[600],
       onRefresh: _loadPost,
       child: CustomScrollView(
         controller: _scrollController,
@@ -331,7 +306,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 color: Colors.black87,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            // Display excerpt if available
+            if (_post!.excerpt.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Text(
+                  _post!.excerpt,
+                  style: GoogleFonts.lora(
+                    fontSize: 16,
+                    height: 1.5,
+                    color: Colors.grey[700],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
             _buildAuthorInfo(),
             const SizedBox(height: 24),
             if (_post!.imageUrl != null) _buildHeaderImage(),
@@ -346,9 +342,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isPublic ? Colors.blue[50] : Colors.orange,
+        color: isPublic ? Colors.blue[50] : Colors.orange[50],
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isPublic ? Colors.blue! : Colors.orange!),
+        border: Border.all(
+          color: isPublic ? Colors.blue[600]! : Colors.orange[600]!,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -356,7 +354,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           Icon(
             isPublic ? Icons.public : Icons.location_on,
             size: 16,
-            color: isPublic ? Colors.blue[700] : Colors.orange,
+            color: isPublic ? Colors.blue[700] : Colors.orange[700],
           ),
           const SizedBox(width: 8),
           Text(
@@ -373,31 +371,47 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildFlairBadge() {
+    final flair = _post!.flair!;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.purple[50],
+        color: _getFlairColor(flair).withOpacity(0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.purple!),
+        border: Border.all(color: _getFlairColor(flair)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_post!.flair!.emoji != null) ...[
-            Text(_post!.flair!.emoji!, style: const TextStyle(fontSize: 14)),
+          if (flair.emoji != null) ...[
+            Text(flair.emoji!, style: const TextStyle(fontSize: 14)),
             const SizedBox(width: 6),
           ],
           Text(
-            _post!.flair!.name,
+            flair.name,
             style: GoogleFonts.lora(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Colors.purple[700],
+              color: _getFlairColor(flair),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Color _getFlairColor(Flair flair) {
+    switch (flair.name.toLowerCase()) {
+      case 'urgent':
+        return Colors.red[700]!;
+      case 'question':
+        return Colors.blue!;
+      case 'announcement':
+        return Colors.green!;
+      case 'discussion':
+        return Colors.purple!;
+      default:
+        return Colors.purple!;
+    }
   }
 
   Widget _buildAuthorInfo() {
@@ -456,14 +470,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ],
                 ],
               ),
+              const SizedBox(height: 4),
               Row(
                 children: [
                   Icon(Icons.schedule, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Text(
-                    _post!.readingTime.isNotEmpty
-                        ? _post!.readingTime
-                        : _post!.calculatedReadingTime,
+                    _post!.readingTime,
                     style: GoogleFonts.lora(
                       fontSize: 12,
                       color: Colors.grey[600],
@@ -492,7 +505,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               height: 240,
               color: Colors.grey[100],
               child: Center(
-                child: CircularProgressIndicator(color: Colors.blue),
+                child: CircularProgressIndicator(color: Colors.blue[600]),
               ),
             ),
             errorWidget: (context, url, error) => Container(
@@ -546,9 +559,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildBlockPreview(models.ContentBlock block) {
+  Widget _buildBlockPreview(ContentBlock block) {
     switch (block.type) {
-      case models.ContentBlockType.heading:
+      case ContentBlockType.heading:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
           child: Text(
@@ -561,7 +574,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
-      case models.ContentBlockType.subHeading:
+      case ContentBlockType.subHeading:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
           child: Text(
@@ -574,7 +587,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
-      case models.ContentBlockType.paragraph:
+      case ContentBlockType.paragraph:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
           child: Text(
@@ -586,7 +599,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
-      case models.ContentBlockType.bulletedList:
+      case ContentBlockType.bulletedList:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
           child: Column(
@@ -623,7 +636,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             }).toList(),
           ),
         );
-      case models.ContentBlockType.numberedList:
+      case ContentBlockType.numberedList:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
           child: Column(
@@ -662,32 +675,41 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             }).toList(),
           ),
         );
-      case models.ContentBlockType.image:
-        if (block.url == null) return const SizedBox.shrink();
+      case ContentBlockType.image:
+        if (block.url == null && block.file == null)
+          return const SizedBox.shrink();
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: CachedNetworkImage(
-              imageUrl: block.url!,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              placeholder: (context, url) => Container(
-                height: 200,
-                color: Colors.grey[100],
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.blue),
-                ),
-              ),
-              errorWidget: (context, url, error) => Container(
-                height: 200,
-                color: Colors.grey[100],
-                child: const Center(child: Text('Image unavailable')),
-              ),
-            ),
+            child: block.file != null
+                ? Image.file(
+                    block.file!,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  )
+                : CachedNetworkImage(
+                    imageUrl: block.url!,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      height: 200,
+                      color: Colors.grey[100],
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: Colors.blue[600],
+                        ),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      height: 200,
+                      color: Colors.grey[100],
+                      child: const Center(child: Text('Image unavailable')),
+                    ),
+                  ),
           ),
         );
-      case models.ContentBlockType.link:
+      case ContentBlockType.link:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
           child: GestureDetector(
@@ -697,11 +719,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               decoration: BoxDecoration(
                 color: Colors.blue[50],
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue!),
+                border: Border.all(color: Colors.blue[600]!),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.link, color: Colors.blue, size: 20),
+                  Icon(Icons.link, color: Colors.blue[600], size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -719,7 +741,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
-      case models.ContentBlockType.file:
+      case ContentBlockType.file:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
           child: Container(
@@ -727,11 +749,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             decoration: BoxDecoration(
               color: Colors.grey[50],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey!),
+              border: Border.all(color: Colors.grey[300]!),
             ),
             child: Row(
               children: [
-                Icon(Icons.attach_file, color: Colors.grey, size: 24),
+                Icon(Icons.attach_file, color: Colors.grey[600], size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -763,7 +785,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
-      case models.ContentBlockType.flowchart:
+      case ContentBlockType.flowchart:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
           child: GestureDetector(
@@ -773,7 +795,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               decoration: BoxDecoration(
                 color: Colors.blue[50],
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue!),
+                border: Border.all(color: Colors.blue[600]!),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -781,11 +803,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   // Header
                   Row(
                     children: [
-                      Icon(Icons.account_tree, color: Colors.blue, size: 24),
+                      Icon(
+                        Icons.account_tree,
+                        color: Colors.blue[600],
+                        size: 24,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          block.flowchartData?['title'] ?? 'Flowchart',
+                          block.flowchartData?['title'] ?? block.text,
                           style: GoogleFonts.lora(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
@@ -800,7 +826,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ],
                   ),
-
                   // Description
                   if (block.flowchartData?['description'] != null &&
                       block.flowchartData!['description']
@@ -815,33 +840,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
                   ],
-
                   const SizedBox(height: 16),
-
-                  // Actual flowchart preview
-                  Container(
+                  // Use the shared FlowchartPreviewWidget
+                  FlowchartPreviewWidget(
+                    flowchartData: block.flowchartData,
                     height: 300,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: _buildFlowchartPreview(block.flowchartData),
+                    onTap: () => _viewFlowchart(block),
                   ),
-
                   const SizedBox(height: 12),
-
                   // Footer info
                   Row(
                     children: [
-                      Icon(Icons.visibility, color: Colors.blue, size: 16),
+                      Icon(Icons.visibility, color: Colors.blue[600], size: 16),
                       const SizedBox(width: 4),
                       Text(
                         'Tap to view full flowchart',
                         style: GoogleFonts.lora(
                           fontSize: 12,
-                          color: Colors.blue,
+                          color: Colors.blue[600],
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -850,7 +866,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         '${block.flowchartData?['nodeCount'] ?? 0} nodes',
                         style: GoogleFonts.lora(
                           fontSize: 12,
-                          color: Colors.grey,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
@@ -863,86 +879,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  Widget _buildFlowchartPreview(Map<String, dynamic>? flowchartData) {
-    if (flowchartData == null || flowchartData['nodes'] == null) {
-      return Center(
-        child: Text(
-          'No flowchart data available',
-          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
-        ),
-      );
-    }
-
-    try {
-      final nodesList = flowchartData['nodes'] as String;
-      final nodes = nodeInputFromJson(nodesList);
-
-      if (nodes.isEmpty) {
-        return Center(
-          child: Text(
-            'No nodes to display',
-            style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
-          ),
-        );
-      }
-
-      return InteractiveViewer(
-        minScale: 0.5,
-        maxScale: 2.0,
-        constrained: false,
-        child: SizedBox(
-          width: double.infinity,
-          height: 280, // Fixed height for consistent preview
-          child: DirectGraph(
-            list: nodes,
-            defaultCellSize: const Size(100, 50),
-            cellPadding: const EdgeInsets.all(16),
-            orientation: MatrixOrientation.Vertical,
-            centered: true,
-            nodeBuilder: (context, node) => Container(
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                border: Border.all(color: Colors.blue!),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Text(
-                    node.id,
-                    style: GoogleFonts.lora(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blue,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    } catch (e) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error, color: Colors.red, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              'Error displaying flowchart',
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.red),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  void _viewFlowchart(models.ContentBlock block) {
+  void _viewFlowchart(ContentBlock block) {
     if (block.flowchartData == null) return;
 
     Navigator.push(
@@ -1020,7 +957,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            StreamBuilder<List<models.Comment>>(
+            StreamBuilder<List<Comment>>(
               stream: PostService.streamComments(widget.postId),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1054,7 +991,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildCommentTree(List<models.Comment> comments) {
+  Widget _buildCommentTree(List<Comment> comments) {
     final rootComments = comments.where((c) => c.parentId == null).toList();
     return Column(
       children: rootComments.map((comment) {
@@ -1067,8 +1004,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildCommentItem(
-    models.Comment comment,
-    List<models.Comment> replies, {
+    Comment comment,
+    List<Comment> replies, {
     int depth = 0,
   }) {
     return Container(
@@ -1077,7 +1014,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey!),
+        border: Border.all(color: Colors.grey[300]!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1378,7 +1315,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               'Post deleted successfully',
               style: GoogleFonts.lora(),
             ),
-            backgroundColor: Colors.green,
+            backgroundColor: Colors.green[600],
           ),
         );
       }
@@ -1432,7 +1369,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     'Post reported. Thank you for your feedback.',
                     style: GoogleFonts.lora(),
                   ),
-                  backgroundColor: Colors.orange,
+                  backgroundColor: Colors.orange[600],
                 ),
               );
             },
@@ -1537,7 +1474,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 }
 
 class EnhancedVoteBar extends StatefulWidget {
-  final models.Post post;
+  final Post post;
 
   const EnhancedVoteBar({Key? key, required this.post}) : super(key: key);
 
@@ -1547,8 +1484,8 @@ class EnhancedVoteBar extends StatefulWidget {
 
 class _EnhancedVoteBarState extends State<EnhancedVoteBar>
     with TickerProviderStateMixin {
-  late models.Post _post;
-  models.Vote? _userVote;
+  late Post _post;
+  Vote? _userVote;
   bool _isVoting = false;
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -1595,7 +1532,7 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey!),
+        border: Border.all(color: Colors.grey[300]!),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1634,7 +1571,7 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: isSelected
-                ? (isUpvote ? Colors.green[50] : Colors.red)
+                ? (isUpvote ? Colors.green[50] : Colors.red[50])
                 : Colors.white,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
@@ -1647,7 +1584,7 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
             icon,
             size: 24,
             color: isSelected
-                ? (isUpvote ? Colors.green[600] : Colors.red)
+                ? (isUpvote ? Colors.green[600] : Colors.red[600])
                 : Colors.grey,
           ),
         ),
@@ -1656,7 +1593,7 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
   }
 
   Color _getScoreBackgroundColor() {
-    if (_post.score > 0) return Colors.green!;
+    if (_post.score > 0) return Colors.green[50]!;
     if (_post.score < 0) return Colors.red!;
     return Colors.grey!;
   }
@@ -1690,11 +1627,8 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
           _userVote = null;
           _post = _post.copyWith(score: prevScore - (prevVote?.value ?? 0));
         } else {
-          _userVote = models.Vote(
-            id: models.Vote.generateId(
-              postId: _post.id,
-              userId: currentUser.uid,
-            ),
+          _userVote = Vote(
+            id: Vote.generateId(postId: _post.id, userId: currentUser.uid),
             postId: _post.id,
             userId: currentUser.uid,
             value: newValue,
@@ -1769,7 +1703,7 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
 }
 
 class EnhancedCommentVoteBar extends StatefulWidget {
-  final models.Comment comment;
+  final Comment comment;
 
   const EnhancedCommentVoteBar({Key? key, required this.comment})
     : super(key: key);
@@ -1780,8 +1714,8 @@ class EnhancedCommentVoteBar extends StatefulWidget {
 
 class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
     with TickerProviderStateMixin {
-  late models.Comment _comment;
-  models.Vote? _userVote;
+  late Comment _comment;
+  Vote? _userVote;
   bool _isVoting = false;
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -1890,8 +1824,8 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
             score: prevScore - (prevVote?.value ?? 0),
           );
         } else {
-          _userVote = models.Vote(
-            id: models.Vote.generateId(
+          _userVote = Vote(
+            id: Vote.generateId(
               commentId: _comment.id,
               userId: currentUser.uid,
             ),
@@ -1961,6 +1895,55 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
               ),
             ),
             child: Text('Sign In', style: GoogleFonts.lora()),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Placeholder for FlowchartPreviewScreen
+class FlowchartPreviewScreen extends StatelessWidget {
+  final String title;
+  final String description;
+  final List<NodeInput> nodes;
+
+  const FlowchartPreviewScreen({
+    Key? key,
+    required this.title,
+    required this.description,
+    required this.nodes,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title, style: GoogleFonts.lora()),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
+      ),
+      body: Column(
+        children: [
+          if (description.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(description, style: GoogleFonts.lora(fontSize: 16)),
+            ),
+          Expanded(
+            child: nodes.isNotEmpty
+                ? InteractiveViewer(
+                    constrained: false,
+                    child: DirectGraph(
+                      list: nodes,
+                      defaultCellSize: const Size(104.0, 104.0),
+                      cellPadding: const EdgeInsets.all(14),
+                      contactEdgesDistance: 5.0,
+                      orientation: MatrixOrientation.Vertical,
+                    ),
+                  )
+                : const Center(child: Text('No flowchart data available')),
           ),
         ],
       ),

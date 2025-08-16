@@ -1,5 +1,3 @@
-// lib/services/power_pulse_service/powerpulse_services.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -11,26 +9,19 @@ import '../../models/hierarchy_models.dart';
 import '../../models/power_pulse/powerpulse_models.dart';
 import '../../models/user_model.dart';
 
-/// Custom exception for service errors
 class PowerPulseServiceException implements Exception {
   final String message;
   PowerPulseServiceException(this.message);
-
   @override
   String toString() => 'PowerPulseServiceException: $message';
 }
 
-/// ---------------------------------------------------------------------------
-/// Authentication Service
-/// ---------------------------------------------------------------------------
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  static Stream get authStateChanges => _auth.authStateChanges();
+  static Stream<User?> get authStateChanges => _auth.authStateChanges();
   static User? get currentUser => _auth.currentUser;
-
-  static Future signInAnonymously() async {
+  static Future<UserCredential> signInAnonymously() async {
     try {
       return await _auth.signInAnonymously();
     } catch (e) {
@@ -38,11 +29,11 @@ class AuthService {
     }
   }
 
-  static Future signInWithGoogle() async {
+  static Future<UserCredential> signInWithGoogle() async {
     throw UnimplementedError('Implement Google sign-in');
   }
 
-  static Future signOut() async {
+  static Future<void> signOut() async {
     try {
       await _auth.signOut();
     } catch (e) {
@@ -53,12 +44,9 @@ class AuthService {
   static Future<AppUser?> getCurrentAppUser() async {
     final user = currentUser;
     if (user == null) return null;
-
     try {
       final doc = await _firestore.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        return AppUser.fromFirestore(doc);
-      }
+      if (doc.exists) return AppUser.fromFirestore(doc);
       return null;
     } catch (e) {
       throw PowerPulseServiceException('Error getting current app user: $e');
@@ -86,38 +74,26 @@ class AuthService {
   }
 }
 
-/// ---------------------------------------------------------------------------
-/// Post Service
-/// ---------------------------------------------------------------------------
 class PostService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static Future<SharedPreferences> get _prefs async =>
       await SharedPreferences.getInstance();
   static const String _collection = 'posts';
 
-  // Helper to force any value to String for cache safety
-  static String _forceString(dynamic v) {
-    if (v == null) return '';
-    if (v is String) return v;
-    if (v is List || v is Map) return jsonEncode(v);
-    return v.toString();
-  }
-
   static Future<String> createPost(CreatePostInput input) async {
     final user = AuthService.currentUser;
-    if (user == null) {
+    if (user == null)
       throw PowerPulseServiceException('User not authenticated');
-    }
-
     final appUser = await AuthService.getCurrentAppUser();
     final now = Timestamp.now();
+    final readingTime = _calculateReadingTimeFromBlocks(input.contentBlocks);
 
-    // Create data for Firestore (with FieldValue)
-    final postData = {
+    final postDataForFirestore = {
       'authorId': user.uid,
       'title': input.title.trim(),
       'bodyDelta': input.bodyDelta,
-      'bodyPlain': input.bodyPlain.trim(),
+      'bodyPlain': input.serializedContentBlocks,
+      'excerpt': input.excerpt.trim(),
       'scope': input.scope.toMap(),
       'score': 0,
       'commentCount': 0,
@@ -127,19 +103,21 @@ class PostService {
       'imageUrl': input.imageUrl,
       'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
       'authorDesignation': appUser?.designationDisplayName,
-      'readingTime': _calculateReadingTime(input.bodyPlain),
+      'readingTime': readingTime,
     };
 
     try {
-      final docRef = await _firestore.collection(_collection).add(postData);
+      final docRef = await _firestore
+          .collection(_collection)
+          .add(postDataForFirestore);
 
-      // Create a cache-safe version (without FieldValue instances)
       final cacheData = {
         'id': docRef.id,
         'authorId': user.uid,
         'title': input.title.trim(),
-        'bodyDelta': _forceString(input.bodyDelta),
-        'bodyPlain': _forceString(input.bodyPlain.trim()),
+        'bodyDelta': input.bodyDelta,
+        'bodyPlain': input.serializedContentBlocks,
+        'excerpt': input.excerpt.trim(),
         'scope': input.scope.toMap(),
         'score': 0,
         'commentCount': 0,
@@ -149,18 +127,16 @@ class PostService {
         'imageUrl': input.imageUrl,
         'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
         'authorDesignation': appUser?.designationDisplayName,
-        'readingTime': _calculateReadingTime(input.bodyPlain),
+        'readingTime': readingTime,
       };
 
       final prefs = await _prefs;
       await prefs.setString('post_${docRef.id}', jsonEncode(cacheData));
-
       await AnalyticsService.logPostCreated(
         docRef.id,
         input.scope.type.toString().split('.').last,
         flair: input.flair?.name,
       );
-
       return docRef.id;
     } catch (e) {
       throw PowerPulseServiceException('Failed to create post: $e');
@@ -169,89 +145,81 @@ class PostService {
 
   static Future<void> updatePost(String postId, CreatePostInput input) async {
     final user = AuthService.currentUser;
-    if (user == null) {
+    if (user == null)
       throw PowerPulseServiceException('User not authenticated');
-    }
-
     final postDoc = _firestore.collection(_collection).doc(postId);
     final postSnapshot = await postDoc.get();
-    if (!postSnapshot.exists) {
+    if (!postSnapshot.exists)
       throw PowerPulseServiceException('Post not found');
-    }
-
     final existingPost = Post.fromFirestore(postSnapshot);
     if (existingPost.authorId != user.uid) {
       throw PowerPulseServiceException(
         'User is not authorized to update this post',
       );
     }
-
     final appUser = await AuthService.getCurrentAppUser();
+    final readingTime = _calculateReadingTimeFromBlocks(input.contentBlocks);
     final now = Timestamp.now();
 
-    // Create data for Firestore (with FieldValue)
-    final updateData = {
+    final updateDataForFirestore = {
       'title': input.title.trim(),
       'bodyDelta': input.bodyDelta,
-      'bodyPlain': input.bodyPlain.trim(),
+      'bodyPlain': input.serializedContentBlocks,
+      'excerpt': input.excerpt.trim(),
       'scope': input.scope.toMap(),
       'flair': input.flair?.toJson(),
       'updatedAt': FieldValue.serverTimestamp(),
       'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
       'authorDesignation': appUser?.designationDisplayName,
-      'readingTime': _calculateReadingTime(input.bodyPlain),
+      'readingTime': readingTime,
     };
 
     if (input.imageUrl != existingPost.imageUrl) {
-      updateData['imageUrl'] = input.imageUrl;
+      updateDataForFirestore['imageUrl'] = input.imageUrl;
       if (existingPost.imageUrl != null && input.imageUrl != null) {
         try {
           await StorageService.deleteImage(existingPost.imageUrl!);
-        } catch (e) {
-          print('Failed to delete old image: $e');
-        }
+        } catch (e) {}
       }
     }
 
     try {
-      await postDoc.update(updateData);
+      await postDoc.update(updateDataForFirestore);
 
-      // Create cache-safe version for local storage
       final cacheData = {
         'id': postId,
-        'authorId': user.uid,
+        'authorId': existingPost.authorId,
         'title': input.title.trim(),
-        'bodyDelta': _forceString(input.bodyDelta),
-        'bodyPlain': _forceString(input.bodyPlain.trim()),
+        'bodyDelta': input.bodyDelta,
+        'bodyPlain': input.serializedContentBlocks,
+        'excerpt': input.excerpt.trim(),
         'scope': input.scope.toMap(),
-        'flair': input.flair?.toJson(),
-        'updatedAt': now.millisecondsSinceEpoch,
-        'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
-        'authorDesignation': appUser?.designationDisplayName,
-        'readingTime': _calculateReadingTime(input.bodyPlain),
-        'imageUrl': input.imageUrl,
-        // Keep existing values that weren't updated
         'score': existingPost.score,
         'commentCount': existingPost.commentCount,
+        'flair': input.flair?.toJson(),
         'createdAt': existingPost.createdAt.millisecondsSinceEpoch,
+        'updatedAt': now.millisecondsSinceEpoch,
+        'imageUrl': input.imageUrl,
+        'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
+        'authorDesignation': appUser?.designationDisplayName,
+        'readingTime': readingTime,
       };
-
       final prefs = await _prefs;
       await prefs.setString('post_$postId', jsonEncode(cacheData));
-
-      await AnalyticsService.logPostCreated(
-        postId,
-        'updated',
-        flair: input.flair?.name,
-      );
     } catch (e) {
       throw PowerPulseServiceException('Failed to update post: $e');
     }
   }
 
+  static String _calculateReadingTimeFromBlocks(List<ContentBlock> blocks) {
+    final wordCount = blocks.fold(0, (sum, block) => sum + block.wordCount);
+    final minutes = (wordCount / 200).ceil();
+    return minutes == 0 ? '1 min read' : '$minutes min read';
+  }
+
   static String _calculateReadingTime(String text) {
     final wordCount = text.split(RegExp(r'\s+')).length;
-    final minutes = (wordCount / 200).ceil(); // Assuming 200 words per minute
+    final minutes = (wordCount / 200).ceil();
     return minutes == 0 ? '1 min read' : '$minutes min read';
   }
 
@@ -266,8 +234,7 @@ class PostService {
           final prefs = await _prefs;
           return snapshot.docs.map((doc) {
             final post = Post.fromFirestore(doc);
-            // Create cache-safe version
-            final cacheData = _createCacheSafePostData(doc, post);
+            final cacheData = _createCacheSafePostDataFromDoc(doc, post);
             prefs.setString('post_${doc.id}', jsonEncode(cacheData));
             return post;
           }).toList();
@@ -286,7 +253,7 @@ class PostService {
           final prefs = await _prefs;
           return snapshot.docs.map((doc) {
             final post = Post.fromFirestore(doc);
-            final cacheData = _createCacheSafePostData(doc, post);
+            final cacheData = _createCacheSafePostDataFromDoc(doc, post);
             prefs.setString('post_${doc.id}', jsonEncode(cacheData));
             return post;
           }).toList();
@@ -295,7 +262,6 @@ class PostService {
 
   static Stream<List<Post>> streamTopPosts({int limit = 20, String? zoneId}) {
     Query<Map<String, dynamic>> query = _firestore.collection(_collection);
-
     if (zoneId != null) {
       query = query
           .where('scope.type', isEqualTo: 'zone')
@@ -303,7 +269,6 @@ class PostService {
     } else {
       query = query.where('scope.type', isEqualTo: 'public');
     }
-
     return query
         .orderBy('score', descending: true)
         .orderBy('createdAt', descending: true)
@@ -313,38 +278,31 @@ class PostService {
           final prefs = await _prefs;
           return snapshot.docs.map((doc) {
             final post = Post.fromFirestore(doc);
-            final cacheData = _createCacheSafePostData(doc, post);
+            final cacheData = _createCacheSafePostDataFromDoc(doc, post);
             prefs.setString('post_${doc.id}', jsonEncode(cacheData));
             return post;
           }).toList();
         });
   }
 
-  // Helper method to create cache-safe post data
-  static Map<String, dynamic> _createCacheSafePostData(
+  static Map<String, dynamic> _createCacheSafePostDataFromDoc(
     DocumentSnapshot<Map<String, dynamic>> doc,
     Post post,
   ) {
     final data = doc.data()!;
-    final cache = <String, dynamic>{...data};
-
+    final cache = <String, dynamic>{};
+    data.forEach((key, value) {
+      if (value is Timestamp) {
+        cache[key] = value.millisecondsSinceEpoch;
+      } else {
+        cache[key] = value;
+      }
+    });
     cache['id'] = doc.id;
-
-    // Convert Timestamp objects to milliseconds for JSON serialization
-    if (cache['createdAt'] is Timestamp) {
-      cache['createdAt'] =
-          (cache['createdAt'] as Timestamp).millisecondsSinceEpoch;
-    }
-    if (cache['updatedAt'] is Timestamp) {
-      cache['updatedAt'] =
-          (cache['updatedAt'] as Timestamp).millisecondsSinceEpoch;
-    }
-
-    // Force String types for fields the model expects as String
-    cache['bodyDelta'] = _forceString(cache['bodyDelta']);
-    cache['bodyPlain'] = _forceString(cache['bodyPlain']);
+    cache['bodyDelta'] = cache['bodyDelta']?.toString() ?? '';
+    cache['bodyPlain'] = cache['bodyPlain']?.toString() ?? '';
+    cache['excerpt'] = cache['excerpt']?.toString() ?? '';
     cache['readingTime'] = cache['readingTime']?.toString() ?? '1 min read';
-
     return cache;
   }
 
@@ -355,19 +313,15 @@ class PostService {
       if (cachedPost != null) {
         try {
           return Post.fromJson(jsonDecode(cachedPost) as Map<String, dynamic>);
-        } catch (e) {
-          print('Failed to parse cached post: $e');
-        }
+        } catch (e) {}
       }
-
       final doc = await _firestore.collection(_collection).doc(postId).get();
       if (doc.exists) {
         final post = Post.fromFirestore(doc);
-        final cacheData = _createCacheSafePostData(doc, post);
+        final cacheData = _createCacheSafePostDataFromDoc(doc, post);
         await prefs.setString('post_$postId', jsonEncode(cacheData));
         return post;
       }
-
       return null;
     } catch (e) {
       throw PowerPulseServiceException('Error getting post: $e');
@@ -381,7 +335,7 @@ class PostService {
       if (doc.exists) {
         final post = Post.fromFirestore(doc);
         final prefs = await _prefs;
-        final cacheData = _createCacheSafePostData(doc, post);
+        final cacheData = _createCacheSafePostDataFromDoc(doc, post);
         await prefs.setString('post_$postId', jsonEncode(cacheData));
         return post;
       }
@@ -403,7 +357,7 @@ class PostService {
           final prefs = await _prefs;
           return snapshot.docs.map((doc) {
             final post = Post.fromFirestore(doc);
-            final cacheData = _createCacheSafePostData(doc, post);
+            final cacheData = _createCacheSafePostDataFromDoc(doc, post);
             prefs.setString('post_${doc.id}', jsonEncode(cacheData));
             return post;
           }).toList();
@@ -421,11 +375,10 @@ class PostService {
           .orderBy('createdAt', descending: true)
           .limit(limit)
           .get();
-
       final prefs = await _prefs;
       return snapshot.docs.map((doc) {
         final post = Post.fromFirestore(doc);
-        final cacheData = _createCacheSafePostData(doc, post);
+        final cacheData = _createCacheSafePostDataFromDoc(doc, post);
         prefs.setString('post_${doc.id}', jsonEncode(cacheData));
         return post;
       }).toList();
@@ -436,24 +389,17 @@ class PostService {
 
   static Future<void> deletePost(String postId) async {
     final user = AuthService.currentUser;
-    if (user == null) {
+    if (user == null)
       throw PowerPulseServiceException('User not authenticated');
-    }
-
     final post = await getPost(postId);
     if (post == null) throw PowerPulseServiceException('Post not found');
-    if (post.authorId != user.uid) {
+    if (post.authorId != user.uid)
       throw PowerPulseServiceException('Not authorized to delete this post');
-    }
-
     try {
       final batch = _firestore.batch();
       batch.delete(_firestore.collection(_collection).doc(postId));
-
-      if (post.imageUrl != null) {
+      if (post.imageUrl != null)
         await StorageService.deleteImage(post.imageUrl!);
-      }
-
       await batch.commit();
       final prefs = await _prefs;
       await prefs.remove('post_$postId');
@@ -480,32 +426,26 @@ class PostService {
         });
   }
 
-  // Helper method for comment caching
   static Map<String, dynamic> _createCacheSafeCommentData(
     DocumentSnapshot<Map<String, dynamic>> doc,
     Comment comment,
   ) {
     final data = doc.data()!;
-    final cache = <String, dynamic>{...data};
+    final cache = <String, dynamic>{};
+    data.forEach((key, value) {
+      if (value is Timestamp) {
+        cache[key] = value.millisecondsSinceEpoch;
+      } else {
+        cache[key] = value;
+      }
+    });
     cache['id'] = doc.id;
-
-    // Convert Timestamp objects to milliseconds for JSON serialization
-    if (cache['createdAt'] is Timestamp) {
-      cache['createdAt'] =
-          (cache['createdAt'] as Timestamp).millisecondsSinceEpoch;
-    }
-
-    // Force String types for fields the model expects as String
-    cache['bodyDelta'] = _forceString(cache['bodyDelta']);
-    cache['bodyPlain'] = _forceString(cache['bodyPlain']);
-
+    cache['bodyDelta'] = cache['bodyDelta']?.toString() ?? '';
+    cache['bodyPlain'] = cache['bodyPlain']?.toString() ?? '';
     return cache;
   }
 }
 
-/// ---------------------------------------------------------------------------
-/// Comment Service
-/// ---------------------------------------------------------------------------
 class CommentService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static Future<SharedPreferences> get _prefs async =>
@@ -514,13 +454,10 @@ class CommentService {
 
   static Future<String> addComment(CreateCommentInput input) async {
     final user = AuthService.currentUser;
-    if (user == null) {
+    if (user == null)
       throw PowerPulseServiceException('User not authenticated');
-    }
-
     final appUser = await AuthService.getCurrentAppUser();
     final now = Timestamp.now();
-
     final commentData = {
       'postId': input.postId,
       'authorId': user.uid,
@@ -532,35 +469,28 @@ class CommentService {
       'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
       'authorDesignation': appUser?.designationDisplayName,
     };
-
     try {
       final batch = _firestore.batch();
       final commentRef = _firestore.collection(_collection).doc();
       batch.set(commentRef, commentData);
-
       batch.update(_firestore.collection('posts').doc(input.postId), {
         'commentCount': FieldValue.increment(1),
       });
-
       await batch.commit();
-
-      // Create cache-safe version
       final cacheData = {
         'id': commentRef.id,
         'postId': input.postId,
         'authorId': user.uid,
-        'bodyDelta': PostService._forceString(input.bodyDelta),
-        'bodyPlain': PostService._forceString(input.bodyPlain.trim()),
+        'bodyDelta': input.bodyDelta,
+        'bodyPlain': input.bodyPlain.trim(),
         'parentId': input.parentId,
         'score': 0,
         'createdAt': now.millisecondsSinceEpoch,
         'authorName': appUser?.name ?? user.displayName ?? 'Anonymous',
         'authorDesignation': appUser?.designationDisplayName,
       };
-
       final prefs = await _prefs;
       await prefs.setString('comment_${commentRef.id}', jsonEncode(cacheData));
-
       await AnalyticsService.logComment(input.postId);
       return commentRef.id;
     } catch (e) {
@@ -577,11 +507,8 @@ class CommentService {
           return Comment.fromJson(
             jsonDecode(cachedComment) as Map<String, dynamic>,
           );
-        } catch (e) {
-          print('Failed to parse cached comment: $e');
-        }
+        } catch (e) {}
       }
-
       final doc = await _firestore.collection(_collection).doc(commentId).get();
       if (doc.exists) {
         final comment = Comment.fromFirestore(doc);
@@ -589,7 +516,6 @@ class CommentService {
         await prefs.setString('comment_$commentId', jsonEncode(cacheData));
         return comment;
       }
-
       return null;
     } catch (e) {
       throw PowerPulseServiceException('Error getting comment: $e');
@@ -598,23 +524,18 @@ class CommentService {
 
   static Future<void> deleteComment(String commentId) async {
     final user = AuthService.currentUser;
-    if (user == null) {
+    if (user == null)
       throw PowerPulseServiceException('User not authenticated');
-    }
-
     final comment = await getComment(commentId);
     if (comment == null) throw PowerPulseServiceException('Comment not found');
-    if (comment.authorId != user.uid) {
+    if (comment.authorId != user.uid)
       throw PowerPulseServiceException('Not authorized to delete this comment');
-    }
-
     try {
       final batch = _firestore.batch();
       batch.delete(_firestore.collection(_collection).doc(commentId));
       batch.update(_firestore.collection('posts').doc(comment.postId), {
         'commentCount': FieldValue.increment(-1),
       });
-
       await batch.commit();
       final prefs = await _prefs;
       await prefs.remove('comment_$commentId');
@@ -624,9 +545,6 @@ class CommentService {
   }
 }
 
-/// ---------------------------------------------------------------------------
-/// Vote Service
-/// ---------------------------------------------------------------------------
 class VoteService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _collection = 'votes';
@@ -637,25 +555,19 @@ class VoteService {
     required int value,
   }) async {
     final user = AuthService.currentUser;
-    if (user == null) {
+    if (user == null)
       throw PowerPulseServiceException('User not authenticated');
-    }
-
-    if (postId == null && commentId == null) {
+    if (postId == null && commentId == null)
       throw PowerPulseServiceException(
         'Either postId or commentId must be provided',
       );
-    }
-
     final voteId = postId != null
         ? Vote.generateId(postId: postId, userId: user.uid)
         : Vote.generateId(commentId: commentId!, userId: user.uid);
     final parentId = postId ?? commentId!;
     final parentCollection = postId != null ? 'posts' : 'comments';
-
     try {
       final batch = _firestore.batch();
-
       if (value == 0) {
         batch.delete(_firestore.collection(_collection).doc(voteId));
       } else {
@@ -668,17 +580,14 @@ class VoteService {
         };
         batch.set(_firestore.collection(_collection).doc(voteId), voteData);
       }
-
       final currentVote = await getUserVote(
         postId: postId,
         commentId: commentId,
       );
       final scoreDelta = value - (currentVote?.value ?? 0);
-
       batch.update(_firestore.collection(parentCollection).doc(parentId), {
         'score': FieldValue.increment(scoreDelta),
       });
-
       await batch.commit();
       await AnalyticsService.logVote(parentId, value);
     } catch (e) {
@@ -690,17 +599,14 @@ class VoteService {
     final user = AuthService.currentUser;
     if (user == null) return null;
     if (postId == null && commentId == null) return null;
-
     try {
       final voteId = postId != null
           ? Vote.generateId(postId: postId, userId: user.uid)
           : Vote.generateId(commentId: commentId!, userId: user.uid);
-
       final doc = await _firestore.collection(_collection).doc(voteId).get();
       if (doc.exists) {
         return Vote.fromFirestore(doc);
       }
-
       return null;
     } catch (e) {
       throw PowerPulseServiceException('Error getting user vote: $e');
@@ -711,11 +617,9 @@ class VoteService {
     final user = AuthService.currentUser;
     if (user == null) return Stream.value(null);
     if (postId == null && commentId == null) return Stream.value(null);
-
     final voteId = postId != null
         ? Vote.generateId(postId: postId, userId: user.uid)
         : Vote.generateId(commentId: commentId!, userId: user.uid);
-
     return _firestore
         .collection(_collection)
         .doc(voteId)
@@ -724,12 +628,8 @@ class VoteService {
   }
 }
 
-/// ---------------------------------------------------------------------------
-/// Hierarchy Service
-/// ---------------------------------------------------------------------------
 class HierarchyService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
   static Future<List<Zone>> getZones() async {
     try {
       final snapshot = await _firestore
@@ -824,19 +724,13 @@ class HierarchyService {
   }
 }
 
-/// ---------------------------------------------------------------------------
-/// Storage Service
-/// ---------------------------------------------------------------------------
 class StorageService {
   static final FirebaseStorage _storage = FirebaseStorage.instance;
-
   static Future<String> uploadImage(File imageFile, String folder) async {
     try {
       final user = AuthService.currentUser;
-      if (user == null) {
+      if (user == null)
         throw PowerPulseServiceException('User not authenticated');
-      }
-
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${imageFile.path.split('/').last}';
       final ref = _storage.ref().child('$folder/${user.uid}/$fileName');
@@ -862,31 +756,13 @@ class StorageService {
   }
 }
 
-/// ---------------------------------------------------------------------------
-/// Analytics Service
-/// ---------------------------------------------------------------------------
 class AnalyticsService {
-  static Future<void> logPostView(String postId) async {
-    print('Post viewed: $postId');
-    // Implement Firebase Analytics or similar
-  }
-
+  static Future<void> logPostView(String postId) async {}
   static Future<void> logPostCreated(
     String postId,
     String scope, {
     String? flair,
-  }) async {
-    print('Post created: $postId, scope: $scope, flair: $flair');
-    // Implement Firebase Analytics or similar
-  }
-
-  static Future<void> logVote(String id, int value) async {
-    print('Vote: $id, value: $value');
-    // Implement Firebase Analytics or similar
-  }
-
-  static Future<void> logComment(String postId) async {
-    print('Comment added to post: $postId');
-    // Implement Firebase Analytics or similar
-  }
+  }) async {}
+  static Future<void> logVote(String id, int value) async {}
+  static Future<void> logComment(String postId) async {}
 }

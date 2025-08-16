@@ -7,7 +7,6 @@ import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:graphite/graphite.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
+import '../../widgets/post_card/flowchart_preview_widget.dart';
 import 'flowchart_create_screen.dart';
 
 class PostCreateScreen extends StatefulWidget {
@@ -30,6 +30,8 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   late TextEditingController _summaryController;
 
   final List<ContentBlock> _contentBlocks = [];
+  final List<TextEditingController> _blockControllers = [];
+  final List<List<TextEditingController>> _listControllers = [];
 
   final FocusNode _titleFocusNode = FocusNode();
   final FocusNode _summaryFocusNode = FocusNode();
@@ -65,8 +67,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   void dispose() {
     _titleController.dispose();
     _summaryController.dispose();
-    for (final block in _contentBlocks) {
-      block.dispose();
+    for (final ctrl in _blockControllers) {
+      ctrl.dispose();
+    }
+    for (final list in _listControllers) {
+      for (final lc in list) {
+        lc.dispose();
+      }
     }
     _titleFocusNode.dispose();
     _summaryFocusNode.dispose();
@@ -80,19 +87,27 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     if (widget.editingPost != null) {
       final post = widget.editingPost!;
       _titleController = TextEditingController(text: post.title);
-      _summaryController = TextEditingController(text: post.bodyPlain);
+      _summaryController = TextEditingController(text: post.excerpt);
       _selectedScope = post.scope;
       _selectedFlair = post.flair;
       _existingImageUrl = post.imageUrl;
 
-      if (post.bodyDelta.startsWith('[')) {
-        try {
-          final json = jsonDecode(post.bodyDelta) as List<dynamic>;
-          _contentBlocks.addAll(
-            json.map((e) => ContentBlock.fromJson(e)).toList(),
-          );
-        } catch (e) {
-          debugPrint('Error decoding content blocks: $e');
+      _contentBlocks.clear();
+      _blockControllers.clear();
+      _listControllers.clear();
+
+      for (final block in post.contentBlocks) {
+        _contentBlocks.add(block);
+
+        if (_isListBlock(block.type)) {
+          _blockControllers.add(TextEditingController()); // dummy/unused
+          final subCtrls = block.listItems
+              .map((text) => TextEditingController(text: text))
+              .toList();
+          _listControllers.add(subCtrls);
+        } else {
+          _blockControllers.add(TextEditingController(text: block.text));
+          _listControllers.add([]);
         }
       }
     } else {
@@ -135,11 +150,25 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               ? Flair.fromJson(draft['flair'])
               : null;
           _existingImageUrl = draft['imageUrl'];
-          _contentBlocks.addAll(
-            (draft['contentBlocks'] as List<dynamic>? ?? [])
-                .map((e) => ContentBlock.fromJson(e))
-                .toList(),
-          );
+
+          _contentBlocks.clear();
+          _blockControllers.clear();
+          _listControllers.clear();
+          for (final e in (draft['contentBlocks'] as List<dynamic>? ?? [])) {
+            final block = ContentBlock.fromJson(e as Map<String, dynamic>);
+            _contentBlocks.add(block);
+            if (_isListBlock(block.type)) {
+              _blockControllers.add(TextEditingController());
+              _listControllers.add(
+                block.listItems
+                    .map((text) => TextEditingController(text: text))
+                    .toList(),
+              );
+            } else {
+              _blockControllers.add(TextEditingController(text: block.text));
+              _listControllers.add([]);
+            }
+          }
         });
       } catch (e) {
         debugPrint('Error loading draft: $e');
@@ -150,23 +179,19 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   Future<void> _saveDraft() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // Create a serializable version of the draft without FieldValue instances
       final draft = {
         'title': _titleController.text,
         'summary': _summaryController.text,
         'scope': _selectedScope.toJson(),
         'flair': _selectedFlair?.toJson(),
         'imageUrl': _existingImageUrl,
-        'contentBlocks': _contentBlocks.map((b) => b.toJson()).toList(),
-        // Add timestamp as milliseconds instead of FieldValue
+        'contentBlocks': _serializeBlocks(),
         'lastSaved': DateTime.now().millisecondsSinceEpoch,
       };
 
       await prefs.setString('post_draft', jsonEncode(draft));
     } catch (e) {
       debugPrint('Error saving draft: $e');
-      // Don't show error to user for draft saving failures
     }
   }
 
@@ -176,8 +201,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   void _addHeading() {
     setState(() {
       _contentBlocks.add(
-        ContentBlock(ContentBlockType.heading, text: 'Heading'),
+        ContentBlock(type: ContentBlockType.heading, text: 'Heading'),
       );
+      _blockControllers.add(TextEditingController(text: 'Heading'));
+      _listControllers.add([]);
       _saveDraft();
     });
   }
@@ -185,8 +212,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   void _addSubHeading() {
     setState(() {
       _contentBlocks.add(
-        ContentBlock(ContentBlockType.subHeading, text: 'Sub-heading'),
+        ContentBlock(type: ContentBlockType.subHeading, text: 'Sub-heading'),
       );
+      _blockControllers.add(TextEditingController(text: 'Sub-heading'));
+      _listControllers.add([]);
       _saveDraft();
     });
   }
@@ -194,8 +223,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   void _addParagraph() {
     setState(() {
       _contentBlocks.add(
-        ContentBlock(ContentBlockType.paragraph, text: 'Paragraph text…'),
+        ContentBlock(type: ContentBlockType.paragraph, text: 'Paragraph text…'),
       );
+      _blockControllers.add(TextEditingController(text: 'Paragraph text…'));
+      _listControllers.add([]);
       _saveDraft();
     });
   }
@@ -203,8 +234,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   void _addBulletedList() {
     setState(() {
       _contentBlocks.add(
-        ContentBlock(ContentBlockType.bulletedList, listItems: ['']),
+        ContentBlock(type: ContentBlockType.bulletedList, listItems: ['']),
       );
+      _blockControllers.add(TextEditingController());
+      _listControllers.add([TextEditingController()]);
       _saveDraft();
     });
   }
@@ -212,48 +245,51 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   void _addNumberedList() {
     setState(() {
       _contentBlocks.add(
-        ContentBlock(ContentBlockType.numberedList, listItems: ['']),
+        ContentBlock(type: ContentBlockType.numberedList, listItems: ['']),
       );
+      _blockControllers.add(TextEditingController());
+      _listControllers.add([TextEditingController()]);
       _saveDraft();
     });
   }
 
   void _addFlowchart() async {
-    // Navigate to FlowchartCreateScreen and wait for result
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const FlowchartCreateScreen()),
     );
-
-    // If user saved a flowchart, add it to content blocks
     if (result != null) {
       setState(() {
         _contentBlocks.add(
           ContentBlock(
-            ContentBlockType.flowchart,
-            flowchartData: result, // This contains the flowchart data
-            text: result['title'] ?? 'Flowchart', // Use title as display text
+            type: ContentBlockType.flowchart,
+            flowchartData: result,
+            text: result['title'] ?? 'Flowchart',
           ),
         );
+        _blockControllers.add(
+          TextEditingController(text: result['description'] ?? ''),
+        );
+        _listControllers.add([]);
         _saveDraft();
       });
     }
   }
 
-  void _addListItem(ContentBlock block) {
+  void _addListItem(ContentBlock block, int blockIdx) {
     setState(() {
       block.listItems.add('');
-      block.listControllers.add(TextEditingController());
+      _listControllers[blockIdx].add(TextEditingController());
       _saveDraft();
     });
   }
 
-  void _removeListItem(ContentBlock block, int index) {
+  void _removeListItem(ContentBlock block, int blockIdx, int idx) {
     if (block.listItems.length > 1) {
       setState(() {
-        block.listItems.removeAt(index);
-        block.listControllers[index].dispose();
-        block.listControllers.removeAt(index);
+        block.listItems.removeAt(idx);
+        _listControllers[blockIdx][idx].dispose();
+        _listControllers[blockIdx].removeAt(idx);
         _saveDraft();
       });
     }
@@ -263,11 +299,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     setState(() {
       _contentBlocks.add(
         ContentBlock(
-          ContentBlockType.link,
+          type: ContentBlockType.link,
           text: 'Link text',
           url: 'https://example.com',
         ),
       );
+      _blockControllers.add(TextEditingController(text: 'Link text'));
+      _listControllers.add([]);
       _saveDraft();
     });
   }
@@ -278,12 +316,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   Future<void> _uploadImage() async {
     final picker = ImagePicker();
     final XFile? picked = await picker.pickImage(source: ImageSource.gallery);
-
     if (picked == null) return;
 
     final file = File(picked.path);
     final sizeInBytes = await file.length();
-
     if (sizeInBytes > 1 * 1024 * 1024) {
       _showSnackBar('Image must be under 1 MB');
       return;
@@ -299,7 +335,11 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
 
     setState(() {
       _existingImageUrl = null;
-      _contentBlocks.add(ContentBlock(ContentBlockType.image, file: file));
+      _contentBlocks.add(
+        ContentBlock(type: ContentBlockType.image, file: file),
+      );
+      _blockControllers.add(TextEditingController());
+      _listControllers.add([]);
       _saveDraft();
     });
   }
@@ -320,8 +360,14 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     final file = File(picked.path!);
     setState(() {
       _contentBlocks.add(
-        ContentBlock(ContentBlockType.file, file: file, text: picked.name),
+        ContentBlock(
+          type: ContentBlockType.file,
+          file: file,
+          text: picked.name,
+        ),
       );
+      _blockControllers.add(TextEditingController(text: picked.name));
+      _listControllers.add([]);
       _saveDraft();
     });
   }
@@ -411,9 +457,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: _selectedScope.isPublic
                   ? Colors.blue[50]
-                  : Colors.orange[50],
+                  : Colors.orange,
               foregroundColor: _selectedScope.isPublic
-                  ? Colors.blue
+                  ? Colors.blue[700]
                   : Colors.orange,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -439,13 +485,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                 fontSize: 14,
                 color: _selectedFlair != null
                     ? _getFlairColor(_selectedFlair!)
-                    : Colors.grey,
+                    : Colors.grey[600],
               ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: _selectedFlair != null
                   ? _getFlairColor(_selectedFlair!).withOpacity(0.1)
-                  : Colors.grey,
+                  : Colors.grey[200],
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
@@ -745,6 +791,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       color: Colors.grey[400],
                     ),
                     border: InputBorder.none,
+                    counterText: '',
                   ),
                   style: GoogleFonts.lora(
                     fontSize: 14,
@@ -770,7 +817,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                     const SizedBox(height: 12),
                     Text(
                       'Add content using the + button',
-                      style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+                      style: GoogleFonts.lora(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ],
                 )
@@ -782,14 +832,20 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                     setState(() {
                       if (oldIdx < newIdx) newIdx -= 1;
                       final block = _contentBlocks.removeAt(oldIdx);
+                      final blockCtrl = _blockControllers.removeAt(oldIdx);
+                      final listCtrls = _listControllers.removeAt(oldIdx);
+
                       _contentBlocks.insert(newIdx, block);
+                      _blockControllers.insert(newIdx, blockCtrl);
+                      _listControllers.insert(newIdx, listCtrls);
+
                       _saveDraft();
                     });
                   },
                   itemBuilder: (context, index) {
                     final block = _contentBlocks[index];
                     return Dismissible(
-                      key: ValueKey(block),
+                      key: ValueKey('${block.type}_$index'),
                       direction: DismissDirection.endToStart,
                       background: Container(
                         color: Colors.red,
@@ -798,18 +854,22 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         child: const Icon(Icons.delete, color: Colors.white),
                       ),
                       confirmDismiss: (direction) async {
-                        // Show confirmation dialog
                         return await _showDeleteConfirmationDialog(block);
                       },
                       onDismissed: (_) {
                         setState(() {
-                          block.dispose();
                           _contentBlocks.removeAt(index);
+                          _blockControllers[index].dispose();
+                          _blockControllers.removeAt(index);
+                          for (final ctrl in _listControllers[index]) {
+                            ctrl.dispose();
+                          }
+                          _listControllers.removeAt(index);
                           _saveDraft();
                         });
                         _showSnackBar('Block removed');
                       },
-                      child: _blockEditor(block),
+                      child: _blockEditor(block, index),
                     );
                   },
                 ),
@@ -819,7 +879,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Future<bool?> _showDeleteConfirmationDialog(ContentBlock block) async {
-    // Get block type name for the dialog
     String blockTypeName;
     switch (block.type) {
       case ContentBlockType.heading:
@@ -906,52 +965,65 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   // ──────────────────────────────────────────────────────────────────────────────
   // Block editor widgets
   // ──────────────────────────────────────────────────────────────────────────────
-  Widget _blockEditor(ContentBlock block) {
+  Widget _blockEditor(ContentBlock block, int index) {
     switch (block.type) {
       case ContentBlockType.heading:
-        return _headingField(block, fontSize: 20, hint: 'Enter heading…');
+        return _headingField(
+          block,
+          index,
+          fontSize: 20,
+          hint: 'Enter heading…',
+        );
       case ContentBlockType.subHeading:
-        return _headingField(block, fontSize: 17, hint: 'Enter sub-heading…');
+        return _headingField(
+          block,
+          index,
+          fontSize: 17,
+          hint: 'Enter sub-heading…',
+        );
       case ContentBlockType.paragraph:
-        return _paragraphField(block);
+        return _paragraphField(block, index);
       case ContentBlockType.bulletedList:
       case ContentBlockType.numberedList:
-        return _listField(block);
+        return _listField(block, index);
       case ContentBlockType.image:
         return _imageField(block);
       case ContentBlockType.link:
-        return _linkField(block);
+        return _linkField(block, index);
       case ContentBlockType.file:
         return _fileField(block);
       case ContentBlockType.flowchart:
-        return _flowchartField(block);
+        return _flowchartField(block, index);
     }
   }
 
-  // Individual block builders ---------------------------------------------------
   Widget _headingField(
-    ContentBlock block, {
+    ContentBlock block,
+    int index, {
     required double fontSize,
     required String hint,
   }) {
     return _blockShell(
       TextField(
-        controller: block.controller,
+        controller: _blockControllers[index],
         decoration: InputDecoration(border: InputBorder.none, hintText: hint),
         style: GoogleFonts.lora(
           fontSize: fontSize,
           fontWeight: FontWeight.w700,
           color: Colors.black87,
         ),
-        onChanged: (_) => _saveDraft(),
+        onChanged: (value) {
+          block.text = value;
+          _saveDraft();
+        },
       ),
     );
   }
 
-  Widget _paragraphField(ContentBlock block) {
+  Widget _paragraphField(ContentBlock block, int index) {
     return _blockShell(
       TextField(
-        controller: block.controller,
+        controller: _blockControllers[index],
         maxLines: null,
         decoration: const InputDecoration(
           border: InputBorder.none,
@@ -962,16 +1034,26 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           height: 1.5,
           color: Colors.black87,
         ),
-        onChanged: (_) => _saveDraft(),
+        onChanged: (value) {
+          block.text = value;
+          _saveDraft();
+        },
       ),
     );
   }
 
-  Widget _listField(ContentBlock block) {
+  Widget _listField(ContentBlock block, int index) {
+    final listControllers = _listControllers[index];
+
     return _blockShell(
       Column(
         children: [
           ...List.generate(block.listItems.length, (i) {
+            // Ensure we have enough controllers
+            while (listControllers.length <= i) {
+              listControllers.add(TextEditingController());
+            }
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
@@ -988,7 +1070,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   ),
                   Expanded(
                     child: TextField(
-                      controller: block.listControllers[i],
+                      controller: listControllers[i],
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         hintText: 'List item…',
@@ -998,7 +1080,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         height: 1.5,
                         color: Colors.black87,
                       ),
-                      onChanged: (_) => _saveDraft(),
+                      onChanged: (value) {
+                        block.listItems[i] = value;
+                        _saveDraft();
+                      },
                     ),
                   ),
                   if (block.listItems.length > 1)
@@ -1008,7 +1093,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         color: Colors.red,
                         size: 18,
                       ),
-                      onPressed: () => _removeListItem(block, i),
+                      onPressed: () => _removeListItem(block, index, i),
                     ),
                 ],
               ),
@@ -1017,7 +1102,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
-              onPressed: () => _addListItem(block),
+              onPressed: () => _addListItem(block, index),
               icon: const Icon(Icons.add, size: 16, color: Colors.blue),
               label: Text(
                 'Add item',
@@ -1046,24 +1131,24 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     return _blockShell(
       Column(
         children: [
-          img,
+          ClipRRect(borderRadius: BorderRadius.circular(8), child: img),
           const SizedBox(height: 6),
           Text(
             'Image',
-            style: GoogleFonts.lora(fontSize: 11, color: Colors.grey),
+            style: GoogleFonts.lora(fontSize: 11, color: Colors.grey[600]),
           ),
         ],
       ),
     );
   }
 
-  Widget _linkField(ContentBlock block) {
+  Widget _linkField(ContentBlock block, int index) {
     return _blockShell(
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
-            controller: block.controller,
+            controller: _blockControllers[index],
             decoration: const InputDecoration(
               border: InputBorder.none,
               hintText: 'Link text…',
@@ -1073,14 +1158,18 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               color: Colors.blue[700],
               decoration: TextDecoration.underline,
             ),
-            onChanged: (_) => _saveDraft(),
+            onChanged: (value) {
+              block.text = value;
+              _saveDraft();
+            },
           ),
           TextField(
             decoration: const InputDecoration(
               border: InputBorder.none,
               hintText: 'https://…',
             ),
-            style: GoogleFonts.lora(fontSize: 13, color: Colors.grey),
+            style: GoogleFonts.lora(fontSize: 13, color: Colors.grey[600]),
+            controller: TextEditingController(text: block.url ?? ''),
             onChanged: (v) {
               block.url = v;
               _saveDraft();
@@ -1122,8 +1211,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
-  void _editFlowchart(ContentBlock block) async {
-    // Navigate to FlowchartCreateScreen with existing flowchart data for editing
+  void _editFlowchart(ContentBlock block, int index) async {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -1132,17 +1220,17 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
       ),
     );
 
-    // If user saved changes, update the content block
     if (result != null) {
       setState(() {
         block.flowchartData = result;
         block.text = result['title'] ?? 'Flowchart';
+        _blockControllers[index].text = result['description'] ?? '';
         _saveDraft();
       });
     }
   }
 
-  Widget _flowchartField(ContentBlock block) {
+  Widget _flowchartField(ContentBlock block, int index) {
     final flowchartData = block.flowchartData ?? {};
     final title = flowchartData['title'] ?? 'Untitled Flowchart';
     final description = flowchartData['description'] ?? '';
@@ -1150,7 +1238,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
 
     return _blockShell(
       InkWell(
-        onTap: () => _editFlowchart(block),
+        onTap: () => _editFlowchart(block, index),
         child: Container(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -1161,7 +1249,11 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   color: Colors.blue[50],
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(Icons.account_tree, color: Colors.blue, size: 24),
+                child: Icon(
+                  Icons.account_tree,
+                  color: Colors.blue[600],
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1200,7 +1292,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   ],
                 ),
               ),
-              Icon(Icons.edit, color: Colors.grey, size: 20),
+              const Icon(Icons.edit, color: Colors.grey, size: 20),
             ],
           ),
         ),
@@ -1305,7 +1397,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   style: GoogleFonts.montserrat(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Colors.blue,
+                    color: Colors.blue[600],
                   ),
                 ),
               ),
@@ -1333,28 +1425,30 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          ..._contentBlocks.map(_blockPreview),
+          ..._contentBlocks.asMap().entries.map(
+            (entry) => _blockPreview(entry.value, entry.key),
+          ),
         ],
       ),
     );
   }
 
-  Widget _blockPreview(ContentBlock block) {
+  Widget _blockPreview(ContentBlock block, int index) {
     switch (block.type) {
       case ContentBlockType.heading:
         return _pv(
-          text: block.controller.text,
+          text: _blockControllers[index].text,
           size: 20,
           weight: FontWeight.w700,
         );
       case ContentBlockType.subHeading:
         return _pv(
-          text: block.controller.text,
+          text: _blockControllers[index].text,
           size: 17,
           weight: FontWeight.w600,
         );
       case ContentBlockType.paragraph:
-        return _pv(text: block.controller.text, size: 15);
+        return _pv(text: _blockControllers[index].text, size: 15);
       case ContentBlockType.bulletedList:
       case ContentBlockType.numberedList:
         final isBulleted = block.type == ContentBlockType.bulletedList;
@@ -1362,7 +1456,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: block.listControllers.asMap().entries.map((entry) {
+            children: _listControllers[index].asMap().entries.map((entry) {
               final idx = entry.key;
               final ctrl = entry.value;
               return Padding(
@@ -1402,13 +1496,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                     ));
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
-          child: img,
+          child: ClipRRect(borderRadius: BorderRadius.circular(8), child: img),
         );
       case ContentBlockType.link:
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Text(
-            block.controller.text,
+            _blockControllers[index].text,
             style: GoogleFonts.lora(
               fontSize: 15,
               color: Colors.blue[700],
@@ -1462,7 +1556,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             decoration: BoxDecoration(
               color: Colors.blue[50],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue!),
+              border: Border.all(color: Colors.blue[600]!),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1470,7 +1564,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                 // Header
                 Row(
                   children: [
-                    Icon(Icons.account_tree, color: Colors.blue, size: 24),
+                    Icon(Icons.account_tree, color: Colors.blue[600], size: 24),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1499,16 +1593,11 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
 
                 const SizedBox(height: 16),
 
-                // Actual flowchart preview
-                Container(
+                // Use the shared FlowchartPreviewWidget
+                FlowchartPreviewWidget(
+                  flowchartData: block.flowchartData,
                   height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey!),
-                  ),
-                  child: _buildFlowchartPreview(block.flowchartData),
+                  onTap: () => _editFlowchart(block, index),
                 ),
 
                 const SizedBox(height: 12),
@@ -1516,20 +1605,23 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                 // Footer info
                 Row(
                   children: [
-                    Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                    Icon(Icons.info_outline, color: Colors.blue[600], size: 16),
                     const SizedBox(width: 4),
                     Text(
                       'Preview mode - Tap to edit flowchart',
                       style: GoogleFonts.lora(
                         fontSize: 12,
-                        color: Colors.blue,
+                        color: Colors.blue[600],
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     const Spacer(),
                     Text(
                       '$nodeCount nodes',
-                      style: GoogleFonts.lora(fontSize: 12, color: Colors.grey),
+                      style: GoogleFonts.lora(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ],
                 ),
@@ -1537,94 +1629,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             ),
           ),
         );
-    }
-  }
-
-  Widget _buildFlowchartPreview(Map<String, dynamic>? flowchartData) {
-    if (flowchartData == null) {
-      return Center(
-        child: Text(
-          'No flowchart data available',
-          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
-        ),
-      );
-    }
-
-    if (flowchartData['nodes'] == null) {
-      return Center(
-        child: Text(
-          'No flowchart nodes available',
-          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
-        ),
-      );
-    }
-
-    try {
-      final nodesList = flowchartData['nodes'] as String;
-      final nodes = nodeInputFromJson(nodesList);
-
-      if (nodes.isEmpty) {
-        return Center(
-          child: Text(
-            'No nodes to display',
-            style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
-          ),
-        );
-      }
-
-      return InteractiveViewer(
-        minScale: 0.5,
-        maxScale: 2.0,
-        constrained: false,
-        child: SizedBox(
-          width: double.infinity,
-          height: 180, // Smaller height for preview mode
-          child: DirectGraph(
-            list: nodes,
-            defaultCellSize: const Size(100, 50),
-            cellPadding: const EdgeInsets.all(16),
-            orientation: MatrixOrientation.Vertical,
-            centered: true,
-            nodeBuilder: (context, node) => Container(
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                border: Border.all(color: Colors.blue!),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Text(
-                    node.id,
-                    style: GoogleFonts.lora(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blue,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    } catch (e) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error, color: Colors.red, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              'Error displaying flowchart',
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.red),
-            ),
-          ],
-        ),
-      );
     }
   }
 
@@ -1659,7 +1663,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
         children: [
           Text(
             '${_getWordCount()} words • ${_getReadingTime()} min read',
-            style: GoogleFonts.montserrat(fontSize: 12, color: Colors.grey),
+            style: GoogleFonts.montserrat(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
           ),
         ],
       ),
@@ -1753,8 +1760,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     try {
       String? imageUrl = _existingImageUrl;
 
-      // Process content blocks and update their text/data
-      for (final block in _contentBlocks) {
+      // Update block data from controllers before saving
+      for (int i = 0; i < _contentBlocks.length; ++i) {
+        final block = _contentBlocks[i];
+
         if (block.type == ContentBlockType.image && block.file != null) {
           try {
             imageUrl = await StorageService.uploadPostImage(block.file!);
@@ -1764,74 +1773,26 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             _showSnackBar('Failed to upload image: $e');
             return;
           }
-        } else if (block.type == ContentBlockType.bulletedList ||
-            block.type == ContentBlockType.numberedList) {
-          block.listItems = block.listControllers
+        } else if (_isListBlock(block.type)) {
+          block.listItems = _listControllers[i]
               .map((c) => c.text.trim())
-              .where((text) => text.isNotEmpty) // Filter out empty items
+              .where((text) => text.isNotEmpty)
               .toList();
         } else if (block.type == ContentBlockType.flowchart) {
-          // ✅ FIXED: Don't overwrite flowchartData - keep the full data from FlowchartCreateScreen
-          // The flowchartData already contains title, description, nodes, nodeCount, createdAt
+          // Don't overwrite flowchartData - keep the full data from FlowchartCreateScreen
           if (block.flowchartData != null) {
             block.text = block.flowchartData!['title'] ?? 'Flowchart';
           }
-          // Add debug print to verify flowchart data
-          debugPrint('Flowchart data being saved: ${block.flowchartData}');
-        } else if (block.type == ContentBlockType.link) {
-          // Handle link blocks properly
-          block.text = block.controller.text.trim();
-          // URL is already set from the link field
         } else {
-          // For heading, subheading, paragraph, file blocks
-          block.text = block.controller.text.trim();
+          block.text = _blockControllers[i].text.trim();
         }
       }
 
-      // Create JSON-serializable version of content blocks
-      final bodyBlocksJson = _contentBlocks.map((block) {
-        final json = <String, dynamic>{
-          'type': block.type.index,
-          'text': block.text,
-        };
-
-        // Add type-specific data
-        switch (block.type) {
-          case ContentBlockType.bulletedList:
-          case ContentBlockType.numberedList:
-            json['listItems'] = block.listItems;
-            break;
-          case ContentBlockType.image:
-            if (block.url != null) json['url'] = block.url;
-            break;
-          case ContentBlockType.link:
-            json['url'] = block.url ?? '';
-            break;
-          case ContentBlockType.file:
-            // For files, just store the name and type info
-            if (block.file != null) {
-              json['fileName'] = block.text;
-              json['fileExtension'] = p.extension(block.file!.path);
-            }
-            break;
-          case ContentBlockType.flowchart:
-            // ✅ FIXED: Use the complete flowchartData
-            json['flowchartData'] = block.flowchartData ?? {'description': ''};
-            break;
-          default:
-            break;
-        }
-
-        return json;
-      }).toList();
-
-      // Add debug print to verify complete data structure
-      debugPrint('Complete bodyBlocksJson being saved: $bodyBlocksJson');
-
       final input = CreatePostInput(
         title: _titleController.text.trim(),
-        bodyDelta: jsonEncode(bodyBlocksJson),
-        bodyPlain: _summaryController.text.trim(),
+        bodyDelta: '', // empty or rich text, as needed
+        contentBlocks: _contentBlocks,
+        excerpt: _summaryController.text.trim(),
         scope: _selectedScope,
         flair: _selectedFlair,
         imageUrl: imageUrl,
@@ -1920,8 +1881,27 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
       _existingImageUrl != null;
 
   // ──────────────────────────────────────────────────────────────────────────────
-  // Misc helpers
+  // Helper methods
   // ──────────────────────────────────────────────────────────────────────────────
+  List<Map<String, dynamic>> _serializeBlocks() {
+    final result = <Map<String, dynamic>>[];
+    for (int i = 0; i < _contentBlocks.length; ++i) {
+      final block = _contentBlocks[i];
+      final map = block.toJson();
+      if (_isListBlock(block.type)) {
+        map['listItems'] = _listControllers[i].map((c) => c.text).toList();
+      } else {
+        map['text'] = _blockControllers[i].text;
+      }
+      result.add(map);
+    }
+    return result;
+  }
+
+  static bool _isListBlock(ContentBlockType type) =>
+      type == ContentBlockType.bulletedList ||
+      type == ContentBlockType.numberedList;
+
   int _getWordCount() => _contentBlocks.fold(0, (sum, b) => sum + b.wordCount);
 
   int _getReadingTime() =>
@@ -1949,114 +1929,5 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
       default:
         return Colors.purple!;
     }
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Content-block model used only by this screen
-// ──────────────────────────────────────────────────────────────────────────────
-enum ContentBlockType {
-  heading,
-  subHeading,
-  paragraph,
-  bulletedList,
-  numberedList,
-  image,
-  link,
-  file,
-  flowchart,
-}
-
-class ContentBlock {
-  final ContentBlockType type;
-
-  // UI controllers
-  TextEditingController controller;
-  List<TextEditingController> listControllers = [];
-
-  // Data
-  List<String> listItems;
-  File? file;
-  String text;
-  String? url;
-  Map<String, dynamic>? flowchartData;
-
-  ContentBlock(
-    this.type, {
-    this.text = '',
-    this.listItems = const [],
-    this.file,
-    this.url,
-    this.flowchartData,
-  }) : controller = TextEditingController(text: text) {
-    listControllers = listItems
-        .map((e) => TextEditingController(text: e))
-        .toList();
-    if (type == ContentBlockType.flowchart) {
-      controller.text = flowchartData?['description'] ?? '';
-    }
-  }
-
-  // Word-count helper
-  int get wordCount {
-    switch (type) {
-      case ContentBlockType.heading:
-      case ContentBlockType.subHeading:
-      case ContentBlockType.paragraph:
-      case ContentBlockType.link:
-      case ContentBlockType.flowchart:
-        return _countWords(controller.text);
-      case ContentBlockType.bulletedList:
-      case ContentBlockType.numberedList:
-        return listItems.fold(0, (s, i) => s + _countWords(i));
-      default:
-        return 0;
-    }
-  }
-
-  int _countWords(String s) =>
-      s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
-
-  // Serialisation - Make sure this doesn't include FieldValue instances
-  Map<String, dynamic> toJson() {
-    final json = <String, dynamic>{'type': type.index, 'text': text};
-
-    if (listItems.isNotEmpty) {
-      json['listItems'] = listItems;
-    }
-
-    if (url != null) {
-      json['url'] = url;
-    }
-
-    if (file != null) {
-      json['filePath'] = file!.path;
-    }
-
-    if (flowchartData != null) {
-      json['flowchartData'] = flowchartData;
-    }
-
-    return json;
-  }
-
-  static ContentBlock fromJson(Map<String, dynamic> json) {
-    final type = ContentBlockType.values[json['type'] as int];
-    final block = ContentBlock(
-      type,
-      text: json['text'] as String? ?? '',
-      listItems: List<String>.from(json['listItems'] ?? []),
-      url: json['url'] as String?,
-      flowchartData: json['flowchartData'] as Map<String, dynamic>?,
-    );
-    if (json['filePath'] != null) {
-      block.file = File(json['filePath']);
-    }
-    return block;
-  }
-
-  void dispose() {
-    controller.dispose();
-    for (final c in listControllers) c.dispose();
   }
 }
