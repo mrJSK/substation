@@ -73,7 +73,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
               'contactNumber': z.contactNumber,
               'contactPerson': z.contactPerson,
               'contactDesignation': z.contactDesignation,
-              // Convert Timestamp to milliseconds for JSON encoding
               'createdAt': z.createdAt?.millisecondsSinceEpoch,
             },
           )
@@ -132,7 +131,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
     }
   }
 
-  // Add this to your dashboard screen's _loadZones method after getting prefs:
   Future<void> _cleanupBadCache() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -161,7 +159,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
               await prefs.setString(key, jsonEncode(map));
             }
           } catch (_) {
-            // If corrupt, remove
             await prefs.remove(key);
           }
         }
@@ -195,170 +192,98 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
-      elevation: 2,
+      elevation: 0,
       centerTitle: true,
-      toolbarHeight: 64,
-      systemOverlayStyle: SystemUiOverlayStyle.dark,
-      title: Column(
-        children: [
-          Text(
-            'PowerPulse',
-            style: GoogleFonts.lora(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: Colors.blue[700],
-            ),
-          ),
-          Text(
-            'Igniting Ideas in Power & Transmission',
-            style: GoogleFonts.lora(
-              fontSize: 12,
-              color: Colors.grey,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ],
+      title: Text(
+        'PowerPulse',
+        style: GoogleFonts.lora(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: Colors.black87,
+        ),
       ),
       actions: [
         IconButton(
-          icon: Icon(Icons.search, color: Colors.grey),
+          icon: Icon(Icons.search, color: Colors.grey[600]),
           onPressed: () => _showSearchDelegate(context),
           tooltip: 'Search posts',
         ),
         PopupMenuButton<String>(
-          icon: Icon(Icons.person_outline, color: Colors.grey),
+          icon: Icon(Icons.more_vert, color: Colors.grey[600]),
           onSelected: _handleMenuAction,
           itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'profile',
-              child: Row(
-                children: [
-                  Icon(Icons.person, size: 20),
-                  SizedBox(width: 12),
-                  Text('Profile'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'settings',
-              child: Row(
-                children: [
-                  Icon(Icons.settings, size: 20),
-                  SizedBox(width: 12),
-                  Text('Settings'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'about',
-              child: Row(
-                children: [
-                  Icon(Icons.info, size: 20),
-                  SizedBox(width: 12),
-                  Text('About'),
-                ],
-              ),
-            ),
+            const PopupMenuItem(value: 'profile', child: Text('Profile')),
+            const PopupMenuItem(value: 'settings', child: Text('Settings')),
+            const PopupMenuItem(value: 'about', child: Text('About')),
           ],
         ),
-        const SizedBox(width: 8),
       ],
     );
   }
 
   Widget _buildZoneSelector() {
     if (_isLoadingZones && _zones.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        child: Center(
-          child: CircularProgressIndicator(color: Colors.blue[600]),
-        ),
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: CircularProgressIndicator(color: Colors.blueGrey[400]),
       );
     }
 
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            ChoiceChip(
-              label: Text(
-                'All Zones (Public)',
+      child: DropdownButtonFormField<String>(
+        value: selectedZoneId,
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          filled: true,
+          fillColor: Colors.grey[50],
+        ),
+        hint: Text(
+          'Select a Zone',
+          style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600]),
+        ),
+        items: [
+          DropdownMenuItem(
+            value: null,
+            child: Text(
+              'All Zones (Public)',
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          ..._zones.map(
+            (zone) => DropdownMenuItem(
+              value: zone.id,
+              child: Text(
+                zone.name,
                 style: GoogleFonts.montserrat(
                   fontSize: 14,
-                  fontWeight: selectedZoneId == null
-                      ? FontWeight.w600
-                      : FontWeight.w500,
-                  color: selectedZoneId == null
-                      ? Colors.blue[700]
-                      : Colors.grey,
-                ),
-              ),
-              avatar: Icon(
-                Icons.public,
-                size: 18,
-                color: selectedZoneId == null ? Colors.blue : Colors.grey,
-              ),
-              selected: selectedZoneId == null,
-              selectedColor: Colors.blue,
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    selectedZoneId = null;
-                    selectedZoneName = null;
-                  });
-                }
-              },
-            ),
-            const SizedBox(width: 8),
-            ..._zones.map(
-              (zone) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(
-                    zone.name,
-                    style: GoogleFonts.montserrat(
-                      fontSize: 14,
-                      fontWeight: selectedZoneId == zone.id
-                          ? FontWeight.w600
-                          : FontWeight.w500,
-                      color: selectedZoneId == zone.id
-                          ? Colors.blue[700]
-                          : Colors.grey,
-                    ),
-                  ),
-                  avatar: Icon(
-                    Icons.location_on_outlined,
-                    size: 18,
-                    color: selectedZoneId == zone.id
-                        ? Colors.blue
-                        : Colors.grey,
-                  ),
-                  selected: selectedZoneId == zone.id,
-                  selectedColor: Colors.blue,
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() {
-                        selectedZoneId = zone.id;
-                        selectedZoneName = zone.name;
-                      });
-                    }
-                  },
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-            if (_error != null && _zones.isEmpty) ...[
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(Icons.refresh, color: Colors.orange),
-                onPressed: _loadZones,
-                tooltip: 'Retry loading zones',
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
+        onChanged: (value) {
+          setState(() {
+            selectedZoneId = value;
+            selectedZoneName = value == null
+                ? null
+                : _zones.firstWhere((zone) => zone.id == value).name;
+          });
+        },
+        dropdownColor: Colors.white,
+        icon: Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
       ),
     );
   }
@@ -366,16 +291,19 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   Widget _buildTabBar() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TabBar(
         controller: _tabController,
-        labelColor: Colors.blue,
-        unselectedLabelColor: Colors.grey,
-        indicatorColor: Colors.blue,
-        indicatorWeight: 3,
-        labelStyle: GoogleFonts.lora(fontSize: 16, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: GoogleFonts.lora(
-          fontSize: 16,
+        labelColor: Colors.blueGrey[700],
+        unselectedLabelColor: Colors.grey[500],
+        indicatorColor: Colors.blueGrey[700],
+        indicatorWeight: 2,
+        labelStyle: GoogleFonts.montserrat(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: GoogleFonts.montserrat(
+          fontSize: 14,
           fontWeight: FontWeight.w500,
         ),
         tabs: const [
@@ -410,14 +338,14 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
           return _buildEmptyState(
             icon: Icons.inbox_outlined,
             title: 'No posts yet',
-            subtitle: 'Spark the conversation with your ideas!',
+            subtitle: 'Start the conversation with your ideas.',
             actionText: 'Create Post',
             onAction: _navigateToCreatePost,
           );
         }
 
         return RefreshIndicator(
-          color: Colors.blue[600],
+          color: Colors.blueGrey[400],
           onRefresh: () async {
             setState(() {});
           },
@@ -425,7 +353,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
             itemCount: posts.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 16),
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               return PostCard(
                 post: posts[index],
@@ -460,14 +388,14 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
           return _buildEmptyState(
             icon: Icons.trending_up_outlined,
             title: 'No trending posts',
-            subtitle: 'Share something awesome to get the buzz going!',
+            subtitle: 'Share something to spark a trend.',
             actionText: 'Create Post',
             onAction: _navigateToCreatePost,
           );
         }
 
         return RefreshIndicator(
-          color: Colors.blue[600],
+          color: Colors.blueGrey[400],
           onRefresh: () async {
             setState(() {});
           },
@@ -475,7 +403,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
             itemCount: posts.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 16),
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               return PostCard(
                 post: posts[index],
@@ -495,11 +423,14 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: Colors.blue[600]),
-          const SizedBox(height: 16),
+          CircularProgressIndicator(color: Colors.blueGrey[400]),
+          const SizedBox(height: 12),
           Text(
-            'Loading posts...',
-            style: GoogleFonts.lora(fontSize: 16, color: Colors.grey),
+            'Loading...',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
           ),
         ],
       ),
@@ -519,34 +450,36 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 80, color: Colors.grey),
-            const SizedBox(height: 16),
+            Icon(icon, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 12),
             Text(
               title,
-              style: GoogleFonts.lora(
-                fontSize: 18,
+              style: GoogleFonts.montserrat(
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey,
+                color: Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
               textAlign: TextAlign.center,
             ),
             if (actionText != null && onAction != null) ...[
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
+              const SizedBox(height: 16),
+              TextButton(
                 onPressed: onAction,
-                icon: const Icon(Icons.add),
-                label: Text(actionText),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                child: Text(
+                  actionText,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey[700],
                   ),
                 ),
               ),
@@ -564,34 +497,36 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 80, color: Colors.grey[400]),
-            const SizedBox(height: 16),
+            Icon(Icons.error_outline, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 12),
             Text(
               title,
-              style: GoogleFonts.lora(
-                fontSize: 18,
+              style: GoogleFonts.montserrat(
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey,
+                color: Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               error.length > 100 ? '${error.substring(0, 100)}...' : error,
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
               textAlign: TextAlign.center,
             ),
             if (onRetry != null) ...[
               const SizedBox(height: 16),
-              ElevatedButton.icon(
+              TextButton(
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                child: Text(
+                  'Retry',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey[700],
                   ),
                 ),
               ),
@@ -603,18 +538,10 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   Widget _buildFloatingActionButton() {
-    return FloatingActionButton.extended(
+    return FloatingActionButton(
       onPressed: _navigateToCreatePost,
-      backgroundColor: Colors.blue,
-      icon: const Icon(Icons.edit, color: Colors.white),
-      label: Text(
-        'Write',
-        style: GoogleFonts.lora(
-          color: Colors.white,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      heroTag: "createPost",
+      backgroundColor: Colors.blueGrey[700],
+      child: const Icon(Icons.edit, color: Colors.white),
       tooltip: 'Create a new post',
     );
   }
@@ -676,15 +603,21 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text(feature, style: GoogleFonts.lora(fontSize: 18)),
+        title: Text(
+          feature,
+          style: GoogleFonts.montserrat(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         content: Text(
-          '$feature functionality coming soon!',
-          style: GoogleFonts.lora(),
+          '$feature functionality coming soon.',
+          style: GoogleFonts.montserrat(fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('OK', style: GoogleFonts.lora()),
+            child: Text('OK', style: GoogleFonts.montserrat(fontSize: 14)),
           ),
         ],
       ),
@@ -696,12 +629,12 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       context: context,
       applicationName: 'PowerPulse',
       applicationVersion: '1.0.0',
-      applicationIcon: Icon(Icons.bolt, color: Colors.blue[600], size: 32),
+      applicationIcon: Icon(Icons.bolt, color: Colors.blueGrey[700], size: 32),
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Text(
           'Igniting Ideas in Power & Transmission',
-          style: GoogleFonts.lora(),
+          style: GoogleFonts.montserrat(fontSize: 14),
         ),
       ],
     );
@@ -714,18 +647,21 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           'Sign in required',
-          style: GoogleFonts.lora(fontSize: 18, fontWeight: FontWeight.w600),
+          style: GoogleFonts.montserrat(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         content: Text(
           'Please sign in to create a post.',
-          style: GoogleFonts.lora(fontSize: 14),
+          style: GoogleFonts.montserrat(fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text('Cancel', style: GoogleFonts.montserrat(fontSize: 14)),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () async {
               Navigator.pop(context);
               try {
@@ -735,22 +671,19 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Failed to sign in: $e'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: Colors.red[400],
                     ),
                   );
                 }
               }
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue[600],
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
             child: Text(
               'Sign In',
-              style: GoogleFonts.lora(color: Colors.white),
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.blueGrey[700],
+              ),
             ),
           ),
         ],
@@ -768,18 +701,25 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
     return Theme.of(context).copyWith(
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.white,
-        elevation: 2,
-        titleTextStyle: GoogleFonts.lora(fontSize: 18, color: Colors.grey[800]),
-        iconTheme: IconThemeData(color: Colors.grey),
+        elevation: 0,
+        titleTextStyle: GoogleFonts.montserrat(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Colors.black87,
+        ),
+        iconTheme: IconThemeData(color: Colors.grey[600]),
       ),
       inputDecorationTheme: InputDecorationTheme(
-        hintStyle: GoogleFonts.lora(fontSize: 16, color: Colors.grey),
+        hintStyle: GoogleFonts.montserrat(
+          fontSize: 14,
+          color: Colors.grey[500],
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide.none,
         ),
         filled: true,
-        fillColor: Colors.grey,
+        fillColor: Colors.grey[100],
       ),
     );
   }
@@ -789,31 +729,20 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
     return [
       if (query.isNotEmpty)
         IconButton(
-          icon: const Icon(Icons.clear),
+          icon: Icon(Icons.clear, color: Colors.grey[600]),
           onPressed: () {
             query = '';
             showSuggestions(context);
           },
           tooltip: 'Clear search',
         ),
-      PopupMenuButton<String>(
-        icon: Icon(Icons.filter_list, color: Colors.grey),
-        onSelected: (filter) {
-          showResults(context);
-        },
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'author', child: Text('Filter by Author')),
-          const PopupMenuItem(value: 'flair', child: Text('Filter by Flair')),
-          const PopupMenuItem(value: 'zone', child: Text('Filter by Zone')),
-        ],
-      ),
     ];
   }
 
   @override
   Widget buildLeading(BuildContext context) {
     return IconButton(
-      icon: const Icon(Icons.arrow_back),
+      icon: Icon(Icons.arrow_back, color: Colors.grey[600]),
       onPressed: () => close(context, null),
       tooltip: 'Back',
     );
@@ -822,11 +751,11 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
   @override
   Widget buildResults(BuildContext context) {
     if (query.trim().isEmpty) {
-      return _buildEmptySearchState('Enter a search term to find posts');
+      return _buildEmptySearchState('Enter a search term');
     }
 
     if (query.trim().length < 2) {
-      return _buildEmptySearchState('Enter at least 2 characters to search');
+      return _buildEmptySearchState('Enter at least 2 characters');
     }
 
     if (!recentSearches.contains(query)) {
@@ -842,11 +771,14 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(color: Colors.blue[600]),
-                const SizedBox(height: 16),
+                CircularProgressIndicator(color: Colors.blueGrey[400]),
+                const SizedBox(height: 12),
                 Text(
-                  'Searching posts...',
-                  style: GoogleFonts.lora(fontSize: 16),
+                  'Searching...',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
                 ),
               ],
             ),
@@ -870,7 +802,7 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: posts.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 16),
+          separatorBuilder: (context, index) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             return PostCard(
               post: posts[index],
@@ -908,9 +840,13 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
       children: [
         Text(
           query.isEmpty ? 'Recent Searches' : 'Suggested Searches',
-          style: GoogleFonts.lora(fontSize: 18, fontWeight: FontWeight.w600),
+          style: GoogleFonts.montserrat(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (suggestions.isEmpty)
           _buildEmptySearchState(
             query.isEmpty ? 'No recent searches' : 'No suggestions found',
@@ -923,7 +859,10 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
             ),
             title: Text(
               suggestion,
-              style: GoogleFonts.lora(fontWeight: FontWeight.w500),
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
             ),
             onTap: () {
               query = suggestion;
@@ -942,11 +881,14 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 80, color: Colors.grey[400]),
-            const SizedBox(height: 16),
+            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 12),
             Text(
               message,
-              style: GoogleFonts.lora(fontSize: 16, color: Colors.grey),
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -962,34 +904,36 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 80, color: Colors.grey),
-            const SizedBox(height: 16),
+            Icon(Icons.error_outline, size: 60, color: Colors.grey[400]),
+            const SizedBox(height: 12),
             Text(
               title,
-              style: GoogleFonts.lora(
-                fontSize: 18,
+              style: GoogleFonts.montserrat(
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey,
+                color: Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               error.length > 100 ? '${error.substring(0, 100)}...' : error,
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
               textAlign: TextAlign.center,
             ),
             if (onRetry != null) ...[
               const SizedBox(height: 16),
-              ElevatedButton.icon(
+              TextButton(
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                child: Text(
+                  'Retry',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey[700],
                   ),
                 ),
               ),
@@ -1001,8 +945,8 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
   }
 
   @override
-  String get searchFieldLabel => 'Search posts by title, content, or author...';
+  String get searchFieldLabel => 'Search posts...';
 
   @override
-  TextStyle get searchFieldStyle => GoogleFonts.lora(fontSize: 16);
+  TextStyle get searchFieldStyle => GoogleFonts.montserrat(fontSize: 14);
 }

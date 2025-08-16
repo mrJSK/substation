@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:animated_emoji/animated_emoji.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -55,13 +54,13 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
 
   void _setupAnimations() {
     _voteAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _voteScaleAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+    _voteScaleAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
       CurvedAnimation(
         parent: _voteAnimationController,
-        curve: Curves.bounceOut,
+        curve: Curves.easeInOut,
       ),
     );
   }
@@ -90,7 +89,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   String _generateExcerpt(String bodyPlain) {
     if (bodyPlain.isEmpty) return 'No content available';
     try {
-      final json = jsonDecode(bodyPlain) as List<dynamic>;
+      final json = jsonDecode(bodyPlain) as List;
       final excerptBuffer = StringBuffer();
       int wordCount = 0;
       const maxWords = 35;
@@ -102,8 +101,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         final listItems = List<String>.from(blockJson['listItems'] ?? []);
         final flowchartData =
             blockJson['flowchartData'] as Map<String, dynamic>?;
-        final excelData =
-            blockJson['excelData'] as Map<String, dynamic>?; // Add this line
+        final excelData = blockJson['excelData'] as Map<String, dynamic>?;
 
         switch (type) {
           case ContentBlockType.heading:
@@ -117,6 +115,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               if (wordCount < maxWords) excerptBuffer.write(' ');
             }
             break;
+
           case ContentBlockType.bulletedList:
           case ContentBlockType.numberedList:
             for (var item in listItems) {
@@ -132,18 +131,21 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               }
             }
             break;
+
           case ContentBlockType.link:
             if (text.isNotEmpty && wordCount < maxWords) {
               excerptBuffer.write('🔗 $text ');
               wordCount += text.split(RegExp(r'\s+')).length;
             }
             break;
+
           case ContentBlockType.image:
             if (wordCount < maxWords) {
               excerptBuffer.write('📷 Image ');
               wordCount += 1;
             }
             break;
+
           case ContentBlockType.file:
             if (wordCount < maxWords) {
               final fileName = text.isNotEmpty ? text : 'Attachment';
@@ -151,6 +153,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               wordCount += fileName.split(RegExp(r'\s+')).length;
             }
             break;
+
           case ContentBlockType.flowchart:
             if (wordCount < maxWords) {
               final description =
@@ -159,14 +162,13 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               wordCount += description.split(RegExp(r'\s+')).length;
             }
             break;
+
           case ContentBlockType.excelTable:
             if (wordCount < maxWords) {
-              // Get table info from excelData
               final title = excelData?['title']?.toString() ?? 'Excel Table';
               final rows = excelData?['rows'] ?? 0;
               final columns = excelData?['columns'] ?? 0;
 
-              // Create a descriptive excerpt for the Excel table
               String tableDescription;
               if (rows > 0 && columns > 0) {
                 tableDescription = '📊 $title (${rows}×${columns} table)';
@@ -174,19 +176,14 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                 tableDescription = '📊 $title';
               }
 
-              // Optionally include some cell data if available and space permits
-              final data = excelData?['data'] as List<dynamic>?;
+              final data = excelData?['data'] as List?;
               if (data != null && data.isNotEmpty && wordCount < maxWords - 3) {
-                // Try to include first row content as sample
-                final firstRow = data[0] as List<dynamic>?;
+                final firstRow = data[0] as List?;
                 if (firstRow != null && firstRow.isNotEmpty) {
                   final firstCellText = firstRow[0]?.toString()?.trim();
                   if (firstCellText != null && firstCellText.isNotEmpty) {
                     final cellWords = firstCellText.split(RegExp(r'\s+'));
-                    final availableWords =
-                        maxWords -
-                        wordCount -
-                        3; // Reserve space for table description
+                    final availableWords = maxWords - wordCount - 3;
                     if (availableWords > 0) {
                       final sampleWords = cellWords
                           .take(availableWords.clamp(0, 3))
@@ -196,7 +193,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                   }
                 }
               }
-
               excerptBuffer.write('$tableDescription ');
               wordCount += tableDescription.split(RegExp(r'\s+')).length;
             }
@@ -351,10 +347,10 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: isPublic ? Colors.blue[50] : Colors.orange,
+        color: isPublic ? Colors.blue[50] : Colors.orange[50],
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isPublic ? Colors.blue! : Colors.orange!,
+          color: isPublic ? Colors.blue[600]! : Colors.orange[600]!,
           width: 1,
         ),
       ),
@@ -364,7 +360,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
           Icon(
             isPublic ? Icons.public : Icons.location_on,
             size: 12,
-            color: isPublic ? Colors.blue[700] : Colors.orange,
+            color: isPublic ? Colors.blue[700] : Colors.orange[700],
           ),
           const SizedBox(width: 4),
           Text(
@@ -655,12 +651,16 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   Widget _buildCompactMetrics() {
     return Row(
       children: [
-        Icon(Icons.thumb_up_outlined, size: 14, color: Colors.grey[600]),
+        Icon(
+          _userVote?.value == 1 ? Icons.thumb_up : Icons.thumb_up_outlined,
+          size: 16,
+          color: _userVote?.value == 1 ? Colors.green[600] : Colors.grey,
+        ),
         const SizedBox(width: 4),
         Text(
           '${_post.score}',
           style: GoogleFonts.montserrat(
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             color: _getScoreColor(),
           ),
@@ -671,7 +671,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         Text(
           '${_post.commentCount}',
           style: GoogleFonts.montserrat(
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             color: Colors.grey[600],
           ),
@@ -681,99 +681,94 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildVoteSection() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey!, width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildVoteButton(
-            isUpvote: true,
-            isSelected: _userVote?.value == 1,
-            onTap: () => _vote(1),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '${_post.score}',
-              style: GoogleFonts.montserrat(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: _getScoreColor(),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Upvote Button
+        ScaleTransition(
+          scale: _voteScaleAnimation,
+          child: GestureDetector(
+            onTap: _isVoting
+                ? null
+                : () {
+                    HapticFeedback.lightImpact();
+                    _voteAnimationController.forward().then((_) {
+                      _voteAnimationController.reverse();
+                    });
+                    _vote(1);
+                  },
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                _userVote?.value == 1
+                    ? Icons.thumb_up
+                    : Icons.thumb_up_outlined,
+                size: 22,
+                color: _userVote?.value == 1
+                    ? Colors.green[600]
+                    : Colors.grey[600],
               ),
             ),
           ),
-          _buildVoteButton(
-            isUpvote: false,
-            isSelected: _userVote?.value == -1,
-            onTap: () => _vote(-1),
+        ),
+
+        // Score Display
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            '${_post.score}',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: _getScoreColor(),
+            ),
           ),
-        ],
-      ),
+        ),
+
+        // Downvote Button
+        ScaleTransition(
+          scale: _voteScaleAnimation,
+          child: GestureDetector(
+            onTap: _isVoting
+                ? null
+                : () {
+                    HapticFeedback.lightImpact();
+                    _voteAnimationController.forward().then((_) {
+                      _voteAnimationController.reverse();
+                    });
+                    _vote(-1);
+                  },
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                _userVote?.value == -1
+                    ? Icons.thumb_down
+                    : Icons.thumb_down_outlined,
+                size: 22,
+                color: _userVote?.value == -1 ? Colors.red[600] : Colors.grey,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildCommentSection() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey!, width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
-          const SizedBox(width: 6),
-          Text(
-            '${_post.commentCount}',
-            style: GoogleFonts.montserrat(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.chat_bubble_outline, size: 18, color: Colors.grey[600]),
+        const SizedBox(width: 6),
+        Text(
+          '${_post.commentCount}',
+          style: GoogleFonts.montserrat(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[600],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVoteButton({
-    required bool isUpvote,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    final AnimatedEmojiData emojiData = isUpvote
-        ? AnimatedEmojis.thumbsUp
-        : AnimatedEmojis.thumbsDown;
-    final Color backgroundColor = isSelected
-        ? (isUpvote ? Colors.green[100]! : Colors.red!)
-        : Colors.transparent;
-    return ScaleTransition(
-      scale: _voteScaleAnimation,
-      child: GestureDetector(
-        onTap: _isVoting
-            ? null
-            : () {
-                HapticFeedback.lightImpact();
-                _voteAnimationController.forward().then((_) {
-                  _voteAnimationController.reverse();
-                });
-                onTap();
-              },
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: AnimatedEmoji(emojiData, size: 18, repeat: isSelected),
         ),
-      ),
+      ],
     );
   }
 
@@ -783,12 +778,13 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       _showLoginPrompt();
       return;
     }
+
     if (_isVoting) return;
 
     setState(() => _isVoting = true);
-
     final Vote? prevVote = _userVote;
     final int prevScore = _post.score;
+
     try {
       final newValue = (_userVote?.value == value) ? 0 : value;
 
@@ -824,11 +820,12 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         _userVote = prevVote;
         _post = _post.copyWith(score: prevScore);
       });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Failed to vote. Please try again.'),
-            backgroundColor: Colors.red[400],
+            backgroundColor: Colors.red[600],
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -1015,7 +1012,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
 
   List<Color> _getRankGradient(int rank) {
     if (rank <= 3) {
-      return [Colors.orange[400]!, Colors.orange!];
+      return [Colors.orange[400]!, Colors.orange[600]!];
     } else if (rank <= 10) {
       return [Colors.blue!, Colors.blue!];
     } else {
@@ -1024,13 +1021,13 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Color _getRankColor(int rank) {
-    if (rank <= 3) return Colors.orange!;
+    if (rank <= 3) return Colors.orange[600]!;
     if (rank <= 10) return Colors.blue!;
     return Colors.grey!;
   }
 
   Color _getScoreColor() {
-    if (_post.score > 0) return Colors.green!;
+    if (_post.score > 0) return Colors.green[700]!;
     if (_post.score < 0) return Colors.red!;
     return Colors.grey!;
   }
@@ -1052,6 +1049,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     final date = timestamp.toDate();
     final now = DateTime.now();
     final difference = now.difference(date);
+
     if (difference.inMinutes < 1) {
       return 'now';
     } else if (difference.inMinutes < 60) {

@@ -1111,59 +1111,74 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildActionBar() {
     return SliverToBoxAdapter(
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[200]!),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade100, width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 4,
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 6,
               offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: EnhancedVoteBar(post: _post!)),
-            const SizedBox(width: 16),
-            Container(height: 40, width: 1, color: Colors.grey[300]),
-            const SizedBox(width: 16),
+            // Vote section
+            EnhancedVoteBar(post: _post!),
+
+            const SizedBox(height: 20),
+
+            // Comments section
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(Icons.comment_outlined, color: Colors.grey[600], size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  '${_post!.commentCount}',
-                  style: GoogleFonts.lora(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
-                  ),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.comment_outlined,
+                      color: Colors.grey.shade500,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '${_post!.commentCount} Comments',
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: _addComment,
-                  icon: const Icon(Icons.add, size: 18),
+                  icon: const Icon(Icons.add, size: 16),
                   label: Text(
                     'Add Comment',
-                    style: GoogleFonts.lora(
+                    style: GoogleFonts.inter(
                       fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[600],
+                    backgroundColor: Colors.black87,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 8,
+                      vertical: 10,
                     ),
+                    elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                     ),
+                    shadowColor: Colors.transparent,
                   ),
                 ),
               ],
@@ -2489,11 +2504,11 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
 
   void _setupAnimation() {
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
   }
 
@@ -2511,77 +2526,75 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildVoteButton(isUpvote: true),
-        const SizedBox(width: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: _getScoreBackgroundColor(),
-            borderRadius: BorderRadius.circular(8),
+        // Upvote Button
+        ScaleTransition(
+          scale: _scaleAnimation,
+          child: GestureDetector(
+            onTap: _isVoting ? null : () => _handleVote(1),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                _userVote?.value == 1
+                    ? Icons.thumb_up
+                    : Icons.thumb_up_outlined,
+                size: 24,
+                color: _userVote?.value == 1 ? Colors.green[600] : Colors.grey,
+              ),
+            ),
           ),
+        ),
+
+        // Score Display
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            '${_post.score}',
-            style: GoogleFonts.lora(
+            _formatScore(_post.score),
+            style: GoogleFonts.inter(
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: _getScoreColor(),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        _buildVoteButton(isUpvote: false),
+
+        // Downvote Button
+        ScaleTransition(
+          scale: _scaleAnimation,
+          child: GestureDetector(
+            onTap: _isVoting ? null : () => _handleVote(-1),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                _userVote?.value == -1
+                    ? Icons.thumb_down
+                    : Icons.thumb_down_outlined,
+                size: 24,
+                color: _userVote?.value == -1 ? Colors.red[600] : Colors.grey,
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildVoteButton({required bool isUpvote}) {
-    final isSelected = _userVote?.value == (isUpvote ? 1 : -1);
-    final icon = isUpvote ? Icons.arrow_upward : Icons.arrow_downward;
-
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: GestureDetector(
-        onTap: _isVoting ? null : () => _vote(isUpvote ? 1 : -1),
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? (isUpvote ? Colors.green[50] : Colors.red[50])
-                : Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected
-                  ? (isUpvote ? Colors.green[600]! : Colors.red[600]!)
-                  : Colors.grey[400]!,
-            ),
-          ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: isSelected
-                ? (isUpvote ? Colors.green[600] : Colors.red[600])
-                : Colors.grey[600],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Color _getScoreBackgroundColor() {
-    if (_post.score > 0) return Colors.green[50]!;
-    if (_post.score < 0) return Colors.red[50]!;
-    return Colors.grey[100]!;
+  String _formatScore(int score) {
+    if (score >= 1000) {
+      return '${(score / 1000).toStringAsFixed(1)}k';
+    }
+    return score.toString();
   }
 
   Color _getScoreColor() {
     if (_post.score > 0) return Colors.green[700]!;
-    if (_post.score < 0) return Colors.red[700]!;
-    return Colors.grey[600]!;
+    if (_post.score < 0) return Colors.red!;
+    return Colors.grey!;
   }
 
-  Future<void> _vote(int value) async {
+  Future<void> _handleVote(int voteValue) async {
     final currentUser = AuthService.currentUser;
     if (currentUser == null) {
       _showLoginPrompt();
@@ -2593,44 +2606,60 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
     setState(() => _isVoting = true);
     _animationController.forward().then((_) => _animationController.reverse());
 
-    final prevVote = _userVote;
-    final prevScore = _post.score;
+    final previousVote = _userVote;
+    final previousScore = _post.score;
 
     try {
-      final newValue = (_userVote?.value == value) ? 0 : value;
+      int newVoteValue;
+      if (_userVote?.value == voteValue) {
+        newVoteValue = 0; // Remove vote
+      } else {
+        newVoteValue = voteValue; // Add/change vote
+      }
+
+      int scoreDelta = 0;
+      if (previousVote == null) {
+        scoreDelta = newVoteValue;
+      } else {
+        scoreDelta = newVoteValue - previousVote.value;
+      }
 
       setState(() {
-        if (newValue == 0) {
+        if (newVoteValue == 0) {
           _userVote = null;
-          _post = _post.copyWith(score: prevScore - (prevVote?.value ?? 0));
         } else {
           _userVote = Vote(
             id: Vote.generateId(postId: _post.id, userId: currentUser.uid),
             postId: _post.id,
             userId: currentUser.uid,
-            value: newValue,
+            value: newVoteValue,
             createdAt: Timestamp.now(),
           );
-          final scoreDelta = newValue - (prevVote?.value ?? 0);
-          _post = _post.copyWith(score: prevScore + scoreDelta);
         }
+        _post = _post.copyWith(score: previousScore + scoreDelta);
       });
 
-      await VoteService.setVote(postId: _post.id, value: newValue);
-      await AnalyticsService.logVote(_post.id, newValue);
+      await VoteService.setVote(postId: _post.id, value: newVoteValue);
+      await AnalyticsService.logVote(_post.id, newVoteValue);
+
+      if (mounted) {
+        HapticFeedback.lightImpact();
+      }
     } catch (e) {
       setState(() {
-        _userVote = prevVote;
-        _post = _post.copyWith(score: prevScore);
+        _userVote = previousVote;
+        _post = _post.copyWith(score: previousScore);
       });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               'Failed to vote. Please try again.',
-              style: GoogleFonts.lora(),
+              style: GoogleFonts.inter(),
             ),
             backgroundColor: Colors.red[600],
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -2645,19 +2674,19 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Sign in required',
-          style: GoogleFonts.lora(fontSize: 18, fontWeight: FontWeight.w600),
+          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         content: Text(
           'Please sign in to vote on posts.',
-          style: GoogleFonts.lora(fontSize: 14),
+          style: GoogleFonts.inter(fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text('Cancel', style: GoogleFonts.inter()),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2670,7 +2699,7 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: Text('Sign In', style: GoogleFonts.lora()),
+            child: Text('Sign In', style: GoogleFonts.inter()),
           ),
         ],
       ),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../widgets/merged_table.dart';
+
 class ExcelTableBuilderScreen extends StatefulWidget {
   final Map<String, dynamic>? existingData;
   const ExcelTableBuilderScreen({Key? key, this.existingData})
@@ -52,6 +54,23 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
           ),
         ),
       );
+
+      // Initialize cell formats from existing data if available
+      final cellFormatsData =
+          widget.existingData!['cellFormats'] as List? ?? [];
+      _cellFormats = List.generate(
+        _rows,
+        (i) => List.generate(
+          _columns,
+          (j) =>
+              (i < cellFormatsData.length &&
+                  j < (cellFormatsData[i] as List).length)
+              ? CellFormat.fromMap(
+                  Map<String, dynamic>.from((cellFormatsData[i] as List)[j]),
+                )
+              : CellFormat(),
+        ),
+      );
     } else {
       _rows = 5;
       _columns = 5;
@@ -61,13 +80,12 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
         (i) => List.generate(_columns, (j) => TextEditingController()),
       );
       _merges = [];
+      // Initialize cell formats
+      _cellFormats = List.generate(
+        _rows,
+        (i) => List.generate(_columns, (j) => CellFormat()),
+      );
     }
-
-    // Initialize cell formats
-    _cellFormats = List.generate(
-      _rows,
-      (i) => List.generate(_columns, (j) => CellFormat()),
-    );
   }
 
   @override
@@ -133,7 +151,7 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
           // Ribbon toolbar
           _buildRibbon(),
 
-          // Table section with headers
+          // Table section with enhanced merge table
           Expanded(
             child: SingleChildScrollView(
               child: SingleChildScrollView(
@@ -165,11 +183,8 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
 
   Widget _buildRibbon() {
     return Container(
-      height: 70, // Reduced height
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 4,
-      ), // Reduced vertical padding
+      height: 70,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.grey[50],
         border: Border(bottom: BorderSide(color: Colors.grey!)),
@@ -218,43 +233,10 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
 
             // Format group
             _buildRibbonGroup('Format', [
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 1),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _showCellWidthDialog(),
-                    borderRadius: BorderRadius.circular(4),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Transform.rotate(
-                            angle: 1.5708, // 90 degrees (π/2 radians)
-                            child: Icon(
-                              Icons.height,
-                              size: 16,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 1),
-                          Flexible(
-                            child: Text(
-                              'Cell Width',
-                              style: GoogleFonts.lora(
-                                fontSize: 7,
-                                color: Colors.grey[600],
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+              _buildRibbonButton(
+                Icons.width_wide,
+                'Cell Width',
+                () => _showCellWidthDialog(),
               ),
               _buildRibbonButton(
                 Icons.height,
@@ -289,22 +271,19 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
-        mainAxisSize: MainAxisSize.min, // Add this to prevent overflow
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
             style: GoogleFonts.lora(
-              fontSize: 9, // Reduced font size
+              fontSize: 9,
               fontWeight: FontWeight.w500,
               color: Colors.grey[600],
             ),
           ),
-          const SizedBox(height: 2), // Reduced spacing
-          Expanded(
-            // Wrap buttons in Expanded
-            child: Row(children: buttons),
-          ),
+          const SizedBox(height: 2),
+          Expanded(child: Row(children: buttons)),
         ],
       ),
     );
@@ -316,29 +295,24 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     VoidCallback onPressed,
   ) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 1), // Reduced margin
+      margin: const EdgeInsets.symmetric(horizontal: 1),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(4),
           child: Container(
-            padding: const EdgeInsets.all(4), // Reduced padding
+            padding: const EdgeInsets.all(4),
             child: Column(
-              mainAxisSize: MainAxisSize.min, // Add this
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: Colors.grey[700],
-                ), // Reduced icon size
-                const SizedBox(height: 1), // Reduced spacing
+                Icon(icon, size: 16, color: Colors.grey[700]),
+                const SizedBox(height: 1),
                 Flexible(
-                  // Wrap text in Flexible
                   child: Text(
                     tooltip,
                     style: GoogleFonts.lora(
-                      fontSize: 7, // Reduced font size
+                      fontSize: 7,
                       color: Colors.grey[600],
                     ),
                     maxLines: 1,
@@ -353,101 +327,20 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     );
   }
 
+  // *** REPLACED: Use EnhancedMergeTable instead of custom table ***
   Widget _buildTableWithHeaders() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Column headers (A, B, C, ...)
-        Row(
-          children: [
-            // Empty corner cell
-            Container(
-              width: 40,
-              height: 30,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                border: Border.all(color: Colors.grey!),
-              ),
-            ),
-            // Column headers
-            ...List.generate(
-              _columns,
-              (j) => Container(
-                width: _cellFormats[0][j].width,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  border: Border.all(color: Colors.grey!),
-                ),
-                child: Center(
-                  child: Text(
-                    _getColumnName(j),
-                    style: GoogleFonts.lora(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-
-        // Table rows with row numbers
-        ...List.generate(
-          _rows,
-          (i) => Row(
-            children: [
-              // Row header (1, 2, 3, ...)
-              Container(
-                width: 40,
-                height: _cellFormats[i][0].height,
-                decoration: BoxDecoration(
-                  color: Colors.grey,
-                  border: Border.all(color: Colors.grey!),
-                ),
-                child: Center(
-                  child: Text(
-                    '${i + 1}',
-                    style: GoogleFonts.lora(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-              ),
-              // Table cells
-              ...List.generate(
-                _columns,
-                (j) => Container(
-                  width: _cellFormats[i][j].width,
-                  height: _cellFormats[i][j].height,
-                  decoration: BoxDecoration(
-                    color: i == 0 ? Colors.grey[50] : Colors.white,
-                    border: Border.all(color: Colors.grey!),
-                  ),
-                  child: TextField(
-                    controller: _controllers[i][j],
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.all(4),
-                    ),
-                    style: GoogleFonts.lora(
-                      fontSize: _cellFormats[i][j].fontSize,
-                      fontWeight: i == 0 ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: _cellFormats[i][j].textWrap ? null : 1,
-                    minLines: _cellFormats[i][j].textWrap ? 1 : null,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    return EnhancedMergeTable(
+      rows: _rows,
+      columns: _columns,
+      controllers: _controllers,
+      cellFormats: _cellFormats,
+      merges: _merges,
+      showHeaders: true,
+      borderColor: Colors.grey[300]!,
+      onCellTap: (row, col) {
+        // Optional: Handle cell taps for additional functionality
+        print('Tapped cell: $row, $col');
+      },
     );
   }
 
@@ -572,11 +465,20 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
               final toCell = _parseCellReference(toCellCtrl.text.toUpperCase());
 
               if (fromCell != null && toCell != null) {
+                // Normalize the merge (ensure row1 <= row2, col1 <= col2)
                 final merge = MergeInfo(
-                  row1: fromCell['row']!,
-                  col1: fromCell['col']!,
-                  row2: toCell['row']!,
-                  col2: toCell['col']!,
+                  row1: fromCell['row']! < toCell['row']!
+                      ? fromCell['row']!
+                      : toCell['row']!,
+                  col1: fromCell['col']! < toCell['col']!
+                      ? fromCell['col']!
+                      : toCell['col']!,
+                  row2: fromCell['row']! > toCell['row']!
+                      ? fromCell['row']!
+                      : toCell['row']!,
+                  col2: fromCell['col']! > toCell['col']!
+                      ? fromCell['col']!
+                      : toCell['col']!,
                 );
 
                 if (!_merges.any((m) => m.overlaps(merge))) {
@@ -849,79 +751,4 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     };
     Navigator.pop(context, result);
   }
-}
-
-// Cell format class
-class CellFormat {
-  double width;
-  double height;
-  double fontSize;
-  bool textWrap;
-
-  CellFormat({
-    this.width = 100.0,
-    this.height = 40.0,
-    this.fontSize = 14.0,
-    this.textWrap = false,
-  });
-
-  Map<String, dynamic> toMap() => {
-    'width': width,
-    'height': height,
-    'fontSize': fontSize,
-    'textWrap': textWrap,
-  };
-
-  static CellFormat fromMap(Map<String, dynamic> map) => CellFormat(
-    width: map['width'] ?? 100.0,
-    height: map['height'] ?? 40.0,
-    fontSize: map['fontSize'] ?? 14.0,
-    textWrap: map['textWrap'] ?? false,
-  );
-}
-
-// Merge info class
-class MergeInfo {
-  final int row1, col1, row2, col2;
-
-  MergeInfo({
-    required this.row1,
-    required this.col1,
-    required this.row2,
-    required this.col2,
-  });
-
-  Map<String, dynamic> toMap() => {
-    'row1': row1,
-    'col1': col1,
-    'row2': row2,
-    'col2': col2,
-  };
-
-  static MergeInfo fromMap(Map<String, dynamic> m) => MergeInfo(
-    row1: m['row1'] ?? 0,
-    col1: m['col1'] ?? 0,
-    row2: m['row2'] ?? 0,
-    col2: m['col2'] ?? 0,
-  );
-
-  bool overlaps(MergeInfo other) {
-    return !(row2 < other.row1 ||
-        row1 > other.row2 ||
-        col2 < other.col1 ||
-        col1 > other.col2);
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is MergeInfo &&
-          row1 == other.row1 &&
-          col1 == other.col1 &&
-          row2 == other.row2 &&
-          col2 == other.col2;
-
-  @override
-  int get hashCode =>
-      row1.hashCode ^ col1.hashCode ^ row2.hashCode ^ col2.hashCode;
 }
