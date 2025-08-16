@@ -890,14 +890,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       Icon(
                         Icons.table_chart,
                         color: Colors.green[600],
-                        size: 24,
+                        size: 20,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           block.excelData?['title'] ?? block.text,
                           style: GoogleFonts.lora(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: Colors.black87,
                           ),
@@ -906,7 +906,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ElevatedButton.icon(
                         onPressed: () => _downloadExcel(block.excelData!),
                         icon: Icon(Icons.download, size: 16),
-                        label: Text('Download Excel'),
+                        label: Text('Download'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green[600],
                           foregroundColor: Colors.white,
@@ -952,37 +952,50 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildExcelPreview(Map<String, dynamic> excelData) {
-    final data = excelData['data'] as List<dynamic>? ?? [];
+    final data = excelData['data'] as List? ?? [];
     final rows = (excelData['rows'] ?? 0) as int;
     final columns = (excelData['columns'] ?? 0) as int;
 
-    return Container(
-      height: 200,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: Column(
-          children: List.generate(
-            rows > 5 ? 5 : rows,
-            (i) => Row(
-              children: List.generate(
-                columns > 5 ? 5 : columns,
-                (j) => Container(
-                  width: 80,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Center(
-                    child: Text(
-                      i < data.length && j < (data[i] as List).length
-                          ? (data[i] as List)[j].toString()
-                          : '',
-                      style: GoogleFonts.lora(fontSize: 10),
-                      overflow: TextOverflow.ellipsis,
+    return Column(
+      children: [
+        Container(
+          height: 200,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey[300]!),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Scrollbar(
+            scrollbarOrientation: ScrollbarOrientation.bottom,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: Scrollbar(
+                scrollbarOrientation: ScrollbarOrientation.right,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Column(
+                    children: List.generate(
+                      rows > 8 ? 8 : rows,
+                      (i) => Row(
+                        children: List.generate(
+                          columns,
+                          (j) => Container(
+                            width: 80,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: Center(
+                              child: Text(
+                                i < data.length && j < (data[i] as List).length
+                                    ? (data[i] as List)[j].toString()
+                                    : '',
+                                style: GoogleFonts.lora(fontSize: 10),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -990,7 +1003,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ),
-      ),
+        // Add scroll hint
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'Scroll to view all data (${rows}×${columns})',
+            style: GoogleFonts.lora(
+              fontSize: 10,
+              color: Colors.black54,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1004,13 +1029,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             children: [
               CircularProgressIndicator(),
               SizedBox(width: 16),
-              Text('Creating Excel file...'),
+              Expanded(child: Text('Creating Excel file...')),
             ],
           ),
         ),
       );
 
-      // You'll need to implement this service from the previous Excel implementation
       final filePath = await ExcelDownloadService.createAndDownloadExcel(
         excelData,
       );
@@ -1019,16 +1043,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (filePath != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Excel file downloaded: $filePath'),
+            content: Text('Excel file downloaded successfully!'),
             backgroundColor: Colors.green[600],
+            duration: Duration(seconds: 4),
             action: SnackBarAction(
               label: 'Open',
-              onPressed: () {
-                // Implement file opening logic
+              textColor: Colors.white,
+              onPressed: () async {
+                try {
+                  await ExcelDownloadService.openExcelFile(filePath);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Could not open file: ${e.toString()}'),
+                      backgroundColor: Colors.red[600],
+                    ),
+                  );
+                }
               },
             ),
           ),
         );
+
+        // Optional: Auto-open the file after 2 seconds
+        Future.delayed(Duration(seconds: 2), () async {
+          try {
+            await ExcelDownloadService.openExcelFile(filePath);
+          } catch (e) {
+            print('Auto-open failed: $e');
+          }
+        });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1040,7 +1084,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } catch (e) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red[600]),
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }

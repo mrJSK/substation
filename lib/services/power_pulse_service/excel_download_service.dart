@@ -3,19 +3,9 @@ import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:open_filex/open_filex.dart'; // Changed from open_file to open_filex
+import 'package:open_filex/open_filex.dart';
 
 class ExcelDownloadService {
-  /// Creates and saves an Excel file from the given data map using `excel` package.
-  ///
-  /// The input map should contain:
-  /// - 'rows': int, number of rows
-  /// - 'columns': int, number of columns
-  /// - 'title': String, title to use for the sheet and file
-  /// - 'data': List<List<dynamic>>, nested List of cell content per row
-  /// - 'merged': List<Map<String,dynamic>>, each map with keys 'row1','col1','row2','col2' for merged cells
-  ///
-  /// Returns the file path if saved successfully (on mobile/desktop), or null on web.
   static Future<String?> createAndDownloadExcel(
     Map<String, dynamic> excelData,
   ) async {
@@ -61,8 +51,7 @@ class ExcelDownloadService {
             // Header row styling
             cell.cellStyle = CellStyle(
               bold: true,
-              backgroundColorHex:
-                  ExcelColor.grey400, // Use predefined Excel colors
+              backgroundColorHex: ExcelColor.grey400,
             );
           }
         }
@@ -109,10 +98,8 @@ class ExcelDownloadService {
       }
 
       if (kIsWeb) {
-        // Web download requires separate implementation with dart:html
         return await _downloadOnWeb(fileBytes, title);
       } else {
-        // Mobile/Desktop save
         return await _saveOnMobile(fileBytes, title);
       }
     } catch (e) {
@@ -121,55 +108,158 @@ class ExcelDownloadService {
     }
   }
 
-  /// Save Excel file on mobile/desktop platforms
+  /// Save Excel file to user-friendly location: Internal Storage/Substation/PowerPulse/
   static Future<String?> _saveOnMobile(
     List<int> fileBytes,
     String title,
   ) async {
     try {
-      // Request storage permission on Android
+      // Request appropriate permissions
       if (Platform.isAndroid) {
-        var status = await Permission.storage.status;
+        // For Android 11+ (API 30+), request MANAGE_EXTERNAL_STORAGE
+        var status = await Permission.manageExternalStorage.status;
         if (!status.isGranted) {
-          status = await Permission.storage.request();
+          status = await Permission.manageExternalStorage.request();
           if (!status.isGranted) {
-            // Try with manage external storage for Android 11+
-            if (await Permission.manageExternalStorage.isGranted == false) {
-              await Permission.manageExternalStorage.request();
+            // Fall back to regular storage permission
+            var storageStatus = await Permission.storage.status;
+            if (!storageStatus.isGranted) {
+              storageStatus = await Permission.storage.request();
+              if (!storageStatus.isGranted) {
+                throw Exception(
+                  'Storage permission is required to save Excel files',
+                );
+              }
             }
           }
         }
       }
 
-      // Get appropriate directory
       Directory? directory;
+      String folderPath;
+
       if (Platform.isAndroid) {
-        directory = await getExternalStorageDirectory();
-        if (directory != null) {
-          // Create Downloads subfolder
-          directory = Directory('${directory.path}/Download');
+        // Create path: /storage/emulated/0/Substation/PowerPulse/
+        // This is the main internal storage that users can easily access
+        folderPath = '/storage/emulated/0/Substation/PowerPulse';
+      } else if (Platform.isIOS) {
+        // For iOS, use Documents directory
+        final docDir = await getApplicationDocumentsDirectory();
+        folderPath = '${docDir.path}/Substation/PowerPulse';
+      } else {
+        // For other platforms, use Documents directory
+        final docDir = await getApplicationDocumentsDirectory();
+        folderPath = '${docDir.path}/Substation/PowerPulse';
+      }
+
+      // Create the directory structure if it doesn't exist
+      directory = Directory(folderPath);
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+        print('Created directory: $folderPath');
+      }
+
+      // Generate filename with timestamp
+      final fileName =
+          '${_sanitizeFileName(title)}_${_getFormattedDateTime()}.xlsx';
+      final filePath = '${directory.path}/$fileName';
+
+      // Save the file
+      final file = File(filePath);
+      await file.writeAsBytes(fileBytes, flush: true);
+
+      print('✅ Excel file saved successfully!');
+      print('📁 Location: $filePath');
+      print(
+        '📱 User can find it at: Internal Storage > Substation > PowerPulse',
+      );
+
+      return filePath;
+    } catch (e) {
+      print('❌ Error saving Excel file: $e');
+      throw Exception('Failed to save Excel file: $e');
+    }
+  }
+
+  /// Alternative method: Save to Downloads folder (even more accessible)
+  static Future<String?> saveToDownloads(
+    List<int> fileBytes,
+    String title,
+  ) async {
+    try {
+      // Request permissions
+      if (Platform.isAndroid) {
+        var status = await Permission.storage.status;
+        if (!status.isGranted) {
+          status = await Permission.storage.request();
+        }
+
+        if (!status.isGranted) {
+          // Try manage external storage for Android 11+
+          status = await Permission.manageExternalStorage.status;
+          if (!status.isGranted) {
+            await Permission.manageExternalStorage.request();
+          }
+        }
+      }
+
+      Directory? directory;
+
+      if (Platform.isAndroid) {
+        // Save directly to Downloads folder: /storage/emulated/0/Download/
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          // Fallback to external storage Downloads
+          final externalDir = await getExternalStorageDirectory();
+          directory = Directory('${externalDir?.path}/Download');
           if (!await directory.exists()) {
             await directory.create(recursive: true);
           }
         }
       } else {
+        // For iOS/other platforms, use Documents
         directory = await getApplicationDocumentsDirectory();
       }
 
-      directory ??= await getApplicationDocumentsDirectory();
-
       final fileName =
-          '${_sanitizeFileName(title)}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-      final filePath = '${directory.path}/$fileName';
+          '${_sanitizeFileName(title)}_${_getFormattedDateTime()}.xlsx';
+      final filePath = '${directory!.path}/$fileName';
 
       final file = File(filePath);
       await file.writeAsBytes(fileBytes, flush: true);
 
-      print('Excel file saved at: $filePath');
+      print('✅ Excel file saved to Downloads!');
+      print('📁 Location: $filePath');
+
       return filePath;
     } catch (e) {
-      throw Exception('Failed to save Excel file: $e');
+      throw Exception('Failed to save to Downloads: $e');
     }
+  }
+
+  /// Get formatted date-time for filename
+  static String _getFormattedDateTime() {
+    final now = DateTime.now();
+    return '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Create app folder and return path
+  static Future<String> createAppFolder() async {
+    String folderPath;
+
+    if (Platform.isAndroid) {
+      folderPath = '/storage/emulated/0/Substation/PowerPulse';
+    } else {
+      final docDir = await getApplicationDocumentsDirectory();
+      folderPath = '${docDir.path}/Substation/PowerPulse';
+    }
+
+    final directory = Directory(folderPath);
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+
+    return folderPath;
   }
 
   /// Web platform download (requires separate web implementation)
@@ -177,21 +267,16 @@ class ExcelDownloadService {
     List<int> fileBytes,
     String title,
   ) async {
-    // This would require dart:html which should be imported conditionally for web
-    // For now, return null - implement web download separately if needed
+    // This would require dart:html for web implementation
     return null;
   }
 
   /// Sanitize sheet name to comply with Excel requirements
   static String _sanitizeSheetName(String name) {
-    // Excel sheet names can't contain certain characters and max 31 chars
-    // Fixed regex pattern - removed excessive escaping
     String sanitized = name.replaceAll(RegExp(r'[<>:"/\\|?*]'), '').trim();
-
     if (sanitized.isEmpty) {
       sanitized = 'Sheet';
     }
-
     return sanitized.length > 31 ? sanitized.substring(0, 31) : sanitized;
   }
 
@@ -203,25 +288,10 @@ class ExcelDownloadService {
         .trim();
   }
 
-  /// Convert column and row indices to Excel cell name (A1, B2, etc.)
-  static String _cellName(int col, int row) {
-    String columnLetter = '';
-    int tempCol = col + 1; // Convert to 1-based
-
-    while (tempCol > 0) {
-      int remainder = (tempCol - 1) % 26;
-      columnLetter = String.fromCharCode(65 + remainder) + columnLetter;
-      tempCol = (tempCol - remainder - 1) ~/ 26;
-    }
-
-    return '$columnLetter${row + 1}'; // Convert to 1-based
-  }
-
   /// Open the saved Excel file (mobile/desktop only)
   static Future<void> openExcelFile(String filePath) async {
     if (!kIsWeb && File(filePath).existsSync()) {
       try {
-        // Changed from OpenFile.open to OpenFilex.open
         await OpenFilex.open(filePath);
       } catch (e) {
         throw Exception('Failed to open Excel file: $e');
@@ -229,10 +299,45 @@ class ExcelDownloadService {
     }
   }
 
-  /// Check if the app has storage permission (Android)
+  /// Show success message with file location
+  static String getSuccessMessage(String filePath) {
+    if (Platform.isAndroid) {
+      return '✅ Excel file saved successfully!\n📱 Find it at: Internal Storage > Substation > PowerPulse\n📁 Or use any file manager to navigate to: $filePath';
+    } else {
+      return '✅ Excel file saved successfully!\n📁 Location: $filePath';
+    }
+  }
+
+  /// Check if the app has storage permission
   static Future<bool> hasStoragePermission() async {
     if (!Platform.isAndroid) return true;
 
+    // Check for manage external storage first (Android 11+)
+    var manageStatus = await Permission.manageExternalStorage.status;
+    if (manageStatus == PermissionStatus.granted) {
+      return true;
+    }
+
+    // Fall back to regular storage permission
+    var status = await Permission.storage.status;
+    return status == PermissionStatus.granted;
+  }
+
+  /// Request storage permissions with user-friendly explanation
+  static Future<bool> requestStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+
+    // For Android 11+ (API 30+)
+    var manageStatus = await Permission.manageExternalStorage.status;
+    if (manageStatus != PermissionStatus.granted) {
+      manageStatus = await Permission.manageExternalStorage.request();
+    }
+
+    if (manageStatus == PermissionStatus.granted) {
+      return true;
+    }
+
+    // Fall back to regular storage permission
     var status = await Permission.storage.status;
     if (status != PermissionStatus.granted) {
       status = await Permission.storage.request();
