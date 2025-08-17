@@ -154,16 +154,16 @@ exports.sendEventOpenedNotification = onDocumentCreated(
 
 /**
  * Trigger for event CLOSE (status update)
+ * ----> UPDATED FOR CLOUD FUNCTIONS V2 <----
  */
 exports.sendEventClosedNotification = onDocumentUpdated(
   "trippingShutdownEntries/{eventId}",
-  async (change) => {
-    // ✅ FIXED: Changed 'event' to 'change'
-    const before = change.before.data(); // ✅ FIXED: Changed 'event' to 'change'
-    const after = change.after.data(); // ✅ FIXED: Changed 'event' to 'change'
+  async (event) => {
+    // V2: 'event' parameter, not 'change'
+    const before = event.data.before.data();
+    const after = event.data.after.data();
 
     if (!before || !after) {
-      // ✅ ADDED: Safety check
       console.log("Invalid document state");
       return;
     }
@@ -172,7 +172,7 @@ exports.sendEventClosedNotification = onDocumentUpdated(
     if (before.status !== "OPEN" || after.status !== "CLOSED") return;
     if (after.eventType !== "Tripping" && after.eventType !== "Shutdown")
       return;
-    await sendEventNotification(after, change.after.id, "closed"); // ✅ FIXED: Changed 'event' to 'change'
+    await sendEventNotification(after, event.data.after.id, "closed");
   }
 );
 
