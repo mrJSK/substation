@@ -5,7 +5,10 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentUpdated,
+} = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
 // Initialize Firebase Admin
@@ -17,234 +20,185 @@ const messaging = getMessaging();
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 
 /**
- * Sends tripping notification when a new tripping event is created
- * @param {!Object} event - Cloud Function event object
- * @return {Promise<void>} - Promise that resolves when notification is sent
+ * Notification logic for open/close tripping or shutdown events
+ * Handles both line/transformer default and user preferences
  */
-exports.sendTrippingNotification = onDocumentCreated(
+async function sendEventNotification(eventData, eventId, status) {
+  const bayDoc = await db.collection("bays").doc(eventData.bayId).get();
+  if (!bayDoc.exists) {
+    console.log("Bay not found:", eventData.bayId);
+    return;
+  }
+  const bayData = bayDoc.data();
+  const voltageLevel = parseVoltageLevel(bayData.voltageLevel);
+  const bayType = (bayData.bayType || "").toLowerCase();
+
+  console.log(
+    `Processing ${eventData.eventType} ${status} for bay: ${bayData.name}, bayType: ${bayType}, voltage: ${voltageLevel}kV`
+  );
+
+  // User hierarchy query
+  const eligibleUsers = await getEligibleUsersForSubstation(
+    eventData.substationId
+  );
+
+  // User filtering based on preferences and critical bay type
+  const recipientTokens = await filterUsersForNotification(
+    eventData,
+    bayData,
+    voltageLevel,
+    eligibleUsers,
+    eventData.eventType.toLowerCase()
+  );
+
+  if (recipientTokens.length === 0) {
+    console.log("No eligible recipients found after filtering");
+    return;
+  }
+
+  console.log(`Sending notification to ${recipientTokens.length} devices`);
+  // Notification title/body
+  let title = "";
+  let body = "";
+  if (status === "closed") {
+    title = `✅ ${eventData.eventType} Event Closed`;
+    body = `${bayData.name} at ${eventData.substationName} - ${voltageLevel}kV (Resolved)`;
+  } else {
+    title =
+      eventData.eventType === "Tripping"
+        ? `⚡ Tripping Alert`
+        : `🔌 Shutdown Alert`;
+    body = `${bayData.name} at ${eventData.substationName} - ${voltageLevel}kV`;
+  }
+  const message = {
+    notification: { title, body },
+    data: {
+      eventId,
+      eventType: eventData.eventType.toLowerCase(),
+      substationId: eventData.substationId || "",
+      substationName: eventData.substationName || "",
+      bayId: eventData.bayId || "",
+      bayName: bayData.name || "",
+      bayType: bayData.bayType || "",
+      voltageLevel: bayData.voltageLevel || "",
+      startTime: eventData.startTime?.toDate?.()?.toISOString?.() || "",
+      status, // open/closed
+      shutdownType: eventData.shutdownType || "",
+      click_action: "FLUTTER_NOTIFICATION_CLICK",
+    },
+  };
+
+  // ✅ FIXED: Individual sends to avoid /batch endpoint error
+  const responses = [];
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (let i = 0; i < recipientTokens.length; i++) {
+    try {
+      const individualMessage = {
+        notification: message.notification,
+        data: message.data,
+        token: recipientTokens[i], // Send to individual token
+      };
+
+      const response = await messaging.send(individualMessage);
+      responses.push({ success: true, messageId: response, index: i });
+      successCount++;
+      console.log(
+        `✅ Sent to token ${i + 1}/${recipientTokens.length}: ${recipientTokens[
+          i
+        ].substring(0, 20)}...`
+      );
+    } catch (error) {
+      responses.push({ success: false, error, index: i, response: { error } });
+      failureCount++;
+      console.log(
+        `❌ Failed to send to token ${i + 1}/${recipientTokens.length}:`,
+        error.code || error.message
+      );
+    }
+  }
+
+  console.log(
+    `✅ Notification sent to ${successCount} devices (${failureCount} failed)`
+  );
+
+  // Handle failures if any
+  if (failureCount > 0) {
+    const failures = responses.filter((r) => !r.success);
+    console.log("Failed sends:", failures.length);
+    await cleanupInvalidTokens(failures, recipientTokens);
+  }
+}
+
+/**
+ * Trigger for event OPEN (creation)
+ */
+exports.sendEventOpenedNotification = onDocumentCreated(
   "trippingShutdownEntries/{eventId}",
   async (event) => {
-    const snap = event.data;
-    if (!snap) {
+    if (!event.data) {
       console.log("No data in document");
       return;
     }
-
-    const eventData = snap.data();
-
-    try {
-      // Get bay information to determine voltage level
-      const bayDoc = await db.collection("bays").doc(eventData.bayId).get();
-      if (!bayDoc.exists) {
-        console.log("Bay not found:", eventData.bayId);
-        return;
-      }
-
-      const bayData = bayDoc.data();
-      const voltageLevel = parseVoltageLevel(bayData.voltageLevel);
-
-      console.log(
-        `Processing ${eventData.eventType} event for bay: ${bayData.name}, ` +
-          `voltage: ${voltageLevel}kV at substation: ${eventData.substationId}`
-      );
-
-      // Get hierarchically eligible users for this specific substation
-      const eligibleUsers = await getEligibleUsersForSubstation(
-        eventData.substationId
-      );
-      console.log(`Found ${eligibleUsers.length} eligible users in hierarchy`);
-
-      // Filter users based on their notification preferences
-      const recipientTokens = await filterUsersForNotification(
-        eventData,
-        bayData,
-        voltageLevel,
-        eligibleUsers,
-        eventData.eventType.toLowerCase()
-      );
-
-      if (recipientTokens.length === 0) {
-        console.log("No eligible recipients found after filtering");
-        return;
-      }
-
-      console.log(`Sending notification to ${recipientTokens.length} devices`);
-
-      // Send notification
-      const message = {
-        notification: {
-          title: `⚡ ${eventData.eventType} Alert`,
-          body: `${bayData.name} at ${eventData.substationName} - ${voltageLevel}kV`,
-        },
-        data: {
-          eventId: event.params.eventId,
-          eventType: eventData.eventType.toLowerCase(),
-          substationId: eventData.substationId || "",
-          substationName: eventData.substationName || "",
-          bayId: eventData.bayId || "",
-          bayName: bayData.name || "",
-          bayType: bayData.bayType || "",
-          voltageLevel: bayData.voltageLevel || "",
-          startTime: eventData.startTime?.toDate?.()?.toISOString?.() || "",
-          click_action: "FLUTTER_NOTIFICATION_CLICK",
-        },
-        tokens: recipientTokens,
-      };
-
-      const response = await messaging.sendMulticast(message);
-      console.log(`✅ Notification sent to ${response.successCount} devices`);
-
-      if (response.failureCount > 0) {
-        const failures = response.responses
-          .map((r, index) => ({ index, response: r }))
-          .filter((item) => !item.response.success);
-        console.log("Failed sends:", failures);
-        await cleanupInvalidTokens(failures, recipientTokens);
-      }
-    } catch (error) {
-      console.error("Error sending notification:", error);
-    }
+    const eventData = event.data.data(); // ✅ FIXED: event.data is DocumentSnapshot
+    // Tripping or Shutdown only
+    if (
+      eventData.eventType !== "Tripping" &&
+      eventData.eventType !== "Shutdown"
+    )
+      return;
+    await sendEventNotification(eventData, event.params.eventId, "open");
   }
 );
 
 /**
- * Sends shutdown notification when a new shutdown event is created
- * @param {!Object} event - Cloud Function event object
- * @return {Promise<void>} - Promise that resolves when notification is sent
+ * Trigger for event CLOSE (status update)
  */
-exports.sendShutdownNotification = onDocumentCreated(
+exports.sendEventClosedNotification = onDocumentUpdated(
   "trippingShutdownEntries/{eventId}",
-  async (event) => {
-    const snap = event.data;
-    if (!snap) {
-      console.log("No data in document");
+  async (change) => {
+    // ✅ FIXED: Changed 'event' to 'change'
+    const before = change.before.data(); // ✅ FIXED: Changed 'event' to 'change'
+    const after = change.after.data(); // ✅ FIXED: Changed 'event' to 'change'
+
+    if (!before || !after) {
+      // ✅ ADDED: Safety check
+      console.log("Invalid document state");
       return;
     }
 
-    const eventData = snap.data();
-
-    // Only process shutdown events
-    if (eventData.eventType !== "Shutdown") {
+    // Only notify when status changes from OPEN to CLOSED
+    if (before.status !== "OPEN" || after.status !== "CLOSED") return;
+    if (after.eventType !== "Tripping" && after.eventType !== "Shutdown")
       return;
-    }
-
-    try {
-      const bayDoc = await db.collection("bays").doc(eventData.bayId).get();
-      if (!bayDoc.exists) {
-        console.log("Bay not found:", eventData.bayId);
-        return;
-      }
-
-      const bayData = bayDoc.data();
-      const voltageLevel = parseVoltageLevel(bayData.voltageLevel);
-
-      console.log(
-        `Processing shutdown event for bay: ${bayData.name}, ` +
-          `voltage: ${voltageLevel}kV at substation: ${eventData.substationId}`
-      );
-
-      // Get hierarchically eligible users for this specific substation
-      const eligibleUsers = await getEligibleUsersForSubstation(
-        eventData.substationId
-      );
-      const recipientTokens = await filterUsersForNotification(
-        eventData,
-        bayData,
-        voltageLevel,
-        eligibleUsers,
-        "shutdown"
-      );
-
-      if (recipientTokens.length === 0) {
-        console.log("No eligible recipients found for shutdown notification");
-        return;
-      }
-
-      console.log(
-        `Sending shutdown notification to ${recipientTokens.length} devices`
-      );
-
-      const message = {
-        notification: {
-          title: "🔌 Shutdown Event Alert",
-          body: `${bayData.name} at ${eventData.substationName} - ${voltageLevel}kV`,
-        },
-        data: {
-          eventId: event.params.eventId,
-          eventType: "shutdown",
-          substationId: eventData.substationId || "",
-          substationName: eventData.substationName || "",
-          bayId: eventData.bayId || "",
-          bayName: bayData.name || "",
-          bayType: bayData.bayType || "",
-          voltageLevel: bayData.voltageLevel || "",
-          startTime: eventData.startTime?.toDate?.()?.toISOString?.() || "",
-          shutdownType: eventData.shutdownType || "",
-          click_action: "FLUTTER_NOTIFICATION_CLICK",
-        },
-        tokens: recipientTokens,
-      };
-
-      const response = await messaging.sendMulticast(message);
-      console.log(
-        `Shutdown notification sent to ${response.successCount} devices`
-      );
-
-      if (response.failureCount > 0) {
-        const failures = response.responses
-          .map((r, index) => ({ index, response: r }))
-          .filter((item) => !item.response.success);
-        console.log("Failed shutdown notification sends:", failures);
-        await cleanupInvalidTokens(failures, recipientTokens);
-      }
-    } catch (error) {
-      console.error("Error sending shutdown notification:", error);
-    }
+    await sendEventNotification(after, change.after.id, "closed"); // ✅ FIXED: Changed 'event' to 'change'
   }
 );
 
 /**
- * Get all eligible users in the hierarchy for a specific substation
- * @param {string} substationId - The substation ID where the event occurred
- * @return {Promise<Array>} - Array of eligible users with their hierarchy info
+ * Hierarchical user fetch for targeting notifications
  */
 async function getEligibleUsersForSubstation(substationId) {
   try {
-    // Get the substation details first
     const substationDoc = await db
       .collection("substations")
       .doc(substationId)
       .get();
-    if (!substationDoc.exists) {
-      console.log(`Substation ${substationId} not found`);
-      return [];
-    }
-
+    if (!substationDoc.exists) return [];
     const substationData = substationDoc.data();
     const subdivisionId = substationData.subdivisionId;
-
-    if (!subdivisionId) {
-      console.log(`No subdivision found for substation ${substationId}`);
-      return [];
-    }
-
-    // Get subdivision details
+    if (!subdivisionId) return [];
     const subdivisionDoc = await db
       .collection("subdivisions")
       .doc(subdivisionId)
       .get();
-    if (!subdivisionDoc.exists) {
-      console.log(`Subdivision ${subdivisionId} not found`);
-      return [];
-    }
-
+    if (!subdivisionDoc.exists) return [];
     const subdivisionData = subdivisionDoc.data();
     const divisionId = subdivisionData.divisionId;
-
-    // Get division details
+    // Fetch hierarchy IDs
     let circleId = null;
     let zoneId = null;
-
     if (divisionId) {
       const divisionDoc = await db
         .collection("divisions")
@@ -253,7 +207,6 @@ async function getEligibleUsersForSubstation(substationId) {
       if (divisionDoc.exists) {
         const divisionData = divisionDoc.data();
         circleId = divisionData.circleId;
-
         if (circleId) {
           const circleDoc = await db.collection("circles").doc(circleId).get();
           if (circleDoc.exists) {
@@ -263,21 +216,14 @@ async function getEligibleUsersForSubstation(substationId) {
         }
       }
     }
-
-    console.log(
-      `Hierarchy for substation ${substationId}: Zone=${zoneId}, Circle=${circleId}, Division=${divisionId}, Subdivision=${subdivisionId}`
-    );
-
-    // Build queries for eligible users at each level
+    // Build eligible user list
     const eligibleUsers = [];
-
-    // 1. Subdivision managers for this subdivision
+    // Subdivision managers
     const subdivisionManagers = await db
       .collection("users")
       .where("role", "==", "subdivisionManager")
       .where("assignedLevels.subdivisionId", "==", subdivisionId)
       .get();
-
     subdivisionManagers.docs.forEach((doc) => {
       eligibleUsers.push({
         userId: doc.id,
@@ -286,15 +232,13 @@ async function getEligibleUsersForSubstation(substationId) {
         ...doc.data(),
       });
     });
-
-    // 2. Division managers for this division
+    // Division managers
     if (divisionId) {
       const divisionManagers = await db
         .collection("users")
         .where("role", "==", "divisionManager")
         .where("assignedLevels.divisionId", "==", divisionId)
         .get();
-
       divisionManagers.docs.forEach((doc) => {
         eligibleUsers.push({
           userId: doc.id,
@@ -304,15 +248,13 @@ async function getEligibleUsersForSubstation(substationId) {
         });
       });
     }
-
-    // 3. Circle managers for this circle
+    // Circle managers
     if (circleId) {
       const circleManagers = await db
         .collection("users")
         .where("role", "==", "circleManager")
         .where("assignedLevels.circleId", "==", circleId)
         .get();
-
       circleManagers.docs.forEach((doc) => {
         eligibleUsers.push({
           userId: doc.id,
@@ -322,15 +264,13 @@ async function getEligibleUsersForSubstation(substationId) {
         });
       });
     }
-
-    // 4. Zone managers for this zone
+    // Zone managers
     if (zoneId) {
       const zoneManagers = await db
         .collection("users")
         .where("role", "==", "zoneManager")
         .where("assignedLevels.zoneId", "==", zoneId)
         .get();
-
       zoneManagers.docs.forEach((doc) => {
         eligibleUsers.push({
           userId: doc.id,
@@ -340,13 +280,11 @@ async function getEligibleUsersForSubstation(substationId) {
         });
       });
     }
-
-    // 5. Admin users (get notifications for everything)
+    // Admin users
     const adminUsers = await db
       .collection("users")
       .where("role", "==", "admin")
       .get();
-
     adminUsers.docs.forEach((doc) => {
       eligibleUsers.push({
         userId: doc.id,
@@ -355,10 +293,6 @@ async function getEligibleUsersForSubstation(substationId) {
         ...doc.data(),
       });
     });
-
-    console.log(
-      `Found ${eligibleUsers.length} eligible users across all hierarchy levels`
-    );
     return eligibleUsers;
   } catch (error) {
     console.error("Error getting eligible users:", error);
@@ -367,9 +301,7 @@ async function getEligibleUsersForSubstation(substationId) {
 }
 
 /**
- * Parse voltage level from string format (e.g., "132kV" -> 132)
- * @param {string} voltageString - Voltage string to parse
- * @return {number} - Parsed voltage level as number
+ * Basic voltage parsing utility
  */
 function parseVoltageLevel(voltageString) {
   if (!voltageString) return 0;
@@ -378,29 +310,31 @@ function parseVoltageLevel(voltageString) {
 }
 
 /**
- * Filter users based on their notification preferences and hierarchy
- * @param {Object} eventData - Event data from the document
- * @param {Object} bayData - Bay information
- * @param {number} voltageLevel - Voltage level as number
- * @param {Array} eligibleUsers - Array of eligible users from hierarchy
- * @param {string} notificationType - Type of notification (tripping/shutdown)
- * @return {Promise<Array>} - Array of FCM tokens to send notifications to
+ * Preference-aware user filtering
+ * - Users are by default subscribed only to "Line" and "Transformer" (see below)
+ * - If a user disables either via their preferences, no notification is sent for that bay type
+ * - Other bay types strictly require explicit subscription
  */
 async function filterUsersForNotification(
   eventData,
   bayData,
   voltageLevel,
   eligibleUsers,
-  notificationType = "tripping"
+  notificationType
 ) {
+  console.log(`🔍 FILTERING DEBUG START`);
+  console.log(
+    `🔍 Event: ${eventData.eventType}, Bay: ${bayData.bayType}, Voltage: ${voltageLevel}kV`
+  );
+  console.log(`🔍 Eligible users count: ${eligibleUsers.length}`);
+
   const recipientTokens = [];
+  const bayType = (bayData.bayType || "").toLowerCase();
 
   for (const user of eligibleUsers) {
-    try {
-      console.log(
-        `Processing ${user.role} user ${user.userId} at ${user.level} level`
-      );
+    console.log(`\n🔍 Processing user: ${user.userId}, Role: ${user.role}`);
 
+    try {
       // Get user's notification preferences
       const preferencesDoc = await db
         .collection("notificationPreferences")
@@ -410,155 +344,120 @@ async function filterUsersForNotification(
       let preferences;
       if (preferencesDoc.exists) {
         preferences = preferencesDoc.data();
+        console.log(`🔍 Found existing preferences for ${user.userId}`);
       } else {
-        // UPDATED: Default preferences with your specified requirements
+        // Defaults: Only "Line" and "Transformer"
         preferences = {
-          // Default mandatory voltages: 132, 220, 400, 765 kV
           subscribedVoltageThresholds: [132, 220, 400, 765],
-
-          // Optional voltages (not subscribed by default): 11, 33, 66, 110 kV
           optionalVoltageThresholds: [11, 33, 66, 110],
-
-          // All bay types by default (includes Transformer, Line, and others)
-          subscribedBayTypes: ["all"], // This covers "Transformer", "Line", "Bus", "Reactor", etc.
-
-          // All substations under their hierarchy by default
+          enabledOptionalVoltages: [],
+          subscribedBayTypes: ["Line", "Transformer"],
           subscribedSubstations: ["all"],
-
-          // Both notification types enabled by default
           enableTrippingNotifications: true,
           enableShutdownNotifications: true,
         };
-
         await db
           .collection("notificationPreferences")
           .doc(user.userId)
           .set(preferences);
-
-        console.log(
-          `Created default preferences for user ${user.userId} with role ${user.role}:`
-        );
-        console.log(`- Default voltages: 132, 220, 400, 765 kV`);
-        console.log(
-          `- Optional voltages: 11, 33, 66, 110 kV (not subscribed by default)`
-        );
-        console.log(`- All bay types (Transformer, Line, etc.)`);
-        console.log(`- All substations under their hierarchy`);
+        console.log(`🔍 Created default preferences for ${user.userId}`);
       }
 
-      // Check if notifications are enabled for this event type
+      // 1. Check notification enabled
       const notificationEnabled =
         notificationType === "shutdown"
           ? preferences.enableShutdownNotifications
           : preferences.enableTrippingNotifications;
-
+      console.log(
+        `🔍 Notification enabled (${notificationType}): ${notificationEnabled}`
+      );
       if (!notificationEnabled) {
         console.log(
-          `User ${user.userId} has disabled ${notificationType} notifications`
+          `❌ User ${user.userId} has disabled ${notificationType} notifications`
         );
         continue;
       }
 
-      // Check voltage threshold - now includes both subscribed and optional if user opted in
-      if (
-        Array.isArray(preferences.subscribedVoltageThresholds) &&
-        preferences.subscribedVoltageThresholds.length > 0
-      ) {
-        // Combine subscribed voltages with any optional voltages the user has enabled
-        const allSubscribedVoltages = [
-          ...preferences.subscribedVoltageThresholds,
-        ];
-
-        // If user has opted into optional voltages, include them
-        if (Array.isArray(preferences.optionalVoltageThresholds)) {
-          // Check if user has specifically enabled optional voltages
-          const enabledOptionalVoltages =
-            preferences.enabledOptionalVoltages || [];
-          enabledOptionalVoltages.forEach((voltage) => {
-            if (
-              preferences.optionalVoltageThresholds.includes(voltage) &&
-              !allSubscribedVoltages.includes(voltage)
-            ) {
-              allSubscribedVoltages.push(voltage);
-            }
-          });
-        }
-
-        const meetsVoltageThreshold = allSubscribedVoltages.some(
-          (threshold) => voltageLevel >= Number(threshold || 0)
-        );
-
-        if (!meetsVoltageThreshold) {
-          console.log(
-            `User ${user.userId} voltage threshold not met: ${voltageLevel}kV (subscribed to: ${allSubscribedVoltages})`
-          );
-          continue;
-        }
+      // 2. Check voltage threshold
+      const allSubscribedVoltages = Array.isArray(
+        preferences.subscribedVoltageThresholds
+      )
+        ? [...preferences.subscribedVoltageThresholds]
+        : [];
+      if (Array.isArray(preferences.enabledOptionalVoltages))
+        preferences.enabledOptionalVoltages.forEach((v) => {
+          if (!allSubscribedVoltages.includes(v)) allSubscribedVoltages.push(v);
+        });
+      const meetsVoltageThreshold = allSubscribedVoltages.some(
+        (threshold) => voltageLevel >= Number(threshold || 0)
+      );
+      console.log(
+        `🔍 Voltage check: ${voltageLevel}kV >= ${allSubscribedVoltages}: ${meetsVoltageThreshold}`
+      );
+      if (!meetsVoltageThreshold) {
+        console.log(`❌ User ${user.userId} voltage threshold not met`);
+        continue;
       }
 
-      // Check bay type subscription
-      if (
-        Array.isArray(preferences.subscribedBayTypes) &&
-        !preferences.subscribedBayTypes.includes("all")
-      ) {
-        // Check if the specific bay type is subscribed
-        const bayTypeMatch = preferences.subscribedBayTypes.some(
-          (subscribedType) =>
-            subscribedType.toLowerCase() === bayData.bayType.toLowerCase()
+      // 3. Check bay type
+      let bayTypes = Array.isArray(preferences.subscribedBayTypes)
+        ? preferences.subscribedBayTypes.map((x) => x.toLowerCase())
+        : [];
+      console.log(`🔍 User bay types: ${bayTypes}, Event bay type: ${bayType}`);
+      if (bayTypes.includes("all") || bayTypes.includes(bayType)) {
+        console.log(`✅ Bay type match found`);
+      } else {
+        console.log(
+          `❌ User ${user.userId} not subscribed to bay type: ${bayType}`
         );
-
-        if (!bayTypeMatch) {
-          console.log(
-            `User ${user.userId} bay type not subscribed: ${bayData.bayType} (subscribed to: ${preferences.subscribedBayTypes})`
-          );
-          continue;
-        }
+        continue;
       }
 
-      // Check substation subscription
+      // 4. Check substation
       if (
         Array.isArray(preferences.subscribedSubstations) &&
         !preferences.subscribedSubstations.includes("all") &&
         !preferences.subscribedSubstations.includes(eventData.substationId)
       ) {
         console.log(
-          `User ${user.userId} substation not subscribed: ${eventData.substationId}`
+          `❌ User ${user.userId} not subscribed to substation: ${eventData.substationId}`
         );
         continue;
       }
 
-      // Get user's FCM tokens
-      const tokensSnapshot = await db
-        .collection("fcmTokens")
-        .where("userId", "==", user.userId)
-        .where("active", "==", true)
-        .get();
-
-      const userTokens = [];
-      tokensSnapshot.docs.forEach((tokenDoc) => {
-        const tokenData = tokenDoc.data();
-        if (tokenData.token) {
-          userTokens.push(tokenData.token);
-          recipientTokens.push(tokenData.token);
+      // 5. Get FCM tokens
+      console.log(`🔍 Checking FCM tokens for user: ${user.userId}`);
+      const tokenDoc = await db.collection("fcmTokens").doc(user.userId).get();
+      if (tokenDoc.exists) {
+        const data = tokenDoc.data();
+        console.log(
+          `🔍 Token exists - Active: ${data.active}, Has Token: ${!!data.token}`
+        );
+        if (data.active && data.token) {
+          recipientTokens.push(data.token);
+          console.log(
+            `✅ Added token for user ${user.userId}: ${data.token.substring(
+              0,
+              20
+            )}...`
+          );
+        } else {
+          console.log(`❌ Token inactive or missing for user ${user.userId}`);
         }
-      });
-
-      console.log(
-        `✅ User ${user.userId} (${user.role}) qualified: ${userTokens.length} active tokens`
-      );
+      } else {
+        console.log(`❌ No FCM token document found for user ${user.userId}`);
+      }
     } catch (error) {
-      console.error(`Error processing user ${user.userId}:`, error);
+      console.error(`❌ Error processing user ${user.userId}:`, error);
     }
   }
 
+  console.log(`🔍 FILTERING COMPLETE: Found ${recipientTokens.length} tokens`);
   return recipientTokens;
 }
 
 /**
- * Clean up invalid FCM tokens by marking them as inactive
- * @param {Array} failures - Array of failed message attempts
- * @param {Array} originalTokens - Original array of tokens used
- * @return {Promise<void>} - Promise that resolves when cleanup is complete
+ * Mark failed tokens as inactive
  */
 async function cleanupInvalidTokens(failures, originalTokens) {
   const invalidTokens = failures
@@ -569,10 +468,7 @@ async function cleanupInvalidTokens(failures, originalTokens) {
         failure.response.error?.code === "messaging/invalid-registration-token"
     )
     .map((failure) => originalTokens[failure.index]);
-
   if (invalidTokens.length > 0) {
-    console.log(`Cleaning up ${invalidTokens.length} invalid tokens`);
-
     const batch = db.batch();
     for (const token of invalidTokens) {
       const tokenQuery = await db
@@ -580,15 +476,10 @@ async function cleanupInvalidTokens(failures, originalTokens) {
         .where("token", "==", token)
         .limit(1)
         .get();
-
       tokenQuery.docs.forEach((doc) => {
-        batch.update(doc.ref, {
-          active: false,
-          deactivatedAt: new Date(),
-        });
+        batch.update(doc.ref, { active: false, deactivatedAt: new Date() });
       });
     }
-
     await batch.commit();
     console.log("Invalid tokens marked as inactive");
   }

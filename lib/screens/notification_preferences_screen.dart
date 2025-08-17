@@ -1,5 +1,3 @@
-// lib/screens/notification_preferences_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
@@ -24,11 +22,8 @@ class _NotificationPreferencesScreenState
   List<String> _availableSubstations = [];
   Map<String, String> _substationIdToName = {};
 
-  // UPDATED: Default mandatory voltages and optional voltages
   final List<int> _defaultMandatoryVoltages = [132, 220, 400, 765];
   final List<int> _optionalVoltages = [11, 33, 66, 110];
-
-  // Bay type options - UPDATED to include Transformer and Line as specified
   final List<String> _bayTypeOptions = [
     'Transformer',
     'Line',
@@ -47,7 +42,6 @@ class _NotificationPreferencesScreenState
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      // Load existing preferences
       final preferencesDoc = await FirebaseFirestore.instance
           .collection('notificationPreferences')
           .doc(widget.currentUser.uid)
@@ -56,13 +50,10 @@ class _NotificationPreferencesScreenState
       if (preferencesDoc.exists) {
         _preferences = NotificationPreferences.fromFirestore(preferencesDoc);
       } else {
-        // Create default preferences with correct defaults
         _preferences = NotificationPreferences.withDefaults(
           widget.currentUser.uid,
         );
       }
-
-      // Load available substations with hierarchical filtering
       await _loadAvailableSubstations();
     } catch (e) {
       if (mounted) {
@@ -73,13 +64,10 @@ class _NotificationPreferencesScreenState
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // UPDATED: Complete hierarchical filtering for available substations
   Future<void> _loadAvailableSubstations() async {
     _availableSubstations.clear();
     _substationIdToName.clear();
@@ -89,13 +77,10 @@ class _NotificationPreferencesScreenState
           .collection('substations')
           .orderBy('name');
 
-      // Apply hierarchy-based filtering based on user role
       if (widget.currentUser.assignedLevels != null) {
         final assignedLevels = widget.currentUser.assignedLevels!;
-
         switch (widget.currentUser.role) {
           case UserRole.subdivisionManager:
-            // Subdivision managers: only their subdivision's substations
             final subdivisionId = assignedLevels['subdivisionId'];
             if (subdivisionId != null) {
               substationsQuery = substationsQuery.where(
@@ -104,20 +89,16 @@ class _NotificationPreferencesScreenState
               );
             }
             break;
-
           case UserRole.divisionManager:
-            // Division managers: all substations in all subdivisions under their division
             final divisionId = assignedLevels['divisionId'];
             if (divisionId != null) {
               final subdivisionsSnapshot = await FirebaseFirestore.instance
                   .collection('subdivisions')
                   .where('divisionId', isEqualTo: divisionId)
                   .get();
-
               final subdivisionIds = subdivisionsSnapshot.docs
                   .map((doc) => doc.id)
                   .toList();
-
               if (subdivisionIds.isNotEmpty) {
                 substationsQuery = substationsQuery.where(
                   'subdivisionId',
@@ -126,32 +107,24 @@ class _NotificationPreferencesScreenState
               }
             }
             break;
-
           case UserRole.circleManager:
-            // Circle managers: all substations in all subdivisions in all divisions under their circle
             final circleId = assignedLevels['circleId'];
             if (circleId != null) {
-              // Get all divisions in this circle
               final divisionsSnapshot = await FirebaseFirestore.instance
                   .collection('divisions')
                   .where('circleId', isEqualTo: circleId)
                   .get();
-
               final divisionIds = divisionsSnapshot.docs
                   .map((doc) => doc.id)
                   .toList();
-
               if (divisionIds.isNotEmpty) {
-                // Get all subdivisions in these divisions
                 final subdivisionsSnapshot = await FirebaseFirestore.instance
                     .collection('subdivisions')
                     .where('divisionId', whereIn: divisionIds)
                     .get();
-
                 final subdivisionIds = subdivisionsSnapshot.docs
                     .map((doc) => doc.id)
                     .toList();
-
                 if (subdivisionIds.isNotEmpty) {
                   substationsQuery = substationsQuery.where(
                     'subdivisionId',
@@ -161,43 +134,32 @@ class _NotificationPreferencesScreenState
               }
             }
             break;
-
           case UserRole.zoneManager:
-            // Zone managers: all substations in their zone hierarchy
             final zoneId = assignedLevels['zoneId'];
             if (zoneId != null) {
-              // Get all circles in this zone
               final circlesSnapshot = await FirebaseFirestore.instance
                   .collection('circles')
                   .where('zoneId', isEqualTo: zoneId)
                   .get();
-
               final circleIds = circlesSnapshot.docs
                   .map((doc) => doc.id)
                   .toList();
-
               if (circleIds.isNotEmpty) {
-                // Get all divisions in these circles
                 final divisionsSnapshot = await FirebaseFirestore.instance
                     .collection('divisions')
                     .where('circleId', whereIn: circleIds)
                     .get();
-
                 final divisionIds = divisionsSnapshot.docs
                     .map((doc) => doc.id)
                     .toList();
-
                 if (divisionIds.isNotEmpty) {
-                  // Get all subdivisions in these divisions
                   final subdivisionsSnapshot = await FirebaseFirestore.instance
                       .collection('subdivisions')
                       .where('divisionId', whereIn: divisionIds)
                       .get();
-
                   final subdivisionIds = subdivisionsSnapshot.docs
                       .map((doc) => doc.id)
                       .toList();
-
                   if (subdivisionIds.isNotEmpty) {
                     substationsQuery = substationsQuery.where(
                       'subdivisionId',
@@ -208,34 +170,24 @@ class _NotificationPreferencesScreenState
               }
             }
             break;
-
           case UserRole.admin:
-            // Admins: all substations (no filter needed)
+            // No filter needed
             break;
-
           default:
-            // For other roles (like substationUser), no substations available for subscription
-            // They only work at specific substations, they don't manage notifications for multiple substations
             return;
         }
       }
 
       final substationsSnapshot = await substationsQuery.get();
-
       for (var doc in substationsSnapshot.docs) {
         final substationId = doc.id;
         final substationData = doc.data();
         final substationName = substationData['name'] as String?;
-
         if (substationName != null && substationName.trim().isNotEmpty) {
           _availableSubstations.add(substationId);
           _substationIdToName[substationId] = substationName.trim();
         }
       }
-
-      print(
-        'Found ${_availableSubstations.length} substations for ${widget.currentUser.role}',
-      );
     } catch (e) {
       print('Error loading substations: $e');
     }
@@ -243,14 +195,12 @@ class _NotificationPreferencesScreenState
 
   Future<void> _savePreferences() async {
     if (_preferences == null) return;
-
     setState(() => _isSaving = true);
     try {
       await FirebaseFirestore.instance
           .collection('notificationPreferences')
           .doc(widget.currentUser.uid)
           .set(_preferences!.toFirestore());
-
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -267,10 +217,14 @@ class _NotificationPreferencesScreenState
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  void _updatePreferences(NotificationPreferences newPreferences) {
+    setState(() {
+      _preferences = newPreferences;
+    });
   }
 
   Widget _buildPreferenceCard({
@@ -333,17 +287,9 @@ class _NotificationPreferencesScreenState
     );
   }
 
-  // UPDATED: Method to update preferences immutably
-  void _updatePreferences(NotificationPreferences newPreferences) {
-    setState(() {
-      _preferences = newPreferences;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     if (_isLoading) {
       return Scaffold(
         backgroundColor: const Color(0xFFFAFAFA),
@@ -417,7 +363,7 @@ class _NotificationPreferencesScreenState
             ),
           ),
 
-          // UPDATED: Voltage Level Filters with Default and Optional sections
+          // Voltage Level Filters
           _buildPreferenceCard(
             title: 'Voltage Level Thresholds',
             icon: Icons.flash_on,
@@ -425,7 +371,6 @@ class _NotificationPreferencesScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Default Mandatory Voltages Section
                 const Text(
                   'Default voltages (recommended):',
                   style: TextStyle(
@@ -468,12 +413,9 @@ class _NotificationPreferencesScreenState
                     );
                   }).toList(),
                 ),
-
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
-
-                // Optional Voltages Section
                 const Text(
                   'Optional voltages (you can enable these):',
                   style: TextStyle(
@@ -512,7 +454,6 @@ class _NotificationPreferencesScreenState
                     );
                   }).toList(),
                 ),
-
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -546,7 +487,7 @@ class _NotificationPreferencesScreenState
             ),
           ),
 
-          // UPDATED: Bay Type Filters with Transformer and Line highlighted
+          // Bay Type Filters - Default recommended
           _buildPreferenceCard(
             title: 'Bay Types',
             icon: Icons.electrical_services,
@@ -554,11 +495,29 @@ class _NotificationPreferencesScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Receive notifications for these bay types:',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.green, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'By default you receive Line and Transformer notifications. You may enable/disable or add other types.',
+                          style: TextStyle(
+                            color: Colors.green.shade700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 CheckboxListTile(
                   title: const Text(
                     'All Bay Types',
@@ -589,14 +548,13 @@ class _NotificationPreferencesScreenState
                     bool isSelected =
                         _preferences?.subscribedBayTypes.contains(bayType) ??
                         false;
-                    bool isRecommended =
+                    bool isDefault =
                         bayType == 'Transformer' || bayType == 'Line';
-
                     return CheckboxListTile(
                       title: Row(
                         children: [
                           Text(bayType),
-                          if (isRecommended) ...[
+                          if (isDefault) ...[
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -625,7 +583,8 @@ class _NotificationPreferencesScreenState
                           _preferences!.subscribedBayTypes,
                         );
                         if (selected == true) {
-                          bayTypes.add(bayType);
+                          if (!bayTypes.contains(bayType))
+                            bayTypes.add(bayType);
                         } else {
                           bayTypes.remove(bayType);
                         }
@@ -641,7 +600,7 @@ class _NotificationPreferencesScreenState
             ),
           ),
 
-          // UPDATED: Substation Filters with hierarchy information
+          // Substation Filters
           _buildPreferenceCard(
             title: 'Substations',
             icon: Icons.account_tree,
@@ -696,7 +655,6 @@ class _NotificationPreferencesScreenState
                                 substationId,
                               ) ??
                               false;
-
                           return CheckboxListTile(
                             title: Text(
                               substationName,
@@ -756,7 +714,6 @@ class _NotificationPreferencesScreenState
               ],
             ),
           ),
-
           const SizedBox(height: 100), // Space for FAB
         ],
       ),

@@ -31,7 +31,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // Notification state (keep this)
   int _unreadNotificationCount = 0;
   bool _isLoadingNotifications = false;
 
@@ -50,10 +49,9 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     print('🔍 DEBUG: Current user: ${widget.currentUser.email}');
     final tabCount = widget.currentUser.role == UserRole.subdivisionManager
         ? _tabs.length
-        : _tabs.length - 1; // Exclude Asset Management for non-managers
+        : _tabs.length - 1;
     _tabController = TabController(length: tabCount, vsync: this);
 
-    // Load notification count
     _loadNotificationCount();
   }
 
@@ -63,13 +61,11 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     super.dispose();
   }
 
-  // Load unread notification count
   Future<void> _loadNotificationCount() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Get unread notifications count for the current user
       final unreadQuery = await FirebaseFirestore.instance
           .collection('userNotifications')
           .where('userId', isEqualTo: user.uid)
@@ -86,7 +82,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     }
   }
 
-  // Show notifications bottom sheet
   void _showNotifications() {
     showModalBottomSheet(
       context: context,
@@ -95,7 +90,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       builder: (context) => _NotificationBottomSheet(
         currentUser: widget.currentUser,
         onNotificationRead: () {
-          // Refresh notification count when a notification is read
           _loadNotificationCount();
         },
       ),
@@ -115,7 +109,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      appBar: _buildAppBar(theme), // Simplified AppBar
+      appBar: _buildAppBar(theme),
       body: Column(
         children: [
           _buildTabBar(theme),
@@ -130,12 +124,11 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     );
   }
 
-  // Simplified AppBar without substation selector and date picker
   PreferredSizeWidget _buildAppBar(ThemeData theme) {
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
-      toolbarHeight: 60, // Reduced height
+      toolbarHeight: 60,
       title: Text(
         'Subdivision Dashboard',
         style: TextStyle(
@@ -147,7 +140,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       leading: IconButton(
         icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
         onPressed: () {
-          print('🔍 DEBUG: Menu button pressed in SubdivisionDashboard');
           ModernAppDrawer.show(context, widget.currentUser);
         },
       ),
@@ -155,7 +147,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     );
   }
 
-  // Build notification bell icon with badge
   Widget _buildNotificationIcon(ThemeData theme) {
     return Container(
       margin: const EdgeInsets.only(right: 8),
@@ -173,7 +164,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
             ),
             tooltip: 'Notifications',
           ),
-          // Badge for unread count
           if (_unreadNotificationCount > 0)
             Positioned(
               right: 8,
@@ -311,26 +301,20 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     );
   }
 
-  // Updated tab views to pass accessible substations
   List<Widget> _buildTabViews(List<Substation> accessibleSubstations) {
     final List<Widget> views = [
       OperationsTab(
         currentUser: widget.currentUser,
-        accessibleSubstations: accessibleSubstations, // Pass substations
+        accessibleSubstations: accessibleSubstations,
       ),
       EnergyTab(
         currentUser: widget.currentUser,
         accessibleSubstations: accessibleSubstations,
       ),
-
       TrippingTab(
         currentUser: widget.currentUser,
         accessibleSubstations: accessibleSubstations,
       ),
-      // GenerateCustomReportScreen(
-      //   startDate: DateTime.now().subtract(const Duration(days: 7)),
-      //   endDate: DateTime.now(),
-      // ),
     ];
 
     if (widget.currentUser.role == UserRole.subdivisionManager) {
@@ -347,7 +331,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   }
 }
 
-// Notification Bottom Sheet Widget
 class _NotificationBottomSheet extends StatefulWidget {
   final AppUser currentUser;
   final VoidCallback onNotificationRead;
@@ -377,9 +360,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Load recent notifications (last 30 days)
       final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-
       final notificationsQuery = await FirebaseFirestore.instance
           .collection('userNotifications')
           .where('userId', isEqualTo: user.uid)
@@ -427,7 +408,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
           .doc(notificationId)
           .update({'read': true});
 
-      // Update local state
       setState(() {
         final index = _notifications.indexWhere((n) => n.id == notificationId);
         if (index != -1) {
@@ -435,7 +415,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
         }
       });
 
-      // Notify parent to refresh count
       widget.onNotificationRead();
     } catch (e) {
       print('Error marking notification as read: $e');
@@ -446,8 +425,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
-
-      // Mark all unread notifications as read
       final batch = FirebaseFirestore.instance.batch();
       final unreadNotifications = _notifications.where((n) => !n.isRead);
 
@@ -460,17 +437,59 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
 
       await batch.commit();
 
-      // Update local state
       setState(() {
         _notifications = _notifications
             .map((n) => n.copyWith(isRead: true))
             .toList();
       });
 
-      // Notify parent to refresh count
       widget.onNotificationRead();
     } catch (e) {
       print('Error marking all notifications as read: $e');
+    }
+  }
+
+  // NEW: Clear all notifications for this user
+  Future<void> _clearAllNotifications() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final notificationsQuery = await FirebaseFirestore.instance
+          .collection('userNotifications')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in notificationsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      setState(() {
+        _notifications.clear();
+      });
+
+      widget.onNotificationRead();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('All notifications cleared.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error clearing all notifications: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error clearing notifications.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -489,7 +508,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
       ),
       child: Column(
         children: [
-          // Header
+          // Header with Mark all read and Clear all
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -528,6 +547,17 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                       ),
                     ),
                   ),
+                if (_notifications.isNotEmpty)
+                  TextButton(
+                    onPressed: _clearAllNotifications,
+                    child: Text(
+                      'Clear all',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
                   icon: Icon(Icons.close, color: theme.colorScheme.onSurface),
@@ -536,7 +566,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
             ),
           ),
 
-          // Content
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -611,7 +640,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Event type icon
             Container(
               width: 40,
               height: 40,
@@ -630,8 +658,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
               ),
             ),
             const SizedBox(width: 12),
-
-            // Content
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -732,7 +758,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
   }
 }
 
-// Notification Data Model
 class NotificationData {
   final String id;
   final String title;

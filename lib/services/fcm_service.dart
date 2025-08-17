@@ -1,4 +1,5 @@
 // lib/services/fcm_service.dart
+import 'dart:io' show Platform;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -25,11 +26,27 @@ class FCMService {
       // Get token and save to Firestore
       await _saveTokenToFirestore();
 
-      // Listen for token refresh
-      FirebaseMessaging.instance.onTokenRefresh.listen(_saveTokenToFirestore);
+      // Listen for token refresh - IMPROVED
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        print('FCM Token refreshed: ${newToken.substring(0, 20)}...');
+        _saveTokenToFirestore(newToken);
+      });
+
+      // Initialize background handler
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
     } else {
       print('User declined or has not accepted permission');
     }
+  }
+
+  /// Background message handler (must be top-level function)
+  static Future<void> _firebaseMessagingBackgroundHandler(
+    RemoteMessage message,
+  ) async {
+    print('Handling background message: ${message.messageId}');
+    // Handle background notification here if needed
   }
 
   /// FIXED: Store tokens by userId instead of by token
@@ -107,7 +124,7 @@ class FCMService {
     }
   }
 
-  /// Check if user has active FCM token
+  /// Check if user has active FCM token - IMPROVED
   static Future<bool> hasActiveToken() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
@@ -115,8 +132,8 @@ class FCMService {
     try {
       final doc = await _firestore.collection('fcmTokens').doc(user.uid).get();
       if (doc.exists) {
-        final data = doc.data()!;
-        return data['active'] == true;
+        final data = doc.data();
+        return data != null && data['active'] == true;
       }
       return false;
     } catch (e) {
@@ -157,11 +174,19 @@ class FCMService {
     print('✅ FCM token cleaned up on logout');
   }
 
-  /// Get platform identifier
+  /// Get platform identifier - IMPROVED
   static String _getPlatform() {
-    // You can import dart:io and use Platform.isAndroid/Platform.isIOS
-    // For now, returning a generic identifier
-    return 'flutter';
+    try {
+      if (Platform.isAndroid) {
+        return 'android';
+      } else if (Platform.isIOS) {
+        return 'ios';
+      } else {
+        return 'flutter';
+      }
+    } catch (e) {
+      return 'flutter';
+    }
   }
 
   /// Clean up old/inactive tokens (optional maintenance method)
@@ -170,10 +195,6 @@ class FCMService {
     if (user == null) return;
 
     try {
-      // This could be called periodically to clean up old tokens
-      final now = DateTime.now();
-      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
-
       await _firestore.collection('fcmTokens').doc(user.uid).update({
         'lastCleanup': FieldValue.serverTimestamp(),
       });
