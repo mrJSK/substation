@@ -20,8 +20,164 @@ const messaging = getMessaging();
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 
 /**
- * Notification logic for open/close tripping or shutdown events
- * Handles both line/transformer default and user preferences
+ * Format timestamp to IST (Indian Standard Time)
+ */
+function formatTime(timestamp) {
+  if (!timestamp) return "N/A";
+
+  let date;
+  if (timestamp.toDate) {
+    date = timestamp.toDate();
+  } else if (timestamp instanceof Date) {
+    date = timestamp;
+  } else {
+    return "N/A";
+  }
+
+  // Convert to IST and format
+  const istString = date.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  // Parse and reformat to match desired format: "HH:MM, DD MMM YYYY"
+  const [datePart, timePart] = istString.split(", ");
+  const [day, month, year] = datePart.split(" ");
+
+  return `${timePart}, ${day} ${month} ${year}`;
+}
+
+/**
+ * MISSING FUNCTION 2: Calculate duration between start and end time
+ */
+function calculateEventDuration(startTime, endTime) {
+  if (!startTime || !endTime) return "";
+
+  let start = startTime.toDate ? startTime.toDate() : new Date(startTime);
+  let end = endTime.toDate ? endTime.toDate() : new Date(endTime);
+
+  const diffMs = end - start;
+  const minutes = Math.floor(diffMs / (1000 * 60));
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  } else {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  }
+}
+
+/**
+ * Enhanced message formatting with icons only (no images)
+ */
+function formatNotificationMessage(eventData, bayData, status) {
+  const assetName = bayData.name;
+  const substationName = eventData.substationName || "Unknown Substation";
+  const cause =
+    eventData.flagsCause && eventData.flagsCause.trim()
+      ? eventData.flagsCause.trim()
+      : null;
+  const flag = eventData.reasonForNonFeeder || "N/A";
+
+  let title = "";
+  let bodyLines = [];
+
+  if (status === "closed") {
+    // CLOSED EVENT
+    title = `✅ ${eventData.eventType} Restored: ${assetName}`;
+
+    bodyLines.push(`📍 Substation: ${substationName}`);
+    bodyLines.push(`🕐 Close Time: ${formatTime(eventData.endTime)}`);
+    bodyLines.push(`🚩 Flag: ${flag}`);
+
+    if (cause) {
+      bodyLines.push(`❗ Cause: ${cause}`);
+    }
+
+    // Add shutdown person details for shutdown events
+    if (eventData.eventType === "Shutdown") {
+      if (eventData.shutdownPersonName) {
+        bodyLines.push(`👤 Person: ${eventData.shutdownPersonName}`);
+      }
+      if (eventData.shutdownPersonDesignation) {
+        bodyLines.push(
+          `💼 Designation: ${eventData.shutdownPersonDesignation}`
+        );
+      }
+    }
+
+    // Add duration
+    const duration = calculateEventDuration(
+      eventData.startTime,
+      eventData.endTime
+    );
+    if (duration) {
+      bodyLines.push(`⏱️ Duration: ${duration}`);
+    }
+  } else {
+    // OPEN EVENT
+    const emoji = eventData.eventType === "Tripping" ? "⚡" : "🔌";
+    title = `${emoji} ${eventData.eventType}: ${assetName}`;
+
+    const timeLabel =
+      eventData.eventType === "Tripping" ? "Trip Time" : "Start Time";
+    bodyLines.push(`📍 Substation: ${substationName}`);
+    bodyLines.push(`🕐 ${timeLabel}: ${formatTime(eventData.startTime)}`);
+    bodyLines.push(`🚩 Flag: ${flag}`);
+
+    if (cause) {
+      bodyLines.push(`❗ Cause: ${cause}`);
+    }
+
+    // Add shutdown person details for shutdown events
+    if (eventData.eventType === "Shutdown") {
+      if (eventData.shutdownPersonName) {
+        bodyLines.push(`👤 Person: ${eventData.shutdownPersonName}`);
+      }
+      if (eventData.shutdownPersonDesignation) {
+        bodyLines.push(
+          `💼 Designation: ${eventData.shutdownPersonDesignation}`
+        );
+      }
+    }
+
+    // Add phase faults for tripping
+    if (
+      eventData.eventType === "Tripping" &&
+      eventData.phaseFaults &&
+      eventData.phaseFaults.length > 0
+    ) {
+      bodyLines.push(`⚡ Phases: ${eventData.phaseFaults.join(", ")}`);
+    }
+
+    // Add distance for line tripping
+    if (eventData.eventType === "Tripping" && eventData.distance) {
+      bodyLines.push(`📏 Distance: ${eventData.distance} km`);
+    }
+
+    // Add auto-reclose info for high voltage lines
+    if (
+      eventData.eventType === "Tripping" &&
+      eventData.hasAutoReclose === true
+    ) {
+      bodyLines.push(`🔄 Auto-reclose: Yes`);
+    }
+  }
+
+  return {
+    title,
+    body: bodyLines.join("\n"),
+  };
+}
+
+/**
+ * Complete enhanced notification logic - Icons only
  */
 async function sendEventNotification(eventData, eventId, status) {
   const bayDoc = await db.collection("bays").doc(eventData.bayId).get();
@@ -34,7 +190,7 @@ async function sendEventNotification(eventData, eventId, status) {
   const bayType = (bayData.bayType || "").toLowerCase();
 
   console.log(
-    `Processing ${eventData.eventType} ${status} for bay: ${bayData.name}, bayType: ${bayType}, voltage: ${voltageLevel}kV`
+    `Processing ${eventData.eventType} ${status} for bay: ${bayData.name} at ${eventData.substationName}, bayType: ${bayType}, voltage: ${voltageLevel}kV`
   );
 
   // User hierarchy query
@@ -42,7 +198,7 @@ async function sendEventNotification(eventData, eventId, status) {
     eventData.substationId
   );
 
-  // User filtering based on preferences and critical bay type
+  // User filtering based on preferences
   const recipientTokens = await filterUsersForNotification(
     eventData,
     bayData,
@@ -57,21 +213,16 @@ async function sendEventNotification(eventData, eventId, status) {
   }
 
   console.log(`Sending notification to ${recipientTokens.length} devices`);
-  // Notification title/body
-  let title = "";
-  let body = "";
-  if (status === "closed") {
-    title = `✅ ${eventData.eventType} Event Closed`;
-    body = `${bayData.name} at ${eventData.substationName} - ${voltageLevel}kV (Resolved)`;
-  } else {
-    title =
-      eventData.eventType === "Tripping"
-        ? `⚡ Tripping Alert`
-        : `🔌 Shutdown Alert`;
-    body = `${bayData.name} at ${eventData.substationName} - ${voltageLevel}kV`;
-  }
+
+  // Enhanced professional messaging with icons only
+  const { title, body } = formatNotificationMessage(eventData, bayData, status);
+
   const message = {
-    notification: { title, body },
+    notification: {
+      title,
+      body,
+      // Removed icon and badge properties - using emojis only
+    },
     data: {
       eventId,
       eventType: eventData.eventType.toLowerCase(),
@@ -82,14 +233,41 @@ async function sendEventNotification(eventData, eventId, status) {
       bayType: bayData.bayType || "",
       voltageLevel: bayData.voltageLevel || "",
       startTime: eventData.startTime?.toDate?.()?.toISOString?.() || "",
-      status, // open/closed
+      endTime: eventData.endTime?.toDate?.()?.toISOString?.() || "",
+      status,
+      flagsCause: eventData.flagsCause || "",
+      reasonForNonFeeder: eventData.reasonForNonFeeder || "",
+      hasAutoReclose: eventData.hasAutoReclose?.toString() || "",
+      phaseFaults: eventData.phaseFaults
+        ? JSON.stringify(eventData.phaseFaults)
+        : "",
+      distance: eventData.distance || "",
       shutdownType: eventData.shutdownType || "",
+      shutdownPersonName: eventData.shutdownPersonName || "",
+      shutdownPersonDesignation: eventData.shutdownPersonDesignation || "",
+      timestamp: new Date().toISOString(),
       click_action: "FLUTTER_NOTIFICATION_CLICK",
+    },
+    android: {
+      priority: eventData.eventType === "Tripping" ? "high" : "normal",
+      notification: {
+        channelId: getNotificationChannel(eventData.eventType, status),
+        color: getNotificationColor(eventData.eventType, status),
+        sound: eventData.eventType === "Tripping" ? "alert.wav" : "default",
+        // Removed icon property - using emojis in title/body
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          category: getNotificationChannel(eventData.eventType, status),
+          sound: eventData.eventType === "Tripping" ? "alert.wav" : "default",
+        },
+      },
     },
   };
 
-  // ✅ FIXED: Individual sends to avoid /batch endpoint error
-  const responses = [];
+  // Individual sends to avoid batch errors
   let successCount = 0;
   let failureCount = 0;
 
@@ -98,11 +276,12 @@ async function sendEventNotification(eventData, eventId, status) {
       const individualMessage = {
         notification: message.notification,
         data: message.data,
-        token: recipientTokens[i], // Send to individual token
+        android: message.android,
+        apns: message.apns,
+        token: recipientTokens[i],
       };
 
       const response = await messaging.send(individualMessage);
-      responses.push({ success: true, messageId: response, index: i });
       successCount++;
       console.log(
         `✅ Sent to token ${i + 1}/${recipientTokens.length}: ${recipientTokens[
@@ -110,7 +289,6 @@ async function sendEventNotification(eventData, eventId, status) {
         ].substring(0, 20)}...`
       );
     } catch (error) {
-      responses.push({ success: false, error, index: i, response: { error } });
       failureCount++;
       console.log(
         `❌ Failed to send to token ${i + 1}/${recipientTokens.length}:`,
@@ -122,13 +300,17 @@ async function sendEventNotification(eventData, eventId, status) {
   console.log(
     `✅ Notification sent to ${successCount} devices (${failureCount} failed)`
   );
+}
 
-  // Handle failures if any
-  if (failureCount > 0) {
-    const failures = responses.filter((r) => !r.success);
-    console.log("Failed sends:", failures.length);
-    await cleanupInvalidTokens(failures, recipientTokens);
-  }
+// Utility functions
+function getNotificationColor(eventType, status) {
+  if (status === "closed") return "#00C851"; // Green
+  return eventType === "Tripping" ? "#FF3547" : "#FF8800"; // Red/Orange
+}
+
+function getNotificationChannel(eventType, status) {
+  if (status === "closed") return "status_update";
+  return eventType === "Tripping" ? "emergency" : "maintenance";
 }
 
 /**
@@ -141,7 +323,7 @@ exports.sendEventOpenedNotification = onDocumentCreated(
       console.log("No data in document");
       return;
     }
-    const eventData = event.data.data(); // ✅ FIXED: event.data is DocumentSnapshot
+    const eventData = event.data.data();
     // Tripping or Shutdown only
     if (
       eventData.eventType !== "Tripping" &&
@@ -175,6 +357,8 @@ exports.sendEventClosedNotification = onDocumentUpdated(
     await sendEventNotification(after, event.data.after.id, "closed");
   }
 );
+
+// ... [Rest of your existing functions: getEligibleUsersForSubstation, parseVoltageLevel, filterUsersForNotification, cleanupInvalidTokens remain exactly the same] ...
 
 /**
  * Hierarchical user fetch for targeting notifications
@@ -311,9 +495,6 @@ function parseVoltageLevel(voltageString) {
 
 /**
  * Preference-aware user filtering
- * - Users are by default subscribed only to "Line" and "Transformer" (see below)
- * - If a user disables either via their preferences, no notification is sent for that bay type
- * - Other bay types strictly require explicit subscription
  */
 async function filterUsersForNotification(
   eventData,
