@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/reading_models.dart';
+import '../../models/logsheet_models.dart';
 import '../../utils/snackbar_utils.dart';
 import 'logsheet_entry_screen.dart';
 
@@ -36,7 +37,17 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   // Track completion status for each bay
   Map<String, bool> _bayCompletionStatus = {};
+  Map<String, bool> _bayEnergyCompletionStatus = {};
   Map<String, int> _bayMandatoryFieldsCount = {};
+  Map<String, Map<String, dynamic>> _bayLastReadings = {};
+
+  // Required energy fields for calculation
+  static const List<String> REQUIRED_ENERGY_FIELDS = [
+    'Current Day Reading (Import)',
+    'Previous Day Reading (Import)',
+    'Current Day Reading (Export)',
+    'Previous Day Reading (Export)',
+  ];
 
   @override
   void initState() {
@@ -95,6 +106,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
       if (_isDailyReadingAvailable) {
         await _checkDailyReadingCompletion();
+        await _loadLastReadingsForAutoPopulate();
       }
 
       _animationController.forward();
@@ -179,6 +191,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
   Future<void> _checkDailyReadingCompletion() async {
     try {
       _bayCompletionStatus.clear();
+      _bayEnergyCompletionStatus.clear();
 
       // Check completion for each bay individually
       for (var bay in _baysWithDailyAssignments) {
@@ -209,25 +222,140 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
             .limit(1)
             .get();
 
-        _bayCompletionStatus[bay.id] = logsheetQuery.docs.isNotEmpty;
+        bool isComplete = false;
+        bool hasEnergyReadings = false;
+
+        if (logsheetQuery.docs.isNotEmpty) {
+          final entry = LogsheetEntry.fromFirestore(logsheetQuery.docs.first);
+          isComplete = true;
+
+          // Check if all required energy fields are present and have valid values
+          hasEnergyReadings = REQUIRED_ENERGY_FIELDS.every((fieldName) {
+            final value = entry.values[fieldName];
+            if (value == null) return false;
+
+            final stringValue = value.toString().trim();
+            if (stringValue.isEmpty) return false;
+
+            // Check if it's a valid number
+            final numValue = double.tryParse(stringValue);
+            return numValue != null && numValue >= 0;
+          });
+        }
+
+        _bayCompletionStatus[bay.id] = isComplete;
+        _bayEnergyCompletionStatus[bay.id] = hasEnergyReadings;
       }
     } catch (e) {
       print('Error checking daily reading completion: $e');
       for (var bay in _baysWithDailyAssignments) {
         _bayCompletionStatus[bay.id] = false;
+        _bayEnergyCompletionStatus[bay.id] = false;
       }
     }
+  }
+
+  Future<void> _loadLastReadingsForAutoPopulate() async {
+    try {
+      _bayLastReadings.clear();
+
+      // Get previous day for auto-populate
+      final previousDay = widget.selectedDate.subtract(const Duration(days: 1));
+      final startOfPreviousDay = DateTime(
+        previousDay.year,
+        previousDay.month,
+        previousDay.day,
+      );
+      final endOfPreviousDay = DateTime(
+        previousDay.year,
+        previousDay.month,
+        previousDay.day,
+        23,
+        59,
+        59,
+      );
+
+      for (var bay in _baysWithDailyAssignments) {
+        try {
+          final yesterdaySnapshot = await FirebaseFirestore.instance
+              .collection('logsheetEntries')
+              .where('bayId', isEqualTo: bay.id)
+              .where('frequency', isEqualTo: 'daily')
+              .where(
+                'readingTimestamp',
+                isGreaterThanOrEqualTo: Timestamp.fromDate(startOfPreviousDay),
+              )
+              .where(
+                'readingTimestamp',
+                isLessThanOrEqualTo: Timestamp.fromDate(endOfPreviousDay),
+              )
+              .orderBy('readingTimestamp', descending: true)
+              .limit(1)
+              .get();
+
+          if (yesterdaySnapshot.docs.isNotEmpty) {
+            final yesterdayEntry = LogsheetEntry.fromFirestore(
+              yesterdaySnapshot.docs.first,
+            );
+            _bayLastReadings[bay.id] = {
+              'Previous Day Reading (Import)':
+                  yesterdayEntry.values['Current Day Reading (Import)'],
+              'Previous Day Reading (Export)':
+                  yesterdayEntry.values['Current Day Reading (Export)'],
+              'lastReadingDate': DateFormat('dd-MMM-yyyy').format(previousDay),
+            };
+          }
+        } catch (e) {
+          print('Error loading last reading for bay ${bay.id}: $e');
+        }
+      }
+    } catch (e) {
+      print('Error loading last readings for auto-populate: $e');
+    }
+  }
+
+  Future<bool> validateEnergyDataForCalculation() async {
+    final incompleteBays = <String>[];
+
+    for (var bay in _baysWithDailyAssignments) {
+      if (!(_bayEnergyCompletionStatus[bay.id] ?? false)) {
+        incompleteBays.add(bay.name);
+      }
+    }
+
+    if (incompleteBays.isNotEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Energy calculation incomplete. Missing energy readings for: ${incompleteBays.join(', ')}',
+        isError: true,
+      );
+      return false;
+    }
+
+    SnackBarUtils.showSnackBar(
+      context,
+      'All energy readings are complete and ready for calculation!',
+    );
+    return true;
   }
 
   Widget _buildBayCard(Bay bay, int index) {
     final theme = Theme.of(context);
     final bool isComplete = _bayCompletionStatus[bay.id] ?? false;
+    final bool hasEnergyReadings = _bayEnergyCompletionStatus[bay.id] ?? false;
     final int mandatoryFields = _bayMandatoryFieldsCount[bay.id] ?? 0;
+    final bool hasLastReading = _bayLastReadings.containsKey(bay.id);
 
-    // Status colors
-    Color statusColor = isComplete ? Colors.green : Colors.orange;
-    IconData statusIcon = isComplete ? Icons.check_circle : Icons.pending;
-    String statusText = isComplete ? 'Complete' : 'Pending';
+    // Status colors based on energy completion
+    Color statusColor = hasEnergyReadings
+        ? Colors.green
+        : (isComplete ? Colors.blue : Colors.orange);
+    IconData statusIcon = hasEnergyReadings
+        ? Icons.check_circle
+        : (isComplete ? Icons.assignment_turned_in : Icons.pending);
+    String statusText = hasEnergyReadings
+        ? 'Energy Complete'
+        : (isComplete ? 'Readings Complete' : 'Pending');
 
     return AnimatedBuilder(
       animation: _animationController,
@@ -272,6 +400,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                                   readingHour: null,
                                   currentUser: widget.currentUser,
                                   forceReadOnly: false,
+                                  autoPopulateData:
+                                      _bayLastReadings[bay
+                                          .id], // Pass auto-populate data
                                 ),
                               ),
                             )
@@ -280,107 +411,142 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                     : null,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
                     children: [
-                      // Bay Icon
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          _getBayTypeIcon(bay.bayType),
-                          color: statusColor,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                      Row(
+                        children: [
+                          // Bay Icon
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              _getBayTypeIcon(bay.bayType),
+                              color: statusColor,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
 
-                      // Bay Details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              bay.name,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Voltage Level: ${bay.voltageLevel}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.6,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
+                          // Bay Details
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  Icons.assignment,
-                                  size: 16,
-                                  color: theme.colorScheme.onSurface
-                                      .withOpacity(0.6),
-                                ),
-                                const SizedBox(width: 4),
                                 Text(
-                                  '$mandatoryFields mandatory fields',
+                                  bay.name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Voltage Level: ${bay.voltageLevel}',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 14,
                                     color: theme.colorScheme.onSurface
                                         .withOpacity(0.6),
                                   ),
                                 ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.assignment,
+                                      size: 16,
+                                      color: theme.colorScheme.onSurface
+                                          .withOpacity(0.6),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '$mandatoryFields mandatory fields',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.6),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-
-                      // Status Badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: statusColor.withOpacity(0.3),
-                            width: 1,
                           ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(statusIcon, size: 14, color: statusColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              statusText,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: statusColor,
+
+                          // Status Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: statusColor.withOpacity(0.3),
+                                width: 1,
                               ),
                             ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(statusIcon, size: 14, color: statusColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  statusText,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: statusColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          if (_isDailyReadingAvailable) ...[
+                            const SizedBox(width: 12),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              color: theme.colorScheme.primary,
+                              size: 16,
+                            ),
                           ],
-                        ),
+                        ],
                       ),
 
-                      if (_isDailyReadingAvailable) ...[
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.arrow_forward_ios,
-                          color: theme.colorScheme.primary,
-                          size: 16,
+                      // Auto-populate indicator
+                      if (hasLastReading && !isComplete) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                size: 16,
+                                color: Colors.blue.shade700,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Previous readings will be auto-populated from ${_bayLastReadings[bay.id]!['lastReadingDate']}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ],
@@ -416,6 +582,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
   Widget _buildHeader() {
     final theme = Theme.of(context);
     final int completedBays = _bayCompletionStatus.values
+        .where((status) => status)
+        .length;
+    final int energyCompleteBays = _bayEnergyCompletionStatus.values
         .where((status) => status)
         .length;
     final int totalBays = _baysWithDailyAssignments.length;
@@ -475,6 +644,8 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
           ),
           if (_isDailyReadingAvailable && totalBays > 0) ...[
             const SizedBox(height: 16),
+
+            // General Progress
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -493,7 +664,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Progress: $completedBays of $totalBays bays completed',
+                    'General Progress: $completedBays of $totalBays bays',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -515,6 +686,63 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                 ],
               ),
             ),
+
+            const SizedBox(height: 8),
+
+            // Energy Progress
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.electric_bolt, color: Colors.green, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Energy Progress: $energyCompleteBays of $totalBays bays',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: LinearProgressIndicator(
+                      value: totalBays > 0 ? energyCompleteBays / totalBays : 0,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Validation Button
+            if (energyCompleteBays == totalBays && totalBays > 0) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: validateEnergyDataForCalculation,
+                  icon: const Icon(Icons.check_circle, size: 20),
+                  label: const Text('Validate Energy Data for Calculation'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -523,8 +751,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   @override
   Widget build(BuildContext context) {
-    Theme.of(context);
-
     if (widget.substationId.isEmpty) {
       return const Center(
         child: Padding(

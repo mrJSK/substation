@@ -1158,6 +1158,36 @@ class _BayFormScreenState extends State<BayFormScreen>
                       },
                       validator: (v) => v == null ? 'Required' : null,
                     ),
+                    const SizedBox(height: 16),
+                    // ADD MULTIPLYING FACTOR HERE - MANDATORY FOR ALL BAYS
+                    _buildTextField(
+                      controller: _multiplyingFactorController,
+                      label: 'Multiplying Factor*',
+                      icon: const Icon(Icons.calculate, color: Colors.blue),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Multiplying factor is required';
+                        }
+                        final parsed = double.tryParse(value);
+                        if (parsed == null || parsed <= 0) {
+                          return 'Enter a valid positive number';
+                        }
+                        return null;
+                      },
+                    ),
+                    // Add helper text to explain the purpose
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, top: 4),
+                      child: Text(
+                        'Used for energy calculations (typically 1.0 for direct readings)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -1474,40 +1504,47 @@ class _BayFormScreenState extends State<BayFormScreen>
                         ),
                         const SizedBox(height: 24),
                       ],
-                      _buildSection(
-                        title: 'Additional Details (Optional)',
-                        icon: Icons.info_outline,
-                        children: [
-                          _buildTextField(
-                            controller: _descriptionController,
-                            label: 'Description',
-                            icon: const Icon(
-                              Icons.description,
-                              color: Colors.grey,
+                      if (_selectedBayType == 'Line' ||
+                          _selectedBayType == 'Feeder') ...[
+                        _buildSection(
+                          title: 'Additional Details (Optional)',
+                          icon: Icons.info_outline,
+                          children: [
+                            _buildTextField(
+                              controller: _descriptionController,
+                              label: 'Description',
+                              icon: const Icon(
+                                Icons.description,
+                                color: Colors.grey,
+                              ),
+                              maxLines: 3,
                             ),
-                            maxLines: 3,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            controller: _landmarkController,
-                            label: 'Landmark',
-                            icon: const Icon(Icons.flag, color: Colors.grey),
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            controller: _contactNumberController,
-                            label: 'Contact Number',
-                            icon: const Icon(Icons.phone, color: Colors.grey),
-                            keyboardType: TextInputType.phone,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            controller: _contactPersonController,
-                            label: 'Contact Person',
-                            icon: const Icon(Icons.person, color: Colors.grey),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              controller: _landmarkController,
+                              label: 'Landmark',
+                              icon: const Icon(Icons.flag, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              controller: _contactNumberController,
+                              label: 'Contact Number',
+                              icon: const Icon(Icons.phone, color: Colors.grey),
+                              keyboardType: TextInputType.phone,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              controller: _contactPersonController,
+                              label: 'Contact Person',
+                              icon: const Icon(
+                                Icons.person,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
                     ],
                   ),
                   crossFadeState: _selectedBayType != null

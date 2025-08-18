@@ -11,7 +11,6 @@ import '../../equipment_icons/energy_meter_icon.dart';
 import '../../equipment_icons/feeder_icon.dart';
 import '../../equipment_icons/circuit_breaker_icon.dart';
 
-// Enhanced Equipment Icon Widget matching BayReadingsStatusScreen style
 class _EquipmentIcon extends StatelessWidget {
   final String type;
   final double size;
@@ -104,6 +103,7 @@ class LogsheetEntryScreen extends StatefulWidget {
   final int? readingHour;
   final AppUser currentUser;
   final bool forceReadOnly;
+  final Map<String, dynamic>? autoPopulateData;
 
   const LogsheetEntryScreen({
     super.key,
@@ -115,7 +115,7 @@ class LogsheetEntryScreen extends StatefulWidget {
     this.readingHour,
     required this.currentUser,
     this.forceReadOnly = false,
-    int? selectedHour,
+    this.autoPopulateData,
   });
 
   @override
@@ -319,6 +319,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         _existingLogsheetEntry?.values ?? {};
     final Map<String, dynamic> previousValues =
         _previousLogsheetEntry?.values ?? {};
+    final Map<String, dynamic> autoPopulateMap = widget.autoPopulateData ?? {};
 
     for (var field in _filteredReadingFields) {
       final fieldName = field.name;
@@ -326,24 +327,28 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       dynamic value = existingValues[fieldName];
 
       if (_existingLogsheetEntry == null) {
-        if (fieldName.startsWith('Previous Day Reading') &&
-            previousValues.containsKey(
-              fieldName.replaceFirst('Previous Day', 'Current Day'),
-            )) {
-          value =
-              previousValues[fieldName.replaceFirst(
-                'Previous Day',
-                'Current Day',
-              )];
-        } else if (fieldName.startsWith('Previous Month Reading') &&
-            previousValues.containsKey(
-              fieldName.replaceFirst('Previous Month', 'Current Month'),
-            )) {
-          value =
-              previousValues[fieldName.replaceFirst(
-                'Previous Month',
-                'Current Month',
-              )];
+        if (fieldName.startsWith('Previous Day Reading')) {
+          if (autoPopulateMap.containsKey(fieldName)) {
+            value = autoPopulateMap[fieldName];
+          } else if (previousValues.containsKey(
+            fieldName.replaceFirst('Previous Day', 'Current Day'),
+          )) {
+            value =
+                previousValues[fieldName.replaceFirst(
+                  'Previous Day',
+                  'Current Day',
+                )];
+          }
+        } else if (fieldName.startsWith('Previous Month Reading')) {
+          if (previousValues.containsKey(
+            fieldName.replaceFirst('Previous Month', 'Current Month'),
+          )) {
+            value =
+                previousValues[fieldName.replaceFirst(
+                  'Previous Month',
+                  'Current Month',
+                )];
+          }
         }
       }
 
@@ -570,7 +575,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     );
   }
 
-  // Enhanced reading field input to match BayReadingsStatusScreen style
   Widget _buildReadingFieldInput(ReadingField field) {
     final theme = Theme.of(context);
     final String fieldName = field.name;
@@ -591,7 +595,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     final String? unit = field.unit;
     final List<String>? options = field.options;
 
-    // Container styling matching BayReadingsStatusScreen
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -1071,7 +1074,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Header matching BayReadingsStatusScreen style
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -1161,8 +1163,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                     ],
                   ),
                 ),
-
-                // Content
                 Expanded(
                   child: _filteredReadingFields.isEmpty
                       ? Center(
@@ -1207,7 +1207,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                             itemCount:
                                 _filteredReadingFields.length +
                                 (isReadOnlyView ? 1 : 0) +
-                                1, // +1 for bottom padding
+                                1,
                             itemBuilder: (context, index) {
                               if (index == _filteredReadingFields.length) {
                                 if (isReadOnlyView) {
@@ -1244,15 +1244,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                     ),
                                   );
                                 } else {
-                                  return const SizedBox(
-                                    height: 100,
-                                  ); // Bottom padding
+                                  return const SizedBox(height: 100);
                                 }
                               } else if (index ==
                                   _filteredReadingFields.length + 1) {
-                                return const SizedBox(
-                                  height: 100,
-                                ); // Bottom padding
+                                return const SizedBox(height: 100);
                               }
 
                               return _buildReadingFieldInput(

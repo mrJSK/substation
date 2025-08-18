@@ -164,6 +164,15 @@ class _EnergyTabState extends State<EnergyTab> {
     }
   }
 
+  double _getVoltageLevelValue(String voltageLevel) {
+    final regex = RegExp(r'(\d+(?:\.\d+)?)');
+    final match = regex.firstMatch(voltageLevel);
+    if (match != null) {
+      return double.tryParse(match.group(1)!) ?? 0.0;
+    }
+    return 0.0;
+  }
+
   Future<void> _calculateEnergyLosses() async {
     final DateTime queryStartDate = DateTime(
       _startDate!.year,
@@ -199,6 +208,38 @@ class _EnergyTabState extends State<EnergyTab> {
         .map((doc) => LogsheetEntry.fromFirestore(doc))
         .toList();
 
+    Map<String, LogsheetEntry> previousDayEntries = {};
+    if (_startDate == _endDate) {
+      final prevDay = _startDate!.subtract(const Duration(days: 1));
+      final prevStart = DateTime(prevDay.year, prevDay.month, prevDay.day);
+      final prevEnd = DateTime(
+        prevDay.year,
+        prevDay.month,
+        prevDay.day,
+        23,
+        59,
+        59,
+        999,
+      );
+      final prevSnapshot = await FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('substationId', isEqualTo: _selectedSubstation!.id)
+          .where('frequency', isEqualTo: 'daily')
+          .where(
+            'readingTimestamp',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(prevStart),
+          )
+          .where(
+            'readingTimestamp',
+            isLessThanOrEqualTo: Timestamp.fromDate(prevEnd),
+          )
+          .get();
+      for (var doc in prevSnapshot.docs) {
+        final entry = LogsheetEntry.fromFirestore(doc);
+        previousDayEntries[entry.bayId] = entry;
+      }
+    }
+
     _bayEnergyData.clear();
     _substationAbstract.clear();
     _busbarAbstract.clear();
@@ -227,11 +268,15 @@ class _EnergyTabState extends State<EnergyTab> {
 
     for (var bay in _baysMap.values) {
       final bayEntries = entries.where((e) => e.bayId == bay.id).toList();
-      final bayData = _calculateBayLosses(bay, bayEntries);
-
+      final bayData = _calculateBayLosses(
+        bay,
+        bayEntries,
+        _startDate!,
+        _endDate!,
+        previousDayEntries[bay.id],
+      );
       if (bayData.isNotEmpty) {
         _bayEnergyData[bay.id] = bayData;
-
         if (bay.bayType == 'Busbar') {
           final busKey = '${bay.voltageLevel} BUS';
           if (_busbarAbstract.containsKey(busKey)) {
@@ -262,101 +307,114 @@ class _EnergyTabState extends State<EnergyTab> {
     _substationAbstract = _calculateSubstationTotalColumn();
   }
 
-  Map<String, double> _calculateSubstationTotalColumn() {
-    double totalImportEnergy = 0.0;
-    double totalExportEnergy = 0.0;
-    double totalLosses = 0.0;
-
-    _busbarAbstract.forEach((busName, busData) {
-      totalImportEnergy += busData['totalImport'] ?? 0.0;
-      totalExportEnergy += busData['totalExport'] ?? 0.0;
-      totalLosses += busData['totalLosses'] ?? 0.0;
-    });
-
-    if (totalImportEnergy == 0.0 && totalExportEnergy == 0.0) {
-      _bayEnergyData.forEach((bayId, bayData) {
-        totalImportEnergy += bayData['import'] ?? 0.0;
-        totalExportEnergy += bayData['export'] ?? 0.0;
-        totalLosses += bayData['losses'] ?? 0.0;
-      });
-    }
-
-    final double lossPercentage = totalImportEnergy > 0
-        ? (totalLosses / totalImportEnergy) * 100
-        : 0.0;
-
-    final double efficiency = totalImportEnergy > 0
-        ? (totalExportEnergy / totalImportEnergy) * 100
-        : 0.0;
-
-    return {
-      'totalImport': totalImportEnergy,
-      'totalExport': totalExportEnergy,
-      'totalLosses': totalLosses,
-      'lossPercentage': lossPercentage,
-      'efficiency': efficiency,
-      'activeBays': _bayEnergyData.length.toDouble(),
-    };
-  }
-
-  double _getVoltageLevelValue(String voltageLevel) {
-    final regex = RegExp(r'(\d+(?:\.\d+)?)');
-    final match = regex.firstMatch(voltageLevel);
-    if (match != null) {
-      return double.tryParse(match.group(1)!) ?? 0.0;
-    }
-    return 0.0;
-  }
-
   Map<String, double> _calculateBayLosses(
     Bay bay,
     List<LogsheetEntry> entries,
+    DateTime startDate,
+    DateTime endDate,
+    LogsheetEntry? previousDayEntry,
   ) {
     if (entries.isEmpty) return {};
-
     entries.sort((a, b) => a.readingTimestamp.compareTo(b.readingTimestamp));
-
     double totalImport = 0.0;
     double totalExport = 0.0;
-
-    LogsheetEntry? previousEntry;
-    for (final entry in entries) {
-      if (previousEntry != null) {
-        final duration = entry.readingTimestamp
-            .toDate()
-            .difference(previousEntry.readingTimestamp.toDate())
-            .inHours;
-
-        if (duration > 0 && duration <= 48) {
-          entry.values.forEach((key, value) {
-            final keyLower = key.toLowerCase();
-
-            if (keyLower.contains('energy') || keyLower.contains('kwh')) {
-              final currentVal = _parseNumericValue(value);
-              final previousVal = _parseNumericValue(
-                previousEntry!.values[key],
-              );
-
-              if (currentVal != null && previousVal != null) {
-                final energyDiff = max(0, currentVal - previousVal);
-                if (keyLower.contains('import') ||
-                    keyLower.contains('received')) {
-                  totalImport += energyDiff;
-                } else if (keyLower.contains('export') ||
-                    keyLower.contains('sent')) {
-                  totalExport += energyDiff;
-                }
-              }
-            }
-          });
+    double mf = bay.multiplyingFactor ?? 1.0;
+    if (startDate.isAtSameMomentAs(endDate)) {
+      final todayEntry = entries.where((entry) {
+        final entryDate = entry.readingTimestamp.toDate();
+        return entryDate.year == startDate.year &&
+            entryDate.month == startDate.month &&
+            entryDate.day == startDate.day;
+      }).lastOrNull;
+      double? currentImport = 0.0,
+          previousImport = 0.0,
+          currentExport = 0.0,
+          previousExport = 0.0;
+      if (todayEntry != null) {
+        currentImport =
+            _parseNumericValue(
+              todayEntry.values['Current Day Reading (Import)'],
+            ) ??
+            0.0;
+        currentExport =
+            _parseNumericValue(
+              todayEntry.values['Current Day Reading (Export)'],
+            ) ??
+            0.0;
+        if (previousDayEntry != null) {
+          previousImport =
+              _parseNumericValue(
+                previousDayEntry.values['Current Day Reading (Import)'],
+              ) ??
+              0.0;
+          previousExport =
+              _parseNumericValue(
+                previousDayEntry.values['Current Day Reading (Export)'],
+              ) ??
+              0.0;
+        } else {
+          previousImport =
+              _parseNumericValue(
+                todayEntry.values['Previous Day Reading (Import)'],
+              ) ??
+              0.0;
+          previousExport =
+              _parseNumericValue(
+                todayEntry.values['Previous Day Reading (Export)'],
+              ) ??
+              0.0;
+        }
+        totalImport = max(0, currentImport - previousImport) * mf;
+        totalExport = max(0, currentExport - previousExport) * mf;
+      }
+    } else {
+      LogsheetEntry? startEntry;
+      LogsheetEntry? endEntry;
+      for (var entry in entries) {
+        final entryDate = entry.readingTimestamp.toDate();
+        if (entryDate.year == startDate.year &&
+            entryDate.month == startDate.month &&
+            entryDate.day == startDate.day) {
+          startEntry = entry;
+          break;
         }
       }
-      previousEntry = entry;
+      for (var entry in entries.reversed) {
+        final entryDate = entry.readingTimestamp.toDate();
+        if (entryDate.year == endDate.year &&
+            entryDate.month == endDate.month &&
+            entryDate.day == endDate.day) {
+          endEntry = entry;
+          break;
+        }
+      }
+      if (startEntry != null && endEntry != null) {
+        final startImport =
+            _parseNumericValue(
+              startEntry.values['Current Day Reading (Import)'],
+            ) ??
+            0.0;
+        final endImport =
+            _parseNumericValue(
+              endEntry.values['Current Day Reading (Import)'],
+            ) ??
+            0.0;
+        final startExport =
+            _parseNumericValue(
+              startEntry.values['Current Day Reading (Export)'],
+            ) ??
+            0.0;
+        final endExport =
+            _parseNumericValue(
+              endEntry.values['Current Day Reading (Export)'],
+            ) ??
+            0.0;
+        totalImport = max(0, endImport - startImport) * mf;
+        totalExport = max(0, endExport - startExport) * mf;
+      }
     }
-
     final losses = totalImport - totalExport;
     final lossPercentage = totalImport > 0 ? (losses / totalImport) * 100 : 0.0;
-
     return {
       'import': totalImport,
       'export': totalExport,
@@ -373,6 +431,38 @@ class _EnergyTabState extends State<EnergyTab> {
       return _parseNumericValue(value['value']);
     }
     return null;
+  }
+
+  Map<String, double> _calculateSubstationTotalColumn() {
+    double totalImportEnergy = 0.0;
+    double totalExportEnergy = 0.0;
+    double totalLosses = 0.0;
+    _busbarAbstract.forEach((busName, busData) {
+      totalImportEnergy += busData['totalImport'] ?? 0.0;
+      totalExportEnergy += busData['totalExport'] ?? 0.0;
+      totalLosses += busData['totalLosses'] ?? 0.0;
+    });
+    if (totalImportEnergy == 0.0 && totalExportEnergy == 0.0) {
+      _bayEnergyData.forEach((bayId, bayData) {
+        totalImportEnergy += bayData['import'] ?? 0.0;
+        totalExportEnergy += bayData['export'] ?? 0.0;
+        totalLosses += bayData['losses'] ?? 0.0;
+      });
+    }
+    final double lossPercentage = totalImportEnergy > 0
+        ? (totalLosses / totalImportEnergy) * 100
+        : 0.0;
+    final double efficiency = totalImportEnergy > 0
+        ? (totalExportEnergy / totalImportEnergy) * 100
+        : 0.0;
+    return {
+      'totalImport': totalImportEnergy,
+      'totalExport': totalExportEnergy,
+      'totalLosses': totalLosses,
+      'lossPercentage': lossPercentage,
+      'efficiency': efficiency,
+      'activeBays': _bayEnergyData.length.toDouble(),
+    };
   }
 
   @override
@@ -1553,58 +1643,433 @@ class _EnergyTabState extends State<EnergyTab> {
 
   Widget _buildBayReadingsTable(ThemeData theme) {
     List<DataRow> rows = [];
+    int rowIndex = 0;
+
     _groupedEntriesForViewer.forEach((bayId, datesMap) {
       final bay = _viewerBaysMap[bayId];
       datesMap.forEach((date, entries) {
         for (var entry in entries) {
           rows.add(
             DataRow(
+              color: MaterialStateColor.resolveWith(
+                (states) =>
+                    rowIndex % 2 == 0 ? Colors.grey.shade50 : Colors.white,
+              ),
               cells: [
-                DataCell(Text(bay?.name ?? 'Unknown')),
-                DataCell(Text(DateFormat('MMM dd, yyyy').format(date))),
                 DataCell(
-                  Text(
-                    DateFormat(
-                      'HH:mm',
-                    ).format(entry.readingTimestamp.toDate().toLocal()),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 8,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          bay?.name ?? 'Unknown',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: theme.colorScheme.primary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (bay?.bayType != null)
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.secondary.withOpacity(
+                                0.1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              bay!.bayType,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: theme.colorScheme.secondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 DataCell(
                   Container(
-                    width: 300,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          DateFormat('MMM dd').format(date),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('yyyy').format(date),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                DataCell(
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Text(
+                        DateFormat(
+                          'HH:mm',
+                        ).format(entry.readingTimestamp.toDate().toLocal()),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                DataCell(
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     child: _buildSimpleReadingsDisplay(entry),
                   ),
                 ),
               ],
             ),
           );
+          rowIndex++;
         }
       });
     });
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('Bay')),
-          DataColumn(label: Text('Date')),
-          DataColumn(label: Text('Time')),
-          DataColumn(label: Text('Readings')),
+    if (rows.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'No readings found',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 600,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          // Custom Header that scrolls with content
+          Expanded(
+            child: Scrollbar(
+              thickness: 6,
+              radius: const Radius.circular(3),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 800),
+                  child: Column(
+                    children: [
+                      // Header Row
+                      Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withOpacity(0.1),
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Colors.grey.shade300,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            // Bay Column Header
+                            Container(
+                              width: 300,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  right: BorderSide(
+                                    color: Colors.grey.shade300,
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                'Bay',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                            // Date Column Header
+                            Container(
+                              width: 120,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  right: BorderSide(
+                                    color: Colors.grey.shade300,
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                'Date',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                            // Time Column Header
+                            Container(
+                              width: 100,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  right: BorderSide(
+                                    color: Colors.grey.shade300,
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                'Time',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                            // Readings Column Header
+                            Container(
+                              width: 600,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
+                              child: Text(
+                                'Readings',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Data Rows
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: rows.map((row) {
+                              return Container(
+                                height: 180, // Increased row height
+                                decoration: BoxDecoration(
+                                  color: row.color?.resolve({}),
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: Colors.grey.shade200,
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    // Bay Cell
+                                    Container(
+                                      width: 300,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          right: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                      ),
+                                      child: row.cells[0].child,
+                                    ),
+                                    // Date Cell
+                                    Container(
+                                      width: 120,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          right: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                      ),
+                                      child: row.cells[1].child,
+                                    ),
+                                    // Time Cell
+                                    Container(
+                                      width: 100,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          right: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                      ),
+                                      child: row.cells[2].child,
+                                    ),
+                                    // Readings Cell
+                                    Container(
+                                      width: 600,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      child: row.cells[3].child,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
-        rows: rows,
       ),
     );
   }
 
   Widget _buildSimpleReadingsDisplay(LogsheetEntry entry) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: entry.values.entries.take(5).map((e) {
-        return Text(
-          '${e.key}: ${e.value}',
-          style: const TextStyle(fontSize: 12),
-        );
-      }).toList(),
+    final readings = entry.values.entries.take(4).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(12), // Increased padding
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ...readings.map((e) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4), // Increased spacing
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      '${e.key}:',
+                      style: TextStyle(
+                        fontSize: 12, // Slightly larger font
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      '${e.value}',
+                      style: const TextStyle(
+                        fontSize: 12, // Slightly larger font
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          if (entry.values.length > 4)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '+${entry.values.length - 4} more',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade500,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
