@@ -102,7 +102,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
       final bool isToday = DateUtils.isSameDay(widget.selectedDate, now);
 
       // Daily readings are available after 8 AM
-      _isDailyReadingAvailable = !isToday || now.hour >= 8;
+      _isDailyReadingAvailable = !isToday || now.hour >= 00;
 
       if (_isDailyReadingAvailable) {
         await _checkDailyReadingCompletion();

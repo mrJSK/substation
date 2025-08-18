@@ -19,6 +19,9 @@ import '../utils/snackbar_utils.dart';
 class EnergyDataService {
   final String substationId;
   final AppUser currentUser;
+  final VoidCallback?
+  onConfigurationChanged; // ✅ NEW: Callback for configuration changes
+
   Map<String, BusbarEnergyMap> _busbarEnergyMaps = {};
   List<Assessment> allAssessmentsForDisplay = [];
   List<Map<String, dynamic>> loadedAssessmentsSummary = [];
@@ -31,7 +34,12 @@ class EnergyDataService {
   Map<String, DistributionCircle> _distributionCirclesMap = {};
   Map<String, DistributionDivision> _distributionDivisionsMap = {};
   Map<String, DistributionSubdivision> _distributionSubdivisionsMap = {};
-  EnergyDataService({required this.substationId, required this.currentUser});
+
+  EnergyDataService({
+    required this.substationId,
+    required this.currentUser,
+    this.onConfigurationChanged, // ✅ NEW: Optional callback
+  });
 
   Future<void> loadFromSavedSld(
     SavedSld savedSld,
@@ -177,6 +185,7 @@ class EnergyDataService {
           '${doc['busbarId']}-${doc['connectedBayId']}':
               BusbarEnergyMap.fromFirestore(doc),
       };
+      print('DEBUG: Loaded ${_busbarEnergyMaps.length} busbar energy maps');
     } catch (e) {
       print('Error loading busbar energy maps: $e');
       rethrow;
@@ -374,6 +383,7 @@ class EnergyDataService {
     );
   }
 
+  /// SAME-DATE LOGIC is here!
   BayEnergyData _calculateBayEnergyData(
     Bay bay,
     DateTime startDate,
@@ -487,6 +497,7 @@ class EnergyDataService {
     return null;
   }
 
+  // ✅ UPDATED: Apply busbar energy map configurations with new energy mapping logic
   Map<String, Map<String, double>> _calculateBusEnergySummary(
     Map<String, BayEnergyData> bayEnergyData,
     SldController sldController,
@@ -495,28 +506,92 @@ class EnergyDataService {
     final List<Bay> busbarBays = sldController.allBays
         .where((bay) => bay.bayType == 'Busbar')
         .toList();
+
     for (var busbar in busbarBays) {
       double totalImp = 0.0;
       double totalExp = 0.0;
       int connectedBayCount = 0;
+      int configuredBayCount = 0;
+
       final List<Bay> connectedBays = _getConnectedBays(busbar, sldController);
+
       for (var connectedBay in connectedBays) {
         if (connectedBay.bayType != 'Busbar') {
+          connectedBayCount++;
+
+          // ✅ GET BUSBAR ENERGY MAP CONFIGURATION
+          final mapKey = '${busbar.id}-${connectedBay.id}';
+          final busbarMap = _busbarEnergyMaps[mapKey];
+
           final energyData = bayEnergyData[connectedBay.id];
-          if (energyData != null) {
+          if (energyData != null && busbarMap != null) {
+            configuredBayCount++;
+
+            // ✅ APPLY IMPORT CONTRIBUTION MAPPING
+            switch (busbarMap.importContribution) {
+              case EnergyContributionType.busImport:
+                totalImp += energyData.adjustedImportConsumed;
+                print(
+                  'DEBUG: Adding ${connectedBay.name} import (${energyData.adjustedImportConsumed}) to ${busbar.name} import',
+                );
+                break;
+              case EnergyContributionType.busExport:
+                totalExp += energyData.adjustedImportConsumed;
+                print(
+                  'DEBUG: Adding ${connectedBay.name} import (${energyData.adjustedImportConsumed}) to ${busbar.name} export',
+                );
+                break;
+              case EnergyContributionType.none:
+                print(
+                  'DEBUG: ${connectedBay.name} import not contributing to ${busbar.name}',
+                );
+                break;
+            }
+
+            // ✅ APPLY EXPORT CONTRIBUTION MAPPING
+            switch (busbarMap.exportContribution) {
+              case EnergyContributionType.busImport:
+                totalImp += energyData.adjustedExportConsumed;
+                print(
+                  'DEBUG: Adding ${connectedBay.name} export (${energyData.adjustedExportConsumed}) to ${busbar.name} import',
+                );
+                break;
+              case EnergyContributionType.busExport:
+                totalExp += energyData.adjustedExportConsumed;
+                print(
+                  'DEBUG: Adding ${connectedBay.name} export (${energyData.adjustedExportConsumed}) to ${busbar.name} export',
+                );
+                break;
+              case EnergyContributionType.none:
+                print(
+                  'DEBUG: ${connectedBay.name} export not contributing to ${busbar.name}',
+                );
+                break;
+            }
+          } else if (energyData != null) {
+            // ✅ DEFAULT BEHAVIOR: If no configuration exists, include normally
             totalImp += energyData.adjustedImportConsumed;
             totalExp += energyData.adjustedExportConsumed;
-            connectedBayCount++;
+            print(
+              'DEBUG: Default mapping for ${connectedBay.name} to ${busbar.name}',
+            );
           }
         }
       }
+
       busEnergySummary[busbar.id] = {
         'totalImp': totalImp,
         'totalExp': totalExp,
         'netConsumption': totalImp - totalExp,
         'connectedBayCount': connectedBayCount.toDouble(),
+        'configuredBayCount': configuredBayCount.toDouble(),
       };
+
+      print(
+        'DEBUG: Busbar ${busbar.name} summary: Import=$totalImp, Export=$totalExp, Connected=$connectedBayCount, Configured=$configuredBayCount',
+      );
     }
+
     return busEnergySummary;
   }
 
@@ -625,6 +700,7 @@ class EnergyDataService {
     return aggregatedData;
   }
 
+  // ✅ UPDATED: Enhanced busbar selection dialog with configuration status
   void showBusbarSelectionDialog(
     BuildContext context,
     SldController sldController,
@@ -632,15 +708,16 @@ class EnergyDataService {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Busbar Configuration'),
+        title: const Text('Select Busbar Energy Mapping'),
         content: SizedBox(
           width: double.maxFinite,
-          height: 300,
+          height: 400, // ✅ Increased height for better UX
           child: Builder(
             builder: (context) {
               List<Bay> busbars = sldController.allBays
                   .where((bay) => bay.bayType.toLowerCase() == 'busbar')
                   .toList();
+
               if (busbars.isEmpty) {
                 final busEnergyKeys = sldController.busEnergySummary.keys
                     .toSet();
@@ -648,35 +725,77 @@ class EnergyDataService {
                     .where((bay) => busEnergyKeys.contains(bay.id))
                     .toList();
               }
+
               if (busbars.isEmpty) {
                 return const Center(child: Text('No busbars found'));
               }
+
               return ListView.builder(
                 itemCount: busbars.length,
                 itemBuilder: (context, index) {
                   final busbar = busbars[index];
-                  return ListTile(
-                    title: Text('${busbar.voltageLevel} ${busbar.name}'),
-                    subtitle: Text('ID: ${busbar.id}'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      final connectedBays = _getConnectedBays(
-                        busbar,
-                        sldController,
-                      );
-                      showDialog(
-                        context: context,
-                        builder: (context) => BusbarConfigurationScreen(
-                          busbar: busbar,
-                          connectedBays: connectedBays,
-                          onSaveConfiguration: (inclusionMap) {
-                            print(
-                              'Busbar ${busbar.id} configuration: $inclusionMap',
-                            );
-                          },
+                  final connectedBays = _getConnectedBays(
+                    busbar,
+                    sldController,
+                  );
+                  final nonBusbarBays = connectedBays
+                      .where((bay) => bay.bayType != 'Busbar')
+                      .length;
+                  final configurationStatus = _getBusbarConfigurationStatus(
+                    busbar,
+                  );
+
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    child: ListTile(
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: configurationStatus['hasCustomConfig']
+                              ? Colors.blue.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      );
-                    },
+                        child: Icon(
+                          configurationStatus['hasCustomConfig']
+                              ? Icons.settings
+                              : Icons.settings_outlined,
+                          color: configurationStatus['hasCustomConfig']
+                              ? Colors.blue
+                              : Colors.grey,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        '${busbar.voltageLevel} ${busbar.name}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Connected bays: $nonBusbarBays'),
+                          if (configurationStatus['hasCustomConfig'])
+                            Text(
+                              'Energy mappings configured',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                        ],
+                      ),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showBusbarConfigurationDialog(
+                          context,
+                          busbar,
+                          sldController,
+                        );
+                      },
+                    ),
                   );
                 },
               );
@@ -691,6 +810,209 @@ class EnergyDataService {
         ],
       ),
     );
+  }
+
+  // ✅ UPDATED: Get busbar configuration status for energy mapping
+  Map<String, dynamic> _getBusbarConfigurationStatus(Bay busbar) {
+    final connectedBayIds = _busbarEnergyMaps.keys
+        .where((key) => key.startsWith('${busbar.id}-'))
+        .map((key) => key.split('-')[1])
+        .toList();
+
+    if (connectedBayIds.isEmpty) {
+      return {'hasCustomConfig': false, 'totalCount': 0, 'configuredCount': 0};
+    }
+
+    return {
+      'hasCustomConfig': true,
+      'totalCount': connectedBayIds.length,
+      'configuredCount': connectedBayIds.length,
+    };
+  }
+
+  // ✅ UPDATED: Show individual busbar configuration dialog for energy mapping
+  void _showBusbarConfigurationDialog(
+    BuildContext context,
+    Bay busbar,
+    SldController sldController,
+  ) {
+    final connectedBays = _getConnectedBays(
+      busbar,
+      sldController,
+    ).where((bay) => bay.bayType != 'Busbar').toList();
+
+    // Get current configuration
+    final currentConfig = <String, BusbarEnergyMap>{};
+    for (var bay in connectedBays) {
+      final mapKey = '${busbar.id}-${bay.id}';
+      final existing = _busbarEnergyMaps[mapKey];
+      if (existing != null) {
+        currentConfig[mapKey] = existing;
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => BusbarConfigurationScreen(
+        busbar: busbar,
+        connectedBays: connectedBays,
+        currentConfiguration: currentConfig.isNotEmpty ? currentConfig : null,
+        onSaveConfiguration: (configMap) async {
+          try {
+            // Save each BusbarEnergyMap to Firestore
+            await _saveBusbarEnergyMaps(configMap);
+
+            // Trigger configuration change callback
+            if (onConfigurationChanged != null) {
+              onConfigurationChanged!();
+            }
+
+            SnackBarUtils.showSnackBar(
+              context,
+              'Busbar ${busbar.name} energy mapping saved successfully!',
+            );
+          } catch (e) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Failed to save configuration: $e',
+              isError: true,
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  // ✅ NEW: Save busbar energy maps (multiple configurations)
+  Future<void> _saveBusbarEnergyMaps(
+    Map<String, BusbarEnergyMap> configMaps,
+  ) async {
+    final batch = FirebaseFirestore.instance.batch();
+
+    for (var entry in configMaps.entries) {
+      final mapKey = entry.key;
+      final energyMap = entry.value;
+
+      // Check if configuration already exists
+      final existingMap = _busbarEnergyMaps[mapKey];
+
+      if (existingMap != null) {
+        // Update existing configuration
+        final docRef = FirebaseFirestore.instance
+            .collection('busbarEnergyMaps')
+            .doc(existingMap.id);
+
+        batch.update(docRef, energyMap.toFirestore());
+
+        // Update local cache
+        _busbarEnergyMaps[mapKey] = energyMap.copyWith(id: existingMap.id);
+      } else {
+        // Create new configuration
+        final newMapRef = FirebaseFirestore.instance
+            .collection('busbarEnergyMaps')
+            .doc();
+
+        final newMap = energyMap.copyWith(id: newMapRef.id);
+
+        batch.set(newMapRef, newMap.toFirestore());
+
+        // Update local cache
+        _busbarEnergyMaps[mapKey] = newMap;
+      }
+    }
+
+    await batch.commit();
+    print('DEBUG: Saved busbar energy maps');
+  }
+
+  // ✅ DEPRECATED: Old method kept for backward compatibility
+  Future<void> _saveBusbarConfiguration(
+    Bay busbar,
+    Map<String, bool> inclusionMap,
+  ) async {
+    // This method is deprecated but kept for backward compatibility
+    // Use _saveBusbarEnergyMaps instead
+    print('WARNING: Using deprecated _saveBusbarConfiguration method');
+  }
+
+  // ✅ NEW: Get current bay energy mapping for a busbar
+  Map<String, BusbarEnergyMap> getBayEnergyMappings(
+    Bay busbar,
+    List<Bay> connectedBays,
+  ) {
+    final Map<String, BusbarEnergyMap> mappings = {};
+
+    for (var bay in connectedBays) {
+      final mapKey = '${busbar.id}-${bay.id}';
+      final busbarMap = _busbarEnergyMaps[mapKey];
+      if (busbarMap != null) {
+        mappings[mapKey] = busbarMap;
+      }
+    }
+
+    return mappings;
+  }
+
+  // ✅ DEPRECATED: Old method kept for backward compatibility
+  Map<String, bool> getBayInclusionMap(Bay busbar, List<Bay> connectedBays) {
+    // This method is deprecated but kept for backward compatibility
+    final Map<String, bool> inclusionMap = {};
+
+    for (var bay in connectedBays) {
+      final mapKey = '${busbar.id}-${bay.id}';
+      final busbarMap = _busbarEnergyMaps[mapKey];
+      // Convert energy mapping to simple inclusion (if any contribution exists)
+      bool isIncluded =
+          busbarMap != null &&
+          (busbarMap.importContribution != EnergyContributionType.none ||
+              busbarMap.exportContribution != EnergyContributionType.none);
+      inclusionMap[bay.id] = isIncluded;
+    }
+
+    return inclusionMap;
+  }
+
+  // ✅ NEW: Reset busbar configuration to defaults
+  Future<void> resetBusbarConfiguration(Bay busbar) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Find all configurations for this busbar
+      final configurationsToDelete = _busbarEnergyMaps.entries
+          .where((entry) => entry.key.startsWith('${busbar.id}-'))
+          .toList();
+
+      for (var entry in configurationsToDelete) {
+        final mapId = entry.value.id;
+        final docRef = FirebaseFirestore.instance
+            .collection('busbarEnergyMaps')
+            .doc(mapId);
+
+        batch.delete(docRef);
+        _busbarEnergyMaps.remove(entry.key);
+      }
+
+      await batch.commit();
+      print('DEBUG: Reset busbar configuration for ${busbar.name}');
+
+      // Trigger configuration change callback
+      if (onConfigurationChanged != null) {
+        onConfigurationChanged!();
+      }
+    } catch (e) {
+      print('ERROR: Failed to reset busbar configuration: $e');
+      rethrow;
+    }
+  }
+
+  // ✅ NEW: Get all busbar configurations for export/backup
+  List<BusbarEnergyMap> getAllBusbarConfigurations() {
+    return _busbarEnergyMaps.values.toList();
+  }
+
+  // ✅ NEW: Check if a busbar has custom configuration
+  bool hasCustomConfiguration(Bay busbar) {
+    return _busbarEnergyMaps.keys.any((key) => key.startsWith('${busbar.id}-'));
   }
 
   void showBaySelectionForAssessment(

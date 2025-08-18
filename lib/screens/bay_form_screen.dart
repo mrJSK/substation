@@ -811,6 +811,7 @@ class _BayFormScreenState extends State<BayFormScreen>
 
   Future<void> _selectDate(BuildContext context, DateType type) async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     DateTime initial = DateTime.now();
     if (type == DateType.commissioning && _commissioningDate != null) {
       initial = _commissioningDate!;
@@ -831,10 +832,16 @@ class _BayFormScreenState extends State<BayFormScreen>
             colorScheme: theme.colorScheme.copyWith(
               primary: theme.colorScheme.primary,
               onPrimary: theme.colorScheme.onPrimary,
-              surface: theme.colorScheme.surface,
-              onSurface: theme.colorScheme.onSurface,
+              surface: isDarkMode
+                  ? const Color(0xFF1C1C1E)
+                  : theme.colorScheme.surface,
+              onSurface: isDarkMode
+                  ? Colors.white
+                  : theme.colorScheme.onSurface,
             ),
-            dialogBackgroundColor: theme.colorScheme.surface,
+            dialogBackgroundColor: isDarkMode
+                ? const Color(0xFF1C1C1E)
+                : theme.colorScheme.surface,
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
                 foregroundColor: theme.colorScheme.primary,
@@ -882,6 +889,9 @@ class _BayFormScreenState extends State<BayFormScreen>
     required Map<String, T> lookupMap,
     required String addHierarchyType,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     Query query = FirebaseFirestore.instance.collection(collectionName);
     if (parentId != null && parentIdFieldName.isNotEmpty) {
       query = query.where(parentIdFieldName, isEqualTo: parentId);
@@ -935,7 +945,11 @@ class _BayFormScreenState extends State<BayFormScreen>
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.shade300,
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -946,14 +960,16 @@ class _BayFormScreenState extends State<BayFormScreen>
               borderSide: const BorderSide(color: Colors.red, width: 2),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: isDarkMode
+                ? const Color(0xFF3C3C3E)
+                : Colors.grey.shade50,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 12,
             ),
-            labelStyle: const TextStyle(
+            labelStyle: TextStyle(
               fontFamily: 'Roboto',
-              color: Colors.black87,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
           ),
         ),
@@ -962,9 +978,12 @@ class _BayFormScreenState extends State<BayFormScreen>
           menuProps: MenuProps(
             borderRadius: BorderRadius.circular(12),
             elevation: 4,
-            backgroundColor: Colors.white,
+            backgroundColor: isDarkMode
+                ? const Color(0xFF2C2C2E)
+                : Colors.white,
           ),
           searchFieldProps: TextFieldProps(
+            style: TextStyle(color: isDarkMode ? Colors.white : null),
             decoration: InputDecoration(
               labelText: 'Search $label',
               prefixIcon: const Icon(Icons.search, color: Colors.blue),
@@ -973,14 +992,19 @@ class _BayFormScreenState extends State<BayFormScreen>
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+                borderSide: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: Colors.blue, width: 2),
               ),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
+              labelStyle: TextStyle(color: isDarkMode ? Colors.white : null),
             ),
           ),
           showSelectedItems: true,
@@ -993,9 +1017,9 @@ class _BayFormScreenState extends State<BayFormScreen>
                   children: [
                     Text(
                       'No $label found.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Roboto',
-                        color: Colors.black87,
+                        color: isDarkMode ? Colors.white : Colors.black87,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -1054,37 +1078,44 @@ class _BayFormScreenState extends State<BayFormScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Set system status bar to white to match the theme
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    // Set system status bar to match theme
     SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.white,
-        statusBarIconBrightness: Brightness.dark,
-        statusBarBrightness: Brightness.light,
+      SystemUiOverlayStyle(
+        statusBarColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+        statusBarIconBrightness: isDarkMode
+            ? Brightness.light
+            : Brightness.dark,
+        statusBarBrightness: isDarkMode ? Brightness.dark : Brightness.light,
       ),
     );
 
     // 🔥 FIX: Loading state WITHOUT AppBar
     if (_isLoadingConnections) {
       return Scaffold(
-        backgroundColor: const Color(0xFFFAFAFA),
+        backgroundColor: isDarkMode
+            ? const Color(0xFF1C1C1E) // Dark mode background
+            : const Color(0xFFFAFAFA),
         // ❌ REMOVED: No AppBar during loading
         body: SafeArea(
           // ✅ Added SafeArea instead
           child: Column(
             children: [
-              const Expanded(
+              Expanded(
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(color: Colors.blue),
-                      SizedBox(height: 16),
+                      const CircularProgressIndicator(color: Colors.blue),
+                      const SizedBox(height: 16),
                       Text(
                         'Loading bay data...',
                         style: TextStyle(
                           fontFamily: 'Roboto',
                           fontSize: 16,
-                          color: Colors.black87,
+                          color: isDarkMode ? Colors.white : Colors.black87,
                         ),
                       ),
                     ],
@@ -1098,7 +1129,9 @@ class _BayFormScreenState extends State<BayFormScreen>
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode background
+          : const Color(0xFFFAFAFA),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1110,12 +1143,14 @@ class _BayFormScreenState extends State<BayFormScreen>
                 _buildSection(
                   title: 'Basic Information',
                   icon: Icons.info,
+                  isDarkMode: isDarkMode,
                   children: [
                     _buildTextField(
                       controller: _bayNameController,
                       label: 'Bay Name*',
                       icon: const Icon(Icons.grid_on, color: Colors.blue),
                       validator: (v) => v!.isEmpty ? 'Required' : null,
+                      isDarkMode: isDarkMode,
                     ),
                     const SizedBox(height: 16),
                     _buildDropdownField(
@@ -1157,6 +1192,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         });
                       },
                       validator: (v) => v == null ? 'Required' : null,
+                      isDarkMode: isDarkMode,
                     ),
                     const SizedBox(height: 16),
                     // ADD MULTIPLYING FACTOR HERE - MANDATORY FOR ALL BAYS
@@ -1175,6 +1211,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         }
                         return null;
                       },
+                      isDarkMode: isDarkMode,
                     ),
                     // Add helper text to explain the purpose
                     Padding(
@@ -1183,7 +1220,9 @@ class _BayFormScreenState extends State<BayFormScreen>
                         'Used for energy calculations (typically 1.0 for direct readings)',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade600,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey.shade600,
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -1201,6 +1240,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         _buildSection(
                           title: 'Voltage Details',
                           icon: Icons.flash_on,
+                          isDarkMode: isDarkMode,
                           children: [
                             _buildDropdownField(
                               value: _selectedVoltageLevel,
@@ -1213,6 +1253,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onChanged: (v) =>
                                   setState(() => _selectedVoltageLevel = v),
                               validator: (v) => v == null ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                           ],
                         ),
@@ -1224,6 +1265,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         _buildSection(
                           title: 'Busbar Connection',
                           icon: Icons.electrical_services_sharp,
+                          isDarkMode: isDarkMode,
                           children: [
                             _buildDropdownField(
                               value: _selectedBusbarId,
@@ -1245,6 +1287,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                       widget.availableBusbars.isNotEmpty
                                   ? 'Required'
                                   : null,
+                              isDarkMode: isDarkMode,
                             ),
                           ],
                         ),
@@ -1254,6 +1297,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         _buildSection(
                           title: 'Transformer Details',
                           icon: Icons.transform,
+                          isDarkMode: isDarkMode,
                           children: [
                             _buildDropdownField(
                               value: _selectedHvVoltage,
@@ -1270,6 +1314,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 });
                               },
                               validator: (v) => v == null ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildDropdownField(
@@ -1294,6 +1339,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onChanged: (v) =>
                                   setState(() => _selectedHvBusId = v),
                               validator: (v) => v == null ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildDropdownField(
@@ -1311,6 +1357,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 });
                               },
                               validator: (v) => v == null ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildDropdownField(
@@ -1335,6 +1382,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onChanged: (v) =>
                                   setState(() => _selectedLvBusId = v),
                               validator: (v) => v == null ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -1345,6 +1393,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 color: Colors.orange,
                               ),
                               validator: (v) => v!.isEmpty ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -1357,6 +1406,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               ),
                               keyboardType: TextInputType.number,
                               validator: (v) => v!.isEmpty ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -1370,9 +1420,11 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onTap: () =>
                                   _selectDate(context, DateType.manufacturing),
                               suffixIcon: IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.clear,
-                                  color: Colors.grey,
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : Colors.grey,
                                 ),
                                 onPressed: () => setState(() {
                                   _manufacturingDateController.clear();
@@ -1380,6 +1432,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 }),
                               ),
                               validator: (v) => v!.isEmpty ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                           ],
                         ),
@@ -1389,6 +1442,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         _buildSection(
                           title: 'Line Details',
                           icon: Icons.straighten,
+                          isDarkMode: isDarkMode,
                           children: [
                             _buildTextField(
                               controller: _lineLengthController,
@@ -1399,6 +1453,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               ),
                               keyboardType: TextInputType.number,
                               validator: (v) => v!.isEmpty ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildDropdownField(
@@ -1412,6 +1467,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onChanged: (v) =>
                                   setState(() => _selectedCircuit = v),
                               validator: (v) => v == null ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildDropdownField(
@@ -1422,6 +1478,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onChanged: (v) =>
                                   setState(() => _selectedConductor = v),
                               validator: (v) => v == null ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                             if (_selectedConductor == 'Other') ...[
                               const SizedBox(height: 12),
@@ -1434,6 +1491,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 ),
                                 validator: (v) =>
                                     v!.isEmpty ? 'Required' : null,
+                                isDarkMode: isDarkMode,
                               ),
                             ],
                             const SizedBox(height: 12),
@@ -1448,9 +1506,11 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onTap: () =>
                                   _selectDate(context, DateType.erection),
                               suffixIcon: IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.clear,
-                                  color: Colors.grey,
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : Colors.grey,
                                 ),
                                 onPressed: () => setState(() {
                                   _erectionDateController.clear();
@@ -1458,6 +1518,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 }),
                               ),
                               validator: (v) => v!.isEmpty ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                           ],
                         ),
@@ -1468,6 +1529,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         _buildSection(
                           title: 'Commissioning Details',
                           icon: Icons.calendar_today,
+                          isDarkMode: isDarkMode,
                           children: [
                             _buildTextField(
                               controller: _commissioningDateController,
@@ -1480,9 +1542,11 @@ class _BayFormScreenState extends State<BayFormScreen>
                               onTap: () =>
                                   _selectDate(context, DateType.commissioning),
                               suffixIcon: IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.clear,
-                                  color: Colors.grey,
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : Colors.grey,
                                 ),
                                 onPressed: () => setState(() {
                                   _commissioningDateController.clear();
@@ -1490,6 +1554,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 }),
                               ),
                               validator: (v) => v!.isEmpty ? 'Required' : null,
+                              isDarkMode: isDarkMode,
                             ),
                           ],
                         ),
@@ -1500,7 +1565,10 @@ class _BayFormScreenState extends State<BayFormScreen>
                           title: 'Feeder Details',
                           icon: Icons.location_city,
                           iconColor: Colors.blue,
-                          children: _buildFeederDistributionHierarchyFields(),
+                          isDarkMode: isDarkMode,
+                          children: _buildFeederDistributionHierarchyFields(
+                            isDarkMode,
+                          ),
                         ),
                         const SizedBox(height: 24),
                       ],
@@ -1509,6 +1577,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                         _buildSection(
                           title: 'Additional Details (Optional)',
                           icon: Icons.info_outline,
+                          isDarkMode: isDarkMode,
                           children: [
                             _buildTextField(
                               controller: _descriptionController,
@@ -1518,12 +1587,14 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 color: Colors.grey,
                               ),
                               maxLines: 3,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
                               controller: _landmarkController,
                               label: 'Landmark',
                               icon: const Icon(Icons.flag, color: Colors.grey),
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -1531,6 +1602,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                               label: 'Contact Number',
                               icon: const Icon(Icons.phone, color: Colors.grey),
                               keyboardType: TextInputType.phone,
+                              isDarkMode: isDarkMode,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -1540,6 +1612,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 Icons.person,
                                 color: Colors.grey,
                               ),
+                              isDarkMode: isDarkMode,
                             ),
                           ],
                         ),
@@ -1553,7 +1626,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                   duration: const Duration(milliseconds: 500),
                 ),
                 const SizedBox(height: 24),
-                _buildActionButtons(),
+                _buildActionButtons(isDarkMode),
               ],
             ),
           ),
@@ -1562,15 +1635,19 @@ class _BayFormScreenState extends State<BayFormScreen>
     );
   }
 
-  Widget _buildActionButtons() {
+  Widget _buildActionButtons(bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.08),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -1582,8 +1659,14 @@ class _BayFormScreenState extends State<BayFormScreen>
             child: OutlinedButton(
               onPressed: widget.onCancel,
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.grey[700],
-                side: BorderSide(color: Colors.grey.shade300),
+                foregroundColor: isDarkMode
+                    ? Colors.white.withOpacity(0.7)
+                    : Colors.grey[700],
+                side: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1641,12 +1724,15 @@ class _BayFormScreenState extends State<BayFormScreen>
     );
   }
 
-  List<Widget> _buildFeederDistributionHierarchyFields() {
+  List<Widget> _buildFeederDistributionHierarchyFields(bool isDarkMode) {
     return [
       SwitchListTile(
-        title: const Text(
+        title: Text(
           'Government Feeder',
-          style: TextStyle(fontFamily: 'Roboto', color: Colors.black87),
+          style: TextStyle(
+            fontFamily: 'Roboto',
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
         value: _isGovernmentFeeder,
         activeColor: Colors.blue[700],
@@ -1666,6 +1752,7 @@ class _BayFormScreenState extends State<BayFormScreen>
             : _nonGovernmentFeederTypes,
         onChanged: (v) => setState(() => _selectedFeederType = v),
         validator: (v) => v == null ? 'Required' : null,
+        isDarkMode: isDarkMode,
       ),
       const SizedBox(height: 16),
       Text(
@@ -1674,7 +1761,7 @@ class _BayFormScreenState extends State<BayFormScreen>
           fontFamily: 'Roboto',
           fontWeight: FontWeight.w600,
           fontSize: 16,
-          color: Colors.blue[700],
+          color: isDarkMode ? Colors.white : Colors.blue[700],
         ),
       ),
       const SizedBox(height: 12),
@@ -1741,6 +1828,7 @@ class _BayFormScreenState extends State<BayFormScreen>
     required IconData icon,
     Color? iconColor,
     required List<Widget> children,
+    required bool isDarkMode,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1753,11 +1841,11 @@ class _BayFormScreenState extends State<BayFormScreen>
               const SizedBox(width: 12),
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Roboto',
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                  color: isDarkMode ? Colors.white : Colors.black87,
                 ),
               ),
             ],
@@ -1767,11 +1855,15 @@ class _BayFormScreenState extends State<BayFormScreen>
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDarkMode
+                  ? const Color(0xFF2C2C2E) // Dark elevated surface
+                  : Colors.white,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: isDarkMode
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -1795,6 +1887,7 @@ class _BayFormScreenState extends State<BayFormScreen>
     bool readOnly = false,
     VoidCallback? onTap,
     Widget? suffixIcon,
+    required bool isDarkMode,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1805,9 +1898,9 @@ class _BayFormScreenState extends State<BayFormScreen>
         keyboardType: keyboardType,
         readOnly: readOnly,
         onTap: onTap,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Roboto',
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
           fontSize: 16,
         ),
         decoration: InputDecoration(
@@ -1818,7 +1911,11 @@ class _BayFormScreenState extends State<BayFormScreen>
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
+            borderSide: BorderSide(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey.shade300,
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -1829,14 +1926,20 @@ class _BayFormScreenState extends State<BayFormScreen>
             borderSide: const BorderSide(color: Colors.red, width: 2),
           ),
           filled: true,
-          fillColor: Colors.grey.shade50,
+          fillColor: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,
           ),
-          labelStyle: const TextStyle(
+          labelStyle: TextStyle(
             fontFamily: 'Roboto',
-            color: Colors.black87,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
+          hintStyle: TextStyle(
+            fontFamily: 'Roboto',
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.5)
+                : Colors.grey.shade500,
           ),
           errorStyle: const TextStyle(fontFamily: 'Roboto', color: Colors.red),
         ),
@@ -1853,18 +1956,24 @@ class _BayFormScreenState extends State<BayFormScreen>
     required Function(String?) onChanged,
     String? Function(String?)? validator,
     Color? fillColor,
+    required bool isDarkMode,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: DropdownButtonFormField<String>(
         value: value,
+        dropdownColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: icon,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
+            borderSide: BorderSide(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey.shade300,
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -1875,14 +1984,16 @@ class _BayFormScreenState extends State<BayFormScreen>
             borderSide: const BorderSide(color: Colors.red, width: 2),
           ),
           filled: true,
-          fillColor: fillColor ?? Colors.grey.shade50,
+          fillColor:
+              fillColor ??
+              (isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,
           ),
-          labelStyle: const TextStyle(
+          labelStyle: TextStyle(
             fontFamily: 'Roboto',
-            color: Colors.black87,
+            color: isDarkMode ? Colors.white : Colors.black87,
           ),
           errorStyle: const TextStyle(fontFamily: 'Roboto', color: Colors.red),
         ),
@@ -1894,9 +2005,9 @@ class _BayFormScreenState extends State<BayFormScreen>
                 value: itemValues != null ? itemValues[entry.key] : entry.value,
                 child: Text(
                   entry.value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Roboto',
-                    color: Colors.black87,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
               ),
@@ -1904,8 +2015,10 @@ class _BayFormScreenState extends State<BayFormScreen>
             .toList(),
         onChanged: _isSavingBay ? null : onChanged,
         validator: validator,
-        dropdownColor: Colors.white,
-        style: const TextStyle(fontFamily: 'Roboto', color: Colors.black87),
+        style: TextStyle(
+          fontFamily: 'Roboto',
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
       ),
     );
   }

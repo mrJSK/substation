@@ -511,18 +511,21 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       return "Initial Entry";
 
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     TextEditingController reasonController = TextEditingController();
     return await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: theme.colorScheme.surface,
+        backgroundColor: isDarkMode
+            ? const Color(0xFF1C1C1E)
+            : theme.colorScheme.surface,
         title: Text(
           'Reason for Modification',
           style: TextStyle(
             fontFamily: 'Roboto',
             fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         content: Column(
@@ -530,13 +533,19 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
           children: [
             TextFormField(
               controller: reasonController,
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
               decoration: InputDecoration(
                 hintText: 'Enter reason for modification...',
+                hintStyle: TextStyle(
+                  color: isDarkMode ? Colors.white.withOpacity(0.5) : null,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
                 filled: true,
-                fillColor: theme.colorScheme.primary.withOpacity(0.05),
+                fillColor: isDarkMode
+                    ? const Color(0xFF3C3C3E)
+                    : theme.colorScheme.primary.withOpacity(0.05),
                 errorStyle: TextStyle(
                   color: theme.colorScheme.error,
                   fontFamily: 'Roboto',
@@ -555,7 +564,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               'Cancel',
               style: TextStyle(
                 fontFamily: 'Roboto',
-                color: theme.colorScheme.onSurface,
+                color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
               ),
             ),
           ),
@@ -577,6 +586,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
   Widget _buildReadingFieldInput(ReadingField field) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final String fieldName = field.name;
     final String dataType = field.dataType.toString().split('.').last;
     bool isMandatory = field.isMandatory;
@@ -598,11 +608,13 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -619,6 +631,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
           isReadOnly,
           unit,
           options,
+          isDarkMode,
         ),
       ),
     );
@@ -633,6 +646,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     bool isReadOnly,
     String? unit,
     List<String>? options,
+    bool isDarkMode,
   ) {
     String? Function(String?)? validator;
     if (isMandatory && !isReadOnly) {
@@ -667,9 +681,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 children: [
                   Text(
                     fieldName + (isMandatory ? ' *' : ''),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -679,15 +694,25 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       () => TextEditingController(),
                     ),
                     readOnly: isReadOnly,
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
                     decoration: InputDecoration(
                       hintText: 'Enter ${fieldName.toLowerCase()}',
+                      hintStyle: TextStyle(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.5)
+                            : null,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                       filled: true,
                       fillColor: isReadOnly
-                          ? Colors.grey.shade100
-                          : theme.colorScheme.primary.withOpacity(0.05),
+                          ? (isDarkMode
+                                ? const Color(0xFF3C3C3E)
+                                : Colors.grey.shade100)
+                          : (isDarkMode
+                                ? const Color(0xFF3C3C3E)
+                                : theme.colorScheme.primary.withOpacity(0.05)),
                       suffixText: unit,
                     ),
                     validator: validator,
@@ -722,9 +747,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 children: [
                   Text(
                     fieldName + (isMandatory ? ' *' : ''),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -734,17 +760,27 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       () => TextEditingController(),
                     ),
                     readOnly: isReadOnly,
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
                     decoration: InputDecoration(
                       hintText: unit != null && unit.isNotEmpty
                           ? 'Enter value in $unit'
                           : 'Enter numerical value',
+                      hintStyle: TextStyle(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.5)
+                            : null,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                       filled: true,
                       fillColor: isReadOnly
-                          ? Colors.grey.shade100
-                          : theme.colorScheme.primary.withOpacity(0.05),
+                          ? (isDarkMode
+                                ? const Color(0xFF3C3C3E)
+                                : Colors.grey.shade100)
+                          : (isDarkMode
+                                ? const Color(0xFF3C3C3E)
+                                : theme.colorScheme.primary.withOpacity(0.05)),
                       suffixText: unit,
                     ),
                     keyboardType: TextInputType.number,
@@ -794,9 +830,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                     children: [
                       Text(
                         fieldName + (isMandatory ? ' *' : ''),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
+                          color: isDarkMode ? Colors.white : null,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -851,13 +888,19 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                   () => TextEditingController(),
                 ),
                 readOnly: isReadOnly,
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
                 decoration: InputDecoration(
                   labelText: 'Description / Remarks (Optional)',
+                  labelStyle: TextStyle(
+                    color: isDarkMode ? Colors.white : null,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                   filled: true,
-                  fillColor: theme.colorScheme.primary.withOpacity(0.05),
+                  fillColor: isDarkMode
+                      ? const Color(0xFF3C3C3E)
+                      : theme.colorScheme.primary.withOpacity(0.05),
                   prefixIcon: Icon(
                     Icons.description,
                     color: isReadOnly ? Colors.grey : Colors.purple[700],
@@ -899,9 +942,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 children: [
                   Text(
                     fieldName + (isMandatory ? ' *' : ''),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -911,14 +955,20 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                         : DateFormat('yyyy-MM-dd').format(currentDate),
                     style: TextStyle(
                       fontSize: 14,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                   ),
                 ],
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.arrow_forward_ios, size: 16),
+              icon: Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: isDarkMode ? Colors.white : null,
+              ),
               onPressed: isReadOnly
                   ? null
                   : () async {
@@ -927,6 +977,16 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                         initialDate: currentDate ?? DateTime.now(),
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2101),
+                        builder: (context, child) {
+                          return Theme(
+                            data: theme.copyWith(
+                              dialogBackgroundColor: isDarkMode
+                                  ? const Color(0xFF1C1C1E)
+                                  : null,
+                            ),
+                            child: child!,
+                          );
+                        },
                       );
                       if (picked != null)
                         setState(
@@ -961,28 +1021,42 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 children: [
                   Text(
                     fieldName + (isMandatory ? ' *' : ''),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     value: _readingDropdownFieldValues[fieldName],
+                    dropdownColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
+                    style: TextStyle(
+                      color: isDarkMode ? Colors.white : Colors.black,
+                    ),
                     decoration: InputDecoration(
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                       filled: true,
                       fillColor: isReadOnly
-                          ? Colors.grey.shade100
-                          : theme.colorScheme.primary.withOpacity(0.05),
+                          ? (isDarkMode
+                                ? const Color(0xFF3C3C3E)
+                                : Colors.grey.shade100)
+                          : (isDarkMode
+                                ? const Color(0xFF3C3C3E)
+                                : theme.colorScheme.primary.withOpacity(0.05)),
                     ),
                     items: options!
                         .map(
                           (option) => DropdownMenuItem(
                             value: option,
-                            child: Text(option),
+                            child: Text(
+                              option,
+                              style: TextStyle(
+                                color: isDarkMode ? Colors.white : Colors.black,
+                              ),
+                            ),
                           ),
                         )
                         .toList(),
@@ -1001,7 +1075,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         );
         break;
       default:
-        fieldWidget = Text('Unsupported data type: $dataType for $fieldName');
+        fieldWidget = Text(
+          'Unsupported data type: $dataType for $fieldName',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
+        );
     }
     return fieldWidget;
   }
@@ -1009,6 +1086,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     String slotTitle = DateFormat('dd.MMM.yyyy').format(widget.readingDate);
     if (widget.frequency == 'hourly' && widget.readingHour != null) {
       slotTitle += ' - ${widget.readingHour!.toString().padLeft(2, '0')}:00 Hr';
@@ -1022,20 +1101,25 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             _existingLogsheetEntry != null);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         title: Text(
           _currentBay?.name ?? 'Reading Entry',
           style: TextStyle(
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          icon: Icon(
+            Icons.arrow_back,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -1079,7 +1163,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                   padding: const EdgeInsets.all(16),
                   margin: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    color: isDarkMode
+                        ? theme.colorScheme.primaryContainer.withOpacity(0.2)
+                        : theme.colorScheme.primaryContainer.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: theme.colorScheme.primary.withOpacity(0.3),
@@ -1120,8 +1206,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                   widget.substationName,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: theme.colorScheme.onSurface
-                                        .withOpacity(0.7),
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.7)
+                                        : theme.colorScheme.onSurface
+                                              .withOpacity(0.7),
                                   ),
                                 ),
                               ],
@@ -1134,7 +1222,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: isDarkMode
+                                ? const Color(0xFF2C2C2E)
+                                : Colors.white,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: theme.colorScheme.outline.withOpacity(0.2),
@@ -1174,7 +1264,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                 Icon(
                                   Icons.info_outline,
                                   size: 64,
-                                  color: Colors.grey.shade400,
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.4)
+                                      : Colors.grey.shade400,
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
@@ -1182,7 +1274,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w600,
-                                    color: Colors.grey.shade600,
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey.shade600,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -1191,7 +1285,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: Colors.grey.shade600,
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.5)
+                                        : Colors.grey.shade600,
                                   ),
                                 ),
                               ],

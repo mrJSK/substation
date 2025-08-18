@@ -105,22 +105,30 @@ class BayEquipmentListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode background
+          : const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         elevation: 0,
         title: Text(
           'Equipment in $bayName',
           style: TextStyle(
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             fontSize: 18,
             fontWeight: FontWeight.w500,
           ),
         ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          icon: Icon(
+            Icons.arrow_back,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -164,7 +172,9 @@ class BayEquipmentListScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                   ),
                 ],
@@ -187,7 +197,9 @@ class BayEquipmentListScreen extends StatelessWidget {
                     child: Icon(
                       Icons.electrical_services,
                       size: 48,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -196,7 +208,9 @@ class BayEquipmentListScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -204,7 +218,9 @@ class BayEquipmentListScreen extends StatelessWidget {
                     'Add equipment to this bay to get started',
                     style: TextStyle(
                       fontSize: 14,
-                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.5)
+                          : theme.colorScheme.onSurface.withOpacity(0.5),
                     ),
                   ),
                 ],
@@ -225,11 +241,15 @@ class BayEquipmentListScreen extends StatelessWidget {
 
               return Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: isDarkMode
+                      ? const Color(0xFF2C2C2E) // Dark elevated surface
+                      : Colors.white,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: isDarkMode
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.black.withOpacity(0.05),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -244,9 +264,10 @@ class BayEquipmentListScreen extends StatelessWidget {
                   ),
                   title: Text(
                     equipment.equipmentTypeName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                   subtitle: Column(
@@ -257,7 +278,9 @@ class BayEquipmentListScreen extends StatelessWidget {
                         'Make: ${equipment.make}',
                         style: TextStyle(
                           fontSize: 14,
-                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : theme.colorScheme.onSurface.withOpacity(0.6),
                         ),
                       ),
                     ],
@@ -399,6 +422,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final sldController = Provider.of<SldController>(context);
 
     if (sldController.substationId != widget.substationId) {
@@ -425,20 +449,27 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFFAFAFA),
+        backgroundColor: isDarkMode
+            ? const Color(0xFF1C1C1E) // Dark mode background
+            : const Color(0xFFFAFAFA),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: isDarkMode
+              ? const Color(0xFF2C2C2E) // Dark elevated surface
+              : Colors.white,
           elevation: 0,
           title: Text(
             'Substation: ${widget.substationName}',
             style: TextStyle(
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
               fontSize: 18,
               fontWeight: FontWeight.w500,
             ),
           ),
           leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+            icon: Icon(
+              Icons.arrow_back,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+            ),
             onPressed: () => Navigator.pop(context),
           ),
           actions: [
@@ -513,7 +544,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             ? _buildFloatingActionButtons(theme)
             : null,
         bottomNavigationBar: sldController.selectedBayForMovementId != null
-            ? _buildMovementControls(sldController)
+            ? _buildMovementControls(sldController, isDarkMode)
             : null,
       ),
     );
@@ -571,6 +602,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         }
 
         if (baySnapshot.hasError) {
+          final isDarkMode = Theme.of(context).brightness == Brightness.dark;
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -595,9 +627,11 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withOpacity(0.6),
                   ),
                 ),
               ],
@@ -639,9 +673,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             }
 
             if (equipmentSnapshot.hasError) {
+              final isDarkMode =
+                  Theme.of(context).brightness == Brightness.dark;
               return Center(
                 child: Text(
                   'Error loading equipment: ${equipmentSnapshot.error}',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
                 ),
               );
             }
@@ -670,9 +707,12 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 }
 
                 if (readingAssignmentSnapshot.hasError) {
+                  final isDarkMode =
+                      Theme.of(context).brightness == Brightness.dark;
                   return Center(
                     child: Text(
                       'Error loading reading assignments: ${readingAssignmentSnapshot.error}',
+                      style: TextStyle(color: isDarkMode ? Colors.white : null),
                     ),
                   );
                 }
@@ -706,6 +746,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     Set<String> assignedBays,
   ) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     if (baysByVoltage.isEmpty && standaloneEquipment.isEmpty) {
       return Center(
@@ -722,7 +763,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               child: Icon(
                 Icons.electrical_services,
                 size: 64,
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : theme.colorScheme.onSurface.withOpacity(0.6),
               ),
             ),
             const SizedBox(height: 24),
@@ -731,7 +774,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w500,
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : theme.colorScheme.onSurface.withOpacity(0.6),
               ),
             ),
             const SizedBox(height: 8),
@@ -739,7 +784,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               'Start by adding a bay or standalone equipment',
               style: TextStyle(
                 fontSize: 14,
-                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : theme.colorScheme.onSurface.withOpacity(0.5),
               ),
             ),
           ],
@@ -763,129 +810,156 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDarkMode
+                  ? const Color(0xFF2C2C2E) // Dark elevated surface
+                  : Colors.white,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: isDarkMode
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.05),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ],
             ),
-            child: ExpansionTile(
-              tilePadding: const EdgeInsets.all(16),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.flash_on,
-                  color: theme.colorScheme.primary,
-                  size: 24,
+            child: Theme(
+              data: theme.copyWith(
+                dividerColor: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+                listTileTheme: ListTileThemeData(
+                  iconColor: isDarkMode ? Colors.white : null,
+                  textColor: isDarkMode ? Colors.white : null,
                 ),
               ),
-              title: Text(
-                '$voltage Bays',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              subtitle: Text(
-                '${bays.length} bay${bays.length != 1 ? 's' : ''}',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              children: bays.map((bay) {
-                final isAssigned = assignedBays.contains(bay.id);
-
-                // CORRECTED: Updated the ListTile with proper reading assignment icon handling
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.all(16),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                leading: Container(
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                    color: theme.colorScheme.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(12),
-                    leading: _getBayTypeIcon(bay.bayType, theme),
-                    title: Text(
-                      bay.name,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Type: ${bay.bayType}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => BayEquipmentListScreen(
-                            bayId: bay.id,
-                            bayName: bay.name,
-                            currentUser: widget.currentUser,
-                          ),
-                        ),
-                      );
-                    },
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // CORRECTED: Reading assignment icon with proper navigation and refresh
-                        _buildReadingAssignmentIcon(bay, isAssigned),
-                        const SizedBox(width: 4),
-                        // Delete icon
-                        Container(
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.error.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: IconButton(
-                            icon: Icon(
-                              Icons.delete,
-                              color: theme.colorScheme.error,
-                              size: 20,
-                            ),
-                            tooltip: 'Delete Bay',
-                            onPressed: () => _confirmDeleteBay(context, bay),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        // Edit icon
-                        Container(
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: IconButton(
-                            icon: Icon(
-                              Icons.edit,
-                              color: theme.colorScheme.primary,
-                              size: 20,
-                            ),
-                            tooltip: 'Edit Bay Details',
-                            onPressed: () =>
-                                _setViewMode(BayDetailViewMode.edit, bay: bay),
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: Icon(
+                    Icons.flash_on,
+                    color: theme.colorScheme.primary,
+                    size: 24,
                   ),
-                );
-              }).toList(),
+                ),
+                title: Text(
+                  '$voltage Bays',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
+                subtitle: Text(
+                  '${bays.length} bay${bays.length != 1 ? 's' : ''}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+                children: bays.map((bay) {
+                  final isAssigned = assignedBays.contains(bay.id);
+
+                  // CORRECTED: Updated the ListTile with proper reading assignment icon handling
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(12),
+                      leading: _getBayTypeIcon(bay.bayType, theme, isDarkMode),
+                      title: Text(
+                        bay.name,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: isDarkMode ? Colors.white : null,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Type: ${bay.bayType}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => BayEquipmentListScreen(
+                              bayId: bay.id,
+                              bayName: bay.name,
+                              currentUser: widget.currentUser,
+                            ),
+                          ),
+                        );
+                      },
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // CORRECTED: Reading assignment icon with proper navigation and refresh
+                          _buildReadingAssignmentIcon(
+                            bay,
+                            isAssigned,
+                            isDarkMode,
+                          ),
+                          const SizedBox(width: 4),
+                          // Delete icon
+                          Container(
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.error.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                Icons.delete,
+                                color: theme.colorScheme.error,
+                                size: 20,
+                              ),
+                              tooltip: 'Delete Bay',
+                              onPressed: () => _confirmDeleteBay(context, bay),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          // Edit icon
+                          Container(
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                Icons.edit,
+                                color: theme.colorScheme.primary,
+                                size: 20,
+                              ),
+                              tooltip: 'Edit Bay Details',
+                              onPressed: () => _setViewMode(
+                                BayDetailViewMode.edit,
+                                bay: bay,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           );
         }).toList(),
@@ -895,86 +969,110 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           Container(
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDarkMode
+                  ? const Color(0xFF2C2C2E) // Dark elevated surface
+                  : Colors.white,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: isDarkMode
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.05),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ],
             ),
-            child: ExpansionTile(
-              tilePadding: const EdgeInsets.all(16),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.secondary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.settings,
-                  color: theme.colorScheme.secondary,
-                  size: 24,
+            child: Theme(
+              data: theme.copyWith(
+                dividerColor: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+                listTileTheme: ListTileThemeData(
+                  iconColor: isDarkMode ? Colors.white : null,
+                  textColor: isDarkMode ? Colors.white : null,
                 ),
               ),
-              title: const Text(
-                'Standalone Equipment',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                '${standaloneEquipment.length} equipment',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              children: standaloneEquipment.map((equipment) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.all(16),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                leading: Container(
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                    color: theme.colorScheme.secondary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(12),
-                    leading: _EquipmentIcon(
-                      equipmentType: equipment.equipmentTypeName,
-                      size: 32,
-                      color: theme.colorScheme.secondary,
-                    ),
-                    title: Text(
-                      equipment.equipmentTypeName,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Make: ${equipment.make}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => BayEquipmentManagementScreen(
-                            bayId: '',
-                            bayName: equipment.equipmentTypeName,
-                            substationId: widget.substationId,
-                            currentUser: widget.currentUser,
-                          ),
-                        ),
-                      );
-                    },
+                  child: Icon(
+                    Icons.settings,
+                    color: theme.colorScheme.secondary,
+                    size: 24,
                   ),
-                );
-              }).toList(),
+                ),
+                title: Text(
+                  'Standalone Equipment',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
+                subtitle: Text(
+                  '${standaloneEquipment.length} equipment',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : theme.colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                ),
+                children: standaloneEquipment.map((equipment) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(12),
+                      leading: _EquipmentIcon(
+                        equipmentType: equipment.equipmentTypeName,
+                        size: 32,
+                        color: theme.colorScheme.secondary,
+                      ),
+                      title: Text(
+                        equipment.equipmentTypeName,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: isDarkMode ? Colors.white : null,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Make: ${equipment.make}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => BayEquipmentManagementScreen(
+                              bayId: '',
+                              bayName: equipment.equipmentTypeName,
+                              substationId: widget.substationId,
+                              currentUser: widget.currentUser,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           ),
       ],
@@ -982,9 +1080,11 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   }
 
   // NEW: Reading assignment icon widget with proper state management
-  Widget _buildReadingAssignmentIcon(Bay bay, bool isAssigned) {
-    Theme.of(context);
-
+  Widget _buildReadingAssignmentIcon(
+    Bay bay,
+    bool isAssigned,
+    bool isDarkMode,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: isAssigned
@@ -1028,7 +1128,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
   }
 
-  Widget _getBayTypeIcon(String bayType, ThemeData theme) {
+  Widget _getBayTypeIcon(String bayType, ThemeData theme, bool isDarkMode) {
     IconData iconData;
     Color iconColor;
 
@@ -1070,7 +1170,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     );
   }
 
-  Widget _buildMovementControls(SldController sldController) {
+  Widget _buildMovementControls(SldController sldController, bool isDarkMode) {
     final selectedBay =
         sldController.baysMap[sldController.selectedBayForMovementId!];
     if (selectedBay == null) return const SizedBox.shrink();
@@ -1083,7 +1183,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
-        color: Colors.blueGrey.shade800,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.blueGrey.shade800,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -1271,10 +1373,21 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                     await showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text('Save All Changes?'),
-                        content: const Text(
+                        backgroundColor: isDarkMode
+                            ? const Color(0xFF1C1C1E)
+                            : Colors.white,
+                        title: Text(
+                          'Save All Changes?',
+                          style: TextStyle(
+                            color: isDarkMode ? Colors.white : null,
+                          ),
+                        ),
+                        content: Text(
                           'This will save all layout changes made in this session. '
                           'Do you want to continue?',
+                          style: TextStyle(
+                            color: isDarkMode ? Colors.white : null,
+                          ),
                         ),
                         actions: [
                           TextButton(
@@ -1347,12 +1460,14 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
   Future<void> _confirmDeleteBay(BuildContext context, Bay bay) async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
+          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -1371,10 +1486,14 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Delete Bay?',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
                 ),
               ),
             ],
@@ -1385,7 +1504,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
             children: [
               Text(
                 'Are you sure you want to delete "${bay.name}"?',
-                style: const TextStyle(fontSize: 16),
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
               const SizedBox(height: 12),
               Container(
@@ -1405,12 +1527,13 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                       size: 16,
                     ),
                     const SizedBox(width: 8),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'This will also remove all associated equipment and connections. This action cannot be undone.',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
+                          color: isDarkMode ? Colors.white : null,
                         ),
                       ),
                     ),
@@ -1425,7 +1548,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
               child: Text(
                 'Cancel',
                 style: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : theme.colorScheme.onSurface.withOpacity(0.6),
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1454,6 +1579,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
   Future<void> _performAnimatedDeletion(BuildContext context, Bay bay) async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     showDialog(
       context: context,
@@ -1464,7 +1590,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
@@ -1513,9 +1639,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 const SizedBox(height: 20),
                 Text(
                   'Deleting ${bay.name}...',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
+                    color: isDarkMode ? Colors.white : null,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1523,7 +1650,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   'Please wait while we remove the bay',
                   style: TextStyle(
                     fontSize: 14,
-                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : theme.colorScheme.onSurface.withOpacity(0.6),
                   ),
                 ),
               ],
@@ -1582,6 +1711,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
 
   Future<void> _showSuccessAnimation(BuildContext context, Bay bay) async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     showDialog(
       context: context,
@@ -1606,7 +1736,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: isDarkMode
+                          ? const Color(0xFF1C1C1E)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
@@ -1644,9 +1776,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                         const SizedBox(height: 16),
                         Text(
                           'Bay Deleted Successfully!',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
+                            color: isDarkMode ? Colors.white : null,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -1654,7 +1787,9 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                           '${bay.name} has been permanently removed',
                           style: TextStyle(
                             fontSize: 14,
-                            color: theme.colorScheme.onSurface.withOpacity(0.6),
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : theme.colorScheme.onSurface.withOpacity(0.6),
                           ),
                           textAlign: TextAlign.center,
                         ),

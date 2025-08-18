@@ -58,31 +58,39 @@ class _SubdivisionAssetManagementScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode background
+          : const Color(0xFFFAFAFA),
       body: Column(
         children: [
-          _buildConfigurationSection(theme),
+          _buildConfigurationSection(theme, isDarkMode),
           const SizedBox(height: 16),
           Expanded(
             child: _isLoading
-                ? _buildLoadingState(theme)
-                : _buildMainContent(theme),
+                ? _buildLoadingState(theme, isDarkMode)
+                : _buildMainContent(theme, isDarkMode),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildConfigurationSection(ThemeData theme) {
+  Widget _buildConfigurationSection(ThemeData theme, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -113,20 +121,22 @@ class _SubdivisionAssetManagementScreenState
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
+                    color: isDarkMode
+                        ? Colors.white
+                        : theme.colorScheme.onSurface,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          _buildSubstationSelector(theme),
+          _buildSubstationSelector(theme, isDarkMode),
         ],
       ),
     );
   }
 
-  Widget _buildSubstationSelector(ThemeData theme) {
+  Widget _buildSubstationSelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -135,7 +145,7 @@ class _SubdivisionAssetManagementScreenState
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
@@ -152,6 +162,9 @@ class _SubdivisionAssetManagementScreenState
             child: DropdownButton<Substation>(
               value: _selectedSubstation,
               isExpanded: true,
+              dropdownColor: isDarkMode
+                  ? const Color(0xFF2C2C2E)
+                  : Colors.white,
               items: [
                 DropdownMenuItem<Substation>(
                   value: null,
@@ -169,7 +182,10 @@ class _SubdivisionAssetManagementScreenState
                     value: substation,
                     child: Text(
                       substation.name,
-                      style: const TextStyle(fontSize: 14),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDarkMode ? Colors.white : null,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   );
@@ -186,9 +202,12 @@ class _SubdivisionAssetManagementScreenState
                 color: theme.colorScheme.primary,
                 size: 20,
               ),
-              hint: const Text(
+              hint: Text(
                 'Select Substation',
-                style: TextStyle(fontSize: 14),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
           ),
@@ -197,7 +216,7 @@ class _SubdivisionAssetManagementScreenState
     );
   }
 
-  Widget _buildLoadingState(ThemeData theme) {
+  Widget _buildLoadingState(ThemeData theme, bool isDarkMode) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -216,7 +235,9 @@ class _SubdivisionAssetManagementScreenState
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: theme.colorScheme.onSurface.withOpacity(0.7),
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.7)
+                  : theme.colorScheme.onSurface.withOpacity(0.7),
             ),
           ),
         ],
@@ -224,7 +245,7 @@ class _SubdivisionAssetManagementScreenState
     );
   }
 
-  Widget _buildMainContent(ThemeData theme) {
+  Widget _buildMainContent(ThemeData theme, bool isDarkMode) {
     return RefreshIndicator(
       color: theme.colorScheme.primary,
       onRefresh: _fetchSubdivisionAssets,
@@ -234,25 +255,27 @@ class _SubdivisionAssetManagementScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildStatsSection(theme),
+            _buildStatsSection(theme, isDarkMode),
             const SizedBox(height: 20),
-            _buildActionCards(theme),
+            _buildActionCards(theme, isDarkMode),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStatsSection(ThemeData theme) {
+  Widget _buildStatsSection(ThemeData theme, bool isDarkMode) {
     if (_totalBays == 0 && _totalEquipment == 0) {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: isDarkMode
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -261,14 +284,22 @@ class _SubdivisionAssetManagementScreenState
         child: Center(
           child: Column(
             children: [
-              Icon(Icons.info_outline, size: 40, color: Colors.grey.shade400),
+              Icon(
+                Icons.info_outline,
+                size: 40,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey.shade400,
+              ),
               const SizedBox(height: 12),
               Text(
                 'No Assets Found',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
                 ),
               ),
               const SizedBox(height: 4),
@@ -276,7 +307,12 @@ class _SubdivisionAssetManagementScreenState
                 _selectedSubstation != null
                     ? 'No bays or equipment found in ${_selectedSubstation!.name}'
                     : 'No bays or equipment found in subdivision substations',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey.shade500,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -288,7 +324,6 @@ class _SubdivisionAssetManagementScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Overview stats with dynamic title
         Text(
           _selectedSubstation != null
               ? 'Assets in ${_selectedSubstation!.name}'
@@ -296,7 +331,7 @@ class _SubdivisionAssetManagementScreenState
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 12),
@@ -310,6 +345,7 @@ class _SubdivisionAssetManagementScreenState
                   value: '${_substationsInSubdivision.length}',
                   icon: Icons.electrical_services,
                   color: Colors.blue,
+                  isDarkMode: isDarkMode,
                 ),
               ),
             if (_selectedSubstation == null) const SizedBox(width: 12),
@@ -320,6 +356,7 @@ class _SubdivisionAssetManagementScreenState
                 value: '$_totalBays',
                 icon: Icons.settings,
                 color: Colors.green,
+                isDarkMode: isDarkMode,
               ),
             ),
             const SizedBox(width: 12),
@@ -330,6 +367,7 @@ class _SubdivisionAssetManagementScreenState
                 value: '$_totalEquipment',
                 icon: Icons.construction,
                 color: Colors.orange,
+                isDarkMode: isDarkMode,
               ),
             ),
           ],
@@ -342,11 +380,11 @@ class _SubdivisionAssetManagementScreenState
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 12),
-          _buildBayTypeStats(theme),
+          _buildBayTypeStats(theme, isDarkMode),
         ],
 
         if (_equipmentTypeStats.isNotEmpty) ...[
@@ -356,17 +394,17 @@ class _SubdivisionAssetManagementScreenState
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 12),
-          _buildEquipmentTypeStats(theme),
+          _buildEquipmentTypeStats(theme, isDarkMode),
         ],
       ],
     );
   }
 
-  Widget _buildBayTypeStats(ThemeData theme) {
+  Widget _buildBayTypeStats(ThemeData theme, bool isDarkMode) {
     final colors = [
       Colors.purple,
       Colors.teal,
@@ -389,12 +427,13 @@ class _SubdivisionAssetManagementScreenState
           icon: Icons.settings_input_component,
           color: color,
           isCompact: true,
+          isDarkMode: isDarkMode,
         );
       }).toList(),
     );
   }
 
-  Widget _buildEquipmentTypeStats(ThemeData theme) {
+  Widget _buildEquipmentTypeStats(ThemeData theme, bool isDarkMode) {
     final colors = [
       Colors.cyan,
       Colors.pink,
@@ -417,6 +456,7 @@ class _SubdivisionAssetManagementScreenState
           icon: Icons.precision_manufacturing,
           color: color,
           isCompact: true,
+          isDarkMode: isDarkMode,
         );
       }).toList(),
     );
@@ -429,16 +469,21 @@ class _SubdivisionAssetManagementScreenState
     required IconData icon,
     required Color color,
     bool isCompact = false,
+    required bool isDarkMode,
   }) {
     return Container(
       width: isCompact ? 140 : null,
       padding: EdgeInsets.all(isCompact ? 12 : 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -467,7 +512,7 @@ class _SubdivisionAssetManagementScreenState
             style: TextStyle(
               fontSize: isCompact ? 18 : 20,
               fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 4),
@@ -475,7 +520,9 @@ class _SubdivisionAssetManagementScreenState
             title,
             style: TextStyle(
               fontSize: isCompact ? 11 : 13,
-              color: Colors.grey.shade600,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -485,7 +532,7 @@ class _SubdivisionAssetManagementScreenState
     );
   }
 
-  Widget _buildActionCards(ThemeData theme) {
+  Widget _buildActionCards(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -494,7 +541,7 @@ class _SubdivisionAssetManagementScreenState
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 12),
@@ -509,6 +556,7 @@ class _SubdivisionAssetManagementScreenState
           onTap: _selectedSubstation != null
               ? () => _navigateToSubstationDetail(_selectedSubstation!)
               : null,
+          isDarkMode: isDarkMode,
         ),
         const SizedBox(height: 12),
         _buildActionCard(
@@ -520,6 +568,7 @@ class _SubdivisionAssetManagementScreenState
               : 'Generate comprehensive CSV reports of your assets',
           color: Colors.green,
           onTap: () => _navigateToExportScreen(),
+          isDarkMode: isDarkMode,
         ),
       ],
     );
@@ -532,6 +581,7 @@ class _SubdivisionAssetManagementScreenState
     required String subtitle,
     required Color color,
     VoidCallback? onTap,
+    required bool isDarkMode,
   }) {
     final isDisabled = onTap == null;
 
@@ -542,16 +592,28 @@ class _SubdivisionAssetManagementScreenState
           scale: 1.0 - (_animationController.value * 0.02),
           child: Container(
             decoration: BoxDecoration(
-              color: isDisabled ? Colors.grey.shade100 : Colors.white,
+              color: isDisabled
+                  ? (isDarkMode
+                        ? const Color(0xFF3C3C3E)
+                        : Colors.grey.shade100)
+                  : (isDarkMode ? const Color(0xFF2C2C2E) : Colors.white),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isDisabled ? Colors.grey.shade300 : Colors.grey.shade200,
+                color: isDisabled
+                    ? (isDarkMode
+                          ? Colors.white.withOpacity(0.1)
+                          : Colors.grey.shade300)
+                    : (isDarkMode
+                          ? Colors.white.withOpacity(0.1)
+                          : Colors.grey.shade200),
               ),
               boxShadow: isDisabled
                   ? null
                   : [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
+                        color: isDarkMode
+                            ? Colors.black.withOpacity(0.3)
+                            : Colors.black.withOpacity(0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -569,13 +631,19 @@ class _SubdivisionAssetManagementScreenState
                       height: 44,
                       decoration: BoxDecoration(
                         color: isDisabled
-                            ? Colors.grey.shade300
+                            ? (isDarkMode
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.grey.shade300)
                             : color.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(
                         icon,
-                        color: isDisabled ? Colors.grey.shade500 : color,
+                        color: isDisabled
+                            ? (isDarkMode
+                                  ? Colors.white.withOpacity(0.3)
+                                  : Colors.grey.shade500)
+                            : color,
                         size: 20,
                       ),
                     ),
@@ -590,8 +658,12 @@ class _SubdivisionAssetManagementScreenState
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               color: isDisabled
-                                  ? Colors.grey.shade500
-                                  : theme.colorScheme.onSurface,
+                                  ? (isDarkMode
+                                        ? Colors.white.withOpacity(0.3)
+                                        : Colors.grey.shade500)
+                                  : (isDarkMode
+                                        ? Colors.white
+                                        : theme.colorScheme.onSurface),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -600,8 +672,12 @@ class _SubdivisionAssetManagementScreenState
                             style: TextStyle(
                               fontSize: 13,
                               color: isDisabled
-                                  ? Colors.grey.shade400
-                                  : Colors.grey.shade600,
+                                  ? (isDarkMode
+                                        ? Colors.white.withOpacity(0.2)
+                                        : Colors.grey.shade400)
+                                  : (isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey.shade600),
                               height: 1.3,
                             ),
                           ),
@@ -670,7 +746,6 @@ class _SubdivisionAssetManagementScreenState
     setState(() => _isLoading = true);
 
     try {
-      // Fetch substations in subdivision
       final substationsSnapshot = await FirebaseFirestore.instance
           .collection('substations')
           .where('subdivisionId', isEqualTo: widget.subdivisionId)
@@ -681,7 +756,6 @@ class _SubdivisionAssetManagementScreenState
           .map((doc) => Substation.fromFirestore(doc))
           .toList();
 
-      // Auto-select first substation if available and none selected
       if (_substationsInSubdivision.isNotEmpty && _selectedSubstation == null) {
         _selectedSubstation = _substationsInSubdivision.first;
       }
@@ -705,15 +779,12 @@ class _SubdivisionAssetManagementScreenState
       List<String> substationIds;
 
       if (_selectedSubstation != null) {
-        // Calculate stats for selected substation only
         substationIds = [_selectedSubstation!.id];
       } else {
-        // Calculate stats for all substations
         substationIds = _substationsInSubdivision.map((s) => s.id).toList();
       }
 
       if (substationIds.isNotEmpty) {
-        // Fetch bays for selected substations
         final baysSnapshot = await FirebaseFirestore.instance
             .collection('bays')
             .where('substationId', whereIn: substationIds)
@@ -723,18 +794,15 @@ class _SubdivisionAssetManagementScreenState
             .map((doc) => Bay.fromFirestore(doc))
             .toList();
 
-        // Calculate bay type stats
         _bayTypeStats.clear();
         for (final bay in bays) {
           _bayTypeStats[bay.bayType] = (_bayTypeStats[bay.bayType] ?? 0) + 1;
         }
         _totalBays = bays.length;
 
-        // Fetch equipment for all bays
         if (bays.isNotEmpty) {
           final bayIds = bays.map((b) => b.id).toList();
 
-          // Query equipment instances in chunks of 10 (Firestore limit)
           List<EquipmentInstance> allEquipment = [];
           for (int i = 0; i < bayIds.length; i += 10) {
             final chunk = bayIds.sublist(
@@ -754,7 +822,6 @@ class _SubdivisionAssetManagementScreenState
             );
           }
 
-          // Calculate equipment type stats
           _equipmentTypeStats.clear();
           for (final equipment in allEquipment) {
             _equipmentTypeStats[equipment.equipmentTypeName] =

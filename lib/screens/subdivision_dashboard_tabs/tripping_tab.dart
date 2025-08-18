@@ -210,34 +210,42 @@ class _TrippingTabState extends State<TrippingTab>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode background
+          : const Color(0xFFF8F9FA),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            _buildConfigurationSection(theme),
+            _buildConfigurationSection(theme, isDarkMode),
             const SizedBox(height: 16),
-            _buildSearchButton(theme),
+            _buildSearchButton(theme, isDarkMode),
             const SizedBox(height: 16),
-            if (_hasActiveFilters()) _buildActiveFiltersChips(theme),
-            _buildContent(theme),
+            if (_hasActiveFilters())
+              _buildActiveFiltersChips(theme, isDarkMode),
+            _buildContent(theme, isDarkMode),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildConfigurationSection(ThemeData theme) {
+  Widget _buildConfigurationSection(ThemeData theme, bool isDarkMode) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -268,7 +276,9 @@ class _TrippingTabState extends State<TrippingTab>
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
+                    color: isDarkMode
+                        ? Colors.white
+                        : theme.colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -296,9 +306,15 @@ class _TrippingTabState extends State<TrippingTab>
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(flex: 1, child: _buildSubstationSelector(theme)),
+              Expanded(
+                flex: 1,
+                child: _buildSubstationSelector(theme, isDarkMode),
+              ),
               const SizedBox(width: 16),
-              Expanded(flex: 1, child: _buildDateRangeSelector(theme)),
+              Expanded(
+                flex: 1,
+                child: _buildDateRangeSelector(theme, isDarkMode),
+              ),
             ],
           ),
         ],
@@ -306,7 +322,7 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildSubstationSelector(ThemeData theme) {
+  Widget _buildSubstationSelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -315,7 +331,7 @@ class _TrippingTabState extends State<TrippingTab>
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
@@ -332,12 +348,18 @@ class _TrippingTabState extends State<TrippingTab>
             child: DropdownButton<Substation>(
               value: _selectedSubstation,
               isExpanded: true,
+              dropdownColor: isDarkMode
+                  ? const Color(0xFF2C2C2E)
+                  : Colors.white,
               items: widget.accessibleSubstations.map((substation) {
                 return DropdownMenuItem(
                   value: substation,
                   child: Text(
                     substation.name,
-                    style: const TextStyle(fontSize: 14),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDarkMode ? Colors.white : null,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 );
@@ -367,9 +389,12 @@ class _TrippingTabState extends State<TrippingTab>
                 color: theme.colorScheme.primary,
                 size: 20,
               ),
-              hint: const Text(
+              hint: Text(
                 'Select Substation',
-                style: TextStyle(fontSize: 14),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
           ),
@@ -378,7 +403,7 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildDateRangeSelector(ThemeData theme) {
+  Widget _buildDateRangeSelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -387,7 +412,7 @@ class _TrippingTabState extends State<TrippingTab>
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
@@ -462,7 +487,7 @@ class _TrippingTabState extends State<TrippingTab>
     }
   }
 
-  Widget _buildSearchButton(ThemeData theme) {
+  Widget _buildSearchButton(ThemeData theme, bool isDarkMode) {
     final bool canSearch =
         _selectedSubstation != null && _startDate != null && _endDate != null;
 
@@ -500,7 +525,7 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildActiveFiltersChips(ThemeData theme) {
+  Widget _buildActiveFiltersChips(ThemeData theme, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -511,7 +536,9 @@ class _TrippingTabState extends State<TrippingTab>
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: Colors.grey.shade600,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
             ),
           ),
           const SizedBox(height: 8),
@@ -520,16 +547,17 @@ class _TrippingTabState extends State<TrippingTab>
             runSpacing: 4,
             children: [
               ..._selectedFilterVoltageLevels.map(
-                (level) => _buildFilterChip('Voltage: $level'),
+                (level) => _buildFilterChip('Voltage: $level', isDarkMode),
               ),
               ..._selectedFilterBayTypes.map(
-                (type) => _buildFilterChip('Type: $type'),
+                (type) => _buildFilterChip('Type: $type', isDarkMode),
               ),
               if (_selectedFilterBayIds.isNotEmpty)
                 _buildFilterChip(
                   '${_selectedFilterBayIds.length} specific bay(s)',
+                  isDarkMode,
                 ),
-              _buildClearFiltersChip(),
+              _buildClearFiltersChip(isDarkMode),
             ],
           ),
         ],
@@ -537,21 +565,25 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildFilterChip(String label) {
+  Widget _buildFilterChip(String label, bool isDarkMode) {
     return Chip(
       label: Text(label, style: const TextStyle(fontSize: 11)),
-      backgroundColor: Colors.blue.shade50,
+      backgroundColor: isDarkMode
+          ? Colors.blue.withOpacity(0.2)
+          : Colors.blue.shade50,
       side: BorderSide(color: Colors.blue.shade200),
       labelStyle: TextStyle(color: Colors.blue.shade700),
     );
   }
 
-  Widget _buildClearFiltersChip() {
+  Widget _buildClearFiltersChip(bool isDarkMode) {
     return InkWell(
       onTap: _clearAllFilters,
       child: Chip(
         label: const Text('Clear All', style: TextStyle(fontSize: 11)),
-        backgroundColor: Colors.red.shade50,
+        backgroundColor: isDarkMode
+            ? Colors.red.withOpacity(0.2)
+            : Colors.red.shade50,
         side: BorderSide(color: Colors.red.shade200),
         labelStyle: TextStyle(color: Colors.red.shade700),
         deleteIcon: Icon(Icons.clear, size: 16, color: Colors.red.shade700),
@@ -560,32 +592,32 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildContent(ThemeData theme) {
+  Widget _buildContent(ThemeData theme, bool isDarkMode) {
     if (_isLoading) {
       return Container(
         padding: const EdgeInsets.all(40),
-        child: _buildLoadingState(),
+        child: _buildLoadingState(isDarkMode),
       );
     }
 
     if (widget.accessibleSubstations.isEmpty) {
-      return _buildNoSubstationsState(theme);
+      return _buildNoSubstationsState(theme, isDarkMode);
     }
 
     if (_groupedEntriesByBayType.isEmpty) {
-      return _buildNoEventsState(theme);
+      return _buildNoEventsState(theme, isDarkMode);
     }
 
     return Column(
       children: [
-        _buildResultsHeader(theme),
+        _buildResultsHeader(theme, isDarkMode),
         const SizedBox(height: 16),
-        _buildEventsList(theme),
+        _buildEventsList(theme, isDarkMode),
       ],
     );
   }
 
-  Widget _buildResultsHeader(ThemeData theme) {
+  Widget _buildResultsHeader(ThemeData theme, bool isDarkMode) {
     final totalEvents = _groupedEntriesByBayType.values
         .expand((events) => events)
         .length;
@@ -594,11 +626,15 @@ class _TrippingTabState extends State<TrippingTab>
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -625,12 +661,19 @@ class _TrippingTabState extends State<TrippingTab>
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
+                    color: isDarkMode
+                        ? Colors.white
+                        : theme.colorScheme.onSurface,
                   ),
                 ),
                 Text(
                   '$totalEvents events found',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade600,
+                  ),
                 ),
               ],
             ),
@@ -655,29 +698,36 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildLoadingState() {
-    return const Center(
+  Widget _buildLoadingState(bool isDarkMode) {
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('Loading events...'),
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          Text(
+            'Loading events...',
+            style: TextStyle(color: isDarkMode ? Colors.white : null),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildNoSubstationsState(ThemeData theme) {
+  Widget _buildNoSubstationsState(ThemeData theme, bool isDarkMode) {
     return Container(
       margin: const EdgeInsets.all(32),
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -686,20 +736,31 @@ class _TrippingTabState extends State<TrippingTab>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.location_off, size: 64, color: Colors.grey.shade400),
+          Icon(
+            Icons.location_off,
+            size: 64,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.4)
+                : Colors.grey.shade400,
+          ),
           const SizedBox(height: 16),
           Text(
             'No Substations Found',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             'No accessible substations found. Please contact your administrator.',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            style: TextStyle(
+              fontSize: 14,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -707,16 +768,20 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildNoEventsState(ThemeData theme) {
+  Widget _buildNoEventsState(ThemeData theme, bool isDarkMode) {
     return Container(
       margin: const EdgeInsets.all(32),
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -725,14 +790,20 @@ class _TrippingTabState extends State<TrippingTab>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.event_available, size: 64, color: Colors.grey.shade400),
+          Icon(
+            Icons.event_available,
+            size: 64,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.4)
+                : Colors.grey.shade400,
+          ),
           const SizedBox(height: 16),
           Text(
             'No Events Found',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 8),
@@ -740,7 +811,12 @@ class _TrippingTabState extends State<TrippingTab>
             _hasActiveFilters()
                 ? 'No tripping or shutdown events found with the applied filters.'
                 : 'No tripping or shutdown events recorded for the selected period.',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            style: TextStyle(
+              fontSize: 14,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
             textAlign: TextAlign.center,
           ),
           if (_hasActiveFilters()) ...[
@@ -755,11 +831,11 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  Widget _buildEventsList(ThemeData theme) {
+  Widget _buildEventsList(ThemeData theme, bool isDarkMode) {
     return Column(
       children: _sortedBayTypes.map((bayType) {
         final entries = _groupedEntriesByBayType[bayType]!;
-        return _buildBayTypeGroup(theme, bayType, entries);
+        return _buildBayTypeGroup(theme, bayType, entries, isDarkMode);
       }).toList(),
     );
   }
@@ -768,68 +844,90 @@ class _TrippingTabState extends State<TrippingTab>
     ThemeData theme,
     String bayType,
     List<TrippingShutdownEntry> entries,
+    bool isDarkMode,
   ) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: ExpansionTile(
-        initiallyExpanded: true,
-        title: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: _getBayTypeColor(bayType).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                _getBayTypeIcon(bayType),
-                color: _getBayTypeColor(bayType),
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              '$bayType Events',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _getBayTypeColor(bayType).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${entries.length}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+          listTileTheme: ListTileThemeData(
+            iconColor: isDarkMode ? Colors.white : null,
+            textColor: isDarkMode ? Colors.white : null,
+          ),
+        ),
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          title: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _getBayTypeColor(bayType).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  _getBayTypeIcon(bayType),
                   color: _getBayTypeColor(bayType),
+                  size: 18,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Text(
+                '$bayType Events',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode ? Colors.white : null,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getBayTypeColor(bayType).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${entries.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _getBayTypeColor(bayType),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          children: entries
+              .map((entry) => _buildEventCard(theme, entry, isDarkMode))
+              .toList(),
         ),
-        children: entries
-            .map((entry) => _buildEventCard(theme, entry))
-            .toList(),
       ),
     );
   }
 
-  Widget _buildEventCard(ThemeData theme, TrippingShutdownEntry entry) {
+  Widget _buildEventCard(
+    ThemeData theme,
+    TrippingShutdownEntry entry,
+    bool isDarkMode,
+  ) {
     final isOpen = entry.status == 'OPEN';
     final statusColor = isOpen ? Colors.orange : Colors.green;
     final statusIcon = isOpen ? Icons.hourglass_empty : Icons.check_circle;
@@ -837,9 +935,13 @@ class _TrippingTabState extends State<TrippingTab>
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.1)
+              : Colors.grey.shade200,
+        ),
       ),
       child: Column(
         children: [
@@ -855,7 +957,11 @@ class _TrippingTabState extends State<TrippingTab>
             ),
             title: Text(
               '${entry.eventType} - ${entry.bayName}',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : null,
+              ),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -863,48 +969,79 @@ class _TrippingTabState extends State<TrippingTab>
                 Text(
                   _substationsMap[entry.substationId]?.name ??
                       'Unknown Substation',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  style: TextStyle(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade600,
+                    fontSize: 12,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   'Start: ${DateFormat('dd.MMM.yyyy HH:mm').format(entry.startTime.toDate())}',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  style: TextStyle(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade600,
+                    fontSize: 12,
+                  ),
                 ),
                 if (!isOpen && entry.endTime != null)
                   Text(
                     'End: ${DateFormat('dd.MMM.yyyy HH:mm').format(entry.endTime!.toDate())}',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    style: TextStyle(
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
                   ),
               ],
             ),
             trailing: PopupMenuButton<String>(
               onSelected: (value) => _handleEventAction(value, entry),
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
               itemBuilder: (context) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'view',
                   child: ListTile(
-                    leading: Icon(Icons.visibility, size: 20),
-                    title: Text('View Details', style: TextStyle(fontSize: 14)),
+                    leading: const Icon(Icons.visibility, size: 20),
+                    title: Text(
+                      'View Details',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDarkMode ? Colors.white : null,
+                      ),
+                    ),
                     dense: true,
                   ),
                 ),
                 if (isOpen && _canEditEvents()) ...[
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'close',
                     child: ListTile(
-                      leading: Icon(Icons.check_circle_outline, size: 20),
+                      leading: const Icon(Icons.check_circle_outline, size: 20),
                       title: Text(
                         'Close Event',
-                        style: TextStyle(fontSize: 14),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDarkMode ? Colors.white : null,
+                        ),
                       ),
                       dense: true,
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'edit',
                     child: ListTile(
-                      leading: Icon(Icons.edit, size: 20),
-                      title: Text('Edit Event', style: TextStyle(fontSize: 14)),
+                      leading: const Icon(Icons.edit, size: 20),
+                      title: Text(
+                        'Edit Event',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDarkMode ? Colors.white : null,
+                        ),
+                      ),
                       dense: true,
                     ),
                   ),
@@ -932,14 +1069,20 @@ class _TrippingTabState extends State<TrippingTab>
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.2)
+                        : Colors.grey.shade300,
+                  ),
                 ),
                 child: Icon(
                   Icons.more_vert,
                   size: 16,
-                  color: Colors.grey.shade600,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
                 ),
               ),
             ),
@@ -951,7 +1094,9 @@ class _TrippingTabState extends State<TrippingTab>
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
+                color: isDarkMode
+                    ? Colors.blue.withOpacity(0.1)
+                    : Colors.blue.shade50,
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(8),
                   bottomRight: Radius.circular(8),
@@ -1242,19 +1387,27 @@ class _TrippingTabState extends State<TrippingTab>
     String eventType,
     String bayName,
   ) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Row(
           children: [
             Icon(Icons.warning, color: Colors.red.shade600),
             const SizedBox(width: 8),
-            const Text('Confirm Delete'),
+            Text(
+              'Confirm Delete',
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
+            ),
           ],
         ),
         content: Text(
           'Are you sure you want to delete this $eventType event for $bayName?\n\nThis action cannot be undone.',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
         ),
         actions: [
           TextButton(
@@ -1296,9 +1449,11 @@ class _TrippingTabState extends State<TrippingTab>
     }
   }
 
-  // Excel Export
   // Excel Export - Updated _exportToExcel method in TrippingTab
   Future<void> _exportToExcel() async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     try {
       if (Platform.isAndroid) {
         var status = await Permission.storage.status;
@@ -1318,16 +1473,20 @@ class _TrippingTabState extends State<TrippingTab>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
+        builder: (context) => Center(
           child: Card(
+            color: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
             child: Padding(
-              padding: EdgeInsets.all(20),
+              padding: const EdgeInsets.all(20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Generating Excel file...'),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Generating Excel file...',
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
+                  ),
                 ],
               ),
             ),
@@ -1559,25 +1718,37 @@ class _TrippingTabState extends State<TrippingTab>
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Row(
+          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+          title: Row(
             children: [
-              Icon(Icons.check_circle, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Export Successful'),
+              const Icon(Icons.check_circle, color: Colors.green),
+              const SizedBox(width: 8),
+              Text(
+                'Export Successful',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('File saved as: $fileName'),
+              Text(
+                'File saved as: $fileName',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
               const SizedBox(height: 8),
-              Text('Location: ${directory.path}'),
+              Text(
+                'Location: ${directory.path}',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
+                  color: isDarkMode
+                      ? Colors.blue.withOpacity(0.1)
+                      : Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.blue.shade200),
                 ),
@@ -1698,7 +1869,10 @@ class _FilterDialogState extends State<_FilterDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Dialog(
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: double.maxFinite,
@@ -1708,7 +1882,9 @@ class _FilterDialogState extends State<_FilterDialog> {
             Container(
               padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withOpacity(0.1),
+                color: isDarkMode
+                    ? const Color(0xFF2C2C2E)
+                    : theme.colorScheme.primary.withOpacity(0.1),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(12),
                   topRight: Radius.circular(12),
@@ -1722,7 +1898,9 @@ class _FilterDialogState extends State<_FilterDialog> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.primary,
+                        color: isDarkMode
+                            ? Colors.white
+                            : theme.colorScheme.primary,
                       ),
                     ),
                   ),
@@ -1734,7 +1912,9 @@ class _FilterDialogState extends State<_FilterDialog> {
                       child: Icon(
                         Icons.close,
                         size: 20,
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: isDarkMode
+                            ? Colors.white
+                            : theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
                     ),
                   ),
@@ -1754,6 +1934,7 @@ class _FilterDialogState extends State<_FilterDialog> {
                       (level) => level,
                       (selected) =>
                           setState(() => tempSelectedVoltageLevels = selected),
+                      isDarkMode,
                     ),
                     const SizedBox(height: 16),
                     _buildMultiSelectSection(
@@ -1763,6 +1944,7 @@ class _FilterDialogState extends State<_FilterDialog> {
                       (type) => type,
                       (selected) =>
                           setState(() => tempSelectedBayTypes = selected),
+                      isDarkMode,
                     ),
                     const SizedBox(height: 16),
                     _buildMultiSelectSection(
@@ -1772,12 +1954,16 @@ class _FilterDialogState extends State<_FilterDialog> {
                       (id) => widget.baysMap[id]?.name ?? 'Unknown',
                       (selected) =>
                           setState(() => tempSelectedBayIds = selected),
+                      isDarkMode,
                     ),
                   ],
                 ),
               ),
             ),
-            const Divider(height: 1),
+            Divider(
+              height: 1,
+              color: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+            ),
             Container(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -1824,6 +2010,7 @@ class _FilterDialogState extends State<_FilterDialog> {
     List<String> selected,
     String Function(String) itemToString,
     Function(List<String>) onChanged,
+    bool isDarkMode,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1832,7 +2019,11 @@ class _FilterDialogState extends State<_FilterDialog> {
           children: [
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : null,
+              ),
             ),
             const Spacer(),
             if (items.isNotEmpty)
@@ -1855,7 +2046,11 @@ class _FilterDialogState extends State<_FilterDialog> {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
+            border: Border.all(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.2)
+                  : Colors.grey.shade300,
+            ),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
@@ -1863,9 +2058,14 @@ class _FilterDialogState extends State<_FilterDialog> {
               final isSelected = selected.contains(item);
               return Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
                   border: Border(
-                    bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                    bottom: BorderSide(
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.1)
+                          : Colors.grey.shade200,
+                      width: 0.5,
+                    ),
                   ),
                 ),
                 child: CheckboxListTile(
@@ -1877,6 +2077,7 @@ class _FilterDialogState extends State<_FilterDialog> {
                       fontWeight: isSelected
                           ? FontWeight.w500
                           : FontWeight.normal,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                   value: isSelected,
@@ -1900,7 +2101,12 @@ class _FilterDialogState extends State<_FilterDialog> {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               '${items.length - 5} more items available',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 12,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade600,
+              ),
             ),
           ),
       ],

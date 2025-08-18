@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
+
 import '../../models/hierarchy_models.dart';
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
@@ -33,12 +34,10 @@ class _OperationsTabState extends State<OperationsTab> {
   List<String> _selectedBayIds = [];
   DateTime? _startDate;
   DateTime? _endDate;
-
   // Cache for bays by substation ID to avoid refetching
   Map<String, List<Bay>> _bayCache = {};
   Map<String, List<String>> _selectedBayCache = {};
   bool _isBaysLoading = false;
-
   bool _isViewerLoading = false;
   String? _viewerErrorMessage;
   List<LogsheetEntry> _rawLogsheetEntriesForViewer = [];
@@ -67,33 +66,41 @@ class _OperationsTabState extends State<OperationsTab> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode background
+          : const Color(0xFFFAFAFA),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildBaySelectionSection(theme),
+            _buildBaySelectionSection(theme, isDarkMode),
             const SizedBox(height: 16),
-            _buildActionButton(theme),
+            _buildActionButton(theme, isDarkMode),
             const SizedBox(height: 16),
-            if (_shouldShowResults()) _buildResultsSection(theme),
+            if (_shouldShowResults()) _buildResultsSection(theme, isDarkMode),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBaySelectionSection(ThemeData theme) {
+  Widget _buildBaySelectionSection(ThemeData theme, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -107,25 +114,31 @@ class _OperationsTabState extends State<OperationsTab> {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(flex: 1, child: _buildSubstationSelector(theme)),
+              Expanded(
+                flex: 1,
+                child: _buildSubstationSelector(theme, isDarkMode),
+              ),
               const SizedBox(width: 16),
-              Expanded(flex: 1, child: _buildDateRangeSelector(theme)),
+              Expanded(
+                flex: 1,
+                child: _buildDateRangeSelector(theme, isDarkMode),
+              ),
             ],
           ),
           const SizedBox(height: 16),
-          _buildBaySelector(theme),
+          _buildBaySelector(theme, isDarkMode),
         ],
       ),
     );
   }
 
-  Widget _buildSubstationSelector(ThemeData theme) {
+  Widget _buildSubstationSelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -134,7 +147,7 @@ class _OperationsTabState extends State<OperationsTab> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
@@ -151,12 +164,18 @@ class _OperationsTabState extends State<OperationsTab> {
             child: DropdownButton<Substation>(
               value: _selectedSubstation,
               isExpanded: true,
+              dropdownColor: isDarkMode
+                  ? const Color(0xFF2C2C2E)
+                  : Colors.white,
               items: widget.accessibleSubstations.map((substation) {
                 return DropdownMenuItem(
                   value: substation,
                   child: Text(
                     substation.name,
-                    style: const TextStyle(fontSize: 14),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDarkMode ? Colors.white : null,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 );
@@ -179,7 +198,6 @@ class _OperationsTabState extends State<OperationsTab> {
                     );
                     _clearViewerData();
                   });
-
                   _fetchBaysForSelectedSubstation();
                 }
               },
@@ -188,9 +206,12 @@ class _OperationsTabState extends State<OperationsTab> {
                 color: theme.colorScheme.primary,
                 size: 20,
               ),
-              hint: const Text(
+              hint: Text(
                 'Select Substation',
-                style: TextStyle(fontSize: 14),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
           ),
@@ -199,7 +220,7 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildDateRangeSelector(ThemeData theme) {
+  Widget _buildDateRangeSelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -208,7 +229,7 @@ class _OperationsTabState extends State<OperationsTab> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
@@ -252,7 +273,7 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildBaySelector(ThemeData theme) {
+  Widget _buildBaySelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -261,11 +282,11 @@ class _OperationsTabState extends State<OperationsTab> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
-        _buildBayMultiSelect(theme),
+        _buildBayMultiSelect(theme, isDarkMode),
       ],
     );
   }
@@ -292,7 +313,6 @@ class _OperationsTabState extends State<OperationsTab> {
         );
       },
     );
-
     if (picked != null) {
       setState(() {
         _startDate = picked.start;
@@ -302,19 +322,28 @@ class _OperationsTabState extends State<OperationsTab> {
     }
   }
 
-  Widget _buildBayMultiSelect(ThemeData theme) {
+  Widget _buildBayMultiSelect(ThemeData theme, bool isDarkMode) {
     if (_bays.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
+          color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey.shade200,
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.info_outline, color: Colors.grey.shade600),
+            Icon(
+              Icons.info_outline,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -323,7 +352,12 @@ class _OperationsTabState extends State<OperationsTab> {
                     : _isBaysLoading
                     ? 'Loading bays for ${_selectedSubstation!.name}...'
                     : 'No bays available for ${_selectedSubstation!.name}',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                style: TextStyle(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
+                  fontSize: 13,
+                ),
               ),
             ),
           ],
@@ -341,9 +375,10 @@ class _OperationsTabState extends State<OperationsTab> {
                 _selectedBayIds.isEmpty
                     ? 'No bays selected'
                     : '${_selectedBayIds.length} bay(s) selected',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
+                  color: isDarkMode ? Colors.white : null,
                 ),
               ),
             ),
@@ -410,7 +445,7 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildActionButton(ThemeData theme) {
+  Widget _buildActionButton(ThemeData theme, bool isDarkMode) {
     final bool canViewEntries =
         _selectedSubstation != null &&
         _selectedBayIds.isNotEmpty &&
@@ -448,15 +483,19 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildResultsSection(ThemeData theme) {
+  Widget _buildResultsSection(ThemeData theme, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -490,14 +529,18 @@ class _OperationsTabState extends State<OperationsTab> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface,
+                        color: isDarkMode
+                            ? Colors.white
+                            : theme.colorScheme.onSurface,
                       ),
                     ),
                     Text(
                       '${_rawLogsheetEntriesForViewer.length} entries found',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey.shade600,
                       ),
                     ),
                   ],
@@ -527,28 +570,32 @@ class _OperationsTabState extends State<OperationsTab> {
           if (_selectedBayIds.length == 1 &&
               !_isViewerLoading &&
               _individualEntriesForDropdown.isNotEmpty)
-            _buildIndividualEntryDropdown(theme),
+            _buildIndividualEntryDropdown(theme, isDarkMode),
           const SizedBox(height: 16),
           if (_isViewerLoading)
             const Center(child: CircularProgressIndicator())
           else if (_viewerErrorMessage != null)
-            _buildErrorMessage(_viewerErrorMessage!)
+            _buildErrorMessage(_viewerErrorMessage!, isDarkMode)
           else if (_groupedEntriesForViewer.isEmpty)
-            _buildNoDataMessage()
+            _buildNoDataMessage(isDarkMode)
           else
-            _buildEntriesTable(theme),
+            _buildEntriesTable(theme, isDarkMode),
         ],
       ),
     );
   }
 
-  Widget _buildIndividualEntryDropdown(ThemeData theme) {
+  Widget _buildIndividualEntryDropdown(ThemeData theme, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.blue.shade50,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.shade200),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.blue.withOpacity(0.3)
+              : Colors.blue.shade200,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -562,7 +609,7 @@ class _OperationsTabState extends State<OperationsTab> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: Colors.blue.shade700,
+                  color: isDarkMode ? Colors.white : Colors.blue.shade700,
                 ),
               ),
             ],
@@ -572,23 +619,30 @@ class _OperationsTabState extends State<OperationsTab> {
             value: _selectedIndividualReadingEntry,
             decoration: InputDecoration(
               labelText: 'Select Specific Reading',
-              labelStyle: const TextStyle(fontSize: 12),
+              labelStyle: TextStyle(
+                fontSize: 12,
+                color: isDarkMode ? Colors.white : null,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
               isDense: true,
             ),
+            dropdownColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
             items: _individualEntriesForDropdown
                 .map(
-                  (entry) => DropdownMenuItem<LogsheetEntry>(
+                  (entry) => DropdownMenuItem(
                     value: entry,
                     child: Text(
                       DateFormat(
                         'yyyy-MM-dd HH:mm',
                       ).format(entry.readingTimestamp.toDate().toLocal()),
-                      style: const TextStyle(fontSize: 13),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDarkMode ? Colors.white : null,
+                      ),
                     ),
                   ),
                 )
@@ -603,11 +657,11 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildErrorMessage(String error) {
+  Widget _buildErrorMessage(String error, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
+        color: isDarkMode ? Colors.red.withOpacity(0.1) : Colors.red.shade50,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.red.shade200),
       ),
@@ -626,26 +680,39 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildNoDataMessage() {
+  Widget _buildNoDataMessage(bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(32),
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+            Icon(
+              Icons.search_off,
+              size: 48,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : Colors.grey.shade400,
+            ),
             const SizedBox(height: 12),
             Text(
               'No logsheet entries found',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade600,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               'No data available for the selected parameters and date range.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+              style: TextStyle(
+                fontSize: 13,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey.shade500,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -654,10 +721,14 @@ class _OperationsTabState extends State<OperationsTab> {
     );
   }
 
-  Widget _buildEntriesTable(ThemeData theme) {
+  Widget _buildEntriesTable(ThemeData theme, bool isDarkMode) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.2)
+              : Colors.grey.shade300,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: SingleChildScrollView(
@@ -670,40 +741,57 @@ class _OperationsTabState extends State<OperationsTab> {
           dataRowMaxHeight: 400,
           columnSpacing: 16,
           horizontalMargin: 16,
-          columns: const [
+          columns: [
             DataColumn(
               label: Text(
                 'Bay',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Date',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Time',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
             DataColumn(
               label: Text(
                 'Readings Summary',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
           ],
-          rows: _buildDataRows(),
+          rows: _buildDataRows(isDarkMode),
         ),
       ),
     );
   }
 
-  List<DataRow> _buildDataRows() {
+  List<DataRow> _buildDataRows(bool isDarkMode) {
     List<DataRow> rows = [];
+
     _groupedEntriesForViewer.forEach((bayId, datesMap) {
       final bay = _viewerBaysMap[bayId];
       datesMap.forEach((date, entries) {
@@ -735,9 +823,10 @@ class _OperationsTabState extends State<OperationsTab> {
                 DataCell(
                   Text(
                     DateFormat('MMM dd, yyyy').format(date),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                 ),
@@ -771,11 +860,17 @@ class _OperationsTabState extends State<OperationsTab> {
                     ),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
+                      color: isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : Colors.grey.shade50,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade200),
+                      border: Border.all(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.1)
+                            : Colors.grey.shade200,
+                      ),
                     ),
-                    child: _buildReadingsDisplay(entry),
+                    child: _buildReadingsDisplay(entry, isDarkMode),
                   ),
                 ),
               ],
@@ -787,9 +882,8 @@ class _OperationsTabState extends State<OperationsTab> {
     return rows;
   }
 
-  Widget _buildReadingsDisplay(LogsheetEntry entry) {
+  Widget _buildReadingsDisplay(LogsheetEntry entry, bool isDarkMode) {
     List<Widget> readingWidgets = [];
-
     Map<String, dynamic> currentReadings = {};
     Map<String, dynamic> voltageReadings = {};
     Map<String, dynamic> statusReadings = {};
@@ -812,7 +906,12 @@ class _OperationsTabState extends State<OperationsTab> {
 
     if (currentReadings.isNotEmpty) {
       readingWidgets.add(
-        _buildReadingSection('Current Readings', currentReadings, Colors.blue),
+        _buildReadingSection(
+          'Current Readings',
+          currentReadings,
+          Colors.blue,
+          isDarkMode,
+        ),
       );
     }
 
@@ -822,19 +921,30 @@ class _OperationsTabState extends State<OperationsTab> {
           'Voltage Readings',
           voltageReadings,
           Colors.orange,
+          isDarkMode,
         ),
       );
     }
 
     if (statusReadings.isNotEmpty) {
       readingWidgets.add(
-        _buildReadingSection('Status', statusReadings, Colors.green),
+        _buildReadingSection(
+          'Status',
+          statusReadings,
+          Colors.green,
+          isDarkMode,
+        ),
       );
     }
 
     if (otherReadings.isNotEmpty) {
       readingWidgets.add(
-        _buildReadingSection('Other Readings', otherReadings, Colors.purple),
+        _buildReadingSection(
+          'Other Readings',
+          otherReadings,
+          Colors.purple,
+          isDarkMode,
+        ),
       );
     }
 
@@ -850,6 +960,7 @@ class _OperationsTabState extends State<OperationsTab> {
     String title,
     Map<String, dynamic> readings,
     Color color,
+    bool isDarkMode,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -888,10 +999,12 @@ class _OperationsTabState extends State<OperationsTab> {
                   flex: 3,
                   child: Text(
                     '${entry.key}:',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.8)
+                          : Colors.black87,
                     ),
                   ),
                 ),
@@ -903,9 +1016,15 @@ class _OperationsTabState extends State<OperationsTab> {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: isDarkMode
+                          ? const Color(0xFF2C2C2E)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.2)
+                            : Colors.grey.shade300,
+                      ),
                     ),
                     child: Text(
                       displayValue,
@@ -918,7 +1037,7 @@ class _OperationsTabState extends State<OperationsTab> {
                             ? (entry.value['value'] as bool
                                   ? Colors.green
                                   : Colors.red)
-                            : Colors.black87,
+                            : (isDarkMode ? Colors.white : Colors.black87),
                       ),
                     ),
                   ),
@@ -957,13 +1076,18 @@ class _OperationsTabState extends State<OperationsTab> {
     }
 
     final List<String> tempSelected = List.from(_selectedBayIds);
-    final result = await showDialog<List<String>?>(
+    final result = await showDialog<List<String>>(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final theme = Theme.of(context);
+            final isDarkMode = theme.brightness == Brightness.dark;
+
             return Dialog(
+              backgroundColor: isDarkMode
+                  ? const Color(0xFF1C1C1E)
+                  : Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -975,7 +1099,9 @@ class _OperationsTabState extends State<OperationsTab> {
                     Container(
                       padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : theme.colorScheme.primary.withOpacity(0.1),
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(12),
                           topRight: Radius.circular(12),
@@ -989,7 +1115,9 @@ class _OperationsTabState extends State<OperationsTab> {
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
-                                color: theme.colorScheme.primary,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : theme.colorScheme.primary,
                               ),
                             ),
                           ),
@@ -1001,9 +1129,11 @@ class _OperationsTabState extends State<OperationsTab> {
                               child: Icon(
                                 Icons.close,
                                 size: 20,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.7,
-                                ),
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : theme.colorScheme.onSurface.withOpacity(
+                                        0.7,
+                                      ),
                               ),
                             ),
                           ),
@@ -1017,9 +1147,10 @@ class _OperationsTabState extends State<OperationsTab> {
                           Expanded(
                             child: Text(
                               '${tempSelected.length} of ${_bays.length} bays selected',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
+                                color: isDarkMode ? Colors.white : null,
                               ),
                             ),
                           ),
@@ -1077,7 +1208,10 @@ class _OperationsTabState extends State<OperationsTab> {
                         ],
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(
+                      height: 1,
+                      color: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+                    ),
                     Expanded(
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
@@ -1085,15 +1219,20 @@ class _OperationsTabState extends State<OperationsTab> {
                         itemBuilder: (context, index) {
                           final bay = _bays[index];
                           final isSelected = tempSelected.contains(bay.id);
+
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: isSelected
                                     ? theme.colorScheme.primary.withOpacity(0.3)
-                                    : Colors.grey.shade300,
+                                    : (isDarkMode
+                                          ? Colors.white.withOpacity(0.1)
+                                          : Colors.grey.shade300),
                                 width: isSelected ? 2 : 1,
                               ),
                             ),
@@ -1107,7 +1246,7 @@ class _OperationsTabState extends State<OperationsTab> {
                                       : FontWeight.w500,
                                   color: isSelected
                                       ? theme.colorScheme.primary
-                                      : null,
+                                      : (isDarkMode ? Colors.white : null),
                                 ),
                               ),
                               subtitle: Text(
@@ -1118,7 +1257,9 @@ class _OperationsTabState extends State<OperationsTab> {
                                       ? theme.colorScheme.primary.withOpacity(
                                           0.7,
                                         )
-                                      : Colors.grey.shade600,
+                                      : (isDarkMode
+                                            ? Colors.white.withOpacity(0.6)
+                                            : Colors.grey.shade600),
                                 ),
                               ),
                               value: isSelected,
@@ -1138,7 +1279,10 @@ class _OperationsTabState extends State<OperationsTab> {
                         },
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(
+                      height: 1,
+                      color: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+                    ),
                     Container(
                       padding: const EdgeInsets.all(16),
                       child: Row(
@@ -1191,6 +1335,7 @@ class _OperationsTabState extends State<OperationsTab> {
 
   Future<void> _exportToExcel() async {
     try {
+      // Storage permission handling for Android
       if (Platform.isAndroid) {
         var status = await Permission.storage.status;
         if (!status.isGranted) {
@@ -1206,6 +1351,7 @@ class _OperationsTabState extends State<OperationsTab> {
         }
       }
 
+      // Show loading dialog
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -1226,11 +1372,12 @@ class _OperationsTabState extends State<OperationsTab> {
         ),
       );
 
+      // Excel generation logic
       var excel = Excel.createExcel();
       excel.delete('Sheet1');
 
+      // Group data by bay type
       Map<String, List<LogsheetEntry>> dataByBayType = {};
-
       for (var entry in _rawLogsheetEntriesForViewer) {
         final bay = _viewerBaysMap[entry.bayId];
         if (bay != null) {
@@ -1240,9 +1387,11 @@ class _OperationsTabState extends State<OperationsTab> {
         }
       }
 
+      // Create sheets for each bay type
       dataByBayType.forEach((bayType, entries) {
         var sheet = excel[bayType];
 
+        // Collect all unique parameters
         Set<String> allParameters = {};
         for (var entry in entries) {
           allParameters.addAll(entry.values.keys);
@@ -1250,6 +1399,7 @@ class _OperationsTabState extends State<OperationsTab> {
 
         List<String> sortedParameters = allParameters.toList()..sort();
 
+        // Create headers
         List<String> headers = [
           'Date & Time',
           'Bay Name',
@@ -1258,6 +1408,7 @@ class _OperationsTabState extends State<OperationsTab> {
           ...sortedParameters,
         ];
 
+        // Write headers
         for (int i = 0; i < headers.length; i++) {
           var cell = sheet.cell(
             CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
@@ -1269,8 +1420,8 @@ class _OperationsTabState extends State<OperationsTab> {
           );
         }
 
+        // Sort entries by bay name and timestamp
         int rowIndex = 1;
-
         entries.sort((a, b) {
           final bayA = _viewerBaysMap[a.bayId]?.name ?? '';
           final bayB = _viewerBaysMap[b.bayId]?.name ?? '';
@@ -1280,21 +1431,22 @@ class _OperationsTabState extends State<OperationsTab> {
           return a.readingTimestamp.compareTo(b.readingTimestamp);
         });
 
+        // Write data rows
         for (var entry in entries) {
           final bay = _viewerBaysMap[entry.bayId];
           final dateTime = entry.readingTimestamp.toDate().toLocal();
 
-          List<dynamic> rowData = [
+          List<String> rowData = [
             DateFormat('yyyy-MM-dd HH:mm:ss').format(dateTime),
             bay?.name ?? 'Unknown',
             bay?.bayType ?? 'Unknown',
             bay?.voltageLevel ?? 'Unknown',
           ];
 
+          // Add parameter values
           for (String parameter in sortedParameters) {
             dynamic value = entry.values[parameter];
             String cellValue = '';
-
             if (value != null) {
               if (value is Map && value.containsKey('value')) {
                 if (value['value'] is bool) {
@@ -1306,22 +1458,24 @@ class _OperationsTabState extends State<OperationsTab> {
                 cellValue = value.toString();
               }
             }
-
             rowData.add(cellValue);
           }
 
+          // Write row data
           for (int i = 0; i < rowData.length; i++) {
             var cell = sheet.cell(
               CellIndex.indexByColumnRow(columnIndex: i, rowIndex: rowIndex),
             );
             cell.value = TextCellValue(rowData[i].toString());
 
+            // Alternate row colors
             if (rowIndex % 2 == 0) {
               cell.cellStyle = CellStyle(
                 backgroundColorHex: ExcelColor.fromHexString('#F5F5F5'),
               );
             }
 
+            // Highlight bay name changes
             if (i == 1 && rowIndex > 1) {
               var prevBayCell = sheet.cell(
                 CellIndex.indexByColumnRow(
@@ -1340,15 +1494,16 @@ class _OperationsTabState extends State<OperationsTab> {
           rowIndex++;
         }
 
-        sheet.setColumnWidth(0, 18);
-        sheet.setColumnWidth(1, 15);
-        sheet.setColumnWidth(2, 12);
-        sheet.setColumnWidth(3, 12);
-
+        // Set column widths
+        sheet.setColumnWidth(0, 18); // Date & Time
+        sheet.setColumnWidth(1, 15); // Bay Name
+        sheet.setColumnWidth(2, 12); // Bay Type
+        sheet.setColumnWidth(3, 12); // Voltage Level
         for (int i = 4; i < headers.length; i++) {
           sheet.setColumnWidth(i, 12);
         }
 
+        // Add summary information at the top
         sheet.insertRowIterables([
           TextCellValue('Bay Type: $bayType'),
           TextCellValue(''),
@@ -1359,6 +1514,7 @@ class _OperationsTabState extends State<OperationsTab> {
           ),
         ], 0);
 
+        // Style summary row
         for (int i = 0; i < 5; i++) {
           var cell = sheet.cell(
             CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
@@ -1370,105 +1526,125 @@ class _OperationsTabState extends State<OperationsTab> {
         }
       });
 
+      // Save file
       final directory = await getApplicationDocumentsDirectory();
       final fileName =
           'logsheet_data_${_selectedSubstation?.name.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
       final file = File('${directory.path}/$fileName');
-
       await file.writeAsBytes(excel.encode()!);
 
+      // Close loading dialog
       Navigator.of(context).pop();
 
+      // Show success dialog
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Export Successful'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('File saved as: $fileName'),
-              const SizedBox(height: 8),
-              Text('Location: ${directory.path}'),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
+        builder: (context) {
+          final theme = Theme.of(context);
+          final isDarkMode = theme.brightness == Brightness.dark;
+
+          return AlertDialog(
+            backgroundColor: isDarkMode
+                ? const Color(0xFF1C1C1E)
+                : Colors.white,
+            title: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green),
+                const SizedBox(width: 8),
+                Text(
+                  'Export Successful',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: Colors.blue.shade700,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Excel Format Details:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue.shade700,
-                              fontWeight: FontWeight.w600,
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'File saved as: $fileName',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Location: ${directory.path}',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDarkMode
+                        ? Colors.blue.withOpacity(0.1)
+                        : Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.blue.shade700,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Excel Format Details:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '• Separate sheets for each bay type\n• Parameters as column headers\n• Time-series data in rows\n• Sorted by bay name and timestamp',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.blue.shade700,
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        '• Separate sheets for each bay type\n• Parameters as column headers\n• Time-series data in rows\n• Sorted by bay name and timestamp',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  try {
+                    await OpenFilex.open(file.path);
+                  } catch (e) {
+                    SnackBarUtils.showSnackBar(
+                      context,
+                      'Could not open file. Please check your file manager.',
+                      isError: true,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Open File'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-            ElevatedButton.icon(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                try {
-                  await OpenFilex.open(file.path);
-                } catch (e) {
-                  SnackBarUtils.showSnackBar(
-                    context,
-                    'Could not open file. Please check your file manager.',
-                    isError: true,
-                  );
-                }
-              },
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Open File'),
-            ),
-          ],
-        ),
+          );
+        },
       );
     } catch (e) {
       if (Navigator.canPop(context)) {
         Navigator.of(context).pop();
       }
-
       print('Error exporting to Excel: $e');
       SnackBarUtils.showSnackBar(
         context,
@@ -1495,6 +1671,7 @@ class _OperationsTabState extends State<OperationsTab> {
     }
 
     if (_isBaysLoading) return;
+
     if (mounted) setState(() => _isBaysLoading = true);
 
     try {
@@ -1557,6 +1734,7 @@ class _OperationsTabState extends State<OperationsTab> {
     });
 
     try {
+      // Clear and fetch bay information
       _viewerBaysMap.clear();
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
@@ -1567,6 +1745,7 @@ class _OperationsTabState extends State<OperationsTab> {
         _viewerBaysMap[doc.id] = Bay.fromFirestore(doc);
       }
 
+      // Set up date range for query
       final DateTime queryStartDate = DateTime(
         _startDate!.year,
         _startDate!.month,
@@ -1582,6 +1761,7 @@ class _OperationsTabState extends State<OperationsTab> {
         999,
       ).toUtc();
 
+      // Fetch logsheet entries
       final logsheetSnapshot = await FirebaseFirestore.instance
           .collection('logsheetEntries')
           .where('substationId', isEqualTo: _selectedSubstation!.id)
@@ -1605,6 +1785,7 @@ class _OperationsTabState extends State<OperationsTab> {
 
       _groupLogsheetEntriesForViewer();
 
+      // Set up individual entries dropdown for single bay selection
       if (_selectedBayIds.length == 1) {
         _individualEntriesForDropdown = _rawLogsheetEntriesForViewer;
         _individualEntriesForDropdown.sort(
@@ -1629,6 +1810,7 @@ class _OperationsTabState extends State<OperationsTab> {
 
   void _groupLogsheetEntriesForViewer() {
     _groupedEntriesForViewer.clear();
+
     for (var entry in _rawLogsheetEntriesForViewer) {
       final String bayId = entry.bayId;
       final DateTime entryDate = DateTime(
@@ -1642,6 +1824,7 @@ class _OperationsTabState extends State<OperationsTab> {
       _groupedEntriesForViewer[bayId]![entryDate]!.add(entry);
     }
 
+    // Sort entries by time within each day
     _groupedEntriesForViewer.forEach((bayId, datesMap) {
       datesMap.forEach((date, entriesList) {
         entriesList.sort((a, b) {

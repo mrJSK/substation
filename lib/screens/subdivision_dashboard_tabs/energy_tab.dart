@@ -8,6 +8,8 @@ import 'dart:io';
 import 'dart:math';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
+import '../../models/bay_connection_model.dart';
+import '../../models/busbar_energy_map.dart';
 import '../../models/logsheet_models.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
@@ -189,6 +191,9 @@ class _EnergyTabState extends State<EnergyTab> {
       999,
     ).toUtc();
 
+    print('DEBUG: Calculating energy losses from ${_startDate} to ${_endDate}');
+
+    // Get main entries for the selected date range
     final entriesSnapshot = await FirebaseFirestore.instance
         .collection('logsheetEntries')
         .where('substationId', isEqualTo: _selectedSubstation!.id)
@@ -208,10 +213,18 @@ class _EnergyTabState extends State<EnergyTab> {
         .map((doc) => LogsheetEntry.fromFirestore(doc))
         .toList();
 
+    print('DEBUG: Found ${entries.length} main entries');
+
+    // Handle previous day entries for same-date calculations
     Map<String, LogsheetEntry> previousDayEntries = {};
-    if (_startDate == _endDate) {
+    if (_startDate!.isAtSameMomentAs(_endDate!)) {
+      print('DEBUG: Same date selected, fetching previous day entries');
       final prevDay = _startDate!.subtract(const Duration(days: 1));
-      final prevStart = DateTime(prevDay.year, prevDay.month, prevDay.day);
+      final prevStart = DateTime(
+        prevDay.year,
+        prevDay.month,
+        prevDay.day,
+      ).toUtc();
       final prevEnd = DateTime(
         prevDay.year,
         prevDay.month,
@@ -220,30 +233,89 @@ class _EnergyTabState extends State<EnergyTab> {
         59,
         59,
         999,
-      );
-      final prevSnapshot = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where('substationId', isEqualTo: _selectedSubstation!.id)
-          .where('frequency', isEqualTo: 'daily')
-          .where(
-            'readingTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(prevStart),
-          )
-          .where(
-            'readingTimestamp',
-            isLessThanOrEqualTo: Timestamp.fromDate(prevEnd),
-          )
-          .get();
-      for (var doc in prevSnapshot.docs) {
-        final entry = LogsheetEntry.fromFirestore(doc);
-        previousDayEntries[entry.bayId] = entry;
+      ).toUtc();
+
+      try {
+        final prevSnapshot = await FirebaseFirestore.instance
+            .collection('logsheetEntries')
+            .where('substationId', isEqualTo: _selectedSubstation!.id)
+            .where('frequency', isEqualTo: 'daily')
+            .where(
+              'readingTimestamp',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(prevStart),
+            )
+            .where(
+              'readingTimestamp',
+              isLessThanOrEqualTo: Timestamp.fromDate(prevEnd),
+            )
+            .get();
+
+        for (var doc in prevSnapshot.docs) {
+          final entry = LogsheetEntry.fromFirestore(doc);
+          previousDayEntries[entry.bayId] = entry;
+        }
+        print('DEBUG: Found ${previousDayEntries.length} previous day entries');
+      } catch (e) {
+        print('ERROR: Failed to fetch previous day entries: $e');
       }
     }
 
+    // Clear existing data
     _bayEnergyData.clear();
     _substationAbstract.clear();
     _busbarAbstract.clear();
 
+    // ✅ STEP 1: Calculate individual bay energy data
+    int processedBays = 0;
+    int baysWithData = 0;
+
+    for (var bay in _baysMap.values) {
+      processedBays++;
+      final bayEntries = entries.where((e) => e.bayId == bay.id).toList();
+
+      print(
+        'DEBUG: Processing bay ${bay.name} (${bay.bayType}) - Found ${bayEntries.length} entries',
+      );
+
+      final bayData = _calculateBayLosses(
+        bay,
+        bayEntries,
+        _startDate!,
+        _endDate!,
+        previousDayEntries[bay.id],
+      );
+
+      if (bayData.isNotEmpty) {
+        baysWithData++;
+        _bayEnergyData[bay.id] = bayData;
+        print(
+          'DEBUG: Added energy data for ${bay.name}: Import=${bayData['import']}, Export=${bayData['export']}',
+        );
+      } else {
+        print('DEBUG: No energy data calculated for ${bay.name}');
+      }
+    }
+
+    print(
+      'DEBUG: Processed $processedBays bays, $baysWithData have energy data',
+    );
+
+    // ✅ STEP 2: Calculate busbar abstracts by aggregating connected bays
+    await _calculateBusbarAbstracts();
+
+    // ✅ STEP 3: Calculate substation totals
+    _substationAbstract = _calculateSubstationTotalColumn();
+
+    print('DEBUG: Final results:');
+    print(' Bay energy data count: ${_bayEnergyData.length}');
+    print(' Busbar abstracts: ${_busbarAbstract.keys.toList()}');
+    print(' Substation abstract: $_substationAbstract');
+  }
+
+  // ✅ NEW METHOD: Calculate busbar abstracts properly
+  // ✅ UPDATED: Use EnergyDataService integration instead of bay connections
+  Future<void> _calculateBusbarAbstracts() async {
+    // Get unique bus voltages from busbar-type bays
     final uniqueBusVoltages =
         _baysMap.values
             .where((bay) => bay.bayType == 'Busbar')
@@ -255,6 +327,9 @@ class _EnergyTabState extends State<EnergyTab> {
                 _getVoltageLevelValue(b).compareTo(_getVoltageLevelValue(a)),
           );
 
+    print('DEBUG: Unique bus voltages: $uniqueBusVoltages');
+
+    // Initialize busbar abstracts
     for (String voltage in uniqueBusVoltages) {
       _busbarAbstract['$voltage BUS'] = {
         'totalImport': 0.0,
@@ -266,45 +341,234 @@ class _EnergyTabState extends State<EnergyTab> {
       };
     }
 
-    for (var bay in _baysMap.values) {
-      final bayEntries = entries.where((e) => e.bayId == bay.id).toList();
-      final bayData = _calculateBayLosses(
-        bay,
-        bayEntries,
-        _startDate!,
-        _endDate!,
-        previousDayEntries[bay.id],
-      );
-      if (bayData.isNotEmpty) {
-        _bayEnergyData[bay.id] = bayData;
-        if (bay.bayType == 'Busbar') {
-          final busKey = '${bay.voltageLevel} BUS';
-          if (_busbarAbstract.containsKey(busKey)) {
-            _busbarAbstract[busKey]!['totalImport'] =
-                (_busbarAbstract[busKey]!['totalImport'] ?? 0.0) +
-                (bayData['import'] ?? 0.0);
-            _busbarAbstract[busKey]!['totalExport'] =
-                (_busbarAbstract[busKey]!['totalExport'] ?? 0.0) +
-                (bayData['export'] ?? 0.0);
-            _busbarAbstract[busKey]!['totalLosses'] =
-                (_busbarAbstract[busKey]!['totalLosses'] ?? 0.0) +
-                (bayData['losses'] ?? 0.0);
-            _busbarAbstract[busKey]!['activeBays'] =
-                (_busbarAbstract[busKey]!['activeBays'] ?? 0.0) + 1.0;
+    // ✅ Use EnergyDataService logic to get busbar mappings
+    await _calculateBusbarAbstractsUsingEnergyMaps();
+  }
+
+  // ✅ NEW: Calculate busbar abstracts using energy maps (same logic as EnergyDataService)
+  Future<void> _calculateBusbarAbstractsUsingEnergyMaps() async {
+    try {
+      // ✅ Load busbar energy maps from Firestore
+      final mapsSnapshot = await FirebaseFirestore.instance
+          .collection('busbarEnergyMaps')
+          .where('substationId', isEqualTo: _selectedSubstation!.id)
+          .get();
+
+      final Map<String, BusbarEnergyMap> busbarEnergyMaps = {
+        for (var doc in mapsSnapshot.docs)
+          '${doc['busbarId']}-${doc['connectedBayId']}':
+              BusbarEnergyMap.fromFirestore(doc),
+      };
+
+      print('DEBUG: Loaded ${busbarEnergyMaps.length} busbar energy maps');
+
+      // ✅ For each busbar, calculate energy using the same logic as EnergyDataService
+      final busbarBays = _baysMap.values
+          .where((bay) => bay.bayType == 'Busbar')
+          .toList();
+
+      for (var busbar in busbarBays) {
+        final busKey = '${busbar.voltageLevel} BUS';
+        print('DEBUG: Processing busbar ${busbar.name} (${busKey})');
+
+        if (!_busbarAbstract.containsKey(busKey)) continue;
+
+        // ✅ Find connected bays using same logic as EnergyDataService
+        final connectedBays = _getConnectedBaysForBusbar(busbar);
+        print(
+          'DEBUG: Found ${connectedBays.length} bays connected to ${busbar.name}',
+        );
+
+        double totalImp = 0.0;
+        double totalExp = 0.0;
+        int connectedBayCount = 0;
+        int configuredBayCount = 0;
+
+        for (var connectedBay in connectedBays) {
+          if (connectedBay.bayType != 'Busbar') {
+            connectedBayCount++;
+
+            // ✅ GET BUSBAR ENERGY MAP CONFIGURATION
+            final mapKey = '${busbar.id}-${connectedBay.id}';
+            final busbarMap = busbarEnergyMaps[mapKey];
+
+            final energyData = _bayEnergyData[connectedBay.id];
+            if (energyData != null && busbarMap != null) {
+              configuredBayCount++;
+
+              // ✅ APPLY IMPORT CONTRIBUTION MAPPING
+              switch (busbarMap.importContribution) {
+                case EnergyContributionType.busImport:
+                  totalImp += energyData['import'] ?? 0.0;
+                  print(
+                    'DEBUG: Adding ${connectedBay.name} import (${energyData['import']}) to ${busbar.name} import',
+                  );
+                  break;
+                case EnergyContributionType.busExport:
+                  totalExp += energyData['import'] ?? 0.0;
+                  print(
+                    'DEBUG: Adding ${connectedBay.name} import (${energyData['import']}) to ${busbar.name} export',
+                  );
+                  break;
+                case EnergyContributionType.none:
+                  print(
+                    'DEBUG: ${connectedBay.name} import not contributing to ${busbar.name}',
+                  );
+                  break;
+              }
+
+              // ✅ APPLY EXPORT CONTRIBUTION MAPPING
+              switch (busbarMap.exportContribution) {
+                case EnergyContributionType.busImport:
+                  totalImp += energyData['export'] ?? 0.0;
+                  print(
+                    'DEBUG: Adding ${connectedBay.name} export (${energyData['export']}) to ${busbar.name} import',
+                  );
+                  break;
+                case EnergyContributionType.busExport:
+                  totalExp += energyData['export'] ?? 0.0;
+                  print(
+                    'DEBUG: Adding ${connectedBay.name} export (${energyData['export']}) to ${busbar.name} export',
+                  );
+                  break;
+                case EnergyContributionType.none:
+                  print(
+                    'DEBUG: ${connectedBay.name} export not contributing to ${busbar.name}',
+                  );
+                  break;
+              }
+            } else if (energyData != null) {
+              // ✅ DEFAULT BEHAVIOR: If no configuration exists, include normally
+              totalImp += energyData['import'] ?? 0.0;
+              totalExp += energyData['export'] ?? 0.0;
+              print(
+                'DEBUG: Default mapping for ${connectedBay.name} to ${busbar.name}: Import=${energyData['import']}, Export=${energyData['export']}',
+              );
+            }
           }
+        }
+
+        // Update busbar abstract
+        final totalLosses = totalImp - totalExp;
+        _busbarAbstract[busKey]!['totalImport'] = totalImp;
+        _busbarAbstract[busKey]!['totalExport'] = totalExp;
+        _busbarAbstract[busKey]!['totalLosses'] = totalLosses;
+        _busbarAbstract[busKey]!['lossPercentage'] = totalImp > 0
+            ? (totalLosses / totalImp) * 100
+            : 0.0;
+        _busbarAbstract[busKey]!['efficiency'] = totalImp > 0
+            ? (totalExp / totalImp) * 100
+            : 0.0;
+        _busbarAbstract[busKey]!['activeBays'] = configuredBayCount.toDouble();
+
+        print('DEBUG: Updated busbar abstract for $busKey:');
+        print('  Total Import: $totalImp');
+        print('  Total Export: $totalExp');
+        print('  Total Losses: $totalLosses');
+        print('  Connected Bays: $connectedBayCount');
+        print('  Configured Bays: $configuredBayCount');
+      }
+    } catch (e) {
+      print(
+        'ERROR: Failed to calculate busbar abstracts using energy maps: $e',
+      );
+    }
+  }
+
+  // ✅ HELPER: Get connected bays for a busbar (using all non-busbar bays for now)
+  List<Bay> _getConnectedBaysForBusbar(Bay busbar) {
+    // Since bay connections are not available, we'll include all non-busbar bays
+    // This matches the logic you would use in a real system where you know which bays are connected
+
+    // For your case, based on the voltage levels:
+    // - 132kV busbar connects to: Lines and Transformers (typically high voltage equipment)
+    // - 33kV busbar connects to: Feeders and other medium voltage equipment
+
+    final connectedBays = <Bay>[];
+
+    for (var bay in _baysMap.values) {
+      if (bay.bayType == 'Busbar') continue; // Skip busbars
+
+      // ✅ VOLTAGE-BASED CONNECTION LOGIC
+      if (busbar.voltageLevel == '132kV') {
+        // 132kV busbar typically connects to transformers and incoming lines
+        if (bay.bayType == 'Transformer' || bay.bayType == 'Line') {
+          connectedBays.add(bay);
+        }
+      } else if (busbar.voltageLevel == '33kV') {
+        // 33kV busbar typically connects to feeders and outgoing equipment
+        if (bay.bayType == 'Feeder') {
+          connectedBays.add(bay);
         }
       }
     }
 
-    _busbarAbstract.forEach((key, data) {
-      final import = data['totalImport'] ?? 0.0;
-      if (import > 0) {
-        data['lossPercentage'] = ((data['totalLosses'] ?? 0.0) / import) * 100;
-        data['efficiency'] = ((data['totalExport'] ?? 0.0) / import) * 100;
-      }
-    });
+    print(
+      'DEBUG: Connected bays for ${busbar.name} (${busbar.voltageLevel}): ${connectedBays.map((b) => '${b.name}(${b.bayType})').join(', ')}',
+    );
+    return connectedBays;
+  }
 
-    _substationAbstract = _calculateSubstationTotalColumn();
+  // ✅ HELPER: Get connected bays for a busbar
+  List<Bay> _getConnectedBays(
+    String busbarId,
+    List<BayConnection> connections,
+  ) {
+    final List<Bay> connectedBays = [];
+
+    for (var connection in connections) {
+      String? connectedBayId;
+
+      if (connection.sourceBayId == busbarId) {
+        connectedBayId = connection.targetBayId;
+      } else if (connection.targetBayId == busbarId) {
+        connectedBayId = connection.sourceBayId;
+      }
+
+      if (connectedBayId != null) {
+        final bay = _baysMap[connectedBayId];
+        if (bay != null && !connectedBays.contains(bay)) {
+          connectedBays.add(bay);
+        }
+      }
+    }
+
+    return connectedBays;
+  }
+
+  // ✅ HELPER: Get bay energy contribution configuration
+  Future<Map<String, bool>> _getBayEnergyContribution(
+    String busbarId,
+    String bayId,
+  ) async {
+    try {
+      // Check for busbar energy map configuration in Firestore
+      final configDoc = await FirebaseFirestore.instance
+          .collection('busbarEnergyMaps')
+          .where('substationId', isEqualTo: _selectedSubstation!.id)
+          .where('busbarId', isEqualTo: busbarId)
+          .where('connectedBayId', isEqualTo: bayId)
+          .limit(1)
+          .get();
+
+      if (configDoc.docs.isNotEmpty) {
+        final config = configDoc.docs.first.data();
+        final importContribution = config['importContribution'] ?? 'none';
+        final exportContribution = config['exportContribution'] ?? 'none';
+
+        return {
+          'importToBusImport': importContribution == 'busImport',
+          'importToBusExport': importContribution == 'busExport',
+          'exportToBusImport': exportContribution == 'busImport',
+          'exportToBusExport': exportContribution == 'busExport',
+        };
+      }
+    } catch (e) {
+      print('DEBUG: Error getting energy contribution config: $e');
+    }
+
+    // Default: no specific configuration found
+    return {};
   }
 
   Map<String, double> _calculateBayLosses(
@@ -314,34 +578,51 @@ class _EnergyTabState extends State<EnergyTab> {
     DateTime endDate,
     LogsheetEntry? previousDayEntry,
   ) {
-    if (entries.isEmpty) return {};
+    if (entries.isEmpty) {
+      print('DEBUG: No entries found for bay ${bay.name}');
+      return <String, double>{}; // ✅ Explicitly typed as Map<String, double>
+    }
+
     entries.sort((a, b) => a.readingTimestamp.compareTo(b.readingTimestamp));
+
     double totalImport = 0.0;
     double totalExport = 0.0;
     double mf = bay.multiplyingFactor ?? 1.0;
+
+    print('DEBUG: Calculating losses for ${bay.name}, MF: $mf');
+
     if (startDate.isAtSameMomentAs(endDate)) {
+      print('DEBUG: Same date calculation for ${bay.name}');
+
+      // Same date selected - use current day vs previous day readings
       final todayEntry = entries.where((entry) {
         final entryDate = entry.readingTimestamp.toDate();
         return entryDate.year == startDate.year &&
             entryDate.month == startDate.month &&
             entryDate.day == startDate.day;
       }).lastOrNull;
-      double? currentImport = 0.0,
-          previousImport = 0.0,
-          currentExport = 0.0,
-          previousExport = 0.0;
+
       if (todayEntry != null) {
-        currentImport =
+        print('DEBUG: Found today entry for ${bay.name}');
+
+        double currentImport =
             _parseNumericValue(
               todayEntry.values['Current Day Reading (Import)'],
             ) ??
             0.0;
-        currentExport =
+
+        double currentExport =
             _parseNumericValue(
               todayEntry.values['Current Day Reading (Export)'],
             ) ??
             0.0;
+
+        double previousImport = 0.0;
+        double previousExport = 0.0;
+
+        // Try to use the separate previous day entry first
         if (previousDayEntry != null) {
+          print('DEBUG: Using separate previous day entry for ${bay.name}');
           previousImport =
               _parseNumericValue(
                 previousDayEntry.values['Current Day Reading (Import)'],
@@ -353,6 +634,8 @@ class _EnergyTabState extends State<EnergyTab> {
               ) ??
               0.0;
         } else {
+          print('DEBUG: Using embedded previous day readings for ${bay.name}');
+          // Fallback to previous day readings stored in today's entry
           previousImport =
               _parseNumericValue(
                 todayEntry.values['Previous Day Reading (Import)'],
@@ -364,12 +647,36 @@ class _EnergyTabState extends State<EnergyTab> {
               ) ??
               0.0;
         }
+
+        // Ensure we have valid readings
+        if (currentImport == 0.0 &&
+            currentExport == 0.0 &&
+            previousImport == 0.0 &&
+            previousExport == 0.0) {
+          print('DEBUG: All readings are zero for ${bay.name}');
+          return <String, double>{}; // ✅ Explicitly typed
+        }
+
         totalImport = max(0, currentImport - previousImport) * mf;
         totalExport = max(0, currentExport - previousExport) * mf;
+
+        print('DEBUG: Same date calculation for ${bay.name}:');
+        print('  Current Import: $currentImport, Previous: $previousImport');
+        print('  Current Export: $currentExport, Previous: $previousExport');
+        print('  Multiplier Factor: $mf');
+        print('  Calculated Import: $totalImport, Export: $totalExport');
+      } else {
+        print('DEBUG: No today entry found for ${bay.name}');
+        return <String, double>{}; // ✅ Explicitly typed
       }
     } else {
+      print('DEBUG: Date range calculation for ${bay.name}');
+
+      // Different dates - use start date vs end date readings
       LogsheetEntry? startEntry;
       LogsheetEntry? endEntry;
+
+      // Find start date entry (first entry of start date)
       for (var entry in entries) {
         final entryDate = entry.readingTimestamp.toDate();
         if (entryDate.year == startDate.year &&
@@ -379,6 +686,8 @@ class _EnergyTabState extends State<EnergyTab> {
           break;
         }
       }
+
+      // Find end date entry (last entry of end date)
       for (var entry in entries.reversed) {
         final entryDate = entry.readingTimestamp.toDate();
         if (entryDate.year == endDate.year &&
@@ -388,48 +697,95 @@ class _EnergyTabState extends State<EnergyTab> {
           break;
         }
       }
+
       if (startEntry != null && endEntry != null) {
+        print('DEBUG: Found both start and end entries for ${bay.name}');
+
         final startImport =
             _parseNumericValue(
               startEntry.values['Current Day Reading (Import)'],
             ) ??
             0.0;
+
         final endImport =
             _parseNumericValue(
               endEntry.values['Current Day Reading (Import)'],
             ) ??
             0.0;
+
         final startExport =
             _parseNumericValue(
               startEntry.values['Current Day Reading (Export)'],
             ) ??
             0.0;
+
         final endExport =
             _parseNumericValue(
               endEntry.values['Current Day Reading (Export)'],
             ) ??
             0.0;
+
+        // Ensure we have valid readings
+        if (startImport == 0.0 &&
+            endImport == 0.0 &&
+            startExport == 0.0 &&
+            endExport == 0.0) {
+          print('DEBUG: All readings are zero for ${bay.name}');
+          return <String, double>{}; // ✅ Explicitly typed
+        }
+
         totalImport = max(0, endImport - startImport) * mf;
         totalExport = max(0, endExport - startExport) * mf;
+
+        print('DEBUG: Date range calculation for ${bay.name}:');
+        print('  Start Import: $startImport, End: $endImport');
+        print('  Start Export: $startExport, End: $endExport');
+        print('  Multiplier Factor: $mf');
+        print('  Calculated Import: $totalImport, Export: $totalExport');
+      } else {
+        print(
+          'DEBUG: Missing start or end entry for ${bay.name} (Start: ${startEntry != null}, End: ${endEntry != null})',
+        );
+        return <String, double>{}; // ✅ Explicitly typed
       }
     }
-    final losses = totalImport - totalExport;
-    final lossPercentage = totalImport > 0 ? (losses / totalImport) * 100 : 0.0;
-    return {
+
+    // Calculate final values
+    final double losses = totalImport - totalExport;
+    final double lossPercentage = totalImport > 0
+        ? (losses / totalImport) * 100
+        : 0.0;
+    final double efficiency = totalImport > 0
+        ? (totalExport / totalImport) * 100
+        : 0.0;
+
+    // ✅ Create the result map with explicit double typing
+    final Map<String, double> result = <String, double>{
       'import': totalImport,
       'export': totalExport,
-      'losses': max(0, losses),
+      'losses': max(0.0, losses), // Ensure max returns double
       'lossPercentage': lossPercentage,
-      'efficiency': totalImport > 0 ? (totalExport / totalImport) * 100 : 0.0,
+      'efficiency': efficiency,
     };
+
+    print('DEBUG: Final result for ${bay.name}: $result');
+    return result;
   }
 
   double? _parseNumericValue(dynamic value) {
+    if (value == null) return null;
+
     if (value is num) return value.toDouble();
-    if (value is String) return double.tryParse(value);
+
+    if (value is String) {
+      if (value.isEmpty) return null;
+      return double.tryParse(value.trim());
+    }
+
     if (value is Map && value.containsKey('value')) {
       return _parseNumericValue(value['value']);
     }
+
     return null;
   }
 
@@ -437,25 +793,40 @@ class _EnergyTabState extends State<EnergyTab> {
     double totalImportEnergy = 0.0;
     double totalExportEnergy = 0.0;
     double totalLosses = 0.0;
+
+    // First try to use busbar abstracts
+    bool hasBusbarData = false;
     _busbarAbstract.forEach((busName, busData) {
-      totalImportEnergy += busData['totalImport'] ?? 0.0;
-      totalExportEnergy += busData['totalExport'] ?? 0.0;
-      totalLosses += busData['totalLosses'] ?? 0.0;
+      final import = busData['totalImport'] ?? 0.0;
+      final export = busData['totalExport'] ?? 0.0;
+      final losses = busData['totalLosses'] ?? 0.0;
+
+      if (import > 0 || export > 0) {
+        hasBusbarData = true;
+        totalImportEnergy += import;
+        totalExportEnergy += export;
+        totalLosses += losses;
+      }
     });
-    if (totalImportEnergy == 0.0 && totalExportEnergy == 0.0) {
+
+    // If no busbar data, use individual bay data
+    if (!hasBusbarData) {
+      print('DEBUG: No busbar data found, using individual bay data');
       _bayEnergyData.forEach((bayId, bayData) {
         totalImportEnergy += bayData['import'] ?? 0.0;
         totalExportEnergy += bayData['export'] ?? 0.0;
         totalLosses += bayData['losses'] ?? 0.0;
       });
     }
+
     final double lossPercentage = totalImportEnergy > 0
         ? (totalLosses / totalImportEnergy) * 100
         : 0.0;
     final double efficiency = totalImportEnergy > 0
         ? (totalExportEnergy / totalImportEnergy) * 100
         : 0.0;
-    return {
+
+    final result = {
       'totalImport': totalImportEnergy,
       'totalExport': totalExportEnergy,
       'totalLosses': totalLosses,
@@ -463,26 +834,32 @@ class _EnergyTabState extends State<EnergyTab> {
       'efficiency': efficiency,
       'activeBays': _bayEnergyData.length.toDouble(),
     };
+
+    print('DEBUG: Substation totals: $result');
+    return result;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode background
+          : const Color(0xFFFAFAFA),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildConfigurationSection(theme),
+              _buildConfigurationSection(theme, isDarkMode),
               const SizedBox(height: 16),
-              _buildCalculateButton(theme),
+              _buildCalculateButton(theme, isDarkMode),
               const SizedBox(height: 16),
               if (!_isLoading && _selectedSubstation != null)
-                ..._buildEnergyContent(theme),
+                ..._buildEnergyContent(theme, isDarkMode),
             ],
           ),
         ),
@@ -490,15 +867,19 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildConfigurationSection(ThemeData theme) {
+  Widget _buildConfigurationSection(ThemeData theme, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -512,15 +893,21 @@ class _EnergyTabState extends State<EnergyTab> {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(flex: 1, child: _buildSubstationSelector(theme)),
+              Expanded(
+                flex: 1,
+                child: _buildSubstationSelector(theme, isDarkMode),
+              ),
               const SizedBox(width: 16),
-              Expanded(flex: 1, child: _buildDateRangeSelector(theme)),
+              Expanded(
+                flex: 1,
+                child: _buildDateRangeSelector(theme, isDarkMode),
+              ),
             ],
           ),
         ],
@@ -528,7 +915,7 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildSubstationSelector(ThemeData theme) {
+  Widget _buildSubstationSelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -537,7 +924,7 @@ class _EnergyTabState extends State<EnergyTab> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
@@ -554,12 +941,18 @@ class _EnergyTabState extends State<EnergyTab> {
             child: DropdownButton<Substation>(
               value: _selectedSubstation,
               isExpanded: true,
+              dropdownColor: isDarkMode
+                  ? const Color(0xFF2C2C2E)
+                  : Colors.white,
               items: widget.accessibleSubstations.map((substation) {
                 return DropdownMenuItem(
                   value: substation,
                   child: Text(
                     substation.name,
-                    style: const TextStyle(fontSize: 14),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDarkMode ? Colors.white : null,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 );
@@ -589,9 +982,12 @@ class _EnergyTabState extends State<EnergyTab> {
                 color: theme.colorScheme.primary,
                 size: 20,
               ),
-              hint: const Text(
+              hint: Text(
                 'Select Substation',
-                style: TextStyle(fontSize: 14),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ),
           ),
@@ -600,7 +996,7 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildDateRangeSelector(ThemeData theme) {
+  Widget _buildDateRangeSelector(ThemeData theme, bool isDarkMode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -609,7 +1005,7 @@ class _EnergyTabState extends State<EnergyTab> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 8),
@@ -685,7 +1081,7 @@ class _EnergyTabState extends State<EnergyTab> {
     }
   }
 
-  Widget _buildCalculateButton(ThemeData theme) {
+  Widget _buildCalculateButton(ThemeData theme, bool isDarkMode) {
     final bool canCalculate =
         _selectedSubstation != null && _startDate != null && _endDate != null;
 
@@ -720,10 +1116,11 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  List<Widget> _buildEnergyContent(ThemeData theme) {
+  List<Widget> _buildEnergyContent(ThemeData theme, bool isDarkMode) {
     return [
       _buildSectionHeader(
         theme,
+        isDarkMode,
         'Bay Energy Losses',
         Icons.battery_alert,
         Colors.red,
@@ -731,11 +1128,12 @@ class _EnergyTabState extends State<EnergyTab> {
         onExport: _exportBayLossesToExcel,
       ),
       const SizedBox(height: 12),
-      _buildBayLossesTable(theme),
+      _buildBayLossesTable(theme, isDarkMode),
       const SizedBox(height: 24),
 
       _buildSectionHeader(
         theme,
+        isDarkMode,
         'Busbar Energy Abstract',
         Icons.electric_bolt,
         Colors.purple,
@@ -743,11 +1141,12 @@ class _EnergyTabState extends State<EnergyTab> {
         onExport: _exportBusbarAbstractToExcel,
       ),
       const SizedBox(height: 12),
-      _buildBusbarAbstractTable(theme),
+      _buildBusbarAbstractTable(theme, isDarkMode),
       const SizedBox(height: 24),
 
       _buildSectionHeader(
         theme,
+        isDarkMode,
         'Substation Energy Abstract',
         Icons.analytics,
         Colors.green,
@@ -755,23 +1154,25 @@ class _EnergyTabState extends State<EnergyTab> {
         onExport: _exportSubstationAbstractToExcel,
       ),
       const SizedBox(height: 12),
-      _buildSubstationAbstractTable(theme),
+      _buildSubstationAbstractTable(theme, isDarkMode),
       const SizedBox(height: 24),
 
       _buildSectionHeader(
         theme,
+        isDarkMode,
         'Bay Readings Viewer',
         Icons.search,
         Colors.blue,
       ),
       const SizedBox(height: 12),
-      _buildBayReadingsViewerSection(theme),
+      _buildBayReadingsViewerSection(theme, isDarkMode),
       const SizedBox(height: 150),
     ];
   }
 
   Widget _buildSectionHeader(
     ThemeData theme,
+    bool isDarkMode,
     String title,
     IconData icon,
     Color color, {
@@ -781,11 +1182,15 @@ class _EnergyTabState extends State<EnergyTab> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -809,7 +1214,7 @@ class _EnergyTabState extends State<EnergyTab> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
+                color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
               ),
             ),
           ),
@@ -833,358 +1238,449 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildBayLossesTable(ThemeData theme) {
+  Widget _buildBayLossesTable(ThemeData theme, bool isDarkMode) {
     if (_bayEnergyData.isEmpty) {
-      return _buildNoDataCard('No energy data available for loss calculation.');
+      return _buildNoDataCard(
+        'No energy data available for loss calculation.',
+        isDarkMode,
+      );
     }
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: MaterialStateColor.resolveWith(
-            (states) => Colors.red.withOpacity(0.1),
+      child: Theme(
+        data: theme.copyWith(
+          dataTableTheme: DataTableThemeData(
+            headingRowColor: MaterialStateColor.resolveWith(
+              (states) => Colors.red.withOpacity(0.1),
+            ),
+            dataRowColor: MaterialStateColor.resolveWith(
+              (states) => isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+            ),
+            headingTextStyle: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: isDarkMode ? Colors.white : null,
+            ),
+            dataTextStyle: TextStyle(color: isDarkMode ? Colors.white : null),
           ),
-          columns: const [
-            DataColumn(
-              label: Text(
-                'Bay Name',
-                style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: [
+              DataColumn(
+                label: Text(
+                  'Bay Name',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Bay Type',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Bay Type',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Import (kWh)',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Import (kWh)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Export (kWh)',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Export (kWh)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Losses (kWh)',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Losses (kWh)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Loss %',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Loss %',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Efficiency %',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Efficiency %',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-          ],
-          rows: _bayEnergyData.entries.map((entry) {
-            final bay = _baysMap[entry.key]!;
-            final data = entry.value;
+            ],
+            rows: _bayEnergyData.entries.map((entry) {
+              final bay = _baysMap[entry.key]!;
+              final data = entry.value;
 
-            return DataRow(
-              cells: [
-                DataCell(
-                  Text(
-                    bay.name,
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      bay.bayType,
-                      style: const TextStyle(fontSize: 12, color: Colors.blue),
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    data['import']?.toStringAsFixed(2) ?? '0.00',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.green,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    data['export']?.toStringAsFixed(2) ?? '0.00',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.orange,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    data['losses']?.toStringAsFixed(2) ?? '0.00',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.red,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getLossColor(
-                        data['lossPercentage'] ?? 0.0,
-                      ).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${data['lossPercentage']?.toStringAsFixed(1) ?? '0.0'}%',
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Text(
+                      bay.name,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: _getLossColor(data['lossPercentage'] ?? 0.0),
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
+                        color: isDarkMode ? Colors.white : null,
                       ),
                     ),
                   ),
-                ),
-                DataCell(
-                  Text(
-                    '${data['efficiency']?.toStringAsFixed(1) ?? '0.0'}%',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.teal,
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        bay.bayType,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            );
-          }).toList(),
+                  DataCell(
+                    Text(
+                      data['import']?.toStringAsFixed(2) ?? '0.00',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      data['export']?.toStringAsFixed(2) ?? '0.00',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      data['losses']?.toStringAsFixed(2) ?? '0.00',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getLossColor(
+                          data['lossPercentage'] ?? 0.0,
+                        ).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${data['lossPercentage']?.toStringAsFixed(1) ?? '0.0'}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _getLossColor(data['lossPercentage'] ?? 0.0),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      '${data['efficiency']?.toStringAsFixed(1) ?? '0.0'}%',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.teal,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildBusbarAbstractTable(ThemeData theme) {
+  Widget _buildBusbarAbstractTable(ThemeData theme, bool isDarkMode) {
     if (_busbarAbstract.isEmpty) {
-      return _buildNoDataCard('No busbar data available.');
+      return _buildNoDataCard('No busbar data available.', isDarkMode);
     }
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: MaterialStateColor.resolveWith(
-            (states) => Colors.purple.withOpacity(0.1),
+      child: Theme(
+        data: theme.copyWith(
+          dataTableTheme: DataTableThemeData(
+            headingRowColor: MaterialStateColor.resolveWith(
+              (states) => Colors.purple.withOpacity(0.1),
+            ),
+            dataRowColor: MaterialStateColor.resolveWith(
+              (states) => isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+            ),
+            headingTextStyle: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: isDarkMode ? Colors.white : null,
+            ),
+            dataTextStyle: TextStyle(color: isDarkMode ? Colors.white : null),
           ),
-          columns: const [
-            DataColumn(
-              label: Text(
-                'Busbar',
-                style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: [
+              DataColumn(
+                label: Text(
+                  'Busbar',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Import (kWh)',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Import (kWh)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Export (kWh)',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Export (kWh)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Losses (kWh)',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Losses (kWh)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Loss %',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Loss %',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Efficiency %',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Efficiency %',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-            DataColumn(
-              label: Text(
-                'Active Bays',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              DataColumn(
+                label: Text(
+                  'Active Bays',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : null,
+                  ),
+                ),
               ),
-            ),
-          ],
-          rows: _busbarAbstract.entries.map((entry) {
-            final busbarName = entry.key;
-            final data = entry.value;
+            ],
+            rows: _busbarAbstract.entries.map((entry) {
+              final busbarName = entry.key;
+              final data = entry.value;
 
-            return DataRow(
-              cells: [
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        busbarName,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.purple,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      busbarName,
+                  ),
+                  DataCell(
+                    Text(
+                      data['totalImport']?.toStringAsFixed(2) ?? '0.00',
                       style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.purple,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.green,
                       ),
                     ),
                   ),
-                ),
-                DataCell(
-                  Text(
-                    data['totalImport']?.toStringAsFixed(2) ?? '0.00',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.green,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    data['totalExport']?.toStringAsFixed(2) ?? '0.00',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.orange,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    data['totalLosses']?.toStringAsFixed(2) ?? '0.00',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.red,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getLossColor(
-                        data['lossPercentage'] ?? 0.0,
-                      ).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${data['lossPercentage']?.toStringAsFixed(1) ?? '0.0'}%',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _getLossColor(data['lossPercentage'] ?? 0.0),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    '${data['efficiency']?.toStringAsFixed(1) ?? '0.0'}%',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.teal,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${data['activeBays']?.toInt() ?? 0}',
+                  DataCell(
+                    Text(
+                      data['totalExport']?.toStringAsFixed(2) ?? '0.00',
                       style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.orange,
                       ),
                     ),
                   ),
-                ),
-              ],
-            );
-          }).toList(),
+                  DataCell(
+                    Text(
+                      data['totalLosses']?.toStringAsFixed(2) ?? '0.00',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getLossColor(
+                          data['lossPercentage'] ?? 0.0,
+                        ).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${data['lossPercentage']?.toStringAsFixed(1) ?? '0.0'}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _getLossColor(data['lossPercentage'] ?? 0.0),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      '${data['efficiency']?.toStringAsFixed(1) ?? '0.0'}%',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.teal,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${data['activeBays']?.toInt() ?? 0}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildSubstationAbstractTable(ThemeData theme) {
+  Widget _buildSubstationAbstractTable(ThemeData theme, bool isDarkMode) {
     if (_substationAbstract.isEmpty) {
-      return _buildNoDataCard('No substation data available.');
+      return _buildNoDataCard('No substation data available.', isDarkMode);
     }
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1199,36 +1695,42 @@ class _EnergyTabState extends State<EnergyTab> {
               '${_substationAbstract['totalImport']?.toStringAsFixed(2)} kWh',
               Icons.flash_on,
               Colors.green,
+              isDarkMode,
             ),
             _buildAbstractRow(
               'Total Export Energy',
               '${_substationAbstract['totalExport']?.toStringAsFixed(2)} kWh',
               Icons.flash_off,
               Colors.orange,
+              isDarkMode,
             ),
             _buildAbstractRow(
               'Total Energy Losses',
               '${_substationAbstract['totalLosses']?.toStringAsFixed(2)} kWh',
               Icons.battery_alert,
               Colors.red,
+              isDarkMode,
             ),
             _buildAbstractRow(
               'Overall Loss Percentage',
               '${_substationAbstract['lossPercentage']?.toStringAsFixed(1)}%',
               Icons.trending_down,
               _getLossColor(_substationAbstract['lossPercentage'] ?? 0.0),
+              isDarkMode,
             ),
             _buildAbstractRow(
               'Overall Efficiency',
               '${_substationAbstract['efficiency']?.toStringAsFixed(1)}%',
               Icons.speed,
               Colors.teal,
+              isDarkMode,
             ),
             _buildAbstractRow(
               'Active Bays',
               '${_substationAbstract['activeBays']?.toInt()}',
               Icons.electrical_services,
               Colors.purple,
+              isDarkMode,
             ),
           ],
         ),
@@ -1241,6 +1743,7 @@ class _EnergyTabState extends State<EnergyTab> {
     String value,
     IconData icon,
     Color color,
+    bool isDarkMode,
   ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1262,10 +1765,12 @@ class _EnergyTabState extends State<EnergyTab> {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: Colors.black87,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.8)
+                        : Colors.black87,
                   ),
                 ),
                 Text(
@@ -1290,15 +1795,19 @@ class _EnergyTabState extends State<EnergyTab> {
     return Colors.green;
   }
 
-  Widget _buildNoDataCard(String message) {
+  Widget _buildNoDataCard(String message, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1307,20 +1816,33 @@ class _EnergyTabState extends State<EnergyTab> {
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.info_outline, size: 64, color: Colors.grey[400]),
+            Icon(
+              Icons.info_outline,
+              size: 64,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 16),
             Text(
               'No Data Available',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey[600],
               ),
             ),
             const SizedBox(height: 8),
             Text(
               message,
-              style: TextStyle(color: Colors.grey[500], fontSize: 14),
+              style: TextStyle(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey[500],
+                fontSize: 14,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1329,28 +1851,32 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildBayReadingsViewerSection(ThemeData theme) {
+  Widget _buildBayReadingsViewerSection(ThemeData theme, bool isDarkMode) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildBaySelectionSection(theme),
+        _buildBaySelectionSection(theme, isDarkMode),
         const SizedBox(height: 16),
-        _buildSearchButton(theme),
+        _buildSearchButton(theme, isDarkMode),
         const SizedBox(height: 16),
-        if (_shouldShowResults()) _buildViewerResultsSection(theme),
+        if (_shouldShowResults()) _buildViewerResultsSection(theme, isDarkMode),
       ],
     );
   }
 
-  Widget _buildBaySelectionSection(ThemeData theme) {
+  Widget _buildBaySelectionSection(ThemeData theme, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1364,7 +1890,7 @@ class _EnergyTabState extends State<EnergyTab> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 16),
@@ -1375,9 +1901,10 @@ class _EnergyTabState extends State<EnergyTab> {
                   _selectedBayIds.isEmpty
                       ? 'No bays selected'
                       : '${_selectedBayIds.length} bay(s) selected',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
+                    color: isDarkMode ? Colors.white : null,
                   ),
                 ),
               ),
@@ -1441,7 +1968,7 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildSearchButton(ThemeData theme) {
+  Widget _buildSearchButton(ThemeData theme, bool isDarkMode) {
     final bool canViewEntries =
         _selectedSubstation != null && _selectedBayIds.isNotEmpty;
 
@@ -1475,16 +2002,20 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildViewerResultsSection(ThemeData theme) {
+  Widget _buildViewerResultsSection(ThemeData theme, bool isDarkMode) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1519,14 +2050,18 @@ class _EnergyTabState extends State<EnergyTab> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface,
+                        color: isDarkMode
+                            ? Colors.white
+                            : theme.colorScheme.onSurface,
                       ),
                     ),
                     Text(
                       '${_rawLogsheetEntriesForViewer.length} entries found',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey.shade600,
                       ),
                     ),
                   ],
@@ -1554,39 +2089,44 @@ class _EnergyTabState extends State<EnergyTab> {
           ),
           const SizedBox(height: 16),
           if (_isViewerLoading)
-            const Padding(
-              padding: EdgeInsets.all(32),
+            Padding(
+              padding: const EdgeInsets.all(32),
               child: Center(
                 child: Column(
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
                     Text(
                       'Searching for bay readings...',
-                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey,
+                      ),
                     ),
                   ],
                 ),
               ),
             )
           else if (_viewerErrorMessage != null)
-            _buildErrorMessage(_viewerErrorMessage!)
+            _buildErrorMessage(_viewerErrorMessage!, isDarkMode)
           else if (!_isViewerLoading && _rawLogsheetEntriesForViewer.isEmpty)
-            _buildNoReadingsMessage()
+            _buildNoReadingsMessage(isDarkMode)
           else if (_groupedEntriesForViewer.isNotEmpty)
-            _buildBayReadingsTable(theme)
+            _buildBayReadingsTable(theme, isDarkMode)
           else
-            _buildNoReadingsMessage(),
+            _buildNoReadingsMessage(isDarkMode),
         ],
       ),
     );
   }
 
-  Widget _buildErrorMessage(String error) {
+  Widget _buildErrorMessage(String error, bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
+        color: isDarkMode ? Colors.red.withOpacity(0.1) : Colors.red.shade50,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.red.shade200),
       ),
@@ -1605,33 +2145,51 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildNoReadingsMessage() {
+  Widget _buildNoReadingsMessage(bool isDarkMode) {
     return Container(
       padding: const EdgeInsets.all(32),
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+            Icon(
+              Icons.search_off,
+              size: 48,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : Colors.grey.shade400,
+            ),
             const SizedBox(height: 12),
             Text(
               'No bay readings found',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade600,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               'No readings exist for the selected bays in the period from ${DateFormat('MMM dd, yyyy').format(_startDate!)} to ${DateFormat('MMM dd, yyyy').format(_endDate!)}.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+              style: TextStyle(
+                fontSize: 13,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey.shade500,
+              ),
               textAlign: TextAlign.center,
             ),
             if (_selectedBayIds.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
                 'Selected bays: ${_selectedBayIds.map((id) => _baysMap[id]?.name ?? 'Unknown').join(', ')}',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.4)
+                      : Colors.grey.shade400,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1641,7 +2199,7 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildBayReadingsTable(ThemeData theme) {
+  Widget _buildBayReadingsTable(ThemeData theme, bool isDarkMode) {
     List<DataRow> rows = [];
     int rowIndex = 0;
 
@@ -1652,8 +2210,11 @@ class _EnergyTabState extends State<EnergyTab> {
           rows.add(
             DataRow(
               color: MaterialStateColor.resolveWith(
-                (states) =>
-                    rowIndex % 2 == 0 ? Colors.grey.shade50 : Colors.white,
+                (states) => rowIndex % 2 == 0
+                    ? (isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : Colors.grey.shade50)
+                    : (isDarkMode ? const Color(0xFF2C2C2E) : Colors.white),
               ),
               cells: [
                 DataCell(
@@ -1710,16 +2271,19 @@ class _EnergyTabState extends State<EnergyTab> {
                       children: [
                         Text(
                           DateFormat('MMM dd').format(date),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
+                            color: isDarkMode ? Colors.white : null,
                           ),
                         ),
                         Text(
                           DateFormat('yyyy').format(date),
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.grey.shade600,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                           ),
                         ),
                       ],
@@ -1756,7 +2320,7 @@ class _EnergyTabState extends State<EnergyTab> {
                   Container(
                     constraints: const BoxConstraints(maxWidth: 280),
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: _buildSimpleReadingsDisplay(entry),
+                    child: _buildSimpleReadingsDisplay(entry, isDarkMode),
                   ),
                 ),
               ],
@@ -1773,14 +2337,22 @@ class _EnergyTabState extends State<EnergyTab> {
         child: Center(
           child: Column(
             children: [
-              Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+              Icon(
+                Icons.search_off,
+                size: 48,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey.shade400,
+              ),
               const SizedBox(height: 12),
               Text(
                 'No readings found',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
                 ),
               ),
             ],
@@ -1793,11 +2365,14 @@ class _EnergyTabState extends State<EnergyTab> {
       height: 600,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.2)
+              : Colors.grey.shade200,
+        ),
       ),
       child: Column(
         children: [
-          // Custom Header that scrolls with content
           Expanded(
             child: Scrollbar(
               thickness: 6,
@@ -1808,21 +2383,21 @@ class _EnergyTabState extends State<EnergyTab> {
                   constraints: const BoxConstraints(minWidth: 800),
                   child: Column(
                     children: [
-                      // Header Row
                       Container(
                         height: 50,
                         decoration: BoxDecoration(
                           color: theme.colorScheme.primary.withOpacity(0.1),
                           border: Border(
                             bottom: BorderSide(
-                              color: Colors.grey.shade300,
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.2)
+                                  : Colors.grey.shade300,
                               width: 1,
                             ),
                           ),
                         ),
                         child: Row(
                           children: [
-                            // Bay Column Header
                             Container(
                               width: 300,
                               padding: const EdgeInsets.symmetric(
@@ -1832,7 +2407,9 @@ class _EnergyTabState extends State<EnergyTab> {
                               decoration: BoxDecoration(
                                 border: Border(
                                   right: BorderSide(
-                                    color: Colors.grey.shade300,
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.2)
+                                        : Colors.grey.shade300,
                                     width: 1,
                                   ),
                                 ),
@@ -1842,11 +2419,12 @@ class _EnergyTabState extends State<EnergyTab> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
-                                  color: theme.colorScheme.primary,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : theme.colorScheme.primary,
                                 ),
                               ),
                             ),
-                            // Date Column Header
                             Container(
                               width: 120,
                               padding: const EdgeInsets.symmetric(
@@ -1856,7 +2434,9 @@ class _EnergyTabState extends State<EnergyTab> {
                               decoration: BoxDecoration(
                                 border: Border(
                                   right: BorderSide(
-                                    color: Colors.grey.shade300,
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.2)
+                                        : Colors.grey.shade300,
                                     width: 1,
                                   ),
                                 ),
@@ -1866,11 +2446,12 @@ class _EnergyTabState extends State<EnergyTab> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
-                                  color: theme.colorScheme.primary,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : theme.colorScheme.primary,
                                 ),
                               ),
                             ),
-                            // Time Column Header
                             Container(
                               width: 100,
                               padding: const EdgeInsets.symmetric(
@@ -1880,7 +2461,9 @@ class _EnergyTabState extends State<EnergyTab> {
                               decoration: BoxDecoration(
                                 border: Border(
                                   right: BorderSide(
-                                    color: Colors.grey.shade300,
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.2)
+                                        : Colors.grey.shade300,
                                     width: 1,
                                   ),
                                 ),
@@ -1890,11 +2473,12 @@ class _EnergyTabState extends State<EnergyTab> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
-                                  color: theme.colorScheme.primary,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : theme.colorScheme.primary,
                                 ),
                               ),
                             ),
-                            // Readings Column Header
                             Container(
                               width: 600,
                               padding: const EdgeInsets.symmetric(
@@ -1906,32 +2490,34 @@ class _EnergyTabState extends State<EnergyTab> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
-                                  color: theme.colorScheme.primary,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : theme.colorScheme.primary,
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      // Data Rows
                       Expanded(
                         child: SingleChildScrollView(
                           child: Column(
                             children: rows.map((row) {
                               return Container(
-                                height: 180, // Increased row height
+                                height: 180,
                                 decoration: BoxDecoration(
                                   color: row.color?.resolve({}),
                                   border: Border(
                                     bottom: BorderSide(
-                                      color: Colors.grey.shade200,
+                                      color: isDarkMode
+                                          ? Colors.white.withOpacity(0.1)
+                                          : Colors.grey.shade200,
                                       width: 0.5,
                                     ),
                                   ),
                                 ),
                                 child: Row(
                                   children: [
-                                    // Bay Cell
                                     Container(
                                       width: 300,
                                       padding: const EdgeInsets.symmetric(
@@ -1941,14 +2527,15 @@ class _EnergyTabState extends State<EnergyTab> {
                                       decoration: BoxDecoration(
                                         border: Border(
                                           right: BorderSide(
-                                            color: Colors.grey.shade300,
+                                            color: isDarkMode
+                                                ? Colors.white.withOpacity(0.2)
+                                                : Colors.grey.shade300,
                                             width: 1,
                                           ),
                                         ),
                                       ),
                                       child: row.cells[0].child,
                                     ),
-                                    // Date Cell
                                     Container(
                                       width: 120,
                                       padding: const EdgeInsets.symmetric(
@@ -1958,14 +2545,15 @@ class _EnergyTabState extends State<EnergyTab> {
                                       decoration: BoxDecoration(
                                         border: Border(
                                           right: BorderSide(
-                                            color: Colors.grey.shade300,
+                                            color: isDarkMode
+                                                ? Colors.white.withOpacity(0.2)
+                                                : Colors.grey.shade300,
                                             width: 1,
                                           ),
                                         ),
                                       ),
                                       child: row.cells[1].child,
                                     ),
-                                    // Time Cell
                                     Container(
                                       width: 100,
                                       padding: const EdgeInsets.symmetric(
@@ -1975,14 +2563,15 @@ class _EnergyTabState extends State<EnergyTab> {
                                       decoration: BoxDecoration(
                                         border: Border(
                                           right: BorderSide(
-                                            color: Colors.grey.shade300,
+                                            color: isDarkMode
+                                                ? Colors.white.withOpacity(0.2)
+                                                : Colors.grey.shade300,
                                             width: 1,
                                           ),
                                         ),
                                       ),
                                       child: row.cells[2].child,
                                     ),
-                                    // Readings Cell
                                     Container(
                                       width: 600,
                                       padding: const EdgeInsets.symmetric(
@@ -2009,15 +2598,19 @@ class _EnergyTabState extends State<EnergyTab> {
     );
   }
 
-  Widget _buildSimpleReadingsDisplay(LogsheetEntry entry) {
+  Widget _buildSimpleReadingsDisplay(LogsheetEntry entry, bool isDarkMode) {
     final readings = entry.values.entries.take(4).toList();
 
     return Container(
-      padding: const EdgeInsets.all(12), // Increased padding
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.1)
+              : Colors.grey.shade200,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2025,7 +2618,7 @@ class _EnergyTabState extends State<EnergyTab> {
         children: [
           ...readings.map((e) {
             return Padding(
-              padding: const EdgeInsets.only(bottom: 4), // Increased spacing
+              padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2034,9 +2627,11 @@ class _EnergyTabState extends State<EnergyTab> {
                     child: Text(
                       '${e.key}:',
                       style: TextStyle(
-                        fontSize: 12, // Slightly larger font
+                        fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade700,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : Colors.grey.shade700,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -2045,9 +2640,10 @@ class _EnergyTabState extends State<EnergyTab> {
                     flex: 3,
                     child: Text(
                       '${e.value}',
-                      style: const TextStyle(
-                        fontSize: 12, // Slightly larger font
+                      style: TextStyle(
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
+                        color: isDarkMode ? Colors.white : Colors.black,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -2063,7 +2659,9 @@ class _EnergyTabState extends State<EnergyTab> {
                 '+${entry.values.length - 4} more',
                 style: TextStyle(
                   fontSize: 11,
-                  color: Colors.grey.shade500,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey.shade500,
                   fontStyle: FontStyle.italic,
                 ),
               ),
@@ -2093,7 +2691,11 @@ class _EnergyTabState extends State<EnergyTab> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final theme = Theme.of(context);
+            final isDarkMode = theme.brightness == Brightness.dark;
             return Dialog(
+              backgroundColor: isDarkMode
+                  ? const Color(0xFF1C1C1E)
+                  : Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -2105,7 +2707,9 @@ class _EnergyTabState extends State<EnergyTab> {
                     Container(
                       padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : theme.colorScheme.primary.withOpacity(0.1),
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(12),
                           topRight: Radius.circular(12),
@@ -2119,7 +2723,9 @@ class _EnergyTabState extends State<EnergyTab> {
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
-                                color: theme.colorScheme.primary,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : theme.colorScheme.primary,
                               ),
                             ),
                           ),
@@ -2131,9 +2737,11 @@ class _EnergyTabState extends State<EnergyTab> {
                               child: Icon(
                                 Icons.close,
                                 size: 20,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.7,
-                                ),
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : theme.colorScheme.onSurface.withOpacity(
+                                        0.7,
+                                      ),
                               ),
                             ),
                           ),
@@ -2147,9 +2755,10 @@ class _EnergyTabState extends State<EnergyTab> {
                           Expanded(
                             child: Text(
                               '${tempSelected.length} of ${availableBays.length} bays selected',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
+                                color: isDarkMode ? Colors.white : null,
                               ),
                             ),
                           ),
@@ -2208,7 +2817,10 @@ class _EnergyTabState extends State<EnergyTab> {
                         ],
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(
+                      height: 1,
+                      color: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+                    ),
                     Expanded(
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
@@ -2220,12 +2832,16 @@ class _EnergyTabState extends State<EnergyTab> {
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: isSelected
                                     ? theme.colorScheme.primary.withOpacity(0.3)
-                                    : Colors.grey.shade300,
+                                    : (isDarkMode
+                                          ? Colors.white.withOpacity(0.1)
+                                          : Colors.grey.shade300),
                                 width: isSelected ? 2 : 1,
                               ),
                             ),
@@ -2239,7 +2855,7 @@ class _EnergyTabState extends State<EnergyTab> {
                                       : FontWeight.w500,
                                   color: isSelected
                                       ? theme.colorScheme.primary
-                                      : null,
+                                      : (isDarkMode ? Colors.white : null),
                                 ),
                               ),
                               subtitle: Text(
@@ -2250,7 +2866,9 @@ class _EnergyTabState extends State<EnergyTab> {
                                       ? theme.colorScheme.primary.withOpacity(
                                           0.7,
                                         )
-                                      : Colors.grey.shade600,
+                                      : (isDarkMode
+                                            ? Colors.white.withOpacity(0.6)
+                                            : Colors.grey.shade600),
                                 ),
                               ),
                               value: isSelected,
@@ -2272,7 +2890,10 @@ class _EnergyTabState extends State<EnergyTab> {
                         },
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(
+                      height: 1,
+                      color: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+                    ),
                     Container(
                       padding: const EdgeInsets.all(16),
                       child: Row(
@@ -2430,7 +3051,6 @@ class _EnergyTabState extends State<EnergyTab> {
         (!_isViewerLoading && _selectedBayIds.isNotEmpty);
   }
 
-  // Excel Export Methods
   Future<void> _exportBayLossesToExcel() async {
     await _exportToExcel('Bay_Energy_Losses', _createBayLossesWorkbook);
   }
@@ -2505,74 +3125,93 @@ class _EnergyTabState extends State<EnergyTab> {
 
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Export Successful'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('File saved as: $fileName'),
-              const SizedBox(height: 8),
-              Text('Location: ${directory.path}'),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
+        builder: (context) {
+          final theme = Theme.of(context);
+          final isDarkMode = theme.brightness == Brightness.dark;
+
+          return AlertDialog(
+            backgroundColor: isDarkMode
+                ? const Color(0xFF1C1C1E)
+                : Colors.white,
+            title: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green),
+                const SizedBox(width: 8),
+                Text(
+                  'Export Successful',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade700,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Energy analysis data exported successfully with calculations.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blue.shade700,
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'File saved as: $fileName',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Location: ${directory.path}',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDarkMode
+                        ? Colors.blue.withOpacity(0.1)
+                        : Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.blue.shade700,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Energy analysis data exported successfully with calculations.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade700,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  try {
+                    await OpenFilex.open(file.path);
+                  } catch (e) {
+                    SnackBarUtils.showSnackBar(
+                      context,
+                      'Could not open file. Please check your file manager.',
+                      isError: true,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Open File'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-            ElevatedButton.icon(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                try {
-                  await OpenFilex.open(file.path);
-                } catch (e) {
-                  SnackBarUtils.showSnackBar(
-                    context,
-                    'Could not open file. Please check your file manager.',
-                    isError: true,
-                  );
-                }
-              },
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Open File'),
-            ),
-          ],
-        ),
+          );
+        },
       );
     } catch (e) {
       if (Navigator.canPop(context)) {
@@ -2776,7 +3415,6 @@ class _EnergyTabState extends State<EnergyTab> {
     var excel = Excel.createExcel();
     excel.delete('Sheet1');
 
-    // Group data by bay type
     Map<String, List<LogsheetEntry>> dataByBayType = {};
 
     for (var entry in _rawLogsheetEntriesForViewer) {

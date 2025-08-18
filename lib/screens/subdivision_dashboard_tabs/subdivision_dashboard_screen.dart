@@ -30,7 +30,6 @@ class SubdivisionDashboardScreen extends StatefulWidget {
 class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
   int _unreadNotificationCount = 0;
   bool _isLoadingNotifications = false;
 
@@ -47,11 +46,12 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     super.initState();
     print('🔍 DEBUG: SubdivisionDashboardScreen initState called');
     print('🔍 DEBUG: Current user: ${widget.currentUser.email}');
+
     final tabCount = widget.currentUser.role == UserRole.subdivisionManager
         ? _tabs.length
         : _tabs.length - 1;
-    _tabController = TabController(length: tabCount, vsync: this);
 
+    _tabController = TabController(length: tabCount, vsync: this);
     _loadNotificationCount();
   }
 
@@ -100,19 +100,22 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
   Widget build(BuildContext context) {
     print('🔍 DEBUG: SubdivisionDashboardScreen build called');
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final appState = Provider.of<AppStateData>(context);
     final accessibleSubstations = appState.accessibleSubstations;
 
     if (accessibleSubstations.isEmpty) {
-      return _buildNoSubstationState(theme);
+      return _buildNoSubstationState(theme, isDarkMode);
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
-      appBar: _buildAppBar(theme),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode background like app drawer
+          : const Color(0xFFF8F9FA), // Light mode background
+      appBar: _buildAppBar(theme, isDarkMode),
       body: Column(
         children: [
-          _buildTabBar(theme),
+          _buildTabBar(theme, isDarkMode),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -124,9 +127,11 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     );
   }
 
-  PreferredSizeWidget _buildAppBar(ThemeData theme) {
+  PreferredSizeWidget _buildAppBar(ThemeData theme, bool isDarkMode) {
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E) // Dark mode AppBar background
+          : Colors.white,
       elevation: 0,
       toolbarHeight: 60,
       title: Text(
@@ -134,20 +139,32 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         style: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
-          color: theme.colorScheme.onSurface,
+          color: isDarkMode
+              ? Colors
+                    .white // White text in dark mode
+              : theme.colorScheme.onSurface,
         ),
       ),
       leading: IconButton(
-        icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+        icon: Icon(
+          Icons.menu,
+          color: isDarkMode
+              ? Colors
+                    .white // White icon in dark mode
+              : theme.colorScheme.onSurface,
+        ),
         onPressed: () {
           ModernAppDrawer.show(context, widget.currentUser);
         },
       ),
-      actions: [_buildNotificationIcon(theme), const SizedBox(width: 8)],
+      actions: [
+        _buildNotificationIcon(theme, isDarkMode),
+        const SizedBox(width: 8),
+      ],
     );
   }
 
-  Widget _buildNotificationIcon(ThemeData theme) {
+  Widget _buildNotificationIcon(ThemeData theme, bool isDarkMode) {
     return Container(
       margin: const EdgeInsets.only(right: 8),
       child: Stack(
@@ -158,7 +175,10 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
               padding: const EdgeInsets.all(8),
               child: Icon(
                 Icons.notifications_outlined,
-                color: theme.colorScheme.primary,
+                color: isDarkMode
+                    ? Colors
+                          .white // White notification icon in dark mode
+                    : theme.colorScheme.primary,
                 size: 24,
               ),
             ),
@@ -173,7 +193,12 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
                 decoration: BoxDecoration(
                   color: Colors.red,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white, width: 2),
+                  border: Border.all(
+                    color: isDarkMode
+                        ? const Color(0xFF1C1C1E) // Match dark background
+                        : Colors.white,
+                    width: 2,
+                  ),
                 ),
                 constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 child: Text(
@@ -194,7 +219,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     );
   }
 
-  Widget _buildTabBar(ThemeData theme) {
+  Widget _buildTabBar(ThemeData theme, bool isDarkMode) {
     final visibleTabs = widget.currentUser.role == UserRole.subdivisionManager
         ? _tabs
         : _tabs.where((tab) => tab.label != 'Asset Management').toList();
@@ -202,11 +227,15 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode
+            ? const Color(0xFF2C2C2E) // Dark elevated surface like app drawer
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -215,13 +244,19 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       child: TabBar(
         controller: _tabController,
         isScrollable: true,
-        tabs: visibleTabs.map((tab) => _buildCustomTab(tab)).toList(),
+        tabs: visibleTabs
+            .map((tab) => _buildCustomTab(tab, isDarkMode))
+            .toList(),
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           color: theme.colorScheme.primary.withOpacity(0.1),
         ),
         labelColor: theme.colorScheme.primary,
-        unselectedLabelColor: Colors.grey.shade600,
+        unselectedLabelColor: isDarkMode
+            ? Colors.white.withOpacity(
+                0.6,
+              ) // Dimmed white for unselected in dark mode
+            : Colors.grey.shade600,
         labelStyle: const TextStyle(fontWeight: FontWeight.w600),
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400),
         padding: const EdgeInsets.all(8),
@@ -230,7 +265,7 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     );
   }
 
-  Widget _buildCustomTab(TabData tabData) {
+  Widget _buildCustomTab(TabData tabData, bool isDarkMode) {
     return Tab(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -246,30 +281,42 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     );
   }
 
-  Widget _buildNoSubstationState(ThemeData theme) {
+  Widget _buildNoSubstationState(ThemeData theme, bool isDarkMode) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFF8F9FA),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+          icon: Icon(
+            Icons.menu,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+          ),
           onPressed: () {
             ModernAppDrawer.show(context, widget.currentUser);
           },
         ),
-        actions: [_buildNotificationIcon(theme), const SizedBox(width: 8)],
+        actions: [
+          _buildNotificationIcon(theme, isDarkMode),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Center(
         child: Container(
           margin: const EdgeInsets.all(32),
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isDarkMode
+                ? const Color(0xFF2C2C2E) // Dark elevated surface
+                : Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: isDarkMode
+                    ? Colors.black.withOpacity(0.4)
+                    : Colors.black.withOpacity(0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
@@ -278,20 +325,33 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.location_off, size: 64, color: Colors.grey.shade400),
+              Icon(
+                Icons.location_off,
+                size: 64,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey.shade400,
+              ),
               const SizedBox(height: 16),
               Text(
                 'No Substations Available',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
+                  color: isDarkMode
+                      ? Colors.white
+                      : theme.colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Loading substations or no accessible substations found. Please contact your administrator.',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -361,6 +421,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
       if (user == null) return;
 
       final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+
       final notificationsQuery = await FirebaseFirestore.instance
           .collection('userNotifications')
           .where('userId', isEqualTo: user.uid)
@@ -425,6 +486,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
+
       final batch = FirebaseFirestore.instance.batch();
       final unreadNotifications = _notifications.where((n) => !n.isRead);
 
@@ -449,7 +511,6 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
     }
   }
 
-  // NEW: Clear all notifications for this user
   Future<void> _clearAllNotifications() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -464,6 +525,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
       for (final doc in notificationsQuery.docs) {
         batch.delete(doc.reference);
       }
+
       await batch.commit();
 
       setState(() {
@@ -474,7 +536,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('All notifications cleared.'),
             backgroundColor: Colors.red,
           ),
@@ -484,7 +546,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
       print('Error clearing all notifications: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Error clearing notifications.'),
             backgroundColor: Colors.red,
           ),
@@ -496,12 +558,15 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.8,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(
+      decoration: BoxDecoration(
+        color: isDarkMode
+            ? const Color(0xFF1C1C1E) // Dark mode background
+            : Colors.white,
+        borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(20),
           topRight: Radius.circular(20),
         ),
@@ -512,7 +577,9 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withOpacity(0.1),
+              color: isDarkMode
+                  ? const Color(0xFF2C2C2E) // Dark elevated surface
+                  : theme.colorScheme.primary.withOpacity(0.1),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
@@ -532,7 +599,9 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.primary,
+                      color: isDarkMode
+                          ? Colors.white
+                          : theme.colorScheme.primary,
                     ),
                   ),
                 ),
@@ -550,7 +619,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                 if (_notifications.isNotEmpty)
                   TextButton(
                     onPressed: _clearAllNotifications,
-                    child: Text(
+                    child: const Text(
                       'Clear all',
                       style: TextStyle(
                         color: Colors.red,
@@ -560,12 +629,16 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                   ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: Icon(Icons.close, color: theme.colorScheme.onSurface),
+                  icon: Icon(
+                    Icons.close,
+                    color: isDarkMode
+                        ? Colors.white
+                        : theme.colorScheme.onSurface,
+                  ),
                 ),
               ],
             ),
           ),
-
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -577,7 +650,9 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                         Icon(
                           Icons.notifications_none,
                           size: 64,
-                          color: Colors.grey.shade400,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.4)
+                              : Colors.grey.shade400,
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -585,7 +660,9 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade600,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -593,7 +670,9 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                           'You\'re all caught up!',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey.shade500,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.5)
+                                : Colors.grey.shade500,
                           ),
                         ),
                       ],
@@ -602,11 +681,17 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                 : ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: _notifications.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 1),
+                    separatorBuilder: (context, index) => Divider(
+                      height: 1,
+                      color: isDarkMode ? Colors.white.withOpacity(0.1) : null,
+                    ),
                     itemBuilder: (context, index) {
                       final notification = _notifications[index];
-                      return _buildNotificationItem(notification, theme);
+                      return _buildNotificationItem(
+                        notification,
+                        theme,
+                        isDarkMode,
+                      );
                     },
                   ),
           ),
@@ -618,6 +703,7 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
   Widget _buildNotificationItem(
     NotificationData notification,
     ThemeData theme,
+    bool isDarkMode,
   ) {
     final isUnread = !notification.isRead;
     final eventColor = notification.eventType == 'tripping'
@@ -631,7 +717,11 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isUnread ? theme.colorScheme.primary.withOpacity(0.05) : null,
+          color: isUnread
+              ? (isDarkMode
+                    ? theme.colorScheme.primary.withOpacity(0.1)
+                    : theme.colorScheme.primary.withOpacity(0.05))
+              : null,
           borderRadius: BorderRadius.circular(8),
           border: isUnread
               ? Border.all(color: theme.colorScheme.primary.withOpacity(0.2))
@@ -672,7 +762,9 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                             fontWeight: isUnread
                                 ? FontWeight.w600
                                 : FontWeight.w500,
-                            color: theme.colorScheme.onSurface,
+                            color: isDarkMode
+                                ? Colors.white
+                                : theme.colorScheme.onSurface,
                           ),
                         ),
                       ),
@@ -692,7 +784,9 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                     notification.body,
                     style: TextStyle(
                       fontSize: 14,
-                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.7)
+                          : theme.colorScheme.onSurface.withOpacity(0.7),
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -703,14 +797,18 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                       Icon(
                         Icons.access_time,
                         size: 14,
-                        color: theme.colorScheme.onSurface.withOpacity(0.5),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.5)
+                            : theme.colorScheme.onSurface.withOpacity(0.5),
                       ),
                       const SizedBox(width: 4),
                       Text(
                         _formatNotificationTime(notification.createdAt),
                         style: TextStyle(
                           fontSize: 12,
-                          color: theme.colorScheme.onSurface.withOpacity(0.5),
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.5)
+                              : theme.colorScheme.onSurface.withOpacity(0.5),
                         ),
                       ),
                       if (notification.substationName.isNotEmpty) ...[
@@ -718,14 +816,18 @@ class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
                         Icon(
                           Icons.location_on,
                           size: 14,
-                          color: theme.colorScheme.onSurface.withOpacity(0.5),
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.5)
+                              : theme.colorScheme.onSurface.withOpacity(0.5),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           notification.substationName,
                           style: TextStyle(
                             fontSize: 12,
-                            color: theme.colorScheme.onSurface.withOpacity(0.5),
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.5)
+                                : theme.colorScheme.onSurface.withOpacity(0.5),
                           ),
                         ),
                       ],

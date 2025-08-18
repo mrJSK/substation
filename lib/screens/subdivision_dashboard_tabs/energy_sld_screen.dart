@@ -318,10 +318,14 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     final sldController = Provider.of<SldController>(context, listen: false);
 
     if (sldController.hasUnsavedChanges()) {
+      final theme = Theme.of(context);
+      final isDarkMode = theme.brightness == Brightness.dark;
+
       final result = await showDialog<String>(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
+          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -333,15 +337,22 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 size: 24,
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Save Changes?',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode ? Colors.white : null,
+                ),
               ),
             ],
           ),
-          content: const Text(
+          content: Text(
             'You have unsaved layout changes. What would you like to do?',
-            style: TextStyle(fontSize: 16),
+            style: TextStyle(
+              fontSize: 16,
+              color: isDarkMode ? Colors.white : null,
+            ),
           ),
           actions: [
             TextButton(
@@ -424,12 +435,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _saveSld() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) {
         final TextEditingController nameController = TextEditingController();
 
         return AlertDialog(
+          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -440,7 +455,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 12),
-              const Text('Save SLD'),
+              Text(
+                'Save SLD',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
             ],
           ),
           content: Column(
@@ -448,11 +466,15 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: "Enter SLD name",
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.label_outline),
+                  hintStyle: TextStyle(
+                    color: isDarkMode ? Colors.white.withOpacity(0.5) : null,
+                  ),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.label_outline),
                 ),
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
                 autofocus: true,
               ),
             ],
@@ -542,8 +564,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
       final matrix = _transformationController?.value ?? Matrix4.identity();
       final double sldScale = matrix.storage[0];
-      final double sldDx = matrix.storage[12];
-      final double sldDy = matrix.storage[13];
+      final double sldDx = matrix.storage[1];
+      final double sldDy = matrix.storage[2];
       final Offset sldOffsetFromController = Offset(sldDx, sldDy);
 
       final capturedData = await _captureSldForPdf();
@@ -659,10 +681,15 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (widget.substationId.isEmpty) {
       return Scaffold(
-        backgroundColor: const Color(0xFFFAFAFA),
-        body: _buildEmptyState(),
+        backgroundColor: isDarkMode
+            ? const Color(0xFF1C1C1E) // Dark mode background
+            : const Color(0xFFFAFAFA),
+        body: _buildEmptyState(isDarkMode),
       );
     }
 
@@ -676,25 +703,31 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFFAFAFA),
-        appBar: _buildAppBar(sldController),
-        body: _buildMainContent(sldController),
+        backgroundColor: isDarkMode
+            ? const Color(0xFF1C1C1E) // Dark mode background
+            : const Color(0xFFFAFAFA),
+        appBar: _buildAppBar(sldController, isDarkMode),
+        body: _buildMainContent(sldController, isDarkMode),
         bottomNavigationBar: _buildBottomNavigationBar(sldController),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(bool isDarkMode) {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(32),
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDarkMode
+              ? const Color(0xFF2C2C2E) // Dark elevated surface
+              : Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: isDarkMode
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.05),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -706,20 +739,27 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             Icon(
               Icons.electrical_services,
               size: 64,
-              color: Colors.grey.shade400,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : Colors.grey.shade400,
             ),
             const SizedBox(height: 16),
             Text(
               'No Substation Selected',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
+                color: isDarkMode ? Colors.white : Colors.grey.shade700,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               'Please select a substation to view energy SLD.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+              style: TextStyle(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade600,
+                fontSize: 14,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -728,7 +768,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  Widget _buildLoadingState() {
+  Widget _buildLoadingState(bool isDarkMode) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -743,7 +783,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           Text(
             'Loading energy data...',
             style: TextStyle(
-              color: Colors.grey.shade600,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
@@ -751,7 +793,12 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           const SizedBox(height: 8),
           Text(
             'Please wait while we fetch the latest information',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+            style: TextStyle(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.5)
+                  : Colors.grey.shade500,
+              fontSize: 12,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -759,7 +806,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  Widget _buildInitializingState() {
+  Widget _buildInitializingState(bool isDarkMode) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -774,7 +821,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           Text(
             'Initializing SLD...',
             style: TextStyle(
-              color: Colors.grey.shade600,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
@@ -784,11 +833,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  PreferredSizeWidget _buildAppBar(SldController sldController) {
+  PreferredSizeWidget _buildAppBar(
+    SldController sldController,
+    bool isDarkMode,
+  ) {
     final hasUnsavedChanges = sldController.hasUnsavedChanges();
 
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode
+          ? const Color(0xFF2C2C2E) // Dark elevated surface
+          : Colors.white,
       elevation: 0,
       leading: IconButton(
         icon: Container(
@@ -822,7 +876,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
+                  color: isDarkMode
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               if (hasUnsavedChanges) ...[
@@ -852,7 +908,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             '${widget.substationName} ($_dateRangeText)',
             style: TextStyle(
               fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
             ),
           ),
         ],
@@ -915,13 +973,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  Widget _buildMainContent(SldController sldController) {
+  Widget _buildMainContent(SldController sldController, bool isDarkMode) {
     return Stack(
       children: [
         if (_isLoading)
-          _buildLoadingState()
+          _buildLoadingState(isDarkMode)
         else if (!_controllersInitialized)
-          _buildInitializingState()
+          _buildInitializingState(isDarkMode)
         else
           Column(
             children: [
@@ -929,21 +987,32 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 child: Container(
                   margin: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: isDarkMode
+                        ? const Color(0xFF2C2C2E) // Dark elevated surface
+                        : Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: isDarkMode
+                            ? Colors.black.withOpacity(0.3)
+                            : Colors.black.withOpacity(0.1),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),
                       BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
+                        color: isDarkMode
+                            ? Colors.black.withOpacity(0.2)
+                            : Colors.grey.withOpacity(0.1),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
                     ],
-                    border: Border.all(color: Colors.grey.shade300, width: 1),
+                    border: Border.all(
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.1)
+                          : Colors.grey.shade300,
+                      width: 1,
+                    ),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(11),
@@ -961,7 +1030,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                         child: Container(
                           width: math.max(800, _sldContentSize.width),
                           height: math.max(600, _sldContentSize.height),
-                          color: Colors.white,
+                          color: isDarkMode
+                              ? const Color(0xFF2C2C2E)
+                              : Colors.white,
                           child: Center(
                             child: SldViewWidget(
                               isEnergySld: true,
