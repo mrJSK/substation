@@ -114,6 +114,8 @@ class _SubstationUserDashboardScreenState
 
   Future<void> _selectSingleDate() async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _singleDate,
@@ -125,6 +127,7 @@ class _SubstationUserDashboardScreenState
             colorScheme: theme.colorScheme.copyWith(
               primary: theme.colorScheme.primary,
             ),
+            dialogBackgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
           ),
           child: child!,
         );
@@ -138,12 +141,13 @@ class _SubstationUserDashboardScreenState
     }
   }
 
-  Widget _buildEmptyState(ThemeData theme) {
+  Widget _buildEmptyState(ThemeData theme, bool isDarkMode) {
     return Center(
       child: Card(
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
@@ -160,21 +164,29 @@ class _SubstationUserDashboardScreenState
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
+                  color: isDarkMode
+                      ? Colors.white
+                      : theme.colorScheme.onSurface,
                 ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
               Text(
                 'Role: Substation User',
-                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                style: TextStyle(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.7)
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
                 'No substation assigned to your account.',
                 style: TextStyle(
                   fontStyle: FontStyle.italic,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.7)
+                      : theme.colorScheme.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -201,22 +213,28 @@ class _SubstationUserDashboardScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         title: Text(
           'Substation Operations',
           style: TextStyle(
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
         leading: IconButton(
-          icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+          icon: Icon(
+            Icons.menu,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+          ),
           onPressed: () {
             // Show the bottom modal drawer
             ModernAppDrawer.show(context, widget.currentUser);
@@ -227,7 +245,7 @@ class _SubstationUserDashboardScreenState
             onPressed: _selectSingleDate,
             icon: Icon(
               Icons.calendar_today,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
             tooltip: 'Select Date',
           ),
@@ -241,7 +259,9 @@ class _SubstationUserDashboardScreenState
                       Icons.access_time,
                       color: _currentTabIndex == 0
                           ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
+                          : (isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : theme.colorScheme.onSurfaceVariant),
                     ),
                     text: 'Operations',
                   ),
@@ -250,7 +270,9 @@ class _SubstationUserDashboardScreenState
                       Icons.electrical_services,
                       color: _currentTabIndex == 1
                           ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
+                          : (isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : theme.colorScheme.onSurfaceVariant),
                     ),
                     text: 'Energy',
                   ),
@@ -259,13 +281,17 @@ class _SubstationUserDashboardScreenState
                       Icons.warning,
                       color: _currentTabIndex == 2
                           ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
+                          : (isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : theme.colorScheme.onSurfaceVariant),
                     ),
                     text: 'Events',
                   ),
                 ],
                 labelColor: theme.colorScheme.primary,
-                unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                unselectedLabelColor: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : theme.colorScheme.onSurfaceVariant,
                 indicatorColor: theme.colorScheme.primary,
               )
             : null,
@@ -279,6 +305,7 @@ class _SubstationUserDashboardScreenState
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
                   child: Padding(
                     padding: const EdgeInsets.all(32),
                     child: Column(
@@ -291,7 +318,9 @@ class _SubstationUserDashboardScreenState
                         Text(
                           'Loading substation data...',
                           style: TextStyle(
-                            color: theme.colorScheme.onSurface,
+                            color: isDarkMode
+                                ? Colors.white
+                                : theme.colorScheme.onSurface,
                             fontSize: 16,
                           ),
                         ),
@@ -301,14 +330,14 @@ class _SubstationUserDashboardScreenState
                 ),
               )
             : _accessibleSubstations.isEmpty
-            ? _buildEmptyState(theme)
+            ? _buildEmptyState(theme, isDarkMode)
             : Column(
                 children: [
                   // Date Display
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
-                    color: Colors.white,
+                    color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
                     child: Text(
                       DateFormat('EEEE, dd MMMM yyyy').format(_singleDate),
                       textAlign: TextAlign.center,

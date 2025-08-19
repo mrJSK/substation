@@ -259,11 +259,22 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2000, 1, 1),
       lastDate: DateTime.now(), // Disable future dates
+      builder: (context, child) {
+        return Theme(
+          data: theme.copyWith(
+            dialogBackgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && picked != _selectedDate) {
       setState(() {
@@ -275,6 +286,9 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     // Check for the "Daily reading available after 08:00" message condition
     bool showDailyReadingMessage =
         widget.frequencyType == 'daily' &&
@@ -287,13 +301,33 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: ListTile(
-                  title: Text(
-                    'Readings Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}',
-                    style: Theme.of(context).textTheme.titleMedium,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isDarkMode
+                            ? Colors.black.withOpacity(0.3)
+                            : Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () => _selectDate(context),
+                  child: ListTile(
+                    title: Text(
+                      'Readings Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: isDarkMode ? Colors.white : null,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.calendar_today,
+                      color: isDarkMode ? Colors.white : null,
+                    ),
+                    onTap: () => _selectDate(context),
+                  ),
                 ),
               ),
               Expanded(
@@ -301,14 +335,33 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
-                          child: Text(
-                            'Daily readings for today will be available for entry after 08:00 AM IST.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.grey.shade700,
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: isDarkMode
+                                      ? Colors.black.withOpacity(0.3)
+                                      : Colors.black.withOpacity(0.05),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
                                 ),
+                              ],
+                            ),
+                            child: Text(
+                              'Daily readings for today will be available for entry after 08:00 AM IST.',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontStyle: FontStyle.italic,
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.7)
+                                    : Colors.grey.shade700,
+                              ),
+                            ),
                           ),
                         ),
                       )
@@ -354,6 +407,9 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
                           return Card(
                             margin: const EdgeInsets.symmetric(vertical: 8.0),
                             elevation: 2,
+                            color: isDarkMode
+                                ? const Color(0xFF2C2C2E)
+                                : Colors.white,
                             child: ListTile(
                               leading: Icon(
                                 isSlotComplete
@@ -370,12 +426,18 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
                                 style: TextStyle(
                                   color: isDisabled
                                       ? Colors.grey
-                                      : Theme.of(
-                                          context,
-                                        ).textTheme.titleMedium?.color,
+                                      : (isDarkMode
+                                            ? Colors.white
+                                            : theme
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.color),
                                 ),
                               ),
-                              trailing: const Icon(Icons.arrow_forward_ios),
+                              trailing: Icon(
+                                Icons.arrow_forward_ios,
+                                color: isDarkMode ? Colors.white : null,
+                              ),
                               onTap: isDisabled
                                   ? null // Disable tap for future slots
                                   : () {

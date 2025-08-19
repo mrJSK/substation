@@ -341,6 +341,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   Widget _buildBayCard(Bay bay, int index) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final bool isComplete = _bayCompletionStatus[bay.id] ?? false;
     final bool hasEnergyReadings = _bayEnergyCompletionStatus[bay.id] ?? false;
     final int mandatoryFields = _bayMandatoryFieldsCount[bay.id] ?? 0;
@@ -371,11 +372,13 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: isDarkMode
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.black.withOpacity(0.05),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -438,9 +441,12 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                               children: [
                                 Text(
                                   bay.name,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : Colors.black87,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -448,8 +454,10 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                                   'Voltage Level: ${bay.voltageLevel}',
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: theme.colorScheme.onSurface
-                                        .withOpacity(0.6),
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : theme.colorScheme.onSurface
+                                              .withOpacity(0.6),
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -458,16 +466,20 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                                     Icon(
                                       Icons.assignment,
                                       size: 16,
-                                      color: theme.colorScheme.onSurface
-                                          .withOpacity(0.6),
+                                      color: isDarkMode
+                                          ? Colors.white.withOpacity(0.6)
+                                          : theme.colorScheme.onSurface
+                                                .withOpacity(0.6),
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
                                       '$mandatoryFields mandatory fields',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: theme.colorScheme.onSurface
-                                            .withOpacity(0.6),
+                                        color: isDarkMode
+                                            ? Colors.white.withOpacity(0.6)
+                                            : theme.colorScheme.onSurface
+                                                  .withOpacity(0.6),
                                       ),
                                     ),
                                   ],
@@ -524,16 +536,24 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
+                            color: isDarkMode
+                                ? Colors.blue.shade800!.withOpacity(0.3)
+                                : Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue.shade200),
+                            border: Border.all(
+                              color: isDarkMode
+                                  ? Colors.blue.shade400!
+                                  : Colors.blue.shade200,
+                            ),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 Icons.auto_awesome,
                                 size: 16,
-                                color: Colors.blue.shade700,
+                                color: isDarkMode
+                                    ? Colors.blue.shade300
+                                    : Colors.blue.shade700,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -541,7 +561,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                                   'Previous readings will be auto-populated from ${_bayLastReadings[bay.id]!['lastReadingDate']}',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.blue.shade700,
+                                    color: isDarkMode
+                                        ? Colors.blue.shade300
+                                        : Colors.blue.shade700,
                                   ),
                                 ),
                               ),
@@ -581,6 +603,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   Widget _buildHeader() {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final int completedBays = _bayCompletionStatus.values
         .where((status) => status)
         .length;
@@ -594,7 +617,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer.withOpacity(0.3),
+        color: isDarkMode
+            ? theme.colorScheme.secondary.withOpacity(0.2)
+            : theme.colorScheme.secondaryContainer.withOpacity(0.3),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.secondary.withOpacity(0.3)),
       ),
@@ -634,7 +659,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                       ).format(widget.selectedDate),
                       style: TextStyle(
                         fontSize: 14,
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -649,10 +676,12 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: theme.colorScheme.outline.withOpacity(0.2),
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.2)
+                      : theme.colorScheme.outline.withOpacity(0.2),
                 ),
               ),
               child: Row(
@@ -675,7 +704,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                   Expanded(
                     child: LinearProgressIndicator(
                       value: totalBays > 0 ? completedBays / totalBays : 0,
-                      backgroundColor: Colors.grey.shade200,
+                      backgroundColor: isDarkMode
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade200,
                       valueColor: AlwaysStoppedAnimation<Color>(
                         completedBays == totalBays
                             ? Colors.green
@@ -693,7 +724,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.green.withOpacity(0.3)),
               ),
@@ -713,7 +744,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                   Expanded(
                     child: LinearProgressIndicator(
                       value: totalBays > 0 ? energyCompleteBays / totalBays : 0,
-                      backgroundColor: Colors.grey.shade200,
+                      backgroundColor: isDarkMode
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade200,
                       valueColor: const AlwaysStoppedAnimation<Color>(
                         Colors.green,
                       ),
@@ -751,17 +784,20 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (widget.substationId.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32.0),
+          padding: const EdgeInsets.all(32.0),
           child: Text(
             'Please select a substation to view energy data.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 16,
               fontStyle: FontStyle.italic,
-              color: Colors.grey,
+              color: isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey,
             ),
           ),
         ),
@@ -769,7 +805,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     }
 
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: CircularProgressIndicator(color: theme.colorScheme.primary),
+      );
     }
 
     return Column(
@@ -789,7 +827,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                         Icon(
                           Icons.info_outline,
                           size: 64,
-                          color: Colors.grey.shade400,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.4)
+                              : Colors.grey.shade400,
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -797,7 +837,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade600,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -806,7 +848,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey.shade600,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                           ),
                         ),
                       ],
@@ -840,7 +884,9 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey.shade600,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                           ),
                         ),
                       ],

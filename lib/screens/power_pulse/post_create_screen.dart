@@ -53,9 +53,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     Flair(name: 'Discussion', emoji: '💬'),
   ];
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Lifecycle
-  // ──────────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -81,9 +78,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     super.dispose();
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Initialisation helpers
-  // ──────────────────────────────────────────────────────────────────────────────
   void _initControllers() {
     if (widget.editingPost != null) {
       final post = widget.editingPost!;
@@ -101,7 +95,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
         _contentBlocks.add(block);
 
         if (_isListBlock(block.type)) {
-          _blockControllers.add(TextEditingController()); // dummy/unused
+          _blockControllers.add(TextEditingController());
           final subCtrls = block.listItems
               .map((text) => TextEditingController(text: text))
               .toList();
@@ -117,9 +111,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Draft & zone helpers
-  // ──────────────────────────────────────────────────────────────────────────────
   Future<void> _loadZones() async {
     try {
       final zones = await HierarchyService.getZones();
@@ -196,9 +187,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Content-block add / remove helpers
-  // ──────────────────────────────────────────────────────────────────────────────
   void _addHeading() {
     setState(() {
       _contentBlocks.add(
@@ -311,9 +299,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     });
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Media upload helpers
-  // ──────────────────────────────────────────────────────────────────────────────
   Future<void> _uploadImage() async {
     final picker = ImagePicker();
     final XFile? picked = await picker.pickImage(source: ImageSource.gallery);
@@ -373,13 +358,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     });
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Scaffold
-  // ──────────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: _buildAppBar(),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -396,18 +381,24 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           ? null
           : FloatingActionButton(
               onPressed: _showContentMenu,
-              backgroundColor: Colors.black87,
+              backgroundColor: isDarkMode ? Colors.blue[600] : Colors.black87,
               child: const Icon(Icons.add, color: Colors.white),
             ),
     );
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.close, color: Colors.black87),
+        icon: Icon(
+          Icons.close,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
         onPressed: _handleBack,
       ),
       title: Text(
@@ -415,34 +406,37 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
         style: GoogleFonts.lora(
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
         ),
       ),
       actions: [
         IconButton(
           icon: Icon(
             _isPreviewMode ? Icons.edit : Icons.visibility,
-            color: Colors.black87,
+            color: isDarkMode ? Colors.white : Colors.black87,
           ),
           onPressed: () => setState(() => _isPreviewMode = !_isPreviewMode),
         ),
         IconButton(
-          icon: const Icon(Icons.save, color: Colors.black87),
+          icon: Icon(
+            Icons.save,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
           onPressed: _isLoading ? null : _savePost,
         ),
       ],
     );
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Scope & flair
-  // ──────────────────────────────────────────────────────────────────────────────
   Widget _buildScopeAndFlairSelector() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
+      color: isDarkMode ? const Color(0xFF2C2C2E) : null,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          // Scope button
           ElevatedButton.icon(
             onPressed: _zones.isNotEmpty ? _showZonePicker : null,
             icon: Icon(
@@ -457,11 +451,11 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: _selectedScope.isPublic
-                  ? Colors.blue[50]
+                  ? (isDarkMode ? Colors.blue[800] : Colors.blue[50])
                   : Colors.orange,
               foregroundColor: _selectedScope.isPublic
-                  ? Colors.blue[700]
-                  : Colors.orange,
+                  ? (isDarkMode ? Colors.blue[200] : Colors.blue[700])
+                  : Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
@@ -470,7 +464,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          // Flair button
           ElevatedButton.icon(
             onPressed: _showFlairPicker,
             icon: Icon(
@@ -478,7 +471,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               size: 16,
               color: _selectedFlair != null
                   ? _getFlairColor(_selectedFlair!)
-                  : Colors.grey[600],
+                  : (isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600]),
             ),
             label: Text(
               _selectedFlair?.name ?? 'Add flair',
@@ -486,13 +481,15 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                 fontSize: 14,
                 color: _selectedFlair != null
                     ? _getFlairColor(_selectedFlair!)
-                    : Colors.grey[600],
+                    : (isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600]),
               ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: _selectedFlair != null
                   ? _getFlairColor(_selectedFlair!).withOpacity(0.1)
-                  : Colors.grey[200],
+                  : (isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[200]),
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
@@ -512,7 +509,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                 'Make public',
                 style: GoogleFonts.montserrat(
                   fontSize: 12,
-                  color: Colors.blue[600],
+                  color: isDarkMode ? Colors.blue[200] : Colors.blue[600],
                 ),
               ),
             ),
@@ -522,8 +519,12 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   void _showFlairPicker() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -538,7 +539,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(height: 20),
@@ -553,7 +554,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   style: GoogleFonts.montserrat(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
-                    color: Colors.black87,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
                 selected: _selectedFlair?.name == flair.name,
@@ -572,7 +573,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                 style: GoogleFonts.montserrat(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black87,
+                  color: isDarkMode ? Colors.white : Colors.black87,
                 ),
               ),
               onTap: () {
@@ -589,13 +590,14 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Content menu
-  // ──────────────────────────────────────────────────────────────────────────────
   void _showContentMenu() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -612,7 +614,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(height: 20),
@@ -656,7 +658,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       'Add a flow-chart description',
                       _addFlowchart,
                     ),
-                    // ADD THIS NEW OPTION HERE:
                     _contentOption(
                       Icons.table_chart,
                       'Excel Table',
@@ -721,19 +722,25 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     String subtitle,
     VoidCallback onTap,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return ListTile(
-      leading: Icon(icon, color: Colors.black54),
+      leading: Icon(icon, color: isDarkMode ? Colors.white54 : Colors.black54),
       title: Text(
         title,
         style: GoogleFonts.lora(
           fontSize: 15,
           fontWeight: FontWeight.w500,
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
         ),
       ),
       subtitle: Text(
         subtitle,
-        style: GoogleFonts.lora(fontSize: 13, color: Colors.black54),
+        style: GoogleFonts.lora(
+          fontSize: 13,
+          color: isDarkMode ? Colors.white54 : Colors.black54,
+        ),
       ),
       onTap: () {
         Navigator.pop(context);
@@ -742,43 +749,43 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Editor view
-  // ──────────────────────────────────────────────────────────────────────────────
   Widget _buildEditor() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title
           TextField(
             controller: _titleController,
             focusNode: _titleFocusNode,
             maxLines: null,
+            style: GoogleFonts.lora(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
             decoration: InputDecoration(
               hintText: 'Enter your title…',
               hintStyle: GoogleFonts.lora(
                 fontSize: 24,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey[400],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey[400],
               ),
               border: InputBorder.none,
-            ),
-            style: GoogleFonts.lora(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
             ),
             textCapitalization: TextCapitalization.sentences,
             onChanged: (_) => _saveDraft(),
           ),
           const SizedBox(height: 16),
-          // Summary
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -786,10 +793,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.summarize,
                       size: 16,
-                      color: Colors.black54,
+                      color: isDarkMode ? Colors.white54 : Colors.black54,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -797,7 +804,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       style: GoogleFonts.lora(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: isDarkMode ? Colors.white : Colors.black87,
                       ),
                     ),
                     const Spacer(),
@@ -805,7 +812,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       '${_summaryController.text.length}/200',
                       style: GoogleFonts.lora(
                         fontSize: 11,
-                        color: Colors.black54,
+                        color: isDarkMode ? Colors.white54 : Colors.black54,
                       ),
                     ),
                   ],
@@ -815,20 +822,22 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   focusNode: _summaryFocusNode,
                   maxLines: 3,
                   maxLength: 200,
+                  style: GoogleFonts.lora(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Brief summary for post previews…',
                     hintStyle: GoogleFonts.lora(
                       fontSize: 14,
                       fontWeight: FontWeight.w400,
-                      color: Colors.grey[400],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.4)
+                          : Colors.grey[400],
                     ),
                     border: InputBorder.none,
                     counterText: '',
-                  ),
-                  style: GoogleFonts.lora(
-                    fontSize: 14,
-                    height: 1.5,
-                    color: Colors.black87,
                   ),
                   textCapitalization: TextCapitalization.sentences,
                   onChanged: (_) => _saveDraft(),
@@ -837,21 +846,24 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          // Content blocks
           _contentBlocks.isEmpty
               ? Column(
                   children: [
                     Icon(
                       Icons.article_outlined,
                       size: 60,
-                      color: Colors.grey[300],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.grey[300],
                     ),
                     const SizedBox(height: 12),
                     Text(
                       'Add content using the + button',
                       style: GoogleFonts.lora(
                         fontSize: 14,
-                        color: Colors.grey[600],
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
                       ),
                     ),
                   ],
@@ -911,6 +923,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Future<bool?> _showDeleteConfirmationDialog(ContentBlock block) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     String blockTypeName;
     switch (block.type) {
       case ContentBlockType.heading:
@@ -948,6 +963,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     return await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Row(
           children: [
@@ -958,21 +974,29 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
           ],
         ),
         content: Text(
           'Are you sure you want to delete this $blockTypeName? This action cannot be undone.',
-          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[700]),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.7)
+                : Colors.grey[700],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(
               'Cancel',
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+              style: GoogleFonts.lora(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : Colors.grey,
+              ),
             ),
           ),
           ElevatedButton(
@@ -998,6 +1022,8 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Widget _excelTableField(ContentBlock block, int index) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final excelData = block.excelData ?? {};
     final rows = excelData['rows'] ?? 0;
     final columns = excelData['columns'] ?? 0;
@@ -1032,7 +1058,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       style: GoogleFonts.lora(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: isDarkMode ? Colors.white : Colors.black87,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1040,13 +1066,19 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       '${rows}×${columns} table with merged cells',
                       style: GoogleFonts.lora(
                         fontSize: 13,
-                        color: Colors.grey[600],
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.edit, color: Colors.grey, size: 20),
+              Icon(
+                Icons.edit,
+                color: isDarkMode ? Colors.white54 : Colors.grey,
+                size: 20,
+              ),
             ],
           ),
         ),
@@ -1054,7 +1086,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
-  // Add this method if not already present
   void _editExcelTable(ContentBlock block, int index) async {
     final result = await Navigator.push(
       context,
@@ -1073,9 +1104,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Block editor widgets
-  // ──────────────────────────────────────────────────────────────────────────────
   Widget _blockEditor(ContentBlock block, int index) {
     switch (block.type) {
       case ContentBlockType.heading:
@@ -1116,14 +1144,25 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     required double fontSize,
     required String hint,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return _blockShell(
       TextField(
         controller: _blockControllers[index],
-        decoration: InputDecoration(border: InputBorder.none, hintText: hint),
         style: GoogleFonts.lora(
           fontSize: fontSize,
           fontWeight: FontWeight.w700,
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: hint,
+          hintStyle: TextStyle(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.4)
+                : Colors.grey[400],
+          ),
         ),
         onChanged: (value) {
           block.text = value;
@@ -1134,18 +1173,26 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Widget _paragraphField(ContentBlock block, int index) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return _blockShell(
       TextField(
         controller: _blockControllers[index],
         maxLines: null,
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          hintText: 'Paragraph…',
-        ),
         style: GoogleFonts.lora(
           fontSize: 15,
           height: 1.5,
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: 'Paragraph…',
+          hintStyle: TextStyle(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.4)
+                : Colors.grey[400],
+          ),
         ),
         onChanged: (value) {
           block.text = value;
@@ -1156,13 +1203,14 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Widget _listField(ContentBlock block, int index) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final listControllers = _listControllers[index];
 
     return _blockShell(
       Column(
         children: [
           ...List.generate(block.listItems.length, (i) {
-            // Ensure we have enough controllers
             while (listControllers.length <= i) {
               listControllers.add(TextEditingController());
             }
@@ -1178,20 +1226,28 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       block.type == ContentBlockType.bulletedList
                           ? '•'
                           : '${i + 1}.',
-                      style: const TextStyle(fontSize: 15),
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
                     ),
                   ),
                   Expanded(
                     child: TextField(
                       controller: listControllers[i],
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'List item…',
-                      ),
                       style: GoogleFonts.lora(
                         fontSize: 15,
                         height: 1.5,
-                        color: Colors.black87,
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'List item…',
+                        hintStyle: TextStyle(
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.4)
+                              : Colors.grey[400],
+                        ),
                       ),
                       onChanged: (value) {
                         block.listItems[i] = value;
@@ -1256,20 +1312,28 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Widget _linkField(ContentBlock block, int index) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return _blockShell(
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: _blockControllers[index],
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              hintText: 'Link text…',
-            ),
             style: GoogleFonts.lora(
               fontSize: 15,
               color: Colors.blue[700],
               decoration: TextDecoration.underline,
+            ),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              hintText: 'Link text…',
+              hintStyle: TextStyle(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey[400],
+              ),
             ),
             onChanged: (value) {
               block.text = value;
@@ -1277,11 +1341,21 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             },
           ),
           TextField(
-            decoration: const InputDecoration(
+            style: GoogleFonts.lora(
+              fontSize: 13,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey[600],
+            ),
+            decoration: InputDecoration(
               border: InputBorder.none,
               hintText: 'https://…',
+              hintStyle: TextStyle(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey[400],
+              ),
             ),
-            style: GoogleFonts.lora(fontSize: 13, color: Colors.grey[600]),
             controller: TextEditingController(text: block.url ?? ''),
             onChanged: (v) {
               block.url = v;
@@ -1294,10 +1368,17 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Widget _fileField(ContentBlock block) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return _blockShell(
       Row(
         children: [
-          const Icon(Icons.attach_file, color: Colors.black54, size: 20),
+          Icon(
+            Icons.attach_file,
+            color: isDarkMode ? Colors.white54 : Colors.black54,
+            size: 20,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -1305,7 +1386,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               children: [
                 Text(
                   block.text,
-                  style: GoogleFonts.lora(fontSize: 15, color: Colors.black87),
+                  style: GoogleFonts.lora(
+                    fontSize: 15,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
                 ),
                 Text(
                   block.file != null
@@ -1313,7 +1397,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       : 'FILE',
                   style: GoogleFonts.lora(
                     fontSize: 11,
-                    color: Colors.grey[500],
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.5)
+                        : Colors.grey[500],
                   ),
                 ),
               ],
@@ -1344,6 +1430,8 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Widget _flowchartField(ContentBlock block, int index) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final flowchartData = block.flowchartData ?? {};
     final title = flowchartData['title'] ?? 'Untitled Flowchart';
     final description = flowchartData['description'] ?? '';
@@ -1378,7 +1466,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       style: GoogleFonts.lora(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: isDarkMode ? Colors.white : Colors.black87,
                       ),
                     ),
                     if (description.isNotEmpty) ...[
@@ -1387,7 +1475,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         description,
                         style: GoogleFonts.lora(
                           fontSize: 13,
-                          color: Colors.grey[600],
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey[600],
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -1405,7 +1495,11 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   ],
                 ),
               ),
-              const Icon(Icons.edit, color: Colors.grey, size: 20),
+              Icon(
+                Icons.edit,
+                color: isDarkMode ? Colors.white54 : Colors.grey,
+                size: 20,
+              ),
             ],
           ),
         ),
@@ -1413,30 +1507,41 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
-  Widget _blockShell(Widget child) => Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.grey.withOpacity(0.08),
-          blurRadius: 4,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    ),
-    child: ListTile(
-      title: child,
-      contentPadding: const EdgeInsets.all(12),
-      trailing: const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
-    ),
-  );
+  Widget _blockShell(Widget child) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Preview view
-  // ──────────────────────────────────────────────────────────────────────────────
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.grey.withOpacity(0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        title: child,
+        contentPadding: const EdgeInsets.all(12),
+        trailing: Icon(
+          Icons.drag_handle,
+          color: isDarkMode ? Colors.white54 : Colors.grey,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
   Widget _buildPreview() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 80),
       child: Column(
@@ -1450,6 +1555,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               fontSize: 28,
               fontWeight: FontWeight.w700,
               height: 1.2,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
           ),
           const SizedBox(height: 8),
@@ -1489,12 +1595,16 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
+                color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 _summaryController.text,
-                style: GoogleFonts.lora(fontSize: 15, height: 1.5),
+                style: GoogleFonts.lora(
+                  fontSize: 15,
+                  height: 1.5,
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -1523,14 +1633,16 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                     style: GoogleFonts.montserrat(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      color: isDarkMode ? Colors.white : Colors.black87,
                     ),
                   ),
                   Text(
                     'Just now • ${_getReadingTime()} min read',
                     style: GoogleFonts.montserrat(
                       fontSize: 11,
-                      color: Colors.grey[600],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
                     ),
                   ),
                 ],
@@ -1547,6 +1659,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
   }
 
   Widget _blockPreview(ContentBlock block, int index) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     switch (block.type) {
       case ContentBlockType.heading:
         return _pv(
@@ -1579,7 +1694,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   children: [
                     Text(
                       isBulleted ? '• ' : '${idx + 1}. ',
-                      style: const TextStyle(fontSize: 15),
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
                     ),
                     Expanded(
                       child: Text(
@@ -1587,7 +1705,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 15,
                           height: 1.5,
-                          color: Colors.black87,
+                          color: isDarkMode ? Colors.white : Colors.black87,
                         ),
                       ),
                     ),
@@ -1628,7 +1746,11 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
             children: [
-              const Icon(Icons.attach_file, size: 18, color: Colors.black54),
+              Icon(
+                Icons.attach_file,
+                size: 18,
+                color: isDarkMode ? Colors.white54 : Colors.black54,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -1638,7 +1760,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       block.text,
                       style: GoogleFonts.lora(
                         fontSize: 15,
-                        color: Colors.black87,
+                        color: isDarkMode ? Colors.white : Colors.black87,
                       ),
                     ),
                     Text(
@@ -1647,7 +1769,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                           : 'FILE',
                       style: GoogleFonts.lora(
                         fontSize: 11,
-                        color: Colors.grey[500],
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.5)
+                            : Colors.grey[500],
                       ),
                     ),
                   ],
@@ -1667,14 +1791,15 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
+              color: isDarkMode
+                  ? Colors.blue[900]?.withOpacity(0.3)
+                  : Colors.blue[50],
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.blue[600]!),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 Row(
                   children: [
                     Icon(Icons.account_tree, color: Colors.blue[600], size: 24),
@@ -1685,28 +1810,28 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: isDarkMode ? Colors.white : Colors.black87,
                         ),
                       ),
                     ),
                   ],
                 ),
 
-                // Description
                 if (description.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
                     description,
                     style: GoogleFonts.lora(
                       fontSize: 14,
-                      color: Colors.grey[700],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.7)
+                          : Colors.grey[700],
                     ),
                   ),
                 ],
 
                 const SizedBox(height: 16),
 
-                // Use the shared FlowchartPreviewWidget
                 FlowchartPreviewWidget(
                   flowchartData: block.flowchartData,
                   height: 200,
@@ -1715,7 +1840,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
 
                 const SizedBox(height: 12),
 
-                // Footer info
                 Row(
                   children: [
                     Icon(Icons.info_outline, color: Colors.blue[600], size: 16),
@@ -1733,7 +1857,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                       '$nodeCount nodes',
                       style: GoogleFonts.lora(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
                       ),
                     ),
                   ],
@@ -1753,7 +1879,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.green[50],
+              color: isDarkMode
+                  ? Colors.green[900]?.withOpacity(0.3)
+                  : Colors.green[50],
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.green!),
             ),
@@ -1770,14 +1898,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: isDarkMode ? Colors.white : Colors.black87,
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Table preview
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Column(
@@ -1790,14 +1917,26 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                             width: 80,
                             height: 30,
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey[300]!),
+                              border: Border.all(
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.3)
+                                    : Colors.grey[300]!,
+                              ),
+                              color: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
                             ),
                             child: Center(
                               child: Text(
                                 i < data.length && j < (data[i] as List).length
                                     ? (data[i] as List)[j].toString()
                                     : '',
-                                style: GoogleFonts.lora(fontSize: 10),
+                                style: GoogleFonts.lora(
+                                  fontSize: 10,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -1827,7 +1966,12 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                     const Spacer(),
                     Text(
                       '${rows}×${columns} table',
-                      style: GoogleFonts.lora(fontSize: 12, color: Colors.grey),
+                      style: GoogleFonts.lora(
+                        fontSize: 12,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
+                      ),
                     ),
                   ],
                 ),
@@ -1842,27 +1986,38 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     required String text,
     required double size,
     FontWeight weight = FontWeight.w400,
-  }) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    child: Text(
-      text,
-      style: GoogleFonts.lora(
-        fontSize: size,
-        fontWeight: weight,
-        color: Colors.black87,
-      ),
-    ),
-  );
+  }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Bottom bar
-  // ──────────────────────────────────────────────────────────────────────────────
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        text,
+        style: GoogleFonts.lora(
+          fontSize: size,
+          fontWeight: weight,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomBar() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey[200]!)),
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey[200]!,
+          ),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -1871,7 +2026,9 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
             '${_getWordCount()} words • ${_getReadingTime()} min read',
             style: GoogleFonts.montserrat(
               fontSize: 12,
-              color: Colors.grey[600],
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey[600],
             ),
           ),
         ],
@@ -1879,12 +2036,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Zone picker
-  // ──────────────────────────────────────────────────────────────────────────────
   void _showZonePicker() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1899,7 +2057,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(height: 20),
@@ -1911,8 +2069,10 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                   leading: Icon(
                     Icons.location_on,
                     color: _selectedZone?.id == zone.id
-                        ? Colors.black87
-                        : Colors.grey[500],
+                        ? (isDarkMode ? Colors.white : Colors.black87)
+                        : (isDarkMode
+                              ? Colors.white.withOpacity(0.5)
+                              : Colors.grey[500]),
                     size: 20,
                   ),
                   title: Text(
@@ -1920,7 +2080,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
                     style: GoogleFonts.montserrat(
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                      color: isDarkMode ? Colors.white : Colors.black87,
                     ),
                   ),
                   selected: _selectedZone?.id == zone.id,
@@ -1940,9 +2100,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     );
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Save post
-  // ──────────────────────────────────────────────────────────────────────────────
   Future<void> _savePost() async {
     if (_titleController.text.trim().isEmpty) {
       _showSnackBar('Please enter a title');
@@ -1966,14 +2123,13 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     try {
       String? imageUrl = _existingImageUrl;
 
-      // Update block data from controllers before saving
       for (int i = 0; i < _contentBlocks.length; ++i) {
         final block = _contentBlocks[i];
 
         if (block.type == ContentBlockType.image && block.file != null) {
           try {
             imageUrl = await StorageService.uploadPostImage(block.file!);
-            block.url = imageUrl; // Update the block with the uploaded URL
+            block.url = imageUrl;
           } catch (e) {
             debugPrint('Failed to upload image: $e');
             _showSnackBar('Failed to upload image: $e');
@@ -1985,7 +2141,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
               .where((text) => text.isNotEmpty)
               .toList();
         } else if (block.type == ContentBlockType.flowchart) {
-          // Don't overwrite flowchartData - keep the full data from FlowchartCreateScreen
           if (block.flowchartData != null) {
             block.text = block.flowchartData!['title'] ?? 'Flowchart';
           }
@@ -1996,7 +2151,7 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
 
       final input = CreatePostInput(
         title: _titleController.text.trim(),
-        bodyDelta: '', // empty or rich text, as needed
+        bodyDelta: '',
         contentBlocks: _contentBlocks,
         excerpt: _summaryController.text.trim(),
         scope: _selectedScope,
@@ -2022,7 +2177,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
         );
       }
 
-      // Clear draft on successful save
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('post_draft');
 
@@ -2040,26 +2194,39 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Navigation & back
-  // ──────────────────────────────────────────────────────────────────────────────
   void _handleBack() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_hasUnsavedChanges()) {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
+          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
           title: Text(
             'Discard changes?',
-            style: GoogleFonts.lora(fontSize: 16, fontWeight: FontWeight.w600),
+            style: GoogleFonts.lora(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isDarkMode ? Colors.white : null,
+            ),
           ),
           content: Text(
             'You have unsaved changes. Leave anyway?',
-            style: GoogleFonts.lora(fontSize: 14),
+            style: GoogleFonts.lora(
+              fontSize: 14,
+              color: isDarkMode ? Colors.white : null,
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.lora()),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.lora(
+                  color: isDarkMode ? Colors.white : null,
+                ),
+              ),
             ),
             TextButton(
               onPressed: () {
@@ -2086,9 +2253,6 @@ class _PostCreateScreenState extends State<PostCreateScreen> {
       _selectedFlair != null ||
       _existingImageUrl != null;
 
-  // ──────────────────────────────────────────────────────────────────────────────
-  // Helper methods
-  // ──────────────────────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _serializeBlocks() {
     final result = <Map<String, dynamic>>[];
     for (int i = 0; i < _contentBlocks.length; ++i) {

@@ -128,7 +128,7 @@ class _AuthScreenState extends State<AuthScreen>
   Future<void> _handleExistingUser(AppUser existingUser) async {
     if (!context.mounted) return;
 
-    // ✅ FIXED: Check mandatory profile fields completion
+    // Check mandatory profile fields completion
     if (!_isMandatoryProfileComplete(existingUser)) {
       _showSnackBar('Please complete your mandatory profile fields.');
       _navigateToProfile(existingUser);
@@ -145,7 +145,7 @@ class _AuthScreenState extends State<AuthScreen>
     await _navigateBasedOnRole(existingUser);
   }
 
-  // ✅ NEW: Method to check if mandatory profile fields are complete
+  // Method to check if mandatory profile fields are complete
   bool _isMandatoryProfileComplete(AppUser user) {
     // Check all mandatory fields
     final bool hasName = user.name.trim().isNotEmpty;
@@ -216,6 +216,9 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -225,12 +228,12 @@ class _AuthScreenState extends State<AuthScreen>
             fontWeight: FontWeight.w500,
             color: isError
                 ? Colors.white
-                : Theme.of(context).colorScheme.onSurface,
+                : (isDarkMode ? Colors.white : theme.colorScheme.onSurface),
           ),
         ),
         backgroundColor: isError
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary.withOpacity(0.9),
+            ? theme.colorScheme.error
+            : theme.colorScheme.primary.withOpacity(0.9),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         margin: const EdgeInsets.all(16),
@@ -243,9 +246,12 @@ class _AuthScreenState extends State<AuthScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFFAFAFA),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -257,11 +263,13 @@ class _AuthScreenState extends State<AuthScreen>
               opacity: _fadeAnimation,
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: isDarkMode
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.black.withOpacity(0.05),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -290,7 +298,9 @@ class _AuthScreenState extends State<AuthScreen>
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
+                        color: isDarkMode
+                            ? Colors.white
+                            : colorScheme.onSurface,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -300,7 +310,9 @@ class _AuthScreenState extends State<AuthScreen>
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: colorScheme.onSurface.withOpacity(0.6),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : colorScheme.onSurface.withOpacity(0.6),
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -326,6 +338,12 @@ class _AuthScreenState extends State<AuthScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: colorScheme.primary,
                           foregroundColor: colorScheme.onPrimary,
+                          disabledBackgroundColor: isDarkMode
+                              ? Colors.grey.shade700
+                              : Colors.grey.shade300,
+                          disabledForegroundColor: isDarkMode
+                              ? Colors.white.withOpacity(0.5)
+                              : Colors.grey.shade500,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 24,
                             vertical: 12,
@@ -346,7 +364,9 @@ class _AuthScreenState extends State<AuthScreen>
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: colorScheme.onSurface.withOpacity(0.5),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.5)
+                            : colorScheme.onSurface.withOpacity(0.5),
                       ),
                       textAlign: TextAlign.center,
                     ),

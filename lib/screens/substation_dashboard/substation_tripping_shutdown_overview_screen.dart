@@ -239,12 +239,14 @@ class _TrippingShutdownOverviewScreenState
     String bayName,
   ) async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     final bool confirm =
         await showDialog(
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
+              backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -252,18 +254,26 @@ class _TrippingShutdownOverviewScreenState
                 children: [
                   Icon(Icons.warning, color: Colors.red.shade600),
                   const SizedBox(width: 8),
-                  const Text('Confirm Deletion'),
+                  Text(
+                    'Confirm Deletion',
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
+                  ),
                 ],
               ),
               content: Text(
                 'Are you sure you want to delete this $eventType event for $bayName?\n\nThis action cannot be undone.',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
               ),
               actions: <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
                   child: Text(
                     'Cancel',
-                    style: TextStyle(color: theme.colorScheme.onSurface),
+                    style: TextStyle(
+                      color: isDarkMode
+                          ? Colors.white
+                          : theme.colorScheme.onSurface,
+                    ),
                   ),
                 ),
                 ElevatedButton(
@@ -409,6 +419,7 @@ class _TrippingShutdownOverviewScreenState
   // Enhanced event card widget
   Widget _buildEventCard(TrippingShutdownEntry entry) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final bay = _baysMap[entry.bayId];
     final String startTimeFormatted = DateFormat(
       'dd.MMM.yyyy HH:mm',
@@ -424,11 +435,13 @@ class _TrippingShutdownOverviewScreenState
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -456,9 +469,10 @@ class _TrippingShutdownOverviewScreenState
                 Expanded(
                   child: Text(
                     '${entry.eventType} - ${entry.bayName}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
                 ),
@@ -492,14 +506,18 @@ class _TrippingShutdownOverviewScreenState
                     Icon(
                       Icons.play_arrow,
                       size: 14,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       'Start: $startTimeFormatted',
                       style: TextStyle(
                         fontSize: 13,
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -580,7 +598,9 @@ class _TrippingShutdownOverviewScreenState
             ),
             trailing: Icon(
               Icons.arrow_forward_ios,
-              color: theme.colorScheme.onSurface.withOpacity(0.4),
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : theme.colorScheme.onSurface.withOpacity(0.4),
               size: 16,
             ),
             onTap: () => _navigateToViewEvent(entry),
@@ -589,7 +609,7 @@ class _TrippingShutdownOverviewScreenState
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
               borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(12),
                 bottomRight: Radius.circular(12),
@@ -638,6 +658,7 @@ class _TrippingShutdownOverviewScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     // Handle empty substation case
     if (widget.substationId.isEmpty) {
@@ -646,11 +667,13 @@ class _TrippingShutdownOverviewScreenState
           margin: const EdgeInsets.all(32),
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: isDarkMode
+                    ? Colors.black.withOpacity(0.3)
+                    : Colors.black.withOpacity(0.1),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -659,14 +682,22 @@ class _TrippingShutdownOverviewScreenState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.location_off, size: 64, color: Colors.grey.shade400),
+              Icon(
+                Icons.location_off,
+                size: 64,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey.shade400,
+              ),
               const SizedBox(height: 16),
               Text(
                 'No Substation Selected',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
+                  color: isDarkMode
+                      ? Colors.white
+                      : theme.colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
@@ -676,7 +707,9 @@ class _TrippingShutdownOverviewScreenState
                 style: TextStyle(
                   fontSize: 14,
                   fontStyle: FontStyle.italic,
-                  color: Colors.grey.shade600,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
                 ),
               ),
             ],
@@ -690,7 +723,9 @@ class _TrippingShutdownOverviewScreenState
     final DateTime displayEndDate = widget.endDate ?? DateTime.utc(2200);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFF8F9FA),
       body: Column(
         children: [
           // Enhanced Header
@@ -701,12 +736,21 @@ class _TrippingShutdownOverviewScreenState
               margin: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Colors.red.shade50, Colors.orange.shade50],
+                  colors: isDarkMode
+                      ? [
+                          Colors.red.shade900.withOpacity(0.3),
+                          Colors.orange.shade900.withOpacity(0.3),
+                        ]
+                      : [Colors.red.shade50, Colors.orange.shade50],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.red.shade200),
+                border: Border.all(
+                  color: isDarkMode
+                      ? Colors.red.shade600.withOpacity(0.3)
+                      : Colors.red.shade200,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.red.withOpacity(0.1),
@@ -749,9 +793,11 @@ class _TrippingShutdownOverviewScreenState
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.8,
-                                ),
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.8)
+                                    : theme.colorScheme.onSurface.withOpacity(
+                                        0.8,
+                                      ),
                               ),
                             ),
                           ],
@@ -800,14 +846,18 @@ class _TrippingShutdownOverviewScreenState
                         Icon(
                           Icons.date_range,
                           size: 16,
-                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : theme.colorScheme.onSurface.withOpacity(0.6),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '${DateFormat('dd.MMM.yyyy').format(widget.startDate!)} - ${DateFormat('dd.MMM.yyyy').format(widget.endDate!)}',
                           style: TextStyle(
                             fontSize: 14,
-                            color: theme.colorScheme.onSurface.withOpacity(0.7),
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.7)
+                                : theme.colorScheme.onSurface.withOpacity(0.7),
                           ),
                         ),
                       ],
@@ -824,11 +874,15 @@ class _TrippingShutdownOverviewScreenState
                     child: Container(
                       padding: const EdgeInsets.all(32),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: isDarkMode
+                                ? Colors.black.withOpacity(0.3)
+                                : Colors.black.withOpacity(0.1),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -845,7 +899,9 @@ class _TrippingShutdownOverviewScreenState
                             'Loading events...',
                             style: TextStyle(
                               fontSize: 16,
-                              color: theme.colorScheme.onSurface,
+                              color: isDarkMode
+                                  ? Colors.white
+                                  : theme.colorScheme.onSurface,
                             ),
                           ),
                         ],
@@ -858,11 +914,15 @@ class _TrippingShutdownOverviewScreenState
                       margin: const EdgeInsets.all(32),
                       padding: const EdgeInsets.all(32),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: isDarkMode
+                                ? Colors.black.withOpacity(0.3)
+                                : Colors.black.withOpacity(0.1),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -894,7 +954,9 @@ class _TrippingShutdownOverviewScreenState
                             style: TextStyle(
                               fontSize: 14,
                               fontStyle: FontStyle.italic,
-                              color: Colors.grey.shade600,
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.6)
+                                  : Colors.grey.shade600,
                             ),
                           ),
                         ],
@@ -920,69 +982,84 @@ class _TrippingShutdownOverviewScreenState
                           return Container(
                             margin: const EdgeInsets.only(bottom: 16),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
+                                  color: isDarkMode
+                                      ? Colors.black.withOpacity(0.3)
+                                      : Colors.black.withOpacity(0.05),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
                               ],
                             ),
-                            child: ExpansionTile(
-                              initiallyExpanded: true,
-                              title: Row(
-                                children: [
-                                  Container(
-                                    width: 32,
-                                    height: 32,
-                                    decoration: BoxDecoration(
-                                      color: _getBayTypeColor(
-                                        bayType,
-                                      ).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      _getBayTypeIcon(bayType),
-                                      color: _getBayTypeColor(bayType),
-                                      size: 18,
-                                    ),
+                            child: Theme(
+                              data: theme.copyWith(
+                                dividerColor: Colors.transparent,
+                                textTheme: theme.textTheme.copyWith(
+                                  titleMedium: TextStyle(
+                                    color: isDarkMode ? Colors.white : null,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    '$bayType Events',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _getBayTypeColor(
-                                        bayType,
-                                      ).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      '${entriesForType.length}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              child: ExpansionTile(
+                                initiallyExpanded: true,
+                                title: Row(
+                                  children: [
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: _getBayTypeColor(
+                                          bayType,
+                                        ).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        _getBayTypeIcon(bayType),
                                         color: _getBayTypeColor(bayType),
+                                        size: 18,
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      '$bayType Events',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDarkMode ? Colors.white : null,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _getBayTypeColor(
+                                          bayType,
+                                        ).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        '${entriesForType.length}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: _getBayTypeColor(bayType),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                children: entriesForType
+                                    .map((entry) => _buildEventCard(entry))
+                                    .toList(),
                               ),
-                              children: entriesForType
-                                  .map((entry) => _buildEventCard(entry))
-                                  .toList(),
                             ),
                           );
                         },

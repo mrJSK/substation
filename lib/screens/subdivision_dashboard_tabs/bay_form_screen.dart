@@ -6,15 +6,15 @@ import 'package:substation_manager/equipment_icons/busbar_icon.dart';
 import 'package:substation_manager/equipment_icons/line_icon.dart';
 import 'package:substation_manager/equipment_icons/reactor_icon.dart';
 import 'package:substation_manager/equipment_icons/transformer_icon.dart';
-import '../models/bay_connection_model.dart';
-import '../models/bay_model.dart';
-import '../models/user_model.dart';
-import '../models/hierarchy_models.dart';
-import '../widgets/add_hierarchy_dialog.dart';
-import '../utils/snackbar_utils.dart';
-import '../equipment_icons/feeder_icon.dart';
-import '../equipment_icons/capacitor_bank_icon.dart';
-import '../equipment_icons/circuit_breaker_icon.dart';
+import '../../models/bay_connection_model.dart';
+import '../../models/bay_model.dart';
+import '../../models/user_model.dart';
+import '../../models/hierarchy_models.dart';
+import '../../widgets/add_hierarchy_dialog.dart';
+import '../../utils/snackbar_utils.dart';
+import '../../equipment_icons/feeder_icon.dart';
+import '../../equipment_icons/capacitor_bank_icon.dart';
+import '../../equipment_icons/circuit_breaker_icon.dart';
 
 enum DateType { commissioning, manufacturing, erection }
 

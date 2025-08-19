@@ -281,18 +281,19 @@ class _SubstationUserOperationsTabState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     if (widget.substationId.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32.0),
+          padding: const EdgeInsets.all(32.0),
           child: Text(
             'Please select a substation to view hourly operations.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 16,
               fontStyle: FontStyle.italic,
-              color: Colors.grey,
+              color: isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey,
             ),
           ),
         ),
@@ -307,7 +308,9 @@ class _SubstationUserOperationsTabState
           padding: const EdgeInsets.all(16),
           margin: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+            color: isDarkMode
+                ? theme.colorScheme.primary.withOpacity(0.2)
+                : theme.colorScheme.primaryContainer.withOpacity(0.3),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: theme.colorScheme.primary.withOpacity(0.3),
@@ -334,7 +337,9 @@ class _SubstationUserOperationsTabState
                 DateFormat('EEEE, dd MMMM yyyy').format(widget.selectedDate),
                 style: TextStyle(
                   fontSize: 14,
-                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.7)
+                      : theme.colorScheme.onSurface.withOpacity(0.7),
                 ),
               ),
             ],
@@ -344,7 +349,11 @@ class _SubstationUserOperationsTabState
         // Content area
         Expanded(
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(
+                  child: CircularProgressIndicator(
+                    color: theme.colorScheme.primary,
+                  ),
+                )
               : !_hasAnyBaysWithReadings
               ? Center(
                   child: Padding(
@@ -355,7 +364,9 @@ class _SubstationUserOperationsTabState
                         Icon(
                           Icons.info_outline,
                           size: 64,
-                          color: Colors.grey.shade400,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.4)
+                              : Colors.grey.shade400,
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -363,7 +374,9 @@ class _SubstationUserOperationsTabState
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade600,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -372,7 +385,9 @@ class _SubstationUserOperationsTabState
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey.shade600,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                           ),
                         ),
                       ],
@@ -387,14 +402,18 @@ class _SubstationUserOperationsTabState
                       Icon(
                         Icons.schedule,
                         size: 64,
-                        color: Colors.grey.shade400,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.4)
+                            : Colors.grey.shade400,
                       ),
                       const SizedBox(height: 16),
                       Text(
                         'No hourly slots available for this date',
                         style: TextStyle(
                           fontSize: 16,
-                          color: Colors.grey.shade600,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey.shade600,
                         ),
                       ),
                     ],
@@ -412,11 +431,15 @@ class _SubstationUserOperationsTabState
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
+                            color: isDarkMode
+                                ? Colors.black.withOpacity(0.3)
+                                : Colors.black.withOpacity(0.05),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
@@ -435,9 +458,10 @@ class _SubstationUserOperationsTabState
                         ),
                         title: Text(
                           'Hour ${slot['displayTime']}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
+                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                         subtitle: Column(
@@ -457,14 +481,22 @@ class _SubstationUserOperationsTabState
                               '${_baysWithHourlyAssignments.length} bays assigned',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.6,
-                                ),
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.6)
+                                    : theme.colorScheme.onSurface.withOpacity(
+                                        0.6,
+                                      ),
                               ),
                             ),
                           ],
                         ),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        trailing: Icon(
+                          Icons.arrow_forward_ios,
+                          size: 16,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
                         onTap: () {
                           // Fixed navigation
                           Navigator.of(context)

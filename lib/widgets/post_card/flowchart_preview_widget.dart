@@ -18,8 +18,11 @@ class FlowchartPreviewWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (flowchartData == null || flowchartData!['nodes'] == null) {
-      return _buildEmptyState();
+      return _buildEmptyState(context);
     }
 
     try {
@@ -27,7 +30,7 @@ class FlowchartPreviewWidget extends StatelessWidget {
       final nodes = nodeInputFromJson(nodesList);
 
       if (nodes.isEmpty) {
-        return _buildEmptyState();
+        return _buildEmptyState(context);
       }
 
       return GestureDetector(
@@ -36,9 +39,13 @@ class FlowchartPreviewWidget extends StatelessWidget {
           height: height,
           width: double.infinity,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300]!),
+            border: Border.all(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey[300]!,
+            ),
           ),
           child: InteractiveViewer(
             minScale: 0.5,
@@ -52,7 +59,9 @@ class FlowchartPreviewWidget extends StatelessWidget {
               centered: true,
               nodeBuilder: (context, node) => Container(
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: isDarkMode
+                      ? Colors.blue[800]?.withOpacity(0.3)
+                      : Colors.blue,
                   border: Border.all(color: Colors.blue!),
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -64,7 +73,7 @@ class FlowchartPreviewWidget extends StatelessWidget {
                       style: GoogleFonts.lora(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: Colors.blue,
+                        color: isDarkMode ? Colors.blue[200] : Colors.blue,
                       ),
                       textAlign: TextAlign.center,
                       maxLines: 2,
@@ -78,32 +87,47 @@ class FlowchartPreviewWidget extends StatelessWidget {
         ),
       );
     } catch (e) {
-      return _buildErrorState();
+      return _buildErrorState(context);
     }
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[100],
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey!),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.2)
+              : Colors.grey.shade300,
+        ),
       ),
       child: Center(
         child: Text(
           'No flowchart data available',
-          style: GoogleFonts.lora(fontSize: 14, color: Colors.grey),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : Colors.grey[600],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildErrorState() {
+  Widget _buildErrorState(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: Colors.red,
+        color: isDarkMode ? Colors.red?.withOpacity(0.3) : Colors.red,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.red!),
       ),

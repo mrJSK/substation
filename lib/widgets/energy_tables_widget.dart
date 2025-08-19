@@ -20,15 +20,22 @@ class EnergyTablesWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final sldController = Provider.of<SldController>(context);
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.2)
+                : Colors.grey.shade200,
+          ),
+        ),
       ),
       child: SingleChildScrollView(
-        // ← FIX: Make the entire content scrollable
         child: Column(
           children: [
             _buildConsolidatedEnergyTable(context, sldController),
@@ -44,8 +51,10 @@ class EnergyTablesWidget extends StatelessWidget {
     BuildContext context,
     SldController sldController,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
-      // ← FIX: Remove fixed height to prevent overflow
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,22 +64,43 @@ class EnergyTablesWidget extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.primary,
+              color: theme.colorScheme.primary,
             ),
           ),
           const SizedBox(height: 12),
-          // ← FIX: Wrap in SingleChildScrollView with intrinsic height
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: MaterialStateColor.resolveWith(
-                (states) =>
-                    Theme.of(context).colorScheme.primary.withOpacity(0.1),
+            child: Theme(
+              data: theme.copyWith(
+                dataTableTheme: DataTableThemeData(
+                  headingRowColor: MaterialStateColor.resolveWith(
+                    (states) => theme.colorScheme.primary.withOpacity(0.1),
+                  ),
+                  dataRowColor: MaterialStateColor.resolveWith(
+                    (states) =>
+                        isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+                  ),
+                  headingTextStyle: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                  dataTextStyle: TextStyle(
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                ),
               ),
-              columns: _buildAbstractTableHeaders(sldController),
-              rows: _buildConsolidatedEnergyTableRows(sldController),
-              columnSpacing: 24,
-              horizontalMargin: 16,
+              child: DataTable(
+                headingRowColor: MaterialStateColor.resolveWith(
+                  (states) => theme.colorScheme.primary.withOpacity(0.1),
+                ),
+                columns: _buildAbstractTableHeaders(sldController, isDarkMode),
+                rows: _buildConsolidatedEnergyTableRows(
+                  sldController,
+                  isDarkMode,
+                ),
+                columnSpacing: 24,
+                horizontalMargin: 16,
+              ),
             ),
           ),
         ],
@@ -82,15 +112,20 @@ class EnergyTablesWidget extends StatelessWidget {
     BuildContext context,
     SldController sldController,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (isViewingSavedSld && loadedAssessmentsSummary.isEmpty) {
       return Container(
         height: 100,
         alignment: Alignment.center,
         child: Text(
           'No assessments were made for this period in the saved SLD.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          style: theme.textTheme.bodyMedium?.copyWith(
             fontStyle: FontStyle.italic,
-            color: Colors.grey.shade600,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : Colors.grey.shade600,
           ),
           textAlign: TextAlign.center,
         ),
@@ -102,7 +137,6 @@ class EnergyTablesWidget extends StatelessWidget {
     }
 
     return Container(
-      // ← FIX: Remove fixed height, let content determine height
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,15 +148,12 @@ class EnergyTablesWidget extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.primary,
+              color: theme.colorScheme.primary,
             ),
           ),
           const SizedBox(height: 12),
-          // ← FIX: Constrain height but allow scrolling
           ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxHeight: 150, // Reasonable max height
-            ),
+            constraints: const BoxConstraints(maxHeight: 150),
             child: isViewingSavedSld
                 ? _buildSavedAssessmentsTable(context, sldController)
                 : _buildRecentAssessmentsList(context, sldController),
@@ -136,51 +167,139 @@ class EnergyTablesWidget extends StatelessWidget {
     BuildContext context,
     SldController sldController,
   ) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical, // ← FIX: Allow vertical scrolling
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal, // ← FIX: Allow horizontal scrolling
-        child: DataTable(
-          headingRowColor: MaterialStateColor.resolveWith(
-            (states) => Colors.orange.shade50,
-          ),
-          columns: const [
-            DataColumn(label: Text('Bay Name')),
-            DataColumn(label: Text('Import Adj.')),
-            DataColumn(label: Text('Export Adj.')),
-            DataColumn(label: Text('Reason')),
-            DataColumn(label: Text('Timestamp')),
-          ],
-          rows: loadedAssessmentsSummary.map((assessmentMap) {
-            final assessment = Assessment.fromMap(assessmentMap);
-            final assessedBayName = assessmentMap['bayName'] ?? 'N/A';
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-            return DataRow(
-              cells: [
-                DataCell(Text(assessedBayName)),
-                DataCell(
-                  Text(
-                    assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A',
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Theme(
+          data: theme.copyWith(
+            dataTableTheme: DataTableThemeData(
+              headingRowColor: MaterialStateColor.resolveWith(
+                (states) => isDarkMode
+                    ? Colors.orange.shade800!.withOpacity(0.3)
+                    : Colors.orange.shade50,
+              ),
+              dataRowColor: MaterialStateColor.resolveWith(
+                (states) => isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+              ),
+              headingTextStyle: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
+              dataTextStyle: TextStyle(
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
+            ),
+          ),
+          child: DataTable(
+            headingRowColor: MaterialStateColor.resolveWith(
+              (states) => isDarkMode
+                  ? Colors.orange.shade800!.withOpacity(0.3)
+                  : Colors.orange.shade50,
+            ),
+            columns: [
+              DataColumn(
+                label: Text(
+                  'Bay Name',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
-                DataCell(
-                  Text(
-                    assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A',
+              ),
+              DataColumn(
+                label: Text(
+                  'Import Adj.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
-                DataCell(Text(assessment.reason)),
-                DataCell(
-                  Text(
-                    DateFormat(
-                      'dd-MMM-yyyy HH:mm',
-                    ).format(assessment.assessmentTimestamp.toDate()),
+              ),
+              DataColumn(
+                label: Text(
+                  'Export Adj.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
-              ],
-            );
-          }).toList(),
-          columnSpacing: 24,
-          horizontalMargin: 16,
+              ),
+              DataColumn(
+                label: Text(
+                  'Reason',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: Text(
+                  'Timestamp',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+            rows: loadedAssessmentsSummary.map((assessmentMap) {
+              final assessment = Assessment.fromMap(assessmentMap);
+              final assessedBayName = assessmentMap['bayName'] ?? 'N/A';
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Text(
+                      assessedBayName,
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      assessment.importAdjustment?.toStringAsFixed(2) ?? 'N/A',
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      assessment.exportAdjustment?.toStringAsFixed(2) ?? 'N/A',
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      assessment.reason,
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      DateFormat(
+                        'dd-MMM-yyyy HH:mm',
+                      ).format(assessment.assessmentTimestamp.toDate()),
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+            columnSpacing: 24,
+            horizontalMargin: 16,
+          ),
         ),
       ),
     );
@@ -190,32 +309,38 @@ class EnergyTablesWidget extends StatelessWidget {
     BuildContext context,
     SldController sldController,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return ListView.separated(
-      shrinkWrap: true, // ← FIX: Allow ListView to take only needed space
-      physics: const ClampingScrollPhysics(), // ← FIX: Better scroll physics
+      shrinkWrap: true,
+      physics: const ClampingScrollPhysics(),
       itemCount: allAssessmentsForDisplay.length,
       separatorBuilder: (context, index) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
         final assessment = allAssessmentsForDisplay[index];
         final assessedBay = sldController.baysMap[assessment.bayId];
-
         return Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
+            color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
             '• ${assessedBay?.name ?? 'Unknown Bay'} on ${DateFormat('dd-MMM-yyyy HH:mm').format(assessment.assessmentTimestamp.toDate())}: ${assessment.reason}',
-            style: Theme.of(context).textTheme.bodySmall,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
           ),
         );
       },
     );
   }
 
-  // ... rest of your existing methods remain the same
-  List<DataColumn> _buildAbstractTableHeaders(SldController sldController) {
+  List<DataColumn> _buildAbstractTableHeaders(
+    SldController sldController,
+    bool isDarkMode,
+  ) {
     List<String> headers = [''];
 
     final uniqueBusVoltages =
@@ -240,14 +365,20 @@ class EnergyTablesWidget extends StatelessWidget {
           (header) => DataColumn(
             label: Text(
               header,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
             ),
           ),
         )
         .toList();
   }
 
-  List<DataRow> _buildConsolidatedEnergyTableRows(SldController sldController) {
+  List<DataRow> _buildConsolidatedEnergyTableRows(
+    SldController sldController,
+    bool isDarkMode,
+  ) {
     final rowLabels = [
       'Import (MWH)',
       'Export (MWH)',
@@ -270,7 +401,15 @@ class EnergyTablesWidget extends StatelessWidget {
       final index = entry.key;
       final label = entry.value;
 
-      List<DataCell> cells = [DataCell(Text(label))];
+      List<DataCell> cells = [
+        DataCell(
+          Text(
+            label,
+            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+          ),
+        ),
+      ];
+
       double rowTotal = 0.0;
 
       // Add bus voltage columns
@@ -312,6 +451,9 @@ class EnergyTablesWidget extends StatelessWidget {
               index == 3
                   ? '${totalForVoltage.toStringAsFixed(2)}%'
                   : totalForVoltage.toStringAsFixed(2),
+              style: TextStyle(
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
             ),
           ),
         );
@@ -330,6 +472,7 @@ class EnergyTablesWidget extends StatelessWidget {
             index == 3
                 ? '${abstractValue.toStringAsFixed(2)}%'
                 : abstractValue.toStringAsFixed(2),
+            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
           ),
         ),
       );
@@ -338,7 +481,12 @@ class EnergyTablesWidget extends StatelessWidget {
 
       // Add total column
       cells.add(
-        DataCell(Text(index == 3 ? 'N/A' : rowTotal.toStringAsFixed(2))),
+        DataCell(
+          Text(
+            index == 3 ? 'N/A' : rowTotal.toStringAsFixed(2),
+            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+          ),
+        ),
       );
 
       return DataRow(cells: cells);

@@ -73,8 +73,11 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: _buildAppBar(),
       body: Column(
         children: [
@@ -88,11 +91,17 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       elevation: 1,
       leading: IconButton(
-        icon: const Icon(Icons.close, color: Colors.black87),
+        icon: Icon(
+          Icons.close,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
         onPressed: _handleBack,
       ),
       title: Text(
@@ -100,7 +109,7 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
         style: GoogleFonts.lora(
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
         ),
       ),
       actions: [
@@ -109,7 +118,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
           child: Text(
             'Preview',
             style: GoogleFonts.lora(
-              color: _isModified ? Colors.blue[600] : Colors.grey,
+              color: _isModified
+                  ? (isDarkMode ? Colors.blue[200] : Colors.blue[600])
+                  : (isDarkMode ? Colors.white54 : Colors.grey),
             ),
           ),
         ),
@@ -118,7 +129,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
           child: Text(
             'Save',
             style: GoogleFonts.lora(
-              color: _isModified ? Colors.blue : Colors.grey,
+              color: _isModified
+                  ? (isDarkMode ? Colors.blue[200] : Colors.blue)
+                  : (isDarkMode ? Colors.white54 : Colors.grey),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -128,38 +141,90 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   Widget _buildHeader() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
-        border: Border(bottom: BorderSide(color: Colors.grey!)),
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
+        border: Border(
+          bottom: BorderSide(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey.shade300,
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: _titleController,
+            style: GoogleFonts.lora(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isDarkMode ? Colors.white : null,
+            ),
             decoration: InputDecoration(
               labelText: 'Flowchart Title',
+              labelStyle: TextStyle(
+                color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
+              ),
+              filled: true,
+              fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
               contentPadding: const EdgeInsets.all(12),
             ),
-            style: GoogleFonts.lora(fontSize: 16, fontWeight: FontWeight.w600),
             onChanged: (_) => _setModified(),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _descriptionController,
+            style: GoogleFonts.lora(
+              fontSize: 14,
+              color: isDarkMode ? Colors.white : null,
+            ),
             decoration: InputDecoration(
               labelText: 'Description',
+              labelStyle: TextStyle(
+                color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
+              ),
+              filled: true,
+              fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
               contentPadding: const EdgeInsets.all(12),
             ),
-            style: GoogleFonts.lora(fontSize: 14),
             maxLines: 2,
             onChanged: (_) => _setModified(),
           ),
@@ -169,8 +234,11 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   Widget _buildFlowchartCanvas() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
-      color: Colors.white,
+      color: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       child: InteractiveViewer(
         constrained: false,
         child: SizedBox(
@@ -188,7 +256,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
               : Container(
                   width: 800,
                   height: 600,
-                  color: Colors.grey[100],
+                  color: isDarkMode
+                      ? const Color(0xFF2C2C2E)
+                      : Colors.grey[100],
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -196,14 +266,18 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
                         Icon(
                           Icons.add_chart,
                           size: 64,
-                          color: Colors.grey[400],
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.4)
+                              : Colors.grey[400],
                         ),
                         const SizedBox(height: 16),
                         Text(
                           'No nodes available',
                           style: TextStyle(
                             fontSize: 18,
-                            color: Colors.grey[600],
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey[600],
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -212,7 +286,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
                           'Add a node to start building your flowchart',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[500],
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.5)
+                                : Colors.grey[500],
                           ),
                         ),
                       ],
@@ -246,6 +322,8 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   Widget _buildFlowchartNode(NodeInput node) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final isSelected = _selectedNodeId == node.id;
 
     return GestureDetector(
@@ -257,15 +335,25 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
       onLongPress: () => _showNodeContextMenu(node),
       child: Container(
         decoration: BoxDecoration(
-          color: isSelected ? Colors.blue[50] : Colors.white,
+          color: isSelected
+              ? (isDarkMode
+                    ? Colors.blue[800]?.withOpacity(0.3)
+                    : Colors.blue[50])
+              : (isDarkMode ? const Color(0xFF2C2C2E) : Colors.white),
           border: Border.all(
-            color: isSelected ? Colors.blue! : Colors.grey!,
+            color: isSelected
+                ? (isDarkMode ? Colors.blue[400]! : Colors.blue!)
+                : (isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300),
             width: isSelected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(8),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: isDarkMode
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.1),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -279,7 +367,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
               style: GoogleFonts.lora(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.blue[800] : Colors.black87,
+                color: isSelected
+                    ? (isDarkMode ? Colors.blue[200] : Colors.blue[800])
+                    : (isDarkMode ? Colors.white : Colors.black87),
               ),
               textAlign: TextAlign.center,
             ),
@@ -290,8 +380,12 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   void _showNodeContextMenu(NodeInput node) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -304,7 +398,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[300],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -314,7 +410,7 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(height: 20),
@@ -365,17 +461,24 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
     required VoidCallback onTap,
     bool isDestructive = false,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return ListTile(
       leading: Icon(
         icon,
-        color: isDestructive ? Colors.red[600] : Colors.black87,
+        color: isDestructive
+            ? Colors.red[600]
+            : (isDarkMode ? Colors.white : Colors.black87),
         size: 24,
       ),
       title: Text(
         label,
         style: GoogleFonts.lora(
           fontSize: 16,
-          color: isDestructive ? Colors.red[600] : Colors.black87,
+          color: isDestructive
+              ? Colors.red[600]
+              : (isDarkMode ? Colors.white : Colors.black87),
         ),
       ),
       onTap: onTap,
@@ -383,14 +486,25 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   Widget _buildBottomActions() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey[200]!)),
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey[200]!,
+          ),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -401,7 +515,12 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
         children: [
           Text(
             'Nodes: ${_nodes.length}',
-            style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
+            style: GoogleFonts.lora(
+              fontSize: 14,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey[600],
+            ),
           ),
         ],
       ),
@@ -421,22 +540,57 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   Widget _buildAddNodeDialog() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final controller = TextEditingController();
 
     return AlertDialog(
-      title: Text('Add New Node', style: GoogleFonts.lora(fontSize: 18)),
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+      title: Text(
+        'Add New Node',
+        style: GoogleFonts.lora(
+          fontSize: 18,
+          color: isDarkMode ? Colors.white : null,
+        ),
+      ),
       content: TextField(
         controller: controller,
-        decoration: const InputDecoration(
+        style: TextStyle(color: isDarkMode ? Colors.white : null),
+        decoration: InputDecoration(
           labelText: 'Node Name',
+          labelStyle: TextStyle(
+            color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+          ),
           hintText: 'Enter node name...',
+          hintStyle: TextStyle(
+            color: isDarkMode ? Colors.white.withOpacity(0.5) : null,
+          ),
+          border: OutlineInputBorder(
+            borderSide: BorderSide(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey.shade300,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey.shade300,
+            ),
+          ),
+          filled: true,
+          fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
         ),
         autofocus: true,
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text('Cancel', style: GoogleFonts.lora()),
+          child: Text(
+            'Cancel',
+            style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+          ),
         ),
         ElevatedButton(
           onPressed: () {
@@ -452,7 +606,6 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   void _addNewNode(String nodeName) {
-    // Check if node already exists
     if (_nodes.any((node) => node.id == nodeName)) {
       _showSnackBar('Node "$nodeName" already exists');
       return;
@@ -465,20 +618,33 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   void _deleteSelectedNode() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_selectedNodeId == null) return;
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete Node', style: GoogleFonts.lora(fontSize: 18)),
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+        title: Text(
+          'Delete Node',
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            color: isDarkMode ? Colors.white : null,
+          ),
+        ),
         content: Text(
           'Are you sure you want to delete "$_selectedNodeId"? This will also remove all connections to this node.',
-          style: GoogleFonts.lora(),
+          style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -495,10 +661,8 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
 
   void _deleteNode(String nodeId) {
     setState(() {
-      // Remove the node
       _nodes.removeWhere((node) => node.id == nodeId);
 
-      // Remove all connections to this node
       for (var node in _nodes) {
         node.next.removeWhere((edge) => edge.outcome == nodeId);
       }
@@ -509,6 +673,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   void _showAddConnectionDialog() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_selectedNodeId == null) return;
 
     final availableNodes = _nodes
@@ -526,22 +693,51 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Add Connection', style: GoogleFonts.lora(fontSize: 18)),
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+        title: Text(
+          'Add Connection',
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            color: isDarkMode ? Colors.white : null,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'From: $_selectedNodeId',
-              style: GoogleFonts.lora(fontWeight: FontWeight.w600),
+              style: GoogleFonts.lora(
+                fontWeight: FontWeight.w600,
+                color: isDarkMode ? Colors.white : null,
+              ),
             ),
             const SizedBox(height: 16),
-            Text('To:', style: GoogleFonts.lora()),
+            Text(
+              'To:',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
+              dropdownColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
+                contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 8,
                 ),
@@ -549,7 +745,12 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
               items: availableNodes.map((nodeId) {
                 return DropdownMenuItem(
                   value: nodeId,
-                  child: Text(nodeId, style: GoogleFonts.lora()),
+                  child: Text(
+                    nodeId,
+                    style: GoogleFonts.lora(
+                      color: isDarkMode ? Colors.white : null,
+                    ),
+                  ),
                 );
               }).toList(),
               onChanged: (value) {
@@ -561,7 +762,10 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -580,7 +784,6 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   void _addConnection(String fromId, String toId) {
     final fromNode = _nodes.firstWhere((node) => node.id == fromId);
 
-    // Check if connection already exists
     if (fromNode.next.any((edge) => edge.outcome == toId)) {
       _showSnackBar('Connection already exists');
       return;
@@ -593,6 +796,9 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   void _editSelectedNode() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_selectedNodeId == null) return;
 
     final controller = TextEditingController(text: _selectedNodeId);
@@ -600,16 +806,48 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Edit Node', style: GoogleFonts.lora(fontSize: 18)),
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+        title: Text(
+          'Edit Node',
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            color: isDarkMode ? Colors.white : null,
+          ),
+        ),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: 'Node Name'),
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
+          decoration: InputDecoration(
+            labelText: 'Node Name',
+            labelStyle: TextStyle(
+              color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+            ),
+            border: OutlineInputBorder(
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.shade300,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.shade300,
+              ),
+            ),
+            filled: true,
+            fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
+          ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -628,20 +866,17 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   void _renameNode(String oldId, String newId) {
     if (oldId == newId) return;
 
-    // Check if new name already exists
     if (_nodes.any((node) => node.id == newId)) {
       _showSnackBar('Node "$newId" already exists');
       return;
     }
 
     setState(() {
-      // Update the node itself
       final node = _nodes.firstWhere((node) => node.id == oldId);
       final updatedNode = NodeInput(id: newId, next: node.next);
       final nodeIndex = _nodes.indexOf(node);
       _nodes[nodeIndex] = updatedNode;
 
-      // Update all connections pointing to this node
       for (var n in _nodes) {
         for (var edge in n.next) {
           if (edge.outcome == oldId) {
@@ -657,18 +892,31 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   void _resetFlowchart() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Reset Flowchart', style: GoogleFonts.lora(fontSize: 18)),
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+        title: Text(
+          'Reset Flowchart',
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            color: isDarkMode ? Colors.white : null,
+          ),
+        ),
         content: Text(
           'Are you sure you want to reset the flowchart? This will remove all your changes.',
-          style: GoogleFonts.lora(),
+          style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -718,24 +966,39 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 
   void _handleBack() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_isModified) {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('Unsaved Changes', style: GoogleFonts.lora(fontSize: 18)),
+          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+          title: Text(
+            'Unsaved Changes',
+            style: GoogleFonts.lora(
+              fontSize: 18,
+              color: isDarkMode ? Colors.white : null,
+            ),
+          ),
           content: Text(
             'You have unsaved changes. Do you want to discard them?',
-            style: GoogleFonts.lora(),
+            style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.lora()),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.lora(
+                  color: isDarkMode ? Colors.white : null,
+                ),
+              ),
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(context); // Close dialog
-                Navigator.pop(context); // Close screen
+                Navigator.pop(context);
+                Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               child: Text('Discard', style: GoogleFonts.lora()),
@@ -758,7 +1021,6 @@ class _FlowchartCreateScreenState extends State<FlowchartCreateScreen> {
   }
 }
 
-// FlowchartPreviewScreen remains the same...
 class FlowchartPreviewScreen extends StatelessWidget {
   final String title;
   final String description;
@@ -773,13 +1035,19 @@ class FlowchartPreviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 1,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          icon: Icon(
+            Icons.arrow_back,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -787,7 +1055,7 @@ class FlowchartPreviewScreen extends StatelessWidget {
           style: GoogleFonts.lora(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Colors.black87,
+            color: isDarkMode ? Colors.white : Colors.black87,
           ),
         ),
       ),
@@ -797,8 +1065,14 @@ class FlowchartPreviewScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              border: Border(bottom: BorderSide(color: Colors.grey!)),
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
+              border: Border(
+                bottom: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.1)
+                      : Colors.grey.shade300,
+                ),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -808,7 +1082,7 @@ class FlowchartPreviewScreen extends StatelessWidget {
                   style: GoogleFonts.lora(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: Colors.black87,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
                 if (description.isNotEmpty) ...[
@@ -817,7 +1091,9 @@ class FlowchartPreviewScreen extends StatelessWidget {
                     description,
                     style: GoogleFonts.lora(
                       fontSize: 14,
-                      color: Colors.grey[700],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.7)
+                          : Colors.grey[700],
                     ),
                   ),
                 ],
@@ -838,8 +1114,14 @@ class FlowchartPreviewScreen extends StatelessWidget {
                         orientation: MatrixOrientation.Vertical,
                         nodeBuilder: (context, node) => Container(
                           decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            border: Border.all(color: Colors.blue!),
+                            color: isDarkMode
+                                ? Colors.blue[800]?.withOpacity(0.3)
+                                : Colors.blue[50],
+                            border: Border.all(
+                              color: isDarkMode
+                                  ? Colors.blue[400]!
+                                  : Colors.blue!,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(
@@ -850,7 +1132,9 @@ class FlowchartPreviewScreen extends StatelessWidget {
                                 style: GoogleFonts.lora(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.blue[800],
+                                  color: isDarkMode
+                                      ? Colors.blue[200]
+                                      : Colors.blue[800],
                                 ),
                                 textAlign: TextAlign.center,
                               ),
@@ -861,7 +1145,9 @@ class FlowchartPreviewScreen extends StatelessWidget {
                     : Container(
                         width: 800,
                         height: 600,
-                        color: Colors.grey[100],
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : Colors.grey[100],
                         child: Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -869,14 +1155,18 @@ class FlowchartPreviewScreen extends StatelessWidget {
                               Icon(
                                 Icons.info_outline,
                                 size: 64,
-                                color: Colors.grey[400],
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.4)
+                                    : Colors.grey[400],
                               ),
                               const SizedBox(height: 16),
                               Text(
                                 'No flowchart data available',
                                 style: TextStyle(
                                   fontSize: 18,
-                                  color: Colors.grey[600],
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : Colors.grey[600],
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),

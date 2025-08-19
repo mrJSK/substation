@@ -369,7 +369,7 @@ class _EnergyTabState extends State<EnergyTab> {
 
       for (var busbar in busbarBays) {
         final busKey = '${busbar.voltageLevel} BUS';
-        print('DEBUG: Processing busbar ${busbar.name} (${busKey})');
+        print('DEBUG: Processing busbar ${busbar.name} ($busKey)');
 
         if (!_busbarAbstract.containsKey(busKey)) continue;
 
@@ -391,8 +391,9 @@ class _EnergyTabState extends State<EnergyTab> {
             // ✅ GET BUSBAR ENERGY MAP CONFIGURATION
             final mapKey = '${busbar.id}-${connectedBay.id}';
             final busbarMap = busbarEnergyMaps[mapKey];
-
             final energyData = _bayEnergyData[connectedBay.id];
+
+            // ✅ ONLY PROCESS IF BOTH ENERGY DATA AND EXPLICIT MAPPING EXIST
             if (energyData != null && busbarMap != null) {
               configuredBayCount++;
 
@@ -437,13 +438,17 @@ class _EnergyTabState extends State<EnergyTab> {
                   );
                   break;
               }
-            } else if (energyData != null) {
-              // ✅ DEFAULT BEHAVIOR: If no configuration exists, include normally
-              totalImp += energyData['import'] ?? 0.0;
-              totalExp += energyData['export'] ?? 0.0;
-              print(
-                'DEBUG: Default mapping for ${connectedBay.name} to ${busbar.name}: Import=${energyData['import']}, Export=${energyData['export']}',
-              );
+            } else {
+              // ✅ NO DEFAULT BEHAVIOR: Only use explicit mappings
+              if (energyData != null && busbarMap == null) {
+                print(
+                  'DEBUG: No explicit mapping found for ${connectedBay.name} to ${busbar.name} - skipping (Energy: Import=${energyData['import']}, Export=${energyData['export']})',
+                );
+              } else if (energyData == null) {
+                print(
+                  'DEBUG: No energy data found for ${connectedBay.name} - skipping',
+                );
+              }
             }
           }
         }
@@ -580,9 +585,10 @@ class _EnergyTabState extends State<EnergyTab> {
   ) {
     if (entries.isEmpty) {
       print('DEBUG: No entries found for bay ${bay.name}');
-      return <String, double>{}; // ✅ Explicitly typed as Map<String, double>
+      return {};
     }
 
+    // Sort entries by timestamp
     entries.sort((a, b) => a.readingTimestamp.compareTo(b.readingTimestamp));
 
     double totalImport = 0.0;
@@ -592,9 +598,9 @@ class _EnergyTabState extends State<EnergyTab> {
     print('DEBUG: Calculating losses for ${bay.name}, MF: $mf');
 
     if (startDate.isAtSameMomentAs(endDate)) {
-      print('DEBUG: Same date calculation for ${bay.name}');
+      // ✅ SINGLE DAY LOGIC: Use current day vs previous day readings
+      print('DEBUG: Single date calculation for ${bay.name}');
 
-      // Same date selected - use current day vs previous day readings
       final todayEntry = entries.where((entry) {
         final entryDate = entry.readingTimestamp.toDate();
         return entryDate.year == startDate.year &&
@@ -635,7 +641,7 @@ class _EnergyTabState extends State<EnergyTab> {
               0.0;
         } else {
           print('DEBUG: Using embedded previous day readings for ${bay.name}');
-          // Fallback to previous day readings stored in today's entry
+          // Fallback to embedded previous day readings
           previousImport =
               _parseNumericValue(
                 todayEntry.values['Previous Day Reading (Import)'],
@@ -648,31 +654,31 @@ class _EnergyTabState extends State<EnergyTab> {
               0.0;
         }
 
-        // Ensure we have valid readings
+        // Check if we have valid readings
         if (currentImport == 0.0 &&
             currentExport == 0.0 &&
             previousImport == 0.0 &&
             previousExport == 0.0) {
           print('DEBUG: All readings are zero for ${bay.name}');
-          return <String, double>{}; // ✅ Explicitly typed
+          return {};
         }
 
         totalImport = max(0, currentImport - previousImport) * mf;
         totalExport = max(0, currentExport - previousExport) * mf;
 
-        print('DEBUG: Same date calculation for ${bay.name}:');
-        print('  Current Import: $currentImport, Previous: $previousImport');
-        print('  Current Export: $currentExport, Previous: $previousExport');
-        print('  Multiplier Factor: $mf');
-        print('  Calculated Import: $totalImport, Export: $totalExport');
+        print('DEBUG: Single date calculation for ${bay.name}:');
+        print(' Current Import: $currentImport, Previous: $previousImport');
+        print(' Current Export: $currentExport, Previous: $previousExport');
+        print(' Multiplier Factor: $mf');
+        print(' Calculated Import: $totalImport, Export: $totalExport');
       } else {
         print('DEBUG: No today entry found for ${bay.name}');
-        return <String, double>{}; // ✅ Explicitly typed
+        return {};
       }
     } else {
+      // ✅ RANGE LOGIC: Use start date vs end date readings
       print('DEBUG: Date range calculation for ${bay.name}');
 
-      // Different dates - use start date vs end date readings
       LogsheetEntry? startEntry;
       LogsheetEntry? endEntry;
 
@@ -725,28 +731,28 @@ class _EnergyTabState extends State<EnergyTab> {
             ) ??
             0.0;
 
-        // Ensure we have valid readings
+        // Check if we have valid readings
         if (startImport == 0.0 &&
             endImport == 0.0 &&
             startExport == 0.0 &&
             endExport == 0.0) {
           print('DEBUG: All readings are zero for ${bay.name}');
-          return <String, double>{}; // ✅ Explicitly typed
+          return {};
         }
 
         totalImport = max(0, endImport - startImport) * mf;
         totalExport = max(0, endExport - startExport) * mf;
 
         print('DEBUG: Date range calculation for ${bay.name}:');
-        print('  Start Import: $startImport, End: $endImport');
-        print('  Start Export: $startExport, End: $endExport');
-        print('  Multiplier Factor: $mf');
-        print('  Calculated Import: $totalImport, Export: $totalExport');
+        print(' Start Import: $startImport, End: $endImport');
+        print(' Start Export: $startExport, End: $endExport');
+        print(' Multiplier Factor: $mf');
+        print(' Calculated Import: $totalImport, Export: $totalExport');
       } else {
         print(
           'DEBUG: Missing start or end entry for ${bay.name} (Start: ${startEntry != null}, End: ${endEntry != null})',
         );
-        return <String, double>{}; // ✅ Explicitly typed
+        return {};
       }
     }
 
@@ -759,11 +765,10 @@ class _EnergyTabState extends State<EnergyTab> {
         ? (totalExport / totalImport) * 100
         : 0.0;
 
-    // ✅ Create the result map with explicit double typing
-    final Map<String, double> result = <String, double>{
+    final Map<String, double> result = {
       'import': totalImport,
       'export': totalExport,
-      'losses': max(0.0, losses), // Ensure max returns double
+      'losses': max(0.0, losses),
       'lossPercentage': lossPercentage,
       'efficiency': efficiency,
     };

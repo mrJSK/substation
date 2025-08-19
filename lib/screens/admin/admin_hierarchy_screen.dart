@@ -19,8 +19,12 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFFAFAFA),
       appBar: _buildAppBar(theme),
       floatingActionButton: _buildFab(theme),
       body: _buildBody(theme),
@@ -28,19 +32,24 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       elevation: 0,
       title: Text(
         'Manage Hierarchy',
         style: TextStyle(
-          color: theme.colorScheme.onSurface,
+          color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           fontSize: 18,
           fontWeight: FontWeight.w500,
         ),
       ),
       leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+        icon: Icon(
+          Icons.arrow_back,
+          color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+        ),
         onPressed: () => Navigator.pop(context),
       ),
     );
@@ -64,6 +73,8 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildHierarchyList(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return StreamBuilder<QuerySnapshot>(
       stream: _fs.collection('appscreenstates').orderBy('name').snapshots(),
       builder: (_, snap) {
@@ -72,7 +83,11 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
         }
 
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return Center(
+            child: CircularProgressIndicator(
+              color: isDarkMode ? Colors.blue[300] : Colors.blue[600],
+            ),
+          );
         }
 
         if (snap.data!.docs.isEmpty) return _buildEmptyState(theme);
@@ -93,59 +108,78 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildStateCard(AppScreenState state, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.all(20),
-        childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        leading: _iconBox(Icons.map_outlined, theme.colorScheme.primary),
-        title: Text(
-          state.name,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          expansionTileTheme: ExpansionTileThemeData(
+            textColor: isDarkMode ? Colors.white : Colors.black87,
+            iconColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedTextColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedIconColor: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
-        children: [
-          _buildActionRow([
-            _ActionButton(
-              label: 'Edit',
-              icon: Icons.edit_outlined,
-              color: Colors.blue,
-              onPressed: () => _showAddBottomSheet(
-                itemType: 'AppScreenState',
-                itemToEdit: state,
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(20),
+          childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          leading: _iconBox(Icons.map_outlined, theme.colorScheme.primary),
+          title: Text(
+            state.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+          ),
+          children: [
+            _buildActionRow([
+              _ActionButton(
+                label: 'Edit',
+                icon: Icons.edit_outlined,
+                color: Colors.blue,
+                onPressed: () => _showAddBottomSheet(
+                  itemType: 'AppScreenState',
+                  itemToEdit: state,
+                ),
               ),
-            ),
-            _ActionButton(
-              label: 'Add Company',
-              icon: Icons.add,
-              color: Colors.green,
-              onPressed: () => _showAddBottomSheet(
-                itemType: 'Company',
-                parentId: state.id,
-                parentName: state.name,
+              _ActionButton(
+                label: 'Add Company',
+                icon: Icons.add,
+                color: Colors.green,
+                onPressed: () => _showAddBottomSheet(
+                  itemType: 'Company',
+                  parentId: state.id,
+                  parentName: state.name,
+                ),
               ),
-            ),
-            _ActionButton(
-              label: 'Delete',
-              icon: Icons.delete_outline,
-              color: Colors.red,
-              onPressed: () =>
-                  _confirmDelete('appscreenstates', state.id, state.name),
-            ),
-          ]),
-          const SizedBox(height: 16),
-          _buildCompaniesForState(state.id, theme),
-        ],
+              _ActionButton(
+                label: 'Delete',
+                icon: Icons.delete_outline,
+                color: Colors.red,
+                onPressed: () =>
+                    _confirmDelete('appscreenstates', state.id, state.name),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            _buildCompaniesForState(state.id, theme),
+          ],
+        ),
       ),
     );
   }
@@ -176,45 +210,93 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildCompanyCard(Company company, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: isDarkMode
+            ? Colors.blue[800]?.withOpacity(0.3)
+            : Colors.blue.shade50,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.shade100),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.blue.shade400.withOpacity(0.3)
+              : Colors.blue.shade100,
+        ),
       ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.all(16),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        leading: _iconBox(Icons.business_outlined, Colors.blue),
-        title: Text(
-          company.name,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          expansionTileTheme: ExpansionTileThemeData(
+            textColor: isDarkMode ? Colors.white : Colors.black87,
+            iconColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedTextColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedIconColor: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleCompanyAction(value, company),
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit')),
-            const PopupMenuItem(value: 'add_zone', child: Text('Add Zone')),
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-          child: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
-        ),
-        children: [
-          _buildMiniActionRow([
-            _MiniActionButton(
-              label: 'Add Zone',
-              icon: Icons.add_location,
-              onPressed: () => _showAddBottomSheet(
-                itemType: 'Zone',
-                parentId: company.id,
-                parentName: company.name,
-              ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          leading: _iconBox(Icons.business_outlined, Colors.blue),
+          title: Text(
+            company.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
-          ]),
-          const SizedBox(height: 12),
-          _buildZonesForCompany(company.id, theme),
-        ],
+          ),
+          trailing: PopupMenuButton<String>(
+            color: isDarkMode ? const Color(0xFF2C2C2E) : null,
+            onSelected: (value) => _handleCompanyAction(value, company),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(
+                  'Edit',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'add_zone',
+                child: Text(
+                  'Add Zone',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Delete',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+            ],
+            child: Icon(
+              Icons.more_vert,
+              size: 18,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
+          ),
+          children: [
+            _buildMiniActionRow([
+              _MiniActionButton(
+                label: 'Add Zone',
+                icon: Icons.add_location,
+                onPressed: () => _showAddBottomSheet(
+                  itemType: 'Zone',
+                  parentId: company.id,
+                  parentName: company.name,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            _buildZonesForCompany(company.id, theme),
+          ],
+        ),
       ),
     );
   }
@@ -243,45 +325,93 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildZoneCard(Zone zone, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.green.shade50,
+        color: isDarkMode
+            ? Colors.green[800]?.withOpacity(0.3)
+            : Colors.green.shade50,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.green.shade100),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.green.shade400.withOpacity(0.3)
+              : Colors.green.shade100,
+        ),
       ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.all(12),
-        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        leading: _iconBox(Icons.location_on_outlined, Colors.green, size: 16),
-        title: Text(
-          zone.name,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          expansionTileTheme: ExpansionTileThemeData(
+            textColor: isDarkMode ? Colors.white : Colors.black87,
+            iconColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedTextColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedIconColor: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleZoneAction(value, zone),
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit')),
-            const PopupMenuItem(value: 'add_circle', child: Text('Add Circle')),
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-          child: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
-        ),
-        children: [
-          _buildMiniActionRow([
-            _MiniActionButton(
-              label: 'Add Circle',
-              icon: Icons.add_circle_outline,
-              onPressed: () => _showAddBottomSheet(
-                itemType: 'Circle',
-                parentId: zone.id,
-                parentName: zone.name,
-              ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(12),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          leading: _iconBox(Icons.location_on_outlined, Colors.green, size: 16),
+          title: Text(
+            zone.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
-          ]),
-          const SizedBox(height: 8),
-          _buildCirclesForZone(zone.id, theme),
-        ],
+          ),
+          trailing: PopupMenuButton<String>(
+            color: isDarkMode ? const Color(0xFF2C2C2E) : null,
+            onSelected: (value) => _handleZoneAction(value, zone),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(
+                  'Edit',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'add_circle',
+                child: Text(
+                  'Add Circle',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Delete',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+            ],
+            child: Icon(
+              Icons.more_vert,
+              size: 18,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
+          ),
+          children: [
+            _buildMiniActionRow([
+              _MiniActionButton(
+                label: 'Add Circle',
+                icon: Icons.add_circle_outline,
+                onPressed: () => _showAddBottomSheet(
+                  itemType: 'Circle',
+                  parentId: zone.id,
+                  parentName: zone.name,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            _buildCirclesForZone(zone.id, theme),
+          ],
+        ),
       ),
     );
   }
@@ -312,52 +442,97 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildCircleCard(Circle circle, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: Colors.orange.shade50,
+        color: isDarkMode
+            ? Colors.orange[800]?.withOpacity(0.3)
+            : Colors.orange.shade50,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.orange.shade100),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.purple.shade400.withOpacity(0.3)
+              : Colors.purple.shade100,
+        ),
       ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.all(10),
-        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-        leading: _iconBox(
-          Icons.radio_button_unchecked,
-          Colors.orange,
-          size: 16,
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          expansionTileTheme: ExpansionTileThemeData(
+            textColor: isDarkMode ? Colors.white : Colors.black87,
+            iconColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedTextColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedIconColor: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
-        title: Text(
-          circle.name,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleCircleAction(value, circle),
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit')),
-            const PopupMenuItem(
-              value: 'add_division',
-              child: Text('Add Division'),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          leading: _iconBox(
+            Icons.radio_button_unchecked,
+            Colors.orange,
+            size: 16,
+          ),
+          title: Text(
+            circle.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-          child: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
-        ),
-        children: [
-          _buildMiniActionRow([
-            _MiniActionButton(
-              label: 'Add Division',
-              icon: Icons.add,
-              onPressed: () => _showAddBottomSheet(
-                itemType: 'Division',
-                parentId: circle.id,
-                parentName: circle.name,
+          ),
+          trailing: PopupMenuButton<String>(
+            color: isDarkMode ? const Color(0xFF2C2C2E) : null,
+            onSelected: (value) => _handleCircleAction(value, circle),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(
+                  'Edit',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
               ),
+              PopupMenuItem(
+                value: 'add_division',
+                child: Text(
+                  'Add Division',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Delete',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+            ],
+            child: Icon(
+              Icons.more_vert,
+              size: 18,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
             ),
-          ]),
-          const SizedBox(height: 8),
-          _buildDivisionsForCircle(circle.id, theme),
-        ],
+          ),
+          children: [
+            _buildMiniActionRow([
+              _MiniActionButton(
+                label: 'Add Division',
+                icon: Icons.add,
+                onPressed: () => _showAddBottomSheet(
+                  itemType: 'Division',
+                  parentId: circle.id,
+                  parentName: circle.name,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            _buildDivisionsForCircle(circle.id, theme),
+          ],
+        ),
       ),
     );
   }
@@ -386,45 +561,93 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildDivisionCard(Division div, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
-        color: Colors.purple.shade50,
+        color: isDarkMode
+            ? Colors.purple[800]?.withOpacity(0.3)
+            : Colors.purple.shade50,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.purple.shade100),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.purple.shade400.withOpacity(0.3)
+              : Colors.purple.shade100,
+        ),
       ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.all(10),
-        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-        leading: _iconBox(Icons.segment, Colors.purple, size: 16),
-        title: Text(
-          div.name,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          expansionTileTheme: ExpansionTileThemeData(
+            textColor: isDarkMode ? Colors.white : Colors.black87,
+            iconColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedTextColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedIconColor: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) => _handleDivisionAction(v, div),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('Edit')),
-            PopupMenuItem(value: 'add_sub', child: Text('Add Sub-division')),
-            PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-          child: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
-        ),
-        children: [
-          _buildMiniActionRow([
-            _MiniActionButton(
-              label: 'Add Sub-division',
-              icon: Icons.add,
-              onPressed: () => _showAddBottomSheet(
-                itemType: 'Subdivision',
-                parentId: div.id,
-                parentName: div.name,
-              ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          leading: _iconBox(Icons.segment, Colors.purple, size: 16),
+          title: Text(
+            div.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
-          ]),
-          const SizedBox(height: 8),
-          _buildSubdivisionsForDivision(div.id, theme),
-        ],
+          ),
+          trailing: PopupMenuButton<String>(
+            color: isDarkMode ? const Color(0xFF2C2C2E) : null,
+            onSelected: (v) => _handleDivisionAction(v, div),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(
+                  'Edit',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'add_sub',
+                child: Text(
+                  'Add Sub-division',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Delete',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+            ],
+            child: Icon(
+              Icons.more_vert,
+              size: 18,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
+          ),
+          children: [
+            _buildMiniActionRow([
+              _MiniActionButton(
+                label: 'Add Sub-division',
+                icon: Icons.add,
+                onPressed: () => _showAddBottomSheet(
+                  itemType: 'Subdivision',
+                  parentId: div.id,
+                  parentName: div.name,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            _buildSubdivisionsForDivision(div.id, theme),
+          ],
+        ),
       ),
     );
   }
@@ -453,45 +676,93 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildSubdivisionCard(Subdivision subd, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: Colors.teal.shade50,
+        color: isDarkMode
+            ? Colors.teal[800]?.withOpacity(0.3)
+            : Colors.teal.shade50,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.teal.shade100),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.teal.shade400.withOpacity(0.3)
+              : Colors.teal.shade100,
+        ),
       ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.all(10),
-        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-        leading: _iconBox(Icons.account_tree, Colors.teal, size: 16),
-        title: Text(
-          subd.name,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          expansionTileTheme: ExpansionTileThemeData(
+            textColor: isDarkMode ? Colors.white : Colors.black87,
+            iconColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedTextColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedIconColor: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) => _handleSubdivisionAction(v, subd),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('Edit')),
-            PopupMenuItem(value: 'add_ss', child: Text('Add Sub-station')),
-            PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-          child: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
-        ),
-        children: [
-          _buildMiniActionRow([
-            _MiniActionButton(
-              label: 'Add Sub-station',
-              icon: Icons.add_home_work_outlined,
-              onPressed: () => _showAddBottomSheet(
-                itemType: 'Substation',
-                parentId: subd.id,
-                parentName: subd.name,
-              ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          leading: _iconBox(Icons.account_tree, Colors.teal, size: 16),
+          title: Text(
+            subd.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
-          ]),
-          const SizedBox(height: 8),
-          _buildSubstationsForSubdivision(subd.id, theme),
-        ],
+          ),
+          trailing: PopupMenuButton<String>(
+            color: isDarkMode ? const Color(0xFF2C2C2E) : null,
+            onSelected: (v) => _handleSubdivisionAction(v, subd),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(
+                  'Edit',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'add_ss',
+                child: Text(
+                  'Add Sub-station',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Delete',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+            ],
+            child: Icon(
+              Icons.more_vert,
+              size: 18,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
+          ),
+          children: [
+            _buildMiniActionRow([
+              _MiniActionButton(
+                label: 'Add Sub-station',
+                icon: Icons.add_home_work_outlined,
+                onPressed: () => _showAddBottomSheet(
+                  itemType: 'Substation',
+                  parentId: subd.id,
+                  parentName: subd.name,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            _buildSubstationsForSubdivision(subd.id, theme),
+          ],
+        ),
       ),
     );
   }
@@ -520,33 +791,76 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   Widget _buildSubstationCard(Substation substation, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: Colors.cyan.shade50,
+        color: isDarkMode
+            ? Colors.cyan[800]?.withOpacity(0.3)
+            : Colors.cyan.shade50,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.cyan.shade100),
-      ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.all(10),
-        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-        leading: _iconBox(Icons.electrical_services, Colors.cyan, size: 16),
-        title: Text(
-          substation.name,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.cyan.shade400.withOpacity(0.3)
+              : Colors.cyan.shade100,
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) => _handleSubstationAction(v, substation),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('Edit')),
-            PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-          child: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
+      ),
+      child: Theme(
+        data: theme.copyWith(
+          dividerColor: Colors.transparent,
+          expansionTileTheme: ExpansionTileThemeData(
+            textColor: isDarkMode ? Colors.white : Colors.black87,
+            iconColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedTextColor: isDarkMode ? Colors.white : Colors.black87,
+            collapsedIconColor: isDarkMode ? Colors.white : Colors.black87,
+          ),
+        ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          leading: _iconBox(Icons.electrical_services, Colors.cyan, size: 16),
+          title: Text(
+            substation.name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+          ),
+          trailing: PopupMenuButton<String>(
+            color: isDarkMode ? const Color(0xFF2C2C2E) : null,
+            onSelected: (v) => _handleSubstationAction(v, substation),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(
+                  'Edit',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Delete',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
+            ],
+            child: Icon(
+              Icons.more_vert,
+              size: 18,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
+          ),
         ),
       ),
     );
   }
 
+  // Action handlers remain the same
   void _handleCompanyAction(String action, Company company) {
     switch (action) {
       case 'edit':
@@ -695,83 +1009,104 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
     child: Icon(icon, color: color, size: size),
   );
 
-  Widget _emptyInnerBox(ThemeData theme, String text, {bool small = false}) =>
-      Container(
-        padding: EdgeInsets.all(small ? 8 : 16),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: small ? 12 : 13,
-            color: theme.colorScheme.onSurface.withOpacity(0.5),
-          ),
-        ),
-      );
+  Widget _emptyInnerBox(ThemeData theme, String text, {bool small = false}) {
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-  Widget _buildEmptyState(ThemeData theme) => Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.map_outlined,
-          size: 64,
-          color: theme.colorScheme.onSurface.withOpacity(0.3),
+    return Container(
+      padding: EdgeInsets.all(small ? 8 : 16),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: small ? 12 : 13,
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.5)
+              : theme.colorScheme.onSurface.withOpacity(0.5),
         ),
-        const SizedBox(height: 16),
-        Text(
-          'No states found',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Tap the + button to add your first state',
-          style: TextStyle(
-            fontSize: 14,
-            color: theme.colorScheme.onSurface.withOpacity(0.5),
-          ),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
-  Widget _buildError(ThemeData theme, String err) => Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.error_outline,
-          size: 64,
-          color: theme.colorScheme.error.withOpacity(0.6),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Error loading data',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-            color: theme.colorScheme.error,
+  Widget _buildEmptyState(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.map_outlined,
+            size: 64,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.3)
+                : theme.colorScheme.onSurface.withOpacity(0.3),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          err,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 14,
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
+          const SizedBox(height: 16),
+          Text(
+            'No states found',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 8),
+          Text(
+            'Tap the + button to add your first state',
+            style: TextStyle(
+              fontSize: 14,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.5)
+                  : theme.colorScheme.onSurface.withOpacity(0.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError(ThemeData theme, String err) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 64,
+            color: theme.colorScheme.error.withOpacity(0.6),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Error loading data',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.error,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            err,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showAddBottomSheet({
     required String itemType,
@@ -779,10 +1114,13 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
     String? parentName,
     HierarchyItem? itemToEdit,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -832,17 +1170,28 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 
   void _confirmDelete(String collection, String docId, String name) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Delete item?'),
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+        title: Text(
+          'Delete item?',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
+        ),
         content: Text(
           'This will permanently delete "$name" and all its sub-items.',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
         ),
         actions: [
           TextButton(
             onPressed: Navigator.of(context).pop,
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -850,7 +1199,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
               Navigator.of(context).pop();
               await _fs.collection(collection).doc(docId).delete();
             },
-            child: const Text('Delete'),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -858,6 +1207,7 @@ class _AdminHierarchyScreenState extends State<AdminHierarchyScreen> {
   }
 }
 
+// Support classes remain the same
 class _ActionButton {
   final String label;
   final IconData icon;
@@ -884,6 +1234,7 @@ class _MiniActionButton {
   });
 }
 
+// Updated bottom sheet with dark mode
 class _AddEditHierarchySheet extends StatefulWidget {
   const _AddEditHierarchySheet({
     required this.itemType,
@@ -922,7 +1273,7 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
   final _commissioningDate = ValueNotifier<DateTime?>(null);
   final _selectedCityId = ValueNotifier<double?>(null);
 
-  String? _substationStateId; // To track which state this substation belongs to
+  String? _substationStateId;
   bool _isLoadingStateContext = false;
 
   @override
@@ -955,7 +1306,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
       _selectedType.value = widget.itemType == 'Substation' ? 'Manual' : null;
     }
 
-    // For substations, we need to determine the state context
     if (widget.itemType == 'Substation' && widget.parentId != null) {
       _determineStateContext();
     }
@@ -981,7 +1331,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
     super.dispose();
   }
 
-  // Method to determine which state this substation belongs to
   Future<void> _determineStateContext() async {
     if (!mounted) return;
 
@@ -990,7 +1339,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
     });
 
     try {
-      // Get the subdivision
       final subdivisionDoc = await FirebaseFirestore.instance
           .collection('subdivisions')
           .doc(widget.parentId)
@@ -1000,7 +1348,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
 
       final subdivision = Subdivision.fromFirestore(subdivisionDoc);
 
-      // Get the division
       final divisionDoc = await FirebaseFirestore.instance
           .collection('divisions')
           .doc(subdivision.divisionId)
@@ -1010,7 +1357,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
 
       final division = Division.fromFirestore(divisionDoc);
 
-      // Get the circle
       final circleDoc = await FirebaseFirestore.instance
           .collection('circles')
           .doc(division.circleId)
@@ -1020,7 +1366,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
 
       final circle = Circle.fromFirestore(circleDoc);
 
-      // Get the zone
       final zoneDoc = await FirebaseFirestore.instance
           .collection('zones')
           .doc(circle.zoneId)
@@ -1030,7 +1375,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
 
       final zone = Zone.fromFirestore(zoneDoc);
 
-      // Get the company
       final companyDoc = await FirebaseFirestore.instance
           .collection('companys')
           .doc(zone.companyId)
@@ -1040,7 +1384,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
 
       final company = Company.fromFirestore(companyDoc);
 
-      // Get the state
       final stateDoc = await FirebaseFirestore.instance
           .collection('appscreenstates')
           .doc(company.stateId)
@@ -1050,7 +1393,6 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
 
       final appState = AppScreenState.fromFirestore(stateDoc);
 
-      // Find the corresponding state in AppStateData
       final appStateData = Provider.of<AppStateData>(context, listen: false);
       final matchingState = appStateData.allStateModels
           .where((state) => state.name == appState.name)
@@ -1075,16 +1417,17 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     final isEdit = widget.existingItem != null;
     final title = isEdit ? 'Edit ${widget.itemType}' : 'Add ${widget.itemType}';
     final isSubstation = widget.itemType == 'Substation';
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        boxShadow: [
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        boxShadow: const [
           BoxShadow(
             color: Colors.black12,
             blurRadius: 10,
@@ -1244,16 +1587,21 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
                       theme: theme,
                     ),
 
-                    // Add City Selection for Substations
                     if (isSubstation) ...[
                       const SizedBox(height: 16),
                       _isLoadingStateContext
                           ? Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
+                                color: isDarkMode
+                                    ? Colors.blue[800]?.withOpacity(0.3)
+                                    : Colors.blue.shade50,
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.blue.shade200),
+                                border: Border.all(
+                                  color: isDarkMode
+                                      ? Colors.blue[400] ?? Colors.blue
+                                      : Colors.blue.shade200,
+                                ),
                               ),
                               child: Row(
                                 children: [
@@ -1262,7 +1610,9 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
                                     height: 16,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      color: Colors.blue.shade700,
+                                      color: isDarkMode
+                                          ? Colors.blue[300]
+                                          : Colors.blue.shade700,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -1270,7 +1620,9 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
                                     'Loading cities...',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.blue.shade700,
+                                      color: isDarkMode
+                                          ? Colors.blue[300]
+                                          : Colors.blue.shade700,
                                     ),
                                   ),
                                 ],
@@ -1340,23 +1692,39 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
     );
   }
 
-  // Method to build city dropdown
   Widget _buildCityDropdown(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_substationStateId == null) {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
+          color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.2)
+                : Colors.grey.shade200,
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.info, color: Colors.grey.shade600, size: 16),
+            Icon(
+              Icons.info,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+              size: 16,
+            ),
             const SizedBox(width: 8),
             Text(
               'State context not available',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 12,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade600,
+              ),
             ),
           ],
         ),
@@ -1372,17 +1740,30 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.orange.shade50,
+          color: isDarkMode
+              ? Colors.orange[800]?.withOpacity(0.3)
+              : Colors.orange.shade50,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.orange.shade200),
+          border: Border.all(
+            color: isDarkMode
+                ? Colors.orange[400] ?? Colors.orange
+                : Colors.orange.shade200,
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.info, color: Colors.orange.shade700, size: 16),
+            Icon(
+              Icons.info,
+              color: isDarkMode ? Colors.orange[300] : Colors.orange.shade700,
+              size: 16,
+            ),
             const SizedBox(width: 8),
             Text(
               'No cities found for this state',
-              style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+              style: TextStyle(
+                fontSize: 12,
+                color: isDarkMode ? Colors.orange[300] : Colors.orange.shade700,
+              ),
             ),
           ],
         ),
@@ -1397,17 +1778,23 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
           decoration: InputDecoration(
             labelText: 'City',
             labelStyle: TextStyle(
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : theme.colorScheme.onSurface.withOpacity(0.6),
               fontSize: 14,
             ),
             border: UnderlineInputBorder(
               borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : theme.colorScheme.outline.withOpacity(0.3),
               ),
             ),
             enabledBorder: UnderlineInputBorder(
               borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : theme.colorScheme.outline.withOpacity(0.3),
               ),
             ),
             focusedBorder: UnderlineInputBorder(
@@ -1430,7 +1817,9 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
                 city.name,
                 style: TextStyle(
                   fontSize: 14,
-                  color: theme.colorScheme.onSurface,
+                  color: isDarkMode
+                      ? Colors.white
+                      : theme.colorScheme.onSurface,
                 ),
               ),
             );
@@ -1438,11 +1827,18 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
           onChanged: (value) {
             _selectedCityId.value = value;
           },
-          style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
-          dropdownColor: theme.colorScheme.surface,
+          style: TextStyle(
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+            fontSize: 14,
+          ),
+          dropdownColor: isDarkMode
+              ? const Color(0xFF2C2C2E)
+              : theme.colorScheme.surface,
           icon: Icon(
             Icons.arrow_drop_down,
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : theme.colorScheme.onSurface.withOpacity(0.6),
           ),
         );
       },
@@ -1451,6 +1847,8 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
 
   Future<void> _selectCommissioningDate() async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     final picked = await showDatePicker(
       context: context,
       initialDate: _commissioningDate.value ?? DateTime.now(),
@@ -1462,8 +1860,12 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
             colorScheme: theme.colorScheme.copyWith(
               primary: theme.colorScheme.primary,
               onPrimary: theme.colorScheme.onPrimary,
-              surface: theme.colorScheme.surface,
-              onSurface: theme.colorScheme.onSurface,
+              surface: isDarkMode
+                  ? const Color(0xFF2C2C2E)
+                  : theme.colorScheme.surface,
+              onSurface: isDarkMode
+                  ? Colors.white
+                  : theme.colorScheme.onSurface,
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
@@ -1515,7 +1917,7 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
         'commissioningDate': _commissioningDate.value != null
             ? Timestamp.fromDate(_commissioningDate.value!)
             : null,
-        'cityId': _selectedCityId.value?.toString(), // Add cityId here
+        'cityId': _selectedCityId.value?.toString(),
       });
 
       if (_selectedType.value == 'SAS') {
@@ -1582,7 +1984,7 @@ class _AddEditHierarchySheetState extends State<_AddEditHierarchySheet> {
   }
 }
 
-// Extracted Stateless Widgets
+// Updated helper widgets with dark mode
 class _HeaderRow extends StatelessWidget {
   final String title;
   final ThemeData theme;
@@ -1591,6 +1993,8 @@ class _HeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1599,7 +2003,7 @@ class _HeaderRow extends StatelessWidget {
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
         ),
         IconButton(
@@ -1607,7 +2011,9 @@ class _HeaderRow extends StatelessWidget {
           icon: Icon(
             Icons.close,
             size: 20,
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : theme.colorScheme.onSurface.withOpacity(0.6),
           ),
         ),
       ],
@@ -1655,27 +2061,37 @@ class _TextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return TextFormField(
       controller: controller,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         labelStyle: TextStyle(
-          color: theme.colorScheme.onSurface.withOpacity(0.6),
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.6)
+              : theme.colorScheme.onSurface.withOpacity(0.6),
           fontSize: 14,
         ),
         hintStyle: TextStyle(
-          color: theme.colorScheme.onSurface.withOpacity(0.4),
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.4)
+              : theme.colorScheme.onSurface.withOpacity(0.4),
           fontSize: 14,
         ),
         border: UnderlineInputBorder(
           borderSide: BorderSide(
-            color: theme.colorScheme.outline.withOpacity(0.3),
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.3)
+                : theme.colorScheme.outline.withOpacity(0.3),
           ),
         ),
         enabledBorder: UnderlineInputBorder(
           borderSide: BorderSide(
-            color: theme.colorScheme.outline.withOpacity(0.3),
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.3)
+                : theme.colorScheme.outline.withOpacity(0.3),
           ),
         ),
         focusedBorder: UnderlineInputBorder(
@@ -1691,7 +2107,10 @@ class _TextField extends StatelessWidget {
       maxLines: maxLines,
       keyboardType: keyboardType,
       validator: validator,
-      style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+      style: TextStyle(
+        fontSize: 14,
+        color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+      ),
     );
   }
 }
@@ -1715,6 +2134,8 @@ class _Dropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return ValueListenableBuilder<String?>(
       valueListenable: valueNotifier,
       builder: (context, value, _) {
@@ -1723,17 +2144,23 @@ class _Dropdown extends StatelessWidget {
           decoration: InputDecoration(
             labelText: label,
             labelStyle: TextStyle(
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : theme.colorScheme.onSurface.withOpacity(0.6),
               fontSize: 14,
             ),
             border: UnderlineInputBorder(
               borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : theme.colorScheme.outline.withOpacity(0.3),
               ),
             ),
             enabledBorder: UnderlineInputBorder(
               borderSide: BorderSide(
-                color: theme.colorScheme.outline.withOpacity(0.3),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : theme.colorScheme.outline.withOpacity(0.3),
               ),
             ),
             focusedBorder: UnderlineInputBorder(
@@ -1756,18 +2183,27 @@ class _Dropdown extends StatelessWidget {
                 item,
                 style: TextStyle(
                   fontSize: 14,
-                  color: theme.colorScheme.onSurface,
+                  color: isDarkMode
+                      ? Colors.white
+                      : theme.colorScheme.onSurface,
                 ),
               ),
             );
           }).toList(),
           onChanged: onChanged ?? (value) => valueNotifier.value = value,
           validator: validator,
-          style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
-          dropdownColor: theme.colorScheme.surface,
+          style: TextStyle(
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+            fontSize: 14,
+          ),
+          dropdownColor: isDarkMode
+              ? const Color(0xFF2C2C2E)
+              : theme.colorScheme.surface,
           icon: Icon(
             Icons.arrow_drop_down,
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : theme.colorScheme.onSurface.withOpacity(0.6),
           ),
         );
       },
@@ -1788,6 +2224,8 @@ class _DateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return ValueListenableBuilder<DateTime?>(
       valueListenable: commissioningDate,
       builder: (context, date, _) {
@@ -1797,17 +2235,23 @@ class _DateField extends StatelessWidget {
             decoration: InputDecoration(
               labelText: 'Commissioning Date',
               labelStyle: TextStyle(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : theme.colorScheme.onSurface.withOpacity(0.6),
                 fontSize: 14,
               ),
               border: UnderlineInputBorder(
                 borderSide: BorderSide(
-                  color: theme.colorScheme.outline.withOpacity(0.3),
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : theme.colorScheme.outline.withOpacity(0.3),
                 ),
               ),
               enabledBorder: UnderlineInputBorder(
                 borderSide: BorderSide(
-                  color: theme.colorScheme.outline.withOpacity(0.3),
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : theme.colorScheme.outline.withOpacity(0.3),
                 ),
               ),
               focusedBorder: UnderlineInputBorder(
@@ -1819,7 +2263,9 @@ class _DateField extends StatelessWidget {
               suffixIcon: Icon(
                 Icons.calendar_today,
                 size: 18,
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : theme.colorScheme.onSurface.withOpacity(0.6),
               ),
             ),
             child: Text(
@@ -1829,8 +2275,10 @@ class _DateField extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 color: date != null
-                    ? theme.colorScheme.onSurface
-                    : theme.colorScheme.onSurface.withOpacity(0.6),
+                    ? (isDarkMode ? Colors.white : theme.colorScheme.onSurface)
+                    : (isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6)),
               ),
             ),
           ),
@@ -1853,14 +2301,20 @@ class _ParentInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer.withOpacity(0.1),
+        color: isDarkMode
+            ? theme.colorScheme.primary.withOpacity(0.2)
+            : theme.colorScheme.primaryContainer.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+          color: isDarkMode
+              ? theme.colorScheme.primary.withOpacity(0.5)
+              : theme.colorScheme.primaryContainer.withOpacity(0.3),
         ),
       ),
       child: Column(
@@ -1890,7 +2344,7 @@ class _ParentInfo extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
         ],
@@ -1906,14 +2360,22 @@ class _CancelButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return TextButton(
       onPressed: () => Navigator.pop(context),
       style: TextButton.styleFrom(
-        foregroundColor: theme.colorScheme.onSurface.withOpacity(0.7),
+        foregroundColor: isDarkMode
+            ? Colors.white.withOpacity(0.7)
+            : theme.colorScheme.onSurface.withOpacity(0.7),
         padding: const EdgeInsets.symmetric(vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: theme.colorScheme.outline.withOpacity(0.3)),
+          side: BorderSide(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.3)
+                : theme.colorScheme.outline.withOpacity(0.3),
+          ),
         ),
       ),
       child: const Text(

@@ -10,7 +10,7 @@ import '../../models/user_model.dart';
 import '../../models/equipment_model.dart';
 import '../../painters/single_line_diagram_painter.dart';
 import '../../utils/snackbar_utils.dart';
-import '../bay_form_screen.dart';
+import 'bay_form_screen.dart';
 import '../bay_equipment_management_screen.dart';
 import '../bay_reading_assignment_screen.dart';
 import 'energy_sld_screen.dart';

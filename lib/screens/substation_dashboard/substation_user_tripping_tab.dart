@@ -245,6 +245,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
 
   Widget _buildEventCard(TrippingShutdownEntry event) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final eventColor = _getEventTypeColor(event.eventType);
     final eventIcon = _getEventTypeIcon(event.eventType);
     final isOpen = event.status == 'OPEN';
@@ -252,11 +253,13 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -287,9 +290,10 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                 Expanded(
                   child: Text(
                     '${event.eventType} - ${event.bayName}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.black87,
                     ),
                   ),
                 ),
@@ -345,14 +349,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     Icon(
                       Icons.access_time,
                       size: 14,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       'Started: ${DateFormat('HH:mm').format(event.startTime.toDate())}',
                       style: TextStyle(
                         fontSize: 14,
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -385,14 +393,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       Icon(
                         Icons.timer,
                         size: 14,
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : theme.colorScheme.onSurface.withOpacity(0.6),
                       ),
                       const SizedBox(width: 4),
                       Text(
                         'Duration: ${_calculateDuration(event.startTime.toDate(), event.endTime!.toDate())}',
                         style: TextStyle(
                           fontSize: 14,
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.7)
+                              : theme.colorScheme.onSurface.withOpacity(0.7),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -405,7 +417,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.05),
+                      color: isDarkMode
+                          ? Colors.blue.shade800!.withOpacity(0.3)
+                          : Colors.blue.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: Colors.blue.withOpacity(0.2)),
                     ),
@@ -415,7 +429,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         Icon(
                           Icons.info_outline,
                           size: 14,
-                          color: Colors.blue.shade600,
+                          color: isDarkMode
+                              ? Colors.blue.shade300
+                              : Colors.blue.shade600,
                         ),
                         const SizedBox(width: 4),
                         Expanded(
@@ -423,7 +439,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                             event.flagsCause,
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.blue.shade700,
+                              color: isDarkMode
+                                  ? Colors.blue.shade300
+                                  : Colors.blue.shade700,
                               fontStyle: FontStyle.italic,
                             ),
                             maxLines: 2,
@@ -442,7 +460,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
           // Action buttons for open events
           if (event.status == 'OPEN') ...[
-            const Divider(height: 1),
+            Divider(
+              height: 1,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.2)
+                  : Colors.grey.shade300,
+            ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -504,6 +527,8 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     required Color color,
     Widget? action,
   }) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
@@ -531,7 +556,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade600,
+              ),
             ),
             if (action != null) ...[const SizedBox(height: 24), action],
           ],
@@ -543,6 +573,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     if (widget.substationId.isEmpty) {
       return _buildEmptyState(
@@ -565,12 +596,21 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Colors.red.shade50, Colors.orange.shade50],
+                colors: isDarkMode
+                    ? [
+                        Colors.red.shade800!.withOpacity(0.3),
+                        Colors.orange.shade800!.withOpacity(0.3),
+                      ]
+                    : [Colors.red.shade50, Colors.orange.shade50],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.shade200),
+              border: Border.all(
+                color: isDarkMode
+                    ? Colors.red.withOpacity(0.4)
+                    : Colors.red.shade200,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.red.withOpacity(0.1),
@@ -586,7 +626,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.red.shade100,
+                        color: isDarkMode
+                            ? Colors.red.withOpacity(0.3)
+                            : Colors.red.shade100,
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -613,9 +655,11 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
-                              color: theme.colorScheme.onSurface.withOpacity(
-                                0.8,
-                              ),
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.8)
+                                  : theme.colorScheme.onSurface.withOpacity(
+                                      0.8,
+                                    ),
                             ),
                           ),
                         ],
@@ -628,7 +672,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: isDarkMode
+                            ? Colors.blue.shade800!.withOpacity(0.3)
+                            : Colors.blue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue.withOpacity(0.3)),
                       ),
@@ -638,7 +684,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           Icon(
                             Icons.notifications_active,
                             size: 14,
-                            color: Colors.blue.shade700,
+                            color: isDarkMode
+                                ? Colors.blue.shade300
+                                : Colors.blue.shade700,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -646,7 +694,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w500,
-                              color: Colors.blue.shade700,
+                              color: isDarkMode
+                                  ? Colors.blue.shade300
+                                  : Colors.blue.shade700,
                             ),
                           ),
                         ],
@@ -661,7 +711,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     Icon(
                       Icons.calendar_today,
                       size: 16,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -670,7 +722,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       ).format(widget.selectedDate),
                       style: TextStyle(
                         fontSize: 14,
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -685,11 +739,15 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     child: Container(
                       padding: const EdgeInsets.all(32),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: isDarkMode
+                                ? Colors.black.withOpacity(0.3)
+                                : Colors.black.withOpacity(0.1),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -706,7 +764,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                             'Loading events...',
                             style: TextStyle(
                               fontSize: 16,
-                              color: theme.colorScheme.onSurface,
+                              color: isDarkMode
+                                  ? Colors.white
+                                  : theme.colorScheme.onSurface,
                             ),
                           ),
                         ],
@@ -730,12 +790,16 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           margin: const EdgeInsets.symmetric(horizontal: 16),
                           padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
+                            color: isDarkMode
+                                ? Colors.grey.shade800
+                                : Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: TabBar(
                             labelColor: theme.colorScheme.primary,
-                            unselectedLabelColor: Colors.grey.shade600,
+                            unselectedLabelColor: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
                             labelStyle: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -745,11 +809,15 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                               fontWeight: FontWeight.w500,
                             ),
                             indicator: BoxDecoration(
-                              color: Colors.white,
+                              color: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(8),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
+                                  color: isDarkMode
+                                      ? Colors.black.withOpacity(0.3)
+                                      : Colors.black.withOpacity(0.1),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
                                 ),

@@ -16,7 +16,6 @@ import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/excel_download_service.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
 import '../../widgets/post_card/flowchart_preview_widget.dart';
-// import 'comment_thread_screen.dart';
 import 'flowchart_create_screen.dart';
 import 'post_create_screen.dart';
 
@@ -101,20 +100,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: _buildAppBar(),
       body: _buildBody(),
     );
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       elevation: 2,
-      systemOverlayStyle: SystemUiOverlayStyle.dark,
+      systemOverlayStyle: isDarkMode
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
       leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: Colors.grey[700]),
+        icon: Icon(
+          Icons.arrow_back,
+          color: isDarkMode ? Colors.white : Colors.grey[700],
+        ),
         onPressed: () => Navigator.of(context).pop(),
       ),
       title: Text(
@@ -122,18 +132,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         style: GoogleFonts.lora(
           fontSize: 20,
           fontWeight: FontWeight.w600,
-          color: Colors.grey[800],
+          color: isDarkMode ? Colors.white : Colors.grey[800],
         ),
       ),
       centerTitle: true,
       actions: [
         IconButton(
-          icon: Icon(Icons.share_outlined, color: Colors.grey[700]),
+          icon: Icon(
+            Icons.share_outlined,
+            color: isDarkMode ? Colors.white : Colors.grey[700],
+          ),
           onPressed: _sharePost,
           tooltip: 'Share post',
         ),
         PopupMenuButton<String>(
-          icon: Icon(Icons.more_vert, color: Colors.grey[700]),
+          icon: Icon(
+            Icons.more_vert,
+            color: isDarkMode ? Colors.white : Colors.grey[700],
+          ),
+          color: isDarkMode ? const Color(0xFF2C2C2E) : null,
           onSelected: _handleMenuAction,
           itemBuilder: (context) => _buildMenuItems(),
         ),
@@ -142,50 +159,73 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   List<PopupMenuEntry<String>> _buildMenuItems() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final currentUser = AuthService.currentUser;
     final isAuthor = currentUser?.uid == _post?.authorId;
 
     return [
       if (isAuthor) ...[
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'edit',
           child: Row(
             children: [
-              Icon(Icons.edit, size: 18),
-              SizedBox(width: 12),
-              Text('Edit Post'),
+              Icon(
+                Icons.edit,
+                size: 18,
+                color: isDarkMode ? Colors.white : null,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Edit Post',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'delete',
           child: Row(
             children: [
-              Icon(Icons.delete, color: Colors.red, size: 18),
-              SizedBox(width: 12),
-              Text('Delete Post', style: TextStyle(color: Colors.red)),
+              const Icon(Icons.delete, color: Colors.red, size: 18),
+              const SizedBox(width: 12),
+              const Text('Delete Post', style: TextStyle(color: Colors.red)),
             ],
           ),
         ),
         const PopupMenuDivider(),
       ],
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'bookmark',
         child: Row(
           children: [
-            Icon(Icons.bookmark_border, size: 18),
-            SizedBox(width: 12),
-            Text('Bookmark'),
+            Icon(
+              Icons.bookmark_border,
+              size: 18,
+              color: isDarkMode ? Colors.white : null,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Bookmark',
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
+            ),
           ],
         ),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'report',
         child: Row(
           children: [
-            Icon(Icons.flag_outlined, size: 18),
-            SizedBox(width: 12),
-            Text('Report'),
+            Icon(
+              Icons.flag_outlined,
+              size: 18,
+              color: isDarkMode ? Colors.white : null,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Report',
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
+            ),
           ],
         ),
       ),
@@ -193,16 +233,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildBody() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_isLoading) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Colors.blue[600]),
+            CircularProgressIndicator(
+              color: isDarkMode ? Colors.blue[300] : Colors.blue[600],
+            ),
             const SizedBox(height: 16),
             Text(
               'Loading post...',
-              style: GoogleFonts.lora(fontSize: 16, color: Colors.grey[600]),
+              style: GoogleFonts.lora(
+                fontSize: 16,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey[600],
+              ),
             ),
           ],
         ),
@@ -216,11 +266,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, size: 80, color: Colors.grey[400]),
+              Icon(
+                Icons.error_outline,
+                size: 80,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey[400],
+              ),
               const SizedBox(height: 16),
               Text(
                 _error!,
-                style: GoogleFonts.lora(fontSize: 16, color: Colors.grey[600]),
+                style: GoogleFonts.lora(
+                  fontSize: 16,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey[600],
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -229,7 +290,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[600],
+                  backgroundColor: isDarkMode
+                      ? Colors.blue[300]
+                      : Colors.blue[600],
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -247,14 +310,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.article_outlined, size: 80, color: Colors.grey[400]),
+            Icon(
+              Icons.article_outlined,
+              size: 80,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 16),
             Text(
               'Post not found',
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey[600],
               ),
             ),
           ],
@@ -263,7 +334,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     return RefreshIndicator(
-      color: Colors.blue[600],
+      color: isDarkMode ? Colors.blue[300] : Colors.blue[600],
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
       onRefresh: _loadPost,
       child: CustomScrollView(
         controller: _scrollController,
@@ -280,6 +352,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildPostHeader() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -302,7 +377,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 fontSize: 28,
                 fontWeight: FontWeight.w700,
                 height: 1.3,
-                color: Colors.black87,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(height: 12),
@@ -310,16 +385,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.grey[50],
+                  color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[200]!),
+                  border: Border.all(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.1)
+                        : Colors.grey[200]!,
+                  ),
                 ),
                 child: Text(
                   _post!.excerpt,
                   style: GoogleFonts.lora(
                     fontSize: 16,
                     height: 1.5,
-                    color: Colors.grey[700],
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.7)
+                        : Colors.grey[700],
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -336,11 +417,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildScopeBadge() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final isPublic = _post!.scope.isPublic;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isPublic ? Colors.blue[50] : Colors.orange[50],
+        color: isPublic
+            ? (isDarkMode
+                  ? Colors.blue[900]?.withOpacity(0.3)
+                  : Colors.blue[50])
+            : (isDarkMode
+                  ? Colors.orange[900]?.withOpacity(0.3)
+                  : Colors.orange[50]),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isPublic ? Colors.blue[600]! : Colors.orange[600]!,
@@ -413,6 +503,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildAuthorInfo() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       children: [
         CircleAvatar(
@@ -437,7 +530,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 style: GoogleFonts.lora(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                  color: isDarkMode ? Colors.white : Colors.black87,
                 ),
               ),
               const SizedBox(height: 4),
@@ -447,20 +540,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     _formatTimestamp(_post!.createdAt),
                     style: GoogleFonts.lora(
                       fontSize: 13,
-                      color: Colors.grey[600],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
                     ),
                   ),
                   if (_post!.authorDesignation != null) ...[
                     Text(
                       ' • ',
-                      style: GoogleFonts.lora(color: Colors.grey[600]),
+                      style: GoogleFonts.lora(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
+                      ),
                     ),
                     Expanded(
                       child: Text(
                         _post!.authorDesignation!,
                         style: GoogleFonts.lora(
                           fontSize: 13,
-                          color: Colors.grey[600],
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey[600],
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -471,13 +572,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Icon(Icons.schedule, size: 14, color: Colors.grey[600]),
+                  Icon(
+                    Icons.schedule,
+                    size: 14,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600],
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     _post!.readingTime,
                     style: GoogleFonts.lora(
                       fontSize: 12,
-                      color: Colors.grey[600],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
                     ),
                   ),
                 ],
@@ -490,6 +599,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildHeaderImage() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Column(
       children: [
         ClipRRect(
@@ -501,26 +613,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             fit: BoxFit.cover,
             placeholder: (context, url) => Container(
               height: 240,
-              color: Colors.grey[100],
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[100],
               child: Center(
-                child: CircularProgressIndicator(color: Colors.blue[600]),
+                child: CircularProgressIndicator(
+                  color: isDarkMode ? Colors.blue[300] : Colors.blue[600],
+                ),
               ),
             ),
             errorWidget: (context, url, error) => Container(
               height: 240,
-              color: Colors.grey[100],
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[100],
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     Icons.image_not_supported,
-                    color: Colors.grey[600],
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600],
                     size: 48,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Image unavailable',
-                    style: GoogleFonts.lora(color: Colors.grey[600]),
+                    style: GoogleFonts.lora(
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
+                    ),
                   ),
                 ],
               ),
@@ -533,6 +653,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildPostContent() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_contentBlocks.isEmpty) {
       return SliverToBoxAdapter(
         child: Padding(
@@ -541,7 +664,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             'No content available',
             style: GoogleFonts.lora(
               fontSize: 16,
-              color: Colors.grey[600],
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey[600],
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -558,6 +683,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildBlockPreview(ContentBlock block) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     switch (block.type) {
       case ContentBlockType.heading:
         return Padding(
@@ -567,7 +695,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             style: GoogleFonts.lora(
               fontSize: 26,
               fontWeight: FontWeight.w700,
-              color: Colors.black87,
+              color: isDarkMode ? Colors.white : Colors.black87,
               height: 1.3,
             ),
           ),
@@ -580,7 +708,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             style: GoogleFonts.lora(
               fontSize: 22,
               fontWeight: FontWeight.w600,
-              color: Colors.black87,
+              color: isDarkMode ? Colors.white : Colors.black87,
               height: 1.3,
             ),
           ),
@@ -593,7 +721,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             style: GoogleFonts.lora(
               fontSize: 18,
               height: 1.6,
-              color: Colors.black87,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
           ),
         );
@@ -614,7 +742,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       width: 6,
                       height: 6,
                       decoration: BoxDecoration(
-                        color: Colors.blue[600],
+                        color: isDarkMode ? Colors.blue[300] : Colors.blue[600],
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -624,7 +752,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 18,
                           height: 1.6,
-                          color: Colors.black87,
+                          color: isDarkMode ? Colors.white : Colors.black87,
                         ),
                       ),
                     ),
@@ -653,7 +781,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Colors.blue[600],
+                          color: isDarkMode
+                              ? Colors.blue[300]
+                              : Colors.blue[600],
                         ),
                       ),
                     ),
@@ -663,7 +793,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 18,
                           height: 1.6,
-                          color: Colors.black87,
+                          color: isDarkMode ? Colors.white : Colors.black87,
                         ),
                       ),
                     ),
@@ -692,16 +822,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
                       height: 200,
-                      color: Colors.grey[100],
+                      color: isDarkMode
+                          ? const Color(0xFF2C2C2E)
+                          : Colors.grey[100],
                       child: Center(
                         child: CircularProgressIndicator(
-                          color: Colors.blue[600],
+                          color: isDarkMode
+                              ? Colors.blue[300]
+                              : Colors.blue[600],
                         ),
                       ),
                     ),
                     errorWidget: (context, url, error) => Container(
                       height: 200,
-                      color: Colors.grey[100],
+                      color: isDarkMode
+                          ? const Color(0xFF2C2C2E)
+                          : Colors.grey[100],
                       child: const Center(child: Text('Image unavailable')),
                     ),
                   ),
@@ -715,7 +851,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: isDarkMode
+                    ? Colors.blue[900]?.withOpacity(0.3)
+                    : Colors.blue[50],
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.blue!),
               ),
@@ -745,13 +883,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey!),
+              border: Border.all(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.2)
+                    : Colors.grey.shade300,
+              ),
             ),
             child: Row(
               children: [
-                Icon(Icons.attach_file, color: Colors.grey, size: 24),
+                Icon(
+                  Icons.attach_file,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey[600],
+                  size: 24,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -762,14 +910,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
-                          color: Colors.black87,
+                          color: isDarkMode ? Colors.white : Colors.black87,
                         ),
                       ),
                       Text(
                         'FILE',
                         style: GoogleFonts.lora(
                           fontSize: 12,
-                          color: Colors.grey[600],
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey[600],
                         ),
                       ),
                     ],
@@ -777,7 +927,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
                 IconButton(
                   onPressed: () => _showFileInfo(block.text),
-                  icon: Icon(Icons.info_outline, color: Colors.grey[600]),
+                  icon: Icon(
+                    Icons.info_outline,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600],
+                  ),
                 ),
               ],
             ),
@@ -791,7 +946,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: isDarkMode
+                    ? Colors.blue[900]?.withOpacity(0.3)
+                    : Colors.blue[50],
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.blue!),
               ),
@@ -812,7 +969,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           style: GoogleFonts.lora(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                       ),
@@ -832,7 +989,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       block.flowchartData!['description'],
                       style: GoogleFonts.lora(
                         fontSize: 14,
-                        color: Colors.grey[700],
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : Colors.grey[700],
                       ),
                     ),
                   ],
@@ -860,7 +1019,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         '${block.flowchartData?['nodeCount'] ?? 0} nodes',
                         style: GoogleFonts.lora(
                           fontSize: 12,
-                          color: Colors.grey[600],
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey[600],
                         ),
                       ),
                     ],
@@ -878,7 +1039,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.green[50],
+                color: isDarkMode
+                    ? Colors.green[900]?.withOpacity(0.3)
+                    : Colors.green[50],
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.green!),
               ),
@@ -899,14 +1062,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           style: GoogleFonts.lora(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                       ),
                       ElevatedButton.icon(
                         onPressed: () => _downloadExcel(block.excelData!),
-                        icon: Icon(Icons.download, size: 16),
-                        label: Text('Download'),
+                        icon: const Icon(Icons.download, size: 16),
+                        label: const Text('Download'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green[600],
                           foregroundColor: Colors.white,
@@ -938,7 +1101,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         '${block.excelData?['rows'] ?? 0}×${block.excelData?['columns'] ?? 0} table',
                         style: GoogleFonts.lora(
                           fontSize: 12,
-                          color: Colors.grey[600],
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey[600],
                         ),
                       ),
                     ],
@@ -952,6 +1117,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildExcelPreview(Map<String, dynamic> excelData) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final data = excelData['data'] as List? ?? [];
     final rows = (excelData['rows'] ?? 0) as int;
     final columns = (excelData['columns'] ?? 0) as int;
@@ -961,8 +1128,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         Container(
           height: 200,
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey[300]!),
+            border: Border.all(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey[300]!,
+            ),
             borderRadius: BorderRadius.circular(8),
+            color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
           ),
           child: Scrollbar(
             scrollbarOrientation: ScrollbarOrientation.bottom,
@@ -982,14 +1154,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             width: 80,
                             height: 30,
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey[300]!),
+                              border: Border.all(
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.3)
+                                    : Colors.grey[300]!,
+                              ),
+                              color: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : Colors.white,
                             ),
                             child: Center(
                               child: Text(
                                 i < data.length && j < (data[i] as List).length
                                     ? (data[i] as List)[j].toString()
                                     : '',
-                                style: GoogleFonts.lora(fontSize: 10),
+                                style: GoogleFonts.lora(
+                                  fontSize: 10,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -1003,14 +1187,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ),
-        // Add scroll hint
         Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             'Scroll to view all data (${rows}×${columns})',
             style: GoogleFonts.lora(
               fontSize: 10,
-              color: Colors.black54,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.5)
+                  : Colors.black54,
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -1020,16 +1205,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _downloadExcel(Map<String, dynamic> excelData) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     try {
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
+          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
           content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Expanded(child: Text('Creating Excel file...')),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Creating Excel file...',
+                  style: TextStyle(color: isDarkMode ? Colors.white : null),
+                ),
+              ),
             ],
           ),
         ),
@@ -1038,14 +1232,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final filePath = await ExcelDownloadService.createAndDownloadExcel(
         excelData,
       );
-      Navigator.pop(context); // Close loading dialog
+      Navigator.pop(context);
 
       if (filePath != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Excel file downloaded successfully!'),
+            content: const Text('Excel file downloaded successfully!'),
             backgroundColor: Colors.green[600],
-            duration: Duration(seconds: 4),
+            duration: const Duration(seconds: 4),
             action: SnackBarAction(
               label: 'Open',
               textColor: Colors.white,
@@ -1065,8 +1259,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         );
 
-        // Optional: Auto-open the file after 2 seconds
-        Future.delayed(Duration(seconds: 2), () async {
+        Future.delayed(const Duration(seconds: 2), () async {
           try {
             await ExcelDownloadService.openExcelFile(filePath);
           } catch (e) {
@@ -1076,7 +1269,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to create Excel file'),
+            content: const Text('Failed to create Excel file'),
             backgroundColor: Colors.red[600],
           ),
         );
@@ -1109,17 +1302,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildActionBar() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return SliverToBoxAdapter(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade100, width: 1),
+          border: Border.all(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey.shade100,
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: isDarkMode
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.03),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -1128,12 +1331,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Vote section
             EnhancedVoteBar(post: _post!),
 
             const SizedBox(height: 20),
 
-            // Comments section
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -1142,7 +1343,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   children: [
                     Icon(
                       Icons.comment_outlined,
-                      color: Colors.grey.shade500,
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.grey.shade500,
                       size: 18,
                     ),
                     const SizedBox(width: 10),
@@ -1151,7 +1354,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade700,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : Colors.grey.shade700,
                       ),
                     ),
                   ],
@@ -1168,7 +1373,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black87,
+                    backgroundColor: isDarkMode
+                        ? Colors.blue[600]
+                        : Colors.black87,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -1190,6 +1397,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildCommentsSection() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -1203,7 +1413,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   style: GoogleFonts.lora(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1213,7 +1423,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.grey[100],
+                    color: isDarkMode
+                        ? const Color(0xFF3C3C3E)
+                        : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -1221,7 +1433,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     style: GoogleFonts.lora(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey[600],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
                     ),
                   ),
                 ),
@@ -1233,7 +1447,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Center(
-                    child: CircularProgressIndicator(color: Colors.blue[600]),
+                    child: CircularProgressIndicator(
+                      color: isDarkMode ? Colors.blue[300] : Colors.blue[600],
+                    ),
                   );
                 }
                 if (snapshot.hasError) {
@@ -1261,6 +1477,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildCommentTree(List<Comment> comments) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     List<Widget> buildFlatComments(List<Comment> commentsList) {
       return commentsList.map((comment) {
         final replies = comments
@@ -1282,12 +1501,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             : null;
 
         return Container(
-          margin: EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
+            border: Border.all(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.grey[200]!,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1318,21 +1541,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               style: GoogleFonts.lora(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.black87,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
                             if (comment.authorDesignation != null) ...[
                               Text(
                                 ' • ',
                                 style: GoogleFonts.lora(
-                                  color: Colors.grey[600],
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : Colors.grey[600],
                                 ),
                               ),
                               Text(
                                 comment.authorDesignation!,
                                 style: GoogleFonts.lora(
                                   fontSize: 12,
-                                  color: Colors.grey[600],
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : Colors.grey[600],
                                 ),
                               ),
                             ],
@@ -1342,7 +1571,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           _formatTimestamp(comment.createdAt),
                           style: GoogleFonts.lora(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey[600],
                           ),
                         ),
                       ],
@@ -1352,12 +1583,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Show @mention for replies
               if (parentComment != null && parentComment.id.isNotEmpty) ...[
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: Colors.blue[50],
+                    color: isDarkMode
+                        ? Colors.blue[900]?.withOpacity(0.3)
+                        : Colors.blue[50],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -1372,7 +1607,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(height: 8),
               ],
 
-              // Comment text with @mentions highlighted
               RichText(text: _buildCommentTextWithMentions(comment.bodyPlain)),
 
               const SizedBox(height: 12),
@@ -1382,14 +1616,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   const SizedBox(width: 16),
                   TextButton.icon(
                     onPressed: () => _addCommentWithMention(comment, comments),
-                    icon: Icon(Icons.reply, color: Colors.grey[600], size: 16),
+                    icon: Icon(
+                      Icons.reply,
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
+                      size: 16,
+                    ),
                     label: Text(
                       'Reply',
-                      style: GoogleFonts.lora(fontSize: 12, color: Colors.grey),
+                      style: GoogleFonts.lora(
+                        fontSize: 12,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
+                      ),
                     ),
                     style: TextButton.styleFrom(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      minimumSize: Size(0, 0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      minimumSize: const Size(0, 0),
                     ),
                   ),
                   if (replies.isNotEmpty) ...[
@@ -1405,11 +1653,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                       ),
                       style: TextButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: 8,
                           vertical: 4,
                         ),
-                        minimumSize: Size(0, 0),
+                        minimumSize: const Size(0, 0),
                       ),
                     ),
                   ],
@@ -1421,7 +1669,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }).toList();
     }
 
-    // Show all comments in flat structure, sorted by timestamp
     final sortedComments = List<Comment>.from(comments)
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
@@ -1432,7 +1679,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     Comment parentComment,
     List<Comment> allComments,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final currentUser = AuthService.currentUser;
+
     if (currentUser == null) {
       _showLoginPrompt();
       return;
@@ -1447,7 +1697,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
@@ -1467,23 +1718,46 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 style: GoogleFonts.lora(
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
+                  color: isDarkMode ? Colors.white : null,
                 ),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               TextField(
                 controller: controller,
                 minLines: 2,
                 maxLines: 5,
                 autofocus: true,
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
                 decoration: InputDecoration(
                   hintText: 'Write your reply...',
+                  hintStyle: TextStyle(
+                    color: isDarkMode ? Colors.white.withOpacity(0.4) : null,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.grey.shade300,
+                    ),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
                   helperText: 'Use @username to mention someone',
+                  helperStyle: TextStyle(
+                    color: isDarkMode ? Colors.white.withOpacity(0.5) : null,
+                  ),
                 ),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Align(
                 alignment: Alignment.centerRight,
                 child: ElevatedButton(
@@ -1543,26 +1817,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   TextSpan _buildCommentTextWithMentions(String text) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final mentionRegex = RegExp(r'@(\w+)');
     final spans = <TextSpan>[];
     int lastIndex = 0;
 
     for (final match in mentionRegex.allMatches(text)) {
-      // Add text before mention
       if (match.start > lastIndex) {
         spans.add(
           TextSpan(
             text: text.substring(lastIndex, match.start),
             style: GoogleFonts.lora(
               fontSize: 14,
-              color: Colors.black87,
+              color: isDarkMode ? Colors.white : Colors.black87,
               height: 1.5,
             ),
           ),
         );
       }
 
-      // Add mention with special styling
       spans.add(
         TextSpan(
           text: match.group(0),
@@ -1578,14 +1852,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       lastIndex = match.end;
     }
 
-    // Add remaining text
     if (lastIndex < text.length) {
       spans.add(
         TextSpan(
           text: text.substring(lastIndex),
           style: GoogleFonts.lora(
             fontSize: 14,
-            color: Colors.black87,
+            color: isDarkMode ? Colors.white : Colors.black87,
             height: 1.5,
           ),
         ),
@@ -1600,10 +1873,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     List<Comment> replies,
     List<Comment> allComments,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) {
@@ -1616,10 +1893,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             return Column(
               children: [
                 Container(
-                  padding: EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     border: Border(
-                      bottom: BorderSide(color: Colors.grey[200]!),
+                      bottom: BorderSide(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.1)
+                            : Colors.grey[200]!,
+                      ),
                     ),
                   ),
                   child: Row(
@@ -1629,12 +1910,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         style: GoogleFonts.lora(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
+                          color: isDarkMode ? Colors.white : null,
                         ),
                       ),
-                      Spacer(),
+                      const Spacer(),
                       IconButton(
                         onPressed: () => Navigator.pop(context),
-                        icon: Icon(Icons.close),
+                        icon: Icon(
+                          Icons.close,
+                          color: isDarkMode ? Colors.white : null,
+                        ),
                       ),
                     ],
                   ),
@@ -1642,15 +1927,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 Expanded(
                   child: ListView.builder(
                     controller: scrollController,
-                    padding: EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(16),
                     itemCount: replies.length + 1,
                     itemBuilder: (context, index) {
                       if (index == 0) {
                         return Container(
-                          margin: EdgeInsets.only(bottom: 16),
-                          padding: EdgeInsets.all(16),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.blue[50],
+                            color: isDarkMode
+                                ? Colors.blue[900]?.withOpacity(0.3)
+                                : Colors.blue[50],
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: Colors.blue!),
                           ),
@@ -1665,20 +1952,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   color: Colors.blue[700],
                                 ),
                               ),
-                              SizedBox(height: 8),
+                              const SizedBox(height: 8),
                               Text(
                                 parentComment.bodyPlain,
                                 style: GoogleFonts.lora(
                                   fontSize: 14,
-                                  color: Colors.black87,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.black87,
                                 ),
                               ),
-                              SizedBox(height: 8),
+                              const SizedBox(height: 8),
                               Text(
                                 '- ${parentComment.authorName ?? "Unknown"}',
                                 style: GoogleFonts.lora(
                                   fontSize: 12,
-                                  color: Colors.grey[600],
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : Colors.grey[600],
                                   fontStyle: FontStyle.italic,
                                 ),
                               ),
@@ -1689,12 +1980,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                       final reply = replies[index - 1];
                       return Container(
-                        margin: EdgeInsets.only(bottom: 12),
-                        padding: EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: isDarkMode
+                              ? const Color(0xFF2C2C2E)
+                              : Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[200]!),
+                          border: Border.all(
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.1)
+                                : Colors.grey[200]!,
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1715,48 +2012,52 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 8),
+                                const SizedBox(width: 8),
                                 Text(
                                   reply.authorName ?? 'Unknown',
                                   style: GoogleFonts.lora(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: Colors.black87,
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : Colors.black87,
                                   ),
                                 ),
-                                Spacer(),
+                                const Spacer(),
                                 Text(
                                   _formatTimestamp(reply.createdAt),
                                   style: GoogleFonts.lora(
                                     fontSize: 11,
-                                    color: Colors.grey[600],
+                                    color: isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey[600],
                                   ),
                                 ),
                               ],
                             ),
-                            SizedBox(height: 8),
+                            const SizedBox(height: 8),
                             RichText(
                               text: _buildCommentTextWithMentions(
                                 reply.bodyPlain,
                               ),
                             ),
-                            SizedBox(height: 8),
+                            const SizedBox(height: 8),
                             Row(
                               children: [
                                 EnhancedCommentVoteBar(comment: reply),
-                                Spacer(),
+                                const Spacer(),
                                 TextButton.icon(
                                   onPressed: () {
                                     Navigator.pop(context);
                                     _addCommentWithMention(reply, allComments);
                                   },
-                                  icon: Icon(Icons.reply, size: 14),
+                                  icon: const Icon(Icons.reply, size: 14),
                                   label: Text(
                                     'Reply',
                                     style: GoogleFonts.lora(fontSize: 12),
                                   ),
                                   style: TextButton.styleFrom(
-                                    padding: EdgeInsets.symmetric(
+                                    padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
                                       vertical: 4,
                                     ),
@@ -1778,9 +2079,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // Updated _addComment to automatically add @mention
   void _addComment({String? parentId}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final currentUser = AuthService.currentUser;
+
     if (currentUser == null) {
       _showLoginPrompt();
       return;
@@ -1791,7 +2094,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
@@ -1800,7 +2104,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           builder: (context, snapshot) {
             final comments = snapshot.data ?? [];
 
-            // Auto-add @mention for replies
             if (parentId != null && comments.isNotEmpty) {
               final parentComment = comments.firstWhere(
                 (c) => c.id == parentId,
@@ -1838,26 +2141,53 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     style: GoogleFonts.lora(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
+                      color: isDarkMode ? Colors.white : null,
                     ),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: controller,
                     minLines: 2,
                     maxLines: 5,
                     autofocus: true,
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
                     decoration: InputDecoration(
                       hintText:
                           'Write your ${parentId == null ? 'comment' : 'reply'}...',
+                      hintStyle: TextStyle(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.4)
+                            : null,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.3)
+                              : Colors.grey.shade300,
+                        ),
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.3)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      filled: true,
+                      fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
                       helperText: parentId != null
                           ? 'Use @username to mention someone'
                           : null,
+                      helperStyle: TextStyle(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.5)
+                            : null,
+                      ),
                     ),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   Align(
                     alignment: Alignment.centerRight,
                     child: ElevatedButton(
@@ -1918,31 +2248,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // void _showThreadView(Comment parentComment, List<Comment> replies) {
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(
-  //       builder: (context) => CommentThreadScreen(
-  //         parentComment: parentComment,
-  //         replies: replies,
-  //         postId: widget.postId,
-  //       ),
-  //     ),
-  //   );
-  // }
-
   Widget _buildCommentItem(
     Comment comment,
     List<Comment> replies, {
     int depth = 0,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: EdgeInsets.only(left: depth * 16.0, bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        border: Border.all(
+          color: isDarkMode ? Colors.white.withOpacity(0.1) : Colors.grey[300]!,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1974,19 +2296,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           style: GoogleFonts.lora(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                         if (comment.authorDesignation != null) ...[
                           Text(
                             ' • ',
-                            style: GoogleFonts.lora(color: Colors.grey[600]),
+                            style: GoogleFonts.lora(
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.6)
+                                  : Colors.grey[600],
+                            ),
                           ),
                           Text(
                             comment.authorDesignation!,
                             style: GoogleFonts.lora(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.6)
+                                  : Colors.grey[600],
                             ),
                           ),
                         ],
@@ -1996,7 +2324,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       _formatTimestamp(comment.createdAt),
                       style: GoogleFonts.lora(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
                       ),
                     ),
                   ],
@@ -2009,7 +2339,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             comment.bodyPlain,
             style: GoogleFonts.lora(
               fontSize: 14,
-              color: Colors.black87,
+              color: isDarkMode ? Colors.white : Colors.black87,
               height: 1.5,
             ),
           ),
@@ -2020,12 +2350,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               const SizedBox(width: 16),
               TextButton.icon(
                 onPressed: () => _addComment(parentId: comment.id),
-                icon: Icon(Icons.reply, color: Colors.grey[600], size: 18),
+                icon: Icon(
+                  Icons.reply,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey[600],
+                  size: 18,
+                ),
                 label: Text(
                   'Reply',
                   style: GoogleFonts.lora(
                     fontSize: 12,
-                    color: Colors.grey[600],
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600],
                   ),
                 ),
               ),
@@ -2047,27 +2385,43 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildErrorState(String title, String error, {VoidCallback? onRetry}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 80, color: Colors.grey[400]),
+            Icon(
+              Icons.error_outline,
+              size: 80,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 16),
             Text(
               title,
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.7)
+                    : Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               error.length > 100 ? '${error.substring(0, 100)}...' : error,
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
+              style: GoogleFonts.lora(
+                fontSize: 14,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey[600],
+              ),
               textAlign: TextAlign.center,
             ),
             if (onRetry != null) ...[
@@ -2077,7 +2431,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[600],
+                  backgroundColor: isDarkMode
+                      ? Colors.blue[300]
+                      : Colors.blue[600],
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -2096,27 +2452,43 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required String title,
     required String subtitle,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 80, color: Colors.grey[400]),
+            Icon(
+              icon,
+              size: 80,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.4)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 16),
             Text(
               title,
               style: GoogleFonts.lora(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.7)
+                    : Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: GoogleFonts.lora(fontSize: 14, color: Colors.grey[600]),
+              style: GoogleFonts.lora(
+                fontSize: 14,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey[600],
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -2181,22 +2553,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _confirmDelete() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           'Delete Post',
-          style: GoogleFonts.lora(fontSize: 18, fontWeight: FontWeight.w600),
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: Text(
           'Are you sure you want to delete this post? This action cannot be undone.',
-          style: GoogleFonts.lora(fontSize: 14),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: _deletePost,
@@ -2256,20 +2642,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _reportPost() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     HapticFeedback.heavyImpact();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text('Report Post', style: GoogleFonts.lora(fontSize: 18)),
+        title: Text(
+          'Report Post',
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            color: isDarkMode ? Colors.white : null,
+          ),
+        ),
         content: Text(
           'Are you sure you want to report this post for inappropriate content?',
-          style: GoogleFonts.lora(fontSize: 14),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2297,110 +2699,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
     );
   }
-
-  // void _addComment({String? parentId}) {
-  //   final currentUser = AuthService.currentUser;
-  //   if (currentUser == null) {
-  //     _showLoginPrompt();
-  //     return;
-  //   }
-  //   final controller = TextEditingController();
-  //   showModalBottomSheet(
-  //     context: context,
-  //     isScrollControlled: true,
-  //     shape: RoundedRectangleBorder(
-  //       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-  //     ),
-  //     builder: (ctx) {
-  //       return Padding(
-  //         padding: EdgeInsets.only(
-  //           left: 24,
-  //           right: 24,
-  //           bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-  //           top: 24,
-  //         ),
-  //         child: Column(
-  //           mainAxisSize: MainAxisSize.min,
-  //           crossAxisAlignment: CrossAxisAlignment.start,
-  //           children: [
-  //             Text(
-  //               parentId == null ? 'Add a Comment' : 'Reply',
-  //               style: GoogleFonts.lora(
-  //                 fontWeight: FontWeight.bold,
-  //                 fontSize: 18,
-  //               ),
-  //             ),
-  //             SizedBox(height: 16),
-  //             TextField(
-  //               controller: controller,
-  //               minLines: 2,
-  //               maxLines: 5,
-  //               autofocus: true,
-  //               decoration: InputDecoration(
-  //                 hintText: 'Write your comment...',
-  //                 border: OutlineInputBorder(
-  //                   borderRadius: BorderRadius.circular(8),
-  //                 ),
-  //               ),
-  //             ),
-  //             SizedBox(height: 16),
-  //             Align(
-  //               alignment: Alignment.centerRight,
-  //               child: ElevatedButton(
-  //                 style: ElevatedButton.styleFrom(
-  //                   backgroundColor: Colors.blue[600],
-  //                   foregroundColor: Colors.white,
-  //                   shape: RoundedRectangleBorder(
-  //                     borderRadius: BorderRadius.circular(8),
-  //                   ),
-  //                 ),
-  //                 onPressed: () async {
-  //                   final text = controller.text.trim();
-  //                   if (text.isEmpty) return;
-  //                   Navigator.pop(ctx);
-  //                   try {
-  //                     await CommentService.addComment(
-  //                       CreateCommentInput(
-  //                         postId: widget.postId,
-  //                         bodyPlain: text,
-  //                         bodyDelta: text,
-  //                         parentId: parentId,
-  //                       ),
-  //                     );
-  //                     if (mounted) {
-  //                       ScaffoldMessenger.of(context).showSnackBar(
-  //                         SnackBar(
-  //                           content: Text(
-  //                             'Comment added!',
-  //                             style: GoogleFonts.lora(),
-  //                           ),
-  //                           backgroundColor: Colors.green[600],
-  //                         ),
-  //                       );
-  //                     }
-  //                   } catch (e) {
-  //                     if (mounted) {
-  //                       ScaffoldMessenger.of(context).showSnackBar(
-  //                         SnackBar(
-  //                           content: Text(
-  //                             'Failed to add comment: $e',
-  //                             style: GoogleFonts.lora(),
-  //                           ),
-  //                           backgroundColor: Colors.red[600],
-  //                         ),
-  //                       );
-  //                     }
-  //                   }
-  //                 },
-  //                 child: Text('Post', style: GoogleFonts.lora()),
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
 
   Future<void> _launchURL(String url) async {
     try {
@@ -2435,22 +2733,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _showLoginPrompt() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           'Sign in required',
-          style: GoogleFonts.lora(fontSize: 18, fontWeight: FontWeight.w600),
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: Text(
           'Please sign in to interact with this post.',
-          style: GoogleFonts.lora(fontSize: 14),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2525,11 +2837,13 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Upvote Button
         ScaleTransition(
           scale: _scaleAnimation,
           child: GestureDetector(
@@ -2541,13 +2855,14 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
                     ? Icons.thumb_up
                     : Icons.thumb_up_outlined,
                 size: 24,
-                color: _userVote?.value == 1 ? Colors.green[600] : Colors.grey,
+                color: _userVote?.value == 1
+                    ? Colors.green[600]
+                    : (isDarkMode ? Colors.white54 : Colors.grey),
               ),
             ),
           ),
         ),
 
-        // Score Display
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
@@ -2560,7 +2875,6 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
           ),
         ),
 
-        // Downvote Button
         ScaleTransition(
           scale: _scaleAnimation,
           child: GestureDetector(
@@ -2572,7 +2886,9 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
                     ? Icons.thumb_down
                     : Icons.thumb_down_outlined,
                 size: 24,
-                color: _userVote?.value == -1 ? Colors.red[600] : Colors.grey,
+                color: _userVote?.value == -1
+                    ? Colors.red[600]
+                    : (isDarkMode ? Colors.white54 : Colors.grey),
               ),
             ),
           ),
@@ -2612,9 +2928,9 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
     try {
       int newVoteValue;
       if (_userVote?.value == voteValue) {
-        newVoteValue = 0; // Remove vote
+        newVoteValue = 0;
       } else {
-        newVoteValue = voteValue; // Add/change vote
+        newVoteValue = voteValue;
       }
 
       int scoreDelta = 0;
@@ -2671,22 +2987,36 @@ class _EnhancedVoteBarState extends State<EnhancedVoteBar>
   }
 
   void _showLoginPrompt() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Sign in required',
-          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600),
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: Text(
           'Please sign in to vote on posts.',
-          style: GoogleFonts.inter(fontSize: 14),
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.inter()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2762,6 +3092,9 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       children: [
         ScaleTransition(
@@ -2773,7 +3106,9 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
               size: 18,
               color: _userVote?.value == 1
                   ? Colors.green[600]
-                  : Colors.grey[600],
+                  : (isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600]),
             ),
           ),
         ),
@@ -2787,7 +3122,9 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
                 ? Colors.green[700]
                 : _comment.score < 0
                 ? Colors.red[700]
-                : Colors.grey[600],
+                : (isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey[600]),
           ),
         ),
         const SizedBox(width: 8),
@@ -2800,7 +3137,9 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
               size: 18,
               color: _userVote?.value == -1
                   ? Colors.red[600]
-                  : Colors.grey[600],
+                  : (isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600]),
             ),
           ),
         ),
@@ -2874,22 +3213,36 @@ class _EnhancedCommentVoteBarState extends State<EnhancedCommentVoteBar>
   }
 
   void _showLoginPrompt() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           'Sign in required',
-          style: GoogleFonts.lora(fontSize: 18, fontWeight: FontWeight.w600),
+          style: GoogleFonts.lora(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: Text(
           'Please sign in to vote on comments.',
-          style: GoogleFonts.lora(fontSize: 14),
+          style: GoogleFonts.lora(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2924,11 +3277,18 @@ class FlowchartPreviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: AppBar(
-        title: Text(title, style: GoogleFonts.lora()),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        title: Text(
+          title,
+          style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+        ),
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        foregroundColor: isDarkMode ? Colors.white : Colors.black87,
         elevation: 1,
       ),
       body: Column(
@@ -2936,7 +3296,13 @@ class FlowchartPreviewScreen extends StatelessWidget {
           if (description.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(description, style: GoogleFonts.lora(fontSize: 16)),
+              child: Text(
+                description,
+                style: GoogleFonts.lora(
+                  fontSize: 16,
+                  color: isDarkMode ? Colors.white : null,
+                ),
+              ),
             ),
           Expanded(
             child: nodes.isNotEmpty
@@ -2950,7 +3316,16 @@ class FlowchartPreviewScreen extends StatelessWidget {
                       orientation: MatrixOrientation.Vertical,
                     ),
                   )
-                : const Center(child: Text('No flowchart data available')),
+                : Center(
+                    child: Text(
+                      'No flowchart data available',
+                      style: TextStyle(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.black87,
+                      ),
+                    ),
+                  ),
           ),
         ],
       ),

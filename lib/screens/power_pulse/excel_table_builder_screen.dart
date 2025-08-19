@@ -55,7 +55,6 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
         ),
       );
 
-      // Initialize cell formats from existing data if available
       final cellFormatsData =
           widget.existingData!['cellFormats'] as List? ?? [];
       _cellFormats = List.generate(
@@ -80,7 +79,6 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
         (i) => List.generate(_columns, (j) => TextEditingController()),
       );
       _merges = [];
-      // Initialize cell formats
       _cellFormats = List.generate(
         _rows,
         (i) => List.generate(_columns, (j) => CellFormat()),
@@ -101,13 +99,19 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.black87),
+          icon: Icon(
+            Icons.close,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -115,43 +119,65 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
           style: GoogleFonts.lora(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Colors.black87,
+            color: isDarkMode ? Colors.white : Colors.black87,
           ),
         ),
         actions: [
           IconButton(
             tooltip: "Save Table",
-            icon: const Icon(Icons.check, color: Colors.black87),
+            icon: Icon(
+              Icons.check,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
             onPressed: _onSave,
           ),
         ],
       ),
       body: Column(
         children: [
-          // Title input
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
               controller: _titleController,
+              style: GoogleFonts.lora(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : null,
+              ),
               decoration: InputDecoration(
                 labelText: 'Table Title',
-                labelStyle: GoogleFonts.lora(color: Colors.grey[600]),
+                labelStyle: GoogleFonts.lora(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.7)
+                      : Colors.grey[600],
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
                 ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 8,
                 ),
               ),
-              style: GoogleFonts.lora(fontSize: 14),
             ),
           ),
 
-          // Ribbon toolbar
           _buildRibbon(),
 
-          // Table section with enhanced merge table
           Expanded(
             child: SingleChildScrollView(
               child: SingleChildScrollView(
@@ -164,15 +190,19 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
             ),
           ),
 
-          // Status message
           if (_statusMessage != null)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
-              color: Colors.blue[50],
+              color: isDarkMode
+                  ? Colors.blue.shade900.withOpacity(0.3)
+                  : Colors.blue[50],
               child: Text(
                 _statusMessage!,
-                style: GoogleFonts.lora(color: Colors.blue[700], fontSize: 12),
+                style: GoogleFonts.lora(
+                  color: isDarkMode ? Colors.blue[100] : Colors.blue[700],
+                  fontSize: 12,
+                ),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -182,18 +212,26 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
   }
 
   Widget _buildRibbon() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       height: 70,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
-        border: Border(bottom: BorderSide(color: Colors.grey!)),
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.grey[50],
+        border: Border(
+          bottom: BorderSide(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey.shade300,
+          ),
+        ),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            // Table size group
             _buildRibbonGroup('Table Size', [
               _buildRibbonButton(Icons.add_box, 'Add Row', () => _addRow()),
               _buildRibbonButton(
@@ -213,9 +251,10 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
               ),
             ]),
 
-            const VerticalDivider(),
+            VerticalDivider(
+              color: isDarkMode ? Colors.white.withOpacity(0.2) : null,
+            ),
 
-            // Merge group
             _buildRibbonGroup('Merge', [
               _buildRibbonButton(
                 Icons.call_merge,
@@ -229,9 +268,10 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
               ),
             ]),
 
-            const VerticalDivider(),
+            VerticalDivider(
+              color: isDarkMode ? Colors.white.withOpacity(0.2) : null,
+            ),
 
-            // Format group
             _buildRibbonGroup('Format', [
               _buildRibbonButton(
                 Icons.width_wide,
@@ -250,9 +290,10 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
               ),
             ]),
 
-            const VerticalDivider(),
+            VerticalDivider(
+              color: isDarkMode ? Colors.white.withOpacity(0.2) : null,
+            ),
 
-            // Quick actions
             _buildRibbonGroup('Quick', [
               _buildRibbonButton(
                 Icons.clear_all,
@@ -268,6 +309,9 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
   }
 
   Widget _buildRibbonGroup(String title, List<Widget> buttons) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
@@ -279,7 +323,9 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
             style: GoogleFonts.lora(
               fontSize: 9,
               fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey[600],
             ),
           ),
           const SizedBox(height: 2),
@@ -294,6 +340,9 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     String tooltip,
     VoidCallback onPressed,
   ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 1),
       child: Material(
@@ -306,14 +355,22 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 16, color: Colors.grey[700]),
+                Icon(
+                  icon,
+                  size: 16,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.7)
+                      : Colors.grey[700],
+                ),
                 const SizedBox(height: 1),
                 Flexible(
                   child: Text(
                     tooltip,
                     style: GoogleFonts.lora(
                       fontSize: 7,
-                      color: Colors.grey[600],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -327,8 +384,10 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     );
   }
 
-  // *** REPLACED: Use EnhancedMergeTable instead of custom table ***
   Widget _buildTableWithHeaders() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return EnhancedMergeTable(
       rows: _rows,
       columns: _columns,
@@ -336,9 +395,10 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
       cellFormats: _cellFormats,
       merges: _merges,
       showHeaders: true,
-      borderColor: Colors.grey[300]!,
+      borderColor: isDarkMode
+          ? Colors.white.withOpacity(0.3)
+          : Colors.grey[300]!,
       onCellTap: (row, col) {
-        // Optional: Handle cell taps for additional functionality
         print('Tapped cell: $row, $col');
       },
     );
@@ -412,50 +472,98 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
   }
 
   void _showMergeDialog() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final fromCellCtrl = TextEditingController();
     final toCellCtrl = TextEditingController();
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           'Merge Cells',
-          style: GoogleFonts.lora(fontWeight: FontWeight.w600),
+          style: GoogleFonts.lora(
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               'Enter cell range to merge (e.g., A1 to C3)',
-              style: GoogleFonts.lora(fontSize: 13, color: Colors.grey[600]),
+              style: GoogleFonts.lora(
+                fontSize: 13,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey[600],
+              ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: fromCellCtrl,
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
               decoration: InputDecoration(
                 labelText: 'From Cell (e.g., A1)',
-                labelStyle: GoogleFonts.lora(),
-                border: const OutlineInputBorder(),
+                labelStyle: GoogleFonts.lora(
+                  color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+                ),
+                border: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
               ),
-              style: GoogleFonts.lora(),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: toCellCtrl,
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
               decoration: InputDecoration(
                 labelText: 'To Cell (e.g., C3)',
-                labelStyle: GoogleFonts.lora(),
-                border: const OutlineInputBorder(),
+                labelStyle: GoogleFonts.lora(
+                  color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+                ),
+                border: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
               ),
-              style: GoogleFonts.lora(),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -465,7 +573,6 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
               final toCell = _parseCellReference(toCellCtrl.text.toUpperCase());
 
               if (fromCell != null && toCell != null) {
-                // Normalize the merge (ensure row1 <= row2, col1 <= col2)
                 final merge = MergeInfo(
                   row1: fromCell['row']! < toCell['row']!
                       ? fromCell['row']!
@@ -510,6 +617,9 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
   }
 
   void _showUnmergeDialog() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_merges.isEmpty) {
       setState(() => _statusMessage = 'No merges to remove');
       _clearStatusAfterDelay();
@@ -519,12 +629,17 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           'Unmerge Cells',
-          style: GoogleFonts.lora(fontWeight: FontWeight.w600),
+          style: GoogleFonts.lora(
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
-        content: SizedBox(
+        content: Container(
+          color: isDarkMode ? const Color(0xFF2C2C2E) : null,
           width: 300,
           height: 200,
           child: ListView.builder(
@@ -534,7 +649,9 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
               return ListTile(
                 title: Text(
                   '${_getCellReference(merge.row1, merge.col1)}:${_getCellReference(merge.row2, merge.col2)}',
-                  style: GoogleFonts.lora(),
+                  style: GoogleFonts.lora(
+                    color: isDarkMode ? Colors.white : null,
+                  ),
                 ),
                 trailing: IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red),
@@ -554,7 +671,10 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Close', style: GoogleFonts.lora()),
+            child: Text(
+              'Close',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
         ],
       ),
@@ -562,29 +682,55 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
   }
 
   void _showCellWidthDialog() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final widthCtrl = TextEditingController(text: '100');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         title: Text(
           'Set Cell Width',
-          style: GoogleFonts.lora(fontWeight: FontWeight.w600),
+          style: GoogleFonts.lora(
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: TextField(
           controller: widthCtrl,
           keyboardType: TextInputType.number,
+          style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
           decoration: InputDecoration(
             labelText: 'Width (pixels)',
-            labelStyle: GoogleFonts.lora(),
-            border: const OutlineInputBorder(),
+            labelStyle: GoogleFonts.lora(
+              color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+            ),
+            border: OutlineInputBorder(
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.shade300,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.shade300,
+              ),
+            ),
+            filled: true,
+            fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
           ),
-          style: GoogleFonts.lora(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -608,29 +754,55 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
   }
 
   void _showCellHeightDialog() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final heightCtrl = TextEditingController(text: '40');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         title: Text(
           'Set Cell Height',
-          style: GoogleFonts.lora(fontWeight: FontWeight.w600),
+          style: GoogleFonts.lora(
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: TextField(
           controller: heightCtrl,
           keyboardType: TextInputType.number,
+          style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
           decoration: InputDecoration(
             labelText: 'Height (pixels)',
-            labelStyle: GoogleFonts.lora(),
-            border: const OutlineInputBorder(),
+            labelStyle: GoogleFonts.lora(
+              color: isDarkMode ? Colors.white.withOpacity(0.7) : null,
+            ),
+            border: OutlineInputBorder(
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.shade300,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.shade300,
+              ),
+            ),
+            filled: true,
+            fillColor: isDarkMode ? const Color(0xFF3C3C3E) : null,
           ),
-          style: GoogleFonts.lora(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: GoogleFonts.lora()),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -682,7 +854,6 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
     setState(() {
       _rows = 5;
       _columns = 5;
-      // Dispose old controllers
       for (var row in _controllers) {
         for (var ctrl in row) {
           ctrl.dispose();
@@ -714,9 +885,9 @@ class _ExcelTableBuilderScreenState extends State<ExcelTableBuilderScreen> {
       for (int i = 0; i < colStr.length; i++) {
         col = col * 26 + (colStr.codeUnitAt(i) - 64);
       }
-      col -= 1; // Convert to 0-based
+      col -= 1;
 
-      final row = int.parse(rowStr) - 1; // Convert to 0-based
+      final row = int.parse(rowStr) - 1;
 
       if (row >= 0 && row < _rows && col >= 0 && col < _columns) {
         return {'row': row, 'col': col};

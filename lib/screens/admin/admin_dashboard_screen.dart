@@ -34,30 +34,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFFAFAFA),
       appBar: _buildAppBar(theme),
       body: _buildBody(theme),
     );
   }
 
   PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       elevation: 0,
       title: Text(
         'Admin Dashboard',
         style: TextStyle(
-          color: theme.colorScheme.onSurface,
+          color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           fontSize: 20,
           fontWeight: FontWeight.w600,
         ),
       ),
       leading: IconButton(
-        icon: Icon(Icons.menu, color: theme.colorScheme.onSurface),
+        icon: Icon(
+          Icons.menu,
+          color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+        ),
         onPressed: () {
-          // Debugging: Check if the button is pressed
           print('Menu button pressed');
           if (mounted) {
             ModernAppDrawer.show(context, widget.adminUser);
@@ -70,7 +77,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildBody(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return RefreshIndicator(
+      color: isDarkMode ? Colors.blue[300] : Colors.blue,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
       onRefresh: _loadDashboardStats,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -79,10 +90,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_isLoadingStats)
-              const Center(
+              Center(
                 child: Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: CircularProgressIndicator(),
+                  padding: const EdgeInsets.all(32.0),
+                  child: CircularProgressIndicator(
+                    color: isDarkMode ? Colors.blue[300] : Colors.blue,
+                  ),
                 ),
               )
             else ...[
@@ -110,29 +123,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // ✅ Updated section header to be consistent across all sections
   Widget _buildSectionHeader(String title, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 20, // ✅ Consistent font size
-          fontWeight: FontWeight.w600, // ✅ Consistent font weight
-          color: theme.colorScheme.onSurface,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
         ),
       ),
     );
   }
 
-  // ✅ Consistent card decoration for all cards
   BoxDecoration _buildCardDecoration() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16), // ✅ Consistent border radius
+      color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+      borderRadius: BorderRadius.circular(16),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.06), // ✅ Consistent shadow
+          color: isDarkMode
+              ? Colors.black.withOpacity(0.3)
+              : Colors.black.withOpacity(0.06),
           blurRadius: 8,
           offset: const Offset(0, 3),
         ),
@@ -146,12 +163,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Admin Functions', theme), // ✅ Consistent header
-        // ✅ Changed from Wrap to Column for consistent vertical alignment
+        _buildSectionHeader('Admin Functions', theme),
         Column(
           children: functions.map((function) {
             return Container(
-              margin: const EdgeInsets.only(bottom: 16), // ✅ Consistent spacing
+              margin: const EdgeInsets.only(bottom: 16),
               child: _buildFunctionCard(function, theme),
             );
           }).toList(),
@@ -161,6 +177,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildFunctionCard(Map<String, dynamic> function, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -169,27 +187,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         );
       },
       child: Container(
-        padding: const EdgeInsets.all(16), // ✅ Consistent padding
-        decoration: _buildCardDecoration(), // ✅ Consistent decoration
+        padding: const EdgeInsets.all(16),
+        decoration: _buildCardDecoration(),
         child: Row(
-          // ✅ Changed to Row for horizontal layout
           children: [
-            // ✅ Icon section
             Container(
-              width: 48, // ✅ Consistent with other sections
+              width: 48,
               height: 48,
               decoration: BoxDecoration(
                 color: function['color'].withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                function['icon'],
-                color: function['color'],
-                size: 24, // ✅ Consistent icon size
-              ),
+              child: Icon(function['icon'], color: function['color'], size: 24),
             ),
-            const SizedBox(width: 16), // ✅ Consistent spacing
-            // ✅ Content section
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -197,9 +208,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   Text(
                     function['title'],
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.black87,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -209,7 +221,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     function['subtitle'],
                     style: TextStyle(
                       fontSize: 13,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : theme.colorScheme.onSurface.withOpacity(0.6),
                       height: 1.3,
                     ),
                     maxLines: 2,
@@ -219,7 +233,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
             ),
 
-            // ✅ Badge section (aligned right)
             if (function['badge'] != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -243,6 +256,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildUserStatsSection(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
     final userStats = _stats['userStats'] as Map<String, int>;
 
     return Column(
@@ -250,12 +264,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       children: [
         Row(
           children: [
-            Expanded(
-              child: _buildSectionHeader(
-                'Users by Category',
-                theme,
-              ), // ✅ Consistent header
-            ),
+            Expanded(child: _buildSectionHeader('Users by Category', theme)),
             if ((_stats['pendingUsers'] ?? 0) > 0)
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -299,11 +308,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildUserStatCard(String role, int count, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
     final roleInfo = _getRoleInfo(role);
 
     return Container(
-      padding: const EdgeInsets.all(16), // ✅ Consistent padding
-      decoration: _buildCardDecoration(), // ✅ Consistent decoration
+      padding: const EdgeInsets.all(16),
+      decoration: _buildCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -340,7 +350,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
-                color: theme.colorScheme.onSurface.withOpacity(0.7),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.7)
+                    : theme.colorScheme.onSurface.withOpacity(0.7),
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -355,7 +367,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Templates', theme), // ✅ Consistent header
+        _buildSectionHeader('Templates', theme),
         SizedBox(
           height: 90,
           child: Row(
@@ -394,9 +406,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     Color color,
     ThemeData theme,
   ) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
-      padding: const EdgeInsets.all(16), // ✅ Consistent padding
-      decoration: _buildCardDecoration(), // ✅ Consistent decoration
+      padding: const EdgeInsets.all(16),
+      decoration: _buildCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -429,7 +443,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
-                color: theme.colorScheme.onSurface.withOpacity(0.7),
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.7)
+                    : theme.colorScheme.onSurface.withOpacity(0.7),
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -446,10 +462,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader(
-          'Substations by Voltage Level',
-          theme,
-        ), // ✅ Consistent header
+        _buildSectionHeader('Substations by Voltage Level', theme),
         SizedBox(
           height: 120,
           child: ListView.builder(
@@ -472,6 +485,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildVoltageStatCard(String voltage, int count, ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: _buildCardDecoration(),
@@ -486,12 +501,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
+                    color: isDarkMode
+                        ? Colors.blue[800]?.withOpacity(0.3)
+                        : Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     Icons.electrical_services,
-                    color: Colors.blue.shade700,
+                    color: isDarkMode ? Colors.blue[300] : Colors.blue.shade700,
                     size: 16,
                   ),
                 ),
@@ -501,7 +518,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.7)
+                        : theme.colorScheme.onSurface.withOpacity(0.7),
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 2,
@@ -518,7 +537,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
-                color: Colors.blue.shade700,
+                color: isDarkMode ? Colors.blue[300] : Colors.blue.shade700,
               ),
             ),
           ),

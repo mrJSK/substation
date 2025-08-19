@@ -93,7 +93,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       final excerptBuffer = StringBuffer();
       int wordCount = 0;
       const maxWords = 35;
-
       for (var blockJson in json) {
         if (wordCount >= maxWords) break;
         final type = ContentBlockType.values[blockJson['type'] as int];
@@ -115,7 +114,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               if (wordCount < maxWords) excerptBuffer.write(' ');
             }
             break;
-
           case ContentBlockType.bulletedList:
           case ContentBlockType.numberedList:
             for (var item in listItems) {
@@ -131,21 +129,18 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               }
             }
             break;
-
           case ContentBlockType.link:
             if (text.isNotEmpty && wordCount < maxWords) {
               excerptBuffer.write('🔗 $text ');
               wordCount += text.split(RegExp(r'\s+')).length;
             }
             break;
-
           case ContentBlockType.image:
             if (wordCount < maxWords) {
               excerptBuffer.write('📷 Image ');
               wordCount += 1;
             }
             break;
-
           case ContentBlockType.file:
             if (wordCount < maxWords) {
               final fileName = text.isNotEmpty ? text : 'Attachment';
@@ -153,7 +148,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               wordCount += fileName.split(RegExp(r'\s+')).length;
             }
             break;
-
           case ContentBlockType.flowchart:
             if (wordCount < maxWords) {
               final description =
@@ -162,13 +156,11 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               wordCount += description.split(RegExp(r'\s+')).length;
             }
             break;
-
           case ContentBlockType.excelTable:
             if (wordCount < maxWords) {
               final title = excelData?['title']?.toString() ?? 'Excel Table';
               final rows = excelData?['rows'] ?? 0;
               final columns = excelData?['columns'] ?? 0;
-
               String tableDescription;
               if (rows > 0 && columns > 0) {
                 tableDescription = '📊 $title (${rows}×${columns} table)';
@@ -213,18 +205,26 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Semantics(
       label: 'Post: ${_post.title}',
       child: widget.isCompact ? _buildCompactCard() : _buildFullCard(),
     );
   }
 
-  // Full card UI
   Widget _buildFullCard() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Card(
       elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.1),
+      shadowColor: isDarkMode
+          ? Colors.black.withOpacity(0.3)
+          : Colors.black.withOpacity(0.1),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       child: InkWell(
         onTap: () {
           HapticFeedback.lightImpact();
@@ -249,11 +249,14 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     );
   }
 
-  // Compact card UI
   Widget _buildCompactCard() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       child: InkWell(
         onTap: () {
           HapticFeedback.lightImpact();
@@ -292,7 +295,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     );
   }
 
-  // Header, flair, scope, menu
   Widget _buildHeader({bool compact = false}) {
     return Row(
       children: [
@@ -343,11 +345,20 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildScopeBadge() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final isPublic = _post.scope.isPublic;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: isPublic ? Colors.blue[50] : Colors.orange[50],
+        color: isPublic
+            ? (isDarkMode
+                  ? Colors.blue[800]?.withOpacity(0.3)
+                  : Colors.blue[50])
+            : (isDarkMode
+                  ? Colors.orange[800]?.withOpacity(0.3)
+                  : Colors.orange[50]),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isPublic ? Colors.blue[600]! : Colors.orange[600]!,
@@ -407,48 +418,76 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildMenuButton() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return PopupMenuButton<String>(
-      icon: Icon(Icons.more_horiz, color: Colors.grey[600]),
+      icon: Icon(
+        Icons.more_horiz,
+        color: isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey[600],
+      ),
+      color: isDarkMode ? const Color(0xFF2C2C2E) : null,
       onSelected: _handleMenuAction,
       itemBuilder: (context) => [
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'share',
           child: Row(
             children: [
-              Icon(Icons.share, size: 18),
-              SizedBox(width: 8),
-              Text('Share'),
+              Icon(
+                Icons.share,
+                size: 18,
+                color: isDarkMode ? Colors.white : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Share',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'bookmark',
           child: Row(
             children: [
-              Icon(Icons.bookmark_border, size: 18),
-              SizedBox(width: 8),
-              Text('Bookmark'),
+              Icon(
+                Icons.bookmark_border,
+                size: 18,
+                color: isDarkMode ? Colors.white : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Bookmark',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
             ],
           ),
         ),
         if (AuthService.currentUser?.uid == _post.authorId)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'delete',
             child: Row(
               children: [
-                Icon(Icons.delete_outline, size: 18),
-                SizedBox(width: 8),
-                Text('Delete'),
+                const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                const SizedBox(width: 8),
+                const Text('Delete', style: TextStyle(color: Colors.red)),
               ],
             ),
           ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'report',
           child: Row(
             children: [
-              Icon(Icons.flag_outlined, size: 18),
-              SizedBox(width: 8),
-              Text('Report'),
+              Icon(
+                Icons.flag_outlined,
+                size: 18,
+                color: isDarkMode ? Colors.white : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Report',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
             ],
           ),
         ),
@@ -472,13 +511,16 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildTitle({bool compact = false}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Text(
       _post.title,
       style: GoogleFonts.lora(
         fontSize: compact ? 16 : 22,
         fontWeight: FontWeight.w700,
         height: 1.3,
-        color: Colors.black87,
+        color: isDarkMode ? Colors.white : Colors.black87,
       ),
       maxLines: compact ? 2 : 3,
       overflow: TextOverflow.ellipsis,
@@ -487,12 +529,15 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildExcerpt() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Text(
       _cachedExcerpt!,
       style: GoogleFonts.lora(
         fontSize: 16,
         height: 1.6,
-        color: Colors.grey[700],
+        color: isDarkMode ? Colors.white.withOpacity(0.7) : Colors.grey[700],
       ),
       maxLines: 3,
       overflow: TextOverflow.ellipsis,
@@ -501,6 +546,9 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildHeroImage() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: CachedNetworkImage(
@@ -510,18 +558,20 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         fit: BoxFit.cover,
         placeholder: (context, url) => Container(
           height: 200,
-          color: Colors.grey[100],
+          color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[100],
           child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         ),
         errorWidget: (context, url, error) => Container(
           height: 200,
-          color: Colors.grey[100],
+          color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[100],
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 Icons.image_not_supported,
-                color: Colors.grey[400],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey[400],
                 size: 32,
               ),
               const SizedBox(height: 8),
@@ -529,7 +579,9 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                 'Image unavailable',
                 style: GoogleFonts.montserrat(
                   fontSize: 12,
-                  color: Colors.grey[500],
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey[500],
                 ),
               ),
             ],
@@ -540,6 +592,9 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildThumbnail() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: CachedNetworkImage(
@@ -550,7 +605,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         placeholder: (context, url) => Container(
           width: 64,
           height: 64,
-          color: Colors.grey[200],
+          color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[200],
           child: const Center(
             child: SizedBox(
               width: 16,
@@ -562,8 +617,12 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         errorWidget: (context, url, error) => Container(
           width: 64,
           height: 64,
-          color: Colors.grey[200],
-          child: Icon(Icons.image_not_supported, color: Colors.grey, size: 20),
+          color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[200],
+          child: Icon(
+            Icons.image_not_supported,
+            color: isDarkMode ? Colors.white.withOpacity(0.4) : Colors.grey,
+            size: 20,
+          ),
         ),
       ),
     );
@@ -586,6 +645,9 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildAuthorInfo({bool compact = false}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -610,7 +672,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               style: GoogleFonts.montserrat(
                 fontSize: compact ? 11 : 12,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
             if (!compact)
@@ -620,14 +682,18 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                     _formatTimestamp(_post.createdAt),
                     style: GoogleFonts.montserrat(
                       fontSize: 11,
-                      color: Colors.grey[600],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
                     ),
                   ),
                   Text(
                     ' • ${_post.readingTime}',
                     style: GoogleFonts.montserrat(
                       fontSize: 11,
-                      color: Colors.grey[600],
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
                     ),
                   ),
                 ],
@@ -649,12 +715,17 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildCompactMetrics() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       children: [
         Icon(
           _userVote?.value == 1 ? Icons.thumb_up : Icons.thumb_up_outlined,
           size: 16,
-          color: _userVote?.value == 1 ? Colors.green[600] : Colors.grey,
+          color: _userVote?.value == 1
+              ? Colors.green[600]
+              : (isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey),
         ),
         const SizedBox(width: 4),
         Text(
@@ -666,14 +737,20 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(width: 12),
-        Icon(Icons.chat_bubble_outline, size: 14, color: Colors.grey[600]),
+        Icon(
+          Icons.chat_bubble_outline,
+          size: 14,
+          color: isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey[600],
+        ),
         const SizedBox(width: 4),
         Text(
           '${_post.commentCount}',
           style: GoogleFonts.montserrat(
             fontSize: 12,
             fontWeight: FontWeight.w500,
-            color: Colors.grey[600],
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : Colors.grey[600],
           ),
         ),
       ],
@@ -681,10 +758,12 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildVoteSection() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Upvote Button
         ScaleTransition(
           scale: _voteScaleAnimation,
           child: GestureDetector(
@@ -706,13 +785,14 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                 size: 22,
                 color: _userVote?.value == 1
                     ? Colors.green[600]
-                    : Colors.grey[600],
+                    : (isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600]),
               ),
             ),
           ),
         ),
 
-        // Score Display
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
@@ -725,7 +805,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
           ),
         ),
 
-        // Downvote Button
         ScaleTransition(
           scale: _voteScaleAnimation,
           child: GestureDetector(
@@ -745,7 +824,11 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                     ? Icons.thumb_down
                     : Icons.thumb_down_outlined,
                 size: 22,
-                color: _userVote?.value == -1 ? Colors.red[600] : Colors.grey,
+                color: _userVote?.value == -1
+                    ? Colors.red[600]
+                    : (isDarkMode
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey),
               ),
             ),
           ),
@@ -755,17 +838,26 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Widget _buildCommentSection() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.chat_bubble_outline, size: 18, color: Colors.grey[600]),
+        Icon(
+          Icons.chat_bubble_outline,
+          size: 18,
+          color: isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey[600],
+        ),
         const SizedBox(width: 6),
         Text(
           '${_post.commentCount}',
           style: GoogleFonts.montserrat(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: Colors.grey[600],
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : Colors.grey[600],
           ),
         ),
       ],
@@ -780,7 +872,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     }
 
     if (_isVoting) return;
-
     setState(() => _isVoting = true);
     final Vote? prevVote = _userVote;
     final int prevScore = _post.score;
@@ -788,7 +879,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     try {
       final newValue = (_userVote?.value == value) ? 0 : value;
 
-      // Optimistic UI update
       setState(() {
         if (newValue == 0) {
           _userVote = null;
@@ -809,7 +899,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       await VoteService.setVote(postId: _post.id, value: newValue);
       await AnalyticsService.logVote(_post.id, newValue);
 
-      // Cache updated post
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
         'post_${_post.id}',
@@ -820,7 +909,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         _userVote = prevVote;
         _post = _post.copyWith(score: prevScore);
       });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -873,7 +961,10 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   Future<void> _deletePost() async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final currentUser = AuthService.currentUser;
+
     if (currentUser == null || currentUser.uid != _post.authorId) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -888,12 +979,22 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Post'),
-        content: const Text('Are you sure you want to delete this post?'),
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+        title: Text(
+          'Delete Post',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
+        ),
+        content: Text(
+          'Are you sure you want to delete this post?',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -928,16 +1029,29 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   void _reportPost() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     HapticFeedback.heavyImpact();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Report Post'),
-        content: const Text('Are you sure you want to report this post?'),
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
+        title: Text(
+          'Report Post',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
+        ),
+        content: Text(
+          'Are you sure you want to report this post?',
+          style: TextStyle(color: isDarkMode ? Colors.white : null),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -957,22 +1071,32 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   }
 
   void _showLoginPrompt() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Sign in required',
-          style: GoogleFonts.montserrat(fontWeight: FontWeight.w600),
+          style: GoogleFonts.montserrat(
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         content: Text(
           'Please sign in to vote and interact with posts.',
-          style: GoogleFonts.lora(),
+          style: GoogleFonts.lora(color: isDarkMode ? Colors.white : null),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: isDarkMode ? Colors.white : null),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -1049,7 +1173,6 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     final date = timestamp.toDate();
     final now = DateTime.now();
     final difference = now.difference(date);
-
     if (difference.inMinutes < 1) {
       return 'now';
     } else if (difference.inMinutes < 60) {

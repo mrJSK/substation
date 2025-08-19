@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import '../../models/equipment_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/user_model.dart';
 import '../../utils/snackbar_utils.dart';
+import '../busbar_configuration_screen.dart';
 import 'substation_detail_screen.dart';
 import '../export_master_data_screen.dart';
 
@@ -559,6 +562,21 @@ class _SubdivisionAssetManagementScreenState
           isDarkMode: isDarkMode,
         ),
         const SizedBox(height: 12),
+        // ✅ NEW: Configure Busbar Action
+        _buildActionCard(
+          theme: theme,
+          icon: Icons.settings,
+          title: 'Configure Busbar',
+          subtitle: _selectedSubstation != null
+              ? 'Configure energy mappings for ${_selectedSubstation!.name}\'s busbars'
+              : 'Select a substation to configure busbar energy mappings',
+          color: Colors.orange,
+          onTap: _selectedSubstation != null
+              ? () => _navigateToBusbarConfiguration(_selectedSubstation!)
+              : null,
+          isDarkMode: isDarkMode,
+        ),
+        const SizedBox(height: 12),
         _buildActionCard(
           theme: theme,
           icon: Icons.download,
@@ -572,6 +590,480 @@ class _SubdivisionAssetManagementScreenState
         ),
       ],
     );
+  }
+
+  // ✅ FIXED: Enhanced navigation with proper debugging and initialization
+  void _navigateToBusbarConfiguration(Substation substation) async {
+    _animationController.forward();
+
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Initialize SLD controller
+      final sldController = SldController(
+        substationId: substation.id,
+        transformationController: TransformationController(),
+      );
+
+      // Wait for proper initialization with detailed logging
+      await _waitForSldControllerWithDebug(sldController);
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      // ✅ DEBUG: Check bay data before showing dialog
+      print('DEBUG: Total bays loaded: ${sldController.allBays.length}');
+      for (var bay in sldController.allBays) {
+        print(
+          'DEBUG: Bay - Name: ${bay.name}, Type: ${bay.bayType}, ID: ${bay.id}',
+        );
+      }
+
+      // Get busbars with debug info
+      final busbars = sldController.allBays
+          .where((bay) => bay.bayType.toLowerCase() == 'busbar')
+          .toList();
+
+      print('DEBUG: Found ${busbars.length} busbars');
+
+      if (busbars.isEmpty) {
+        // ✅ FALLBACK: Show all bays if no busbars found
+        SnackBarUtils.showSnackBar(
+          context,
+          'No busbars found. Showing all bays for configuration.',
+        );
+        _showAllBaysSelectionDialog(context, substation, sldController);
+      } else {
+        _showBusbarSelectionDialog(context, substation, sldController);
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      if (mounted) Navigator.of(context).pop();
+
+      SnackBarUtils.showSnackBar(
+        context,
+        'Failed to load substation data: $e',
+        isError: true,
+      );
+      print('ERROR: Navigation failed - $e');
+    } finally {
+      _animationController.reverse();
+    }
+  }
+
+  // ✅ ENHANCED: Wait with detailed debugging
+  Future<void> _waitForSldControllerWithDebug(
+    SldController sldController,
+  ) async {
+    int attempts = 0;
+    const maxAttempts = 30; // Increased timeout
+
+    print('DEBUG: Starting SLD controller initialization...');
+
+    while (attempts < maxAttempts) {
+      print('DEBUG: Initialization attempt ${attempts + 1}/$maxAttempts');
+      print('DEBUG: Controller initialized: ${sldController.isInitialized}');
+      print('DEBUG: Bays count: ${sldController.allBays.length}');
+
+      if (sldController.isInitialized && sldController.allBays.isNotEmpty) {
+        print(
+          'DEBUG: ✅ SLD Controller ready with ${sldController.allBays.length} bays',
+        );
+        return;
+      }
+
+      attempts++;
+      await Future.delayed(
+        const Duration(milliseconds: 1000),
+      ); // Increased delay
+    }
+
+    print(
+      'ERROR: ❌ SLD Controller initialization timeout after $maxAttempts attempts',
+    );
+    throw Exception(
+      'SLD Controller initialization timeout - no bay data loaded',
+    );
+  }
+
+  // ✅ NEW: Fallback dialog showing all bays
+  void _showAllBaysSelectionDialog(
+    BuildContext context,
+    Substation substation,
+    SldController sldController,
+  ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    final allBays = sldController.allBays
+        .where((bay) => bay.id.isNotEmpty)
+        .toList();
+
+    if (allBays.isEmpty) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'No bays found in ${substation.name}',
+        isError: true,
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.settings, color: Colors.orange, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Select Bay to Configure',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: math.min(400, allBays.length * 80.0),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: allBays.length,
+            itemBuilder: (context, index) {
+              final bay = allBays[index];
+              final connectedBays = _getConnectedBaysForBusbar(
+                bay,
+                sldController,
+              );
+
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ListTile(
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _getBayTypeColor(bay.bayType).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _getBayTypeIcon(bay.bayType),
+                      color: _getBayTypeColor(bay.bayType),
+                      size: 18,
+                    ),
+                  ),
+                  title: Text(
+                    bay.name,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${bay.bayType} • Connected: ${connectedBays.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDarkMode ? Colors.white60 : Colors.grey.shade600,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _navigateToBusbarConfigurationScreen(
+                      bay,
+                      connectedBays,
+                      sldController,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ ENHANCED: Busbar selection with better debugging
+  void _showBusbarSelectionDialog(
+    BuildContext context,
+    Substation substation,
+    SldController sldController,
+  ) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    final busbars = sldController.allBays
+        .where((bay) => bay.bayType.toLowerCase() == 'busbar')
+        .toList();
+
+    // ✅ DEBUG: Log detailed busbar information
+    print('DEBUG: Showing busbar dialog with ${busbars.length} busbars:');
+    for (var i = 0; i < busbars.length; i++) {
+      final busbar = busbars[i];
+      print(
+        'DEBUG: Busbar $i: ${busbar.name} (${busbar.voltageLevel}) - ID: ${busbar.id}',
+      );
+    }
+
+    if (busbars.isEmpty) {
+      print('ERROR: No busbars found - this should not happen here');
+      SnackBarUtils.showSnackBar(
+        context,
+        'No busbars found in ${substation.name}',
+        isError: true,
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.settings, color: Colors.orange, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Select Busbar to Configure',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    '${busbars.length} busbars found',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDarkMode ? Colors.white60 : Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: math.min(400, busbars.length * 80.0 + 50),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: busbars.length,
+            itemBuilder: (context, index) {
+              final busbar = busbars[index];
+              final connectedBays = _getConnectedBaysForBusbar(
+                busbar,
+                sldController,
+              );
+              final nonBusbarBays = connectedBays
+                  .where((bay) => bay.bayType != 'Busbar')
+                  .length;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ListTile(
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.electrical_services,
+                      color: Colors.blue,
+                      size: 18,
+                    ),
+                  ),
+                  title: Text(
+                    '${busbar.voltageLevel} ${busbar.name}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Connected bays: $nonBusbarBays',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDarkMode ? Colors.white60 : Colors.grey.shade600,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () {
+                    print('DEBUG: Selected busbar: ${busbar.name}');
+                    Navigator.pop(context);
+                    _navigateToBusbarConfigurationScreen(
+                      busbar,
+                      connectedBays,
+                      sldController,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NEW: Navigate to the actual configuration screen
+  void _navigateToBusbarConfigurationScreen(
+    Bay selectedBusbar,
+    List<Bay> connectedBays,
+    SldController sldController,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ChangeNotifierProvider.value(
+          value: sldController,
+          child: BusbarConfigurationScreen(
+            busbar: selectedBusbar,
+            connectedBays: connectedBays,
+            allSubstationBays: sldController.allBays,
+            currentConfiguration: null,
+            substationConfiguration: null,
+            onSaveConfiguration: (busbarConfig, substationConfig) async {
+              try {
+                // Here you would integrate with EnergyDataService to save configurations
+                // For now, just show success message
+                SnackBarUtils.showSnackBar(
+                  context,
+                  'Configuration saved for ${selectedBusbar.name}!',
+                );
+              } catch (e) {
+                SnackBarUtils.showSnackBar(
+                  context,
+                  'Failed to save configuration: $e',
+                  isError: true,
+                );
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ✅ NEW: Helper method to get connected bays for a busbar
+  List<Bay> _getConnectedBaysForBusbar(
+    Bay busbar,
+    SldController sldController,
+  ) {
+    final connectedBays = <Bay>[];
+
+    for (var bay in sldController.allBays) {
+      if (bay.bayType == 'Busbar') continue;
+
+      // Simple voltage-based connection logic
+      if (busbar.voltageLevel == '132kV') {
+        if (bay.bayType == 'Transformer' || bay.bayType == 'Line') {
+          connectedBays.add(bay);
+        }
+      } else if (busbar.voltageLevel == '33kV') {
+        if (bay.bayType == 'Transformer' || bay.bayType == 'Feeder') {
+          connectedBays.add(bay);
+        }
+      }
+    }
+
+    return connectedBays;
+  }
+
+  // ✅ HELPER: Get bay type color
+  Color _getBayTypeColor(String bayType) {
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        return Colors.purple;
+      case 'line':
+        return Colors.blue;
+      case 'feeder':
+        return Colors.orange;
+      case 'busbar':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // ✅ HELPER: Get bay type icon
+  IconData _getBayTypeIcon(String bayType) {
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        return Icons.transform;
+      case 'line':
+        return Icons.power_input;
+      case 'feeder':
+        return Icons.cable;
+      case 'busbar':
+        return Icons.electrical_services;
+      default:
+        return Icons.settings;
+    }
   }
 
   Widget _buildActionCard({

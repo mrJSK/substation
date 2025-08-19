@@ -59,7 +59,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       final zones = await HierarchyService.getZones();
       final prefs = await SharedPreferences.getInstance();
 
-      // Convert zones to JSON-safe format before caching
       final zonesJson = zones
           .map(
             (z) => {
@@ -169,9 +168,11 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: _buildAppBar(),
       body: Column(
         children: [
@@ -190,8 +191,11 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       elevation: 0,
       centerTitle: true,
       title: Text(
@@ -199,38 +203,72 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         style: GoogleFonts.lora(
           fontSize: 22,
           fontWeight: FontWeight.w600,
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
         ),
       ),
       actions: [
         IconButton(
-          icon: Icon(Icons.search, color: Colors.grey[600]),
+          icon: Icon(
+            Icons.search,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.7)
+                : Colors.grey[600],
+          ),
           onPressed: () => _showSearchDelegate(context),
           tooltip: 'Search posts',
         ),
         PopupMenuButton<String>(
-          icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+          icon: Icon(
+            Icons.more_vert,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.7)
+                : Colors.grey[600],
+          ),
           onSelected: _handleMenuAction,
           itemBuilder: (context) => [
-            const PopupMenuItem(value: 'profile', child: Text('Profile')),
-            const PopupMenuItem(value: 'settings', child: Text('Settings')),
-            const PopupMenuItem(value: 'about', child: Text('About')),
+            PopupMenuItem(
+              value: 'profile',
+              child: Text(
+                'Profile',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'settings',
+              child: Text(
+                'Settings',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'about',
+              child: Text(
+                'About',
+                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              ),
+            ),
           ],
+          color: isDarkMode ? const Color(0xFF2C2C2E) : null,
         ),
       ],
     );
   }
 
   Widget _buildZoneSelector() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (_isLoadingZones && _zones.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(16.0),
-        child: CircularProgressIndicator(color: Colors.blueGrey[400]),
+        child: CircularProgressIndicator(
+          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+        ),
       );
     }
 
     return Container(
-      color: Colors.white,
+      color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: DropdownButtonFormField<String>(
         value: selectedZoneId,
@@ -241,14 +279,23 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.grey[300]!),
+            borderSide: BorderSide(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey[300]!,
+            ),
           ),
           filled: true,
-          fillColor: Colors.grey[50],
+          fillColor: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[50],
         ),
         hint: Text(
           'Select a Zone',
-          style: GoogleFonts.montserrat(fontSize: 14, color: Colors.grey[600]),
+          style: GoogleFonts.montserrat(
+            fontSize: 14,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.7)
+                : Colors.grey[600],
+          ),
         ),
         items: [
           DropdownMenuItem(
@@ -258,6 +305,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
               style: GoogleFonts.montserrat(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
+                color: isDarkMode ? Colors.white : null,
               ),
             ),
           ),
@@ -269,6 +317,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
                 style: GoogleFonts.montserrat(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
+                  color: isDarkMode ? Colors.white : null,
                 ),
               ),
             ),
@@ -282,21 +331,29 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
                 : _zones.firstWhere((zone) => zone.id == value).name;
           });
         },
-        dropdownColor: Colors.white,
-        icon: Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
+        dropdownColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        icon: Icon(
+          Icons.arrow_drop_down,
+          color: isDarkMode ? Colors.white : Colors.grey[600],
+        ),
       ),
     );
   }
 
   Widget _buildTabBar() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
-      color: Colors.white,
+      color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TabBar(
         controller: _tabController,
-        labelColor: Colors.blueGrey[700],
-        unselectedLabelColor: Colors.grey[500],
-        indicatorColor: Colors.blueGrey[700],
+        labelColor: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+        unselectedLabelColor: isDarkMode
+            ? Colors.white.withOpacity(0.5)
+            : Colors.grey[500],
+        indicatorColor: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
         indicatorWeight: 2,
         labelStyle: GoogleFonts.montserrat(
           fontSize: 14,
@@ -315,6 +372,9 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   Widget _buildLatestFeed() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return StreamBuilder<List<Post>>(
       stream: selectedZoneId == null
           ? PostService.streamPublicPosts()
@@ -345,7 +405,8 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         }
 
         return RefreshIndicator(
-          color: Colors.blueGrey[400],
+          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+          backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
           onRefresh: () async {
             setState(() {});
           },
@@ -367,6 +428,9 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   Widget _buildTopFeed() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return StreamBuilder<List<Post>>(
       stream: PostService.streamTopPosts(zoneId: selectedZoneId),
       builder: (context, snapshot) {
@@ -395,7 +459,8 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         }
 
         return RefreshIndicator(
-          color: Colors.blueGrey[400],
+          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+          backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
           onRefresh: () async {
             setState(() {});
           },
@@ -419,17 +484,24 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   Widget _buildLoadingState() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: Colors.blueGrey[400]),
+          CircularProgressIndicator(
+            color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+          ),
           const SizedBox(height: 12),
           Text(
             'Loading...',
             style: GoogleFonts.montserrat(
               fontSize: 14,
-              color: Colors.grey[600],
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.7)
+                  : Colors.grey[600],
             ),
           ),
         ],
@@ -444,20 +516,29 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
     String? actionText,
     VoidCallback? onAction,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 60, color: Colors.grey[400]),
+            Icon(
+              icon,
+              size: 60,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 12),
             Text(
               title,
               style: GoogleFonts.montserrat(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: isDarkMode ? Colors.white : Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
@@ -466,7 +547,9 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
               subtitle,
               style: GoogleFonts.montserrat(
                 fontSize: 14,
-                color: Colors.grey[500],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey[500],
               ),
               textAlign: TextAlign.center,
             ),
@@ -479,7 +562,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.blueGrey[700],
+                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
                   ),
                 ),
               ),
@@ -491,20 +574,29 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   Widget _buildErrorState(String title, String error, {VoidCallback? onRetry}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 60, color: Colors.grey[400]),
+            Icon(
+              Icons.error_outline,
+              size: 60,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 12),
             Text(
               title,
               style: GoogleFonts.montserrat(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: isDarkMode ? Colors.white : Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
@@ -513,7 +605,9 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
               error.length > 100 ? '${error.substring(0, 100)}...' : error,
               style: GoogleFonts.montserrat(
                 fontSize: 14,
-                color: Colors.grey[500],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey[500],
               ),
               textAlign: TextAlign.center,
             ),
@@ -526,7 +620,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.blueGrey[700],
+                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
                   ),
                 ),
               ),
@@ -538,9 +632,12 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   Widget _buildFloatingActionButton() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return FloatingActionButton(
       onPressed: _navigateToCreatePost,
-      backgroundColor: Colors.blueGrey[700],
+      backgroundColor: isDarkMode ? Colors.blue[600] : Colors.blueGrey[700],
       child: const Icon(Icons.edit, color: Colors.white),
       tooltip: 'Create a new post',
     );
@@ -599,25 +696,39 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   void _showComingSoonDialog(String feature) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           feature,
           style: GoogleFonts.montserrat(
             fontSize: 16,
             fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
           ),
         ),
         content: Text(
           '$feature functionality coming soon.',
-          style: GoogleFonts.montserrat(fontSize: 14),
+          style: GoogleFonts.montserrat(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('OK', style: GoogleFonts.montserrat(fontSize: 14)),
+            child: Text(
+              'OK',
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: isDarkMode ? Colors.blue[100] : null,
+              ),
+            ),
           ),
         ],
       ),
@@ -625,11 +736,18 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   void _showAboutDialog() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showAboutDialog(
       context: context,
       applicationName: 'PowerPulse',
       applicationVersion: '1.0.0',
-      applicationIcon: Icon(Icons.bolt, color: Colors.blueGrey[700], size: 32),
+      applicationIcon: Icon(
+        Icons.bolt,
+        color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+        size: 32,
+      ),
       children: [
         const SizedBox(height: 12),
         Text(
@@ -641,25 +759,39 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 
   void _showLoginPrompt() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           'Sign in required',
           style: GoogleFonts.montserrat(
             fontSize: 16,
             fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : null,
           ),
         ),
         content: Text(
           'Please sign in to create a post.',
-          style: GoogleFonts.montserrat(fontSize: 14),
+          style: GoogleFonts.montserrat(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : null,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.montserrat(fontSize: 14)),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : null,
+              ),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -682,7 +814,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
               style: GoogleFonts.montserrat(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: Colors.blueGrey[700],
+                color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
               ),
             ),
           ),
@@ -698,38 +830,51 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
 
   @override
   ThemeData appBarTheme(BuildContext context) {
-    return Theme.of(context).copyWith(
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return theme.copyWith(
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         titleTextStyle: GoogleFonts.montserrat(
           fontSize: 16,
           fontWeight: FontWeight.w600,
-          color: Colors.black87,
+          color: isDarkMode ? Colors.white : Colors.black87,
         ),
-        iconTheme: IconThemeData(color: Colors.grey[600]),
+        iconTheme: IconThemeData(
+          color: isDarkMode ? Colors.white.withOpacity(0.7) : Colors.grey[600],
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         hintStyle: GoogleFonts.montserrat(
           fontSize: 14,
-          color: Colors.grey[500],
+          color: isDarkMode ? Colors.white.withOpacity(0.4) : Colors.grey[500],
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide.none,
         ),
         filled: true,
-        fillColor: Colors.grey[100],
+        fillColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.grey[100],
       ),
     );
   }
 
   @override
   List<Widget> buildActions(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return [
       if (query.isNotEmpty)
         IconButton(
-          icon: Icon(Icons.clear, color: Colors.grey[600]),
+          icon: Icon(
+            Icons.clear,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.7)
+                : Colors.grey[600],
+          ),
           onPressed: () {
             query = '';
             showSuggestions(context);
@@ -741,8 +886,14 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
 
   @override
   Widget buildLeading(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return IconButton(
-      icon: Icon(Icons.arrow_back, color: Colors.grey[600]),
+      icon: Icon(
+        Icons.arrow_back,
+        color: isDarkMode ? Colors.white.withOpacity(0.7) : Colors.grey[600],
+      ),
       onPressed: () => close(context, null),
       tooltip: 'Back',
     );
@@ -750,12 +901,15 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
 
   @override
   Widget buildResults(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     if (query.trim().isEmpty) {
-      return _buildEmptySearchState('Enter a search term');
+      return _buildEmptySearchState('Enter a search term', isDarkMode);
     }
 
     if (query.trim().length < 2) {
-      return _buildEmptySearchState('Enter at least 2 characters');
+      return _buildEmptySearchState('Enter at least 2 characters', isDarkMode);
     }
 
     if (!recentSearches.contains(query)) {
@@ -771,13 +925,19 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(color: Colors.blueGrey[400]),
+                CircularProgressIndicator(
+                  color: isDarkMode
+                      ? Colors.blueGrey[200]
+                      : Colors.blueGrey[400],
+                ),
                 const SizedBox(height: 12),
                 Text(
                   'Searching...',
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
-                    color: Colors.grey[600],
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.7)
+                        : Colors.grey[600],
                   ),
                 ),
               ],
@@ -790,13 +950,17 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
             'Search failed',
             snapshot.error.toString(),
             onRetry: () => showResults(context),
+            isDarkMode: isDarkMode,
           );
         }
 
         final posts = snapshot.data ?? [];
 
         if (posts.isEmpty) {
-          return _buildEmptySearchState('No posts found for "$query"');
+          return _buildEmptySearchState(
+            'No posts found for "$query"',
+            isDarkMode,
+          );
         }
 
         return ListView.separated(
@@ -827,6 +991,9 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
 
   @override
   Widget buildSuggestions(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     final suggestions = query.isEmpty
         ? recentSearches.isNotEmpty
               ? recentSearches
@@ -835,59 +1002,74 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
               .where((s) => s.toLowerCase().contains(query.toLowerCase()))
               .toList();
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          query.isEmpty ? 'Recent Searches' : 'Suggested Searches',
-          style: GoogleFonts.montserrat(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey[700],
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (suggestions.isEmpty)
-          _buildEmptySearchState(
-            query.isEmpty ? 'No recent searches' : 'No suggestions found',
-          ),
-        ...suggestions.map(
-          (suggestion) => ListTile(
-            leading: Icon(
-              query.isEmpty ? Icons.history : Icons.search,
-              color: Colors.grey[600],
+    return Container(
+      color: isDarkMode ? const Color(0xFF1C1C1E) : null,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            query.isEmpty ? 'Recent Searches' : 'Suggested Searches',
+            style: GoogleFonts.montserrat(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isDarkMode ? Colors.white : Colors.grey[700],
             ),
-            title: Text(
-              suggestion,
-              style: GoogleFonts.montserrat(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+          ),
+          const SizedBox(height: 12),
+          if (suggestions.isEmpty)
+            _buildEmptySearchState(
+              query.isEmpty ? 'No recent searches' : 'No suggestions found',
+              isDarkMode,
+            ),
+          ...suggestions.map(
+            (suggestion) => ListTile(
+              leading: Icon(
+                query.isEmpty ? Icons.history : Icons.search,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey[600],
               ),
+              title: Text(
+                suggestion,
+                style: GoogleFonts.montserrat(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDarkMode ? Colors.white : null,
+                ),
+              ),
+              onTap: () {
+                query = suggestion;
+                showResults(context);
+              },
             ),
-            onTap: () {
-              query = suggestion;
-              showResults(context);
-            },
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildEmptySearchState(String message) {
+  Widget _buildEmptySearchState(String message, bool isDarkMode) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 60, color: Colors.grey[400]),
+            Icon(
+              Icons.search_off,
+              size: 60,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 12),
             Text(
               message,
               style: GoogleFonts.montserrat(
                 fontSize: 14,
-                color: Colors.grey[500],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey[500],
               ),
               textAlign: TextAlign.center,
             ),
@@ -897,21 +1079,32 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
     );
   }
 
-  Widget _buildErrorState(String title, String error, {VoidCallback? onRetry}) {
+  Widget _buildErrorState(
+    String title,
+    String error, {
+    VoidCallback? onRetry,
+    bool isDarkMode = false,
+  }) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 60, color: Colors.grey[400]),
+            Icon(
+              Icons.error_outline,
+              size: 60,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey[400],
+            ),
             const SizedBox(height: 12),
             Text(
               title,
               style: GoogleFonts.montserrat(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: isDarkMode ? Colors.white : Colors.grey[700],
               ),
               textAlign: TextAlign.center,
             ),
@@ -920,7 +1113,9 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
               error.length > 100 ? '${error.substring(0, 100)}...' : error,
               style: GoogleFonts.montserrat(
                 fontSize: 14,
-                color: Colors.grey[500],
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.grey[500],
               ),
               textAlign: TextAlign.center,
             ),
@@ -933,7 +1128,7 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.blueGrey[700],
+                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
                   ),
                 ),
               ),

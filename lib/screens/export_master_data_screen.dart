@@ -86,7 +86,6 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
       case UserRole.substationUser:
         return 'substation';
       case UserRole.pending:
-        // TODO: Handle this case.
         throw UnimplementedError();
     }
   }
@@ -114,7 +113,6 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
       case UserRole.superAdmin:
         return null;
       case UserRole.pending:
-        // TODO: Handle this case.
         throw UnimplementedError();
     }
   }
@@ -221,7 +219,6 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
         case UserRole.superAdmin:
           break;
         case UserRole.pending:
-          // TODO: Handle this case.
           throw UnimplementedError();
       }
     } catch (e) {
@@ -740,8 +737,12 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFFAFAFA),
       appBar: _buildAppBar(theme),
       body: _isLoading
           ? _buildLoadingState(theme)
@@ -768,25 +769,32 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   PreferredSizeWidget _buildAppBar(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       elevation: 0,
       title: Text(
         'Export Master Data',
         style: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          color: theme.colorScheme.onSurface,
+          color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
         ),
       ),
       leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+        icon: Icon(
+          Icons.arrow_back,
+          color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+        ),
         onPressed: () => Navigator.of(context).pop(),
       ),
     );
   }
 
   Widget _buildLoadingState(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -805,7 +813,9 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: theme.colorScheme.onSurface.withOpacity(0.7),
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.7)
+                  : theme.colorScheme.onSurface.withOpacity(0.7),
             ),
           ),
         ],
@@ -814,14 +824,18 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   Widget _buildHeaderSection(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -860,7 +874,9 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
                   'Generate comprehensive CSV reports of your assets',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.grey.shade600,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade600,
                     height: 1.3,
                   ),
                 ),
@@ -873,14 +889,18 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   Widget _buildDataTypeSelector(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -894,7 +914,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 12),
@@ -902,19 +922,52 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             value: _selectedDataType,
             decoration: InputDecoration(
               labelText: 'Data Type',
-              prefixIcon: const Icon(Icons.source),
+              labelStyle: TextStyle(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade700,
+              ),
+              prefixIcon: Icon(
+                Icons.source,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.6)
+                    : Colors.grey.shade600,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.shade300,
+                ),
               ),
               filled: true,
-              fillColor: Colors.grey.shade50,
+              fillColor: isDarkMode
+                  ? const Color(0xFF3C3C3E)
+                  : Colors.grey.shade50,
             ),
+            dropdownColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
+            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
             items: ExportDataType.values.map((type) {
               String displayName =
                   type.name[0].toUpperCase() + type.name.substring(1);
               return DropdownMenuItem(
                 value: type,
-                child: Text(displayName, style: const TextStyle(fontSize: 14)),
+                child: Text(
+                  displayName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                ),
               );
             }).toList(),
             onChanged: (ExportDataType? newValue) {
@@ -929,16 +982,19 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   Widget _buildHierarchySelectors(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
     final startingLevel = _getStartingHierarchyLevel();
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -952,7 +1008,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 16),
@@ -1136,25 +1192,72 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
     String? parentField,
     bool enabled = true,
   }) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return DropdownSearch<T>(
       popupProps: PopupProps.menu(
         showSearchBox: true,
-        menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+        menuProps: MenuProps(
+          backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
+          borderRadius: BorderRadius.circular(10),
+        ),
         searchFieldProps: TextFieldProps(
+          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
           decoration: InputDecoration(
             labelText: 'Search $label',
-            prefixIcon: const Icon(Icons.search),
+            labelStyle: TextStyle(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade700,
+            ),
+            prefixIcon: Icon(
+              Icons.search,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.6)
+                  : Colors.grey.shade600,
+            ),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            filled: true,
+            fillColor: isDarkMode
+                ? const Color(0xFF3C3C3E)
+                : Colors.grey.shade50,
           ),
         ),
       ),
       dropdownDecoratorProps: DropDownDecoratorProps(
         dropdownSearchDecoration: InputDecoration(
           labelText: label,
-          prefixIcon: Icon(icon),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          labelStyle: TextStyle(
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : Colors.grey.shade700,
+          ),
+          prefixIcon: Icon(
+            icon,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.6)
+                : Colors.grey.shade600,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey.shade300,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.3)
+                  : Colors.grey.shade300,
+            ),
+          ),
           filled: true,
-          fillColor: enabled ? Colors.grey.shade50 : Colors.grey.shade100,
+          fillColor: enabled
+              ? (isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey.shade50)
+              : (isDarkMode ? Colors.grey.shade800 : Colors.grey.shade100),
         ),
       ),
       asyncItems: (filter) => _fetchHierarchyItems<T>(
@@ -1199,14 +1302,18 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   Widget _buildFilterSelectors(ThemeData theme) {
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1220,7 +1327,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 16),
@@ -1229,26 +1336,71 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             items: _allEquipmentTemplates,
             popupProps: PopupPropsMultiSelection.menu(
               showSearchBox: true,
-              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+              menuProps: MenuProps(
+                backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
+                borderRadius: BorderRadius.circular(10),
+              ),
               searchFieldProps: TextFieldProps(
+                style: TextStyle(
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Search Equipment Types',
-                  prefixIcon: const Icon(Icons.search),
+                  labelStyle: TextStyle(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade700,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade600,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
+                  filled: true,
+                  fillColor: isDarkMode
+                      ? const Color(0xFF3C3C3E)
+                      : Colors.grey.shade50,
                 ),
               ),
             ),
             dropdownDecoratorProps: DropDownDecoratorProps(
               dropdownSearchDecoration: InputDecoration(
                 labelText: 'Equipment Types',
-                prefixIcon: const Icon(Icons.construction),
+                labelStyle: TextStyle(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade700,
+                ),
+                prefixIcon: Icon(
+                  Icons.construction,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
                 ),
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: isDarkMode
+                    ? const Color(0xFF3C3C3E)
+                    : Colors.grey.shade50,
               ),
             ),
             itemAsString: (template) => template.equipmentType,
@@ -1261,26 +1413,71 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             items: _allVoltageLevels,
             popupProps: PopupPropsMultiSelection.menu(
               showSearchBox: true,
-              menuProps: MenuProps(borderRadius: BorderRadius.circular(10)),
+              menuProps: MenuProps(
+                backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
+                borderRadius: BorderRadius.circular(10),
+              ),
               searchFieldProps: TextFieldProps(
+                style: TextStyle(
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Search Voltage Levels',
-                  prefixIcon: const Icon(Icons.search),
+                  labelStyle: TextStyle(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade700,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey.shade600,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
+                  filled: true,
+                  fillColor: isDarkMode
+                      ? const Color(0xFF3C3C3E)
+                      : Colors.grey.shade50,
                 ),
               ),
             ),
             dropdownDecoratorProps: DropDownDecoratorProps(
               dropdownSearchDecoration: InputDecoration(
                 labelText: 'Bay Voltage Levels',
-                prefixIcon: const Icon(Icons.flash_on),
+                labelStyle: TextStyle(
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade700,
+                ),
+                prefixIcon: Icon(
+                  Icons.flash_on,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.shade300,
+                  ),
                 ),
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: isDarkMode
+                    ? const Color(0xFF3C3C3E)
+                    : Colors.grey.shade50,
               ),
             ),
             onChanged: (data) => setState(() => _selectedVoltageLevels = data),
@@ -1297,16 +1494,24 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade400),
+                      border: Border.all(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.3)
+                            : Colors.grey.shade400,
+                      ),
                       borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey.shade50,
+                      color: isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : Colors.grey.shade50,
                     ),
                     child: Row(
                       children: [
                         Icon(
                           Icons.calendar_today,
                           size: 20,
-                          color: Colors.grey.shade600,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey.shade600,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1317,8 +1522,12 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
                             style: TextStyle(
                               fontSize: 14,
                               color: _startDate == null
-                                  ? Colors.grey.shade600
-                                  : Colors.black87,
+                                  ? (isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey.shade600)
+                                  : (isDarkMode
+                                        ? Colors.white
+                                        : Colors.black87),
                             ),
                           ),
                         ),
@@ -1335,16 +1544,24 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade400),
+                      border: Border.all(
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.3)
+                            : Colors.grey.shade400,
+                      ),
                       borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey.shade50,
+                      color: isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : Colors.grey.shade50,
                     ),
                     child: Row(
                       children: [
                         Icon(
                           Icons.calendar_today,
                           size: 20,
-                          color: Colors.grey.shade600,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey.shade600,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1355,8 +1572,12 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
                             style: TextStyle(
                               fontSize: 14,
                               color: _endDate == null
-                                  ? Colors.grey.shade600
-                                  : Colors.black87,
+                                  ? (isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey.shade600)
+                                  : (isDarkMode
+                                        ? Colors.white
+                                        : Colors.black87),
                             ),
                           ),
                         ),
@@ -1373,7 +1594,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   Widget _buildGenerateButton(ThemeData theme) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
       height: 48,
       child: ElevatedButton.icon(
@@ -1405,11 +1626,31 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
   }
 
   Future<void> _selectDate(BuildContext context, bool isStart) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: (isStart ? _startDate : _endDate) ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: theme.copyWith(
+            colorScheme: theme.colorScheme.copyWith(
+              primary: theme.colorScheme.primary,
+              onPrimary: theme.colorScheme.onPrimary,
+              surface: isDarkMode
+                  ? const Color(0xFF2C2C2E)
+                  : theme.colorScheme.surface,
+              onSurface: isDarkMode
+                  ? Colors.white
+                  : theme.colorScheme.onSurface,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
