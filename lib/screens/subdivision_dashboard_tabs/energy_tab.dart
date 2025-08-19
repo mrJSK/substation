@@ -786,31 +786,36 @@ class _EnergyTabState extends State<EnergyTab> {
     double totalImportEnergy = 0.0;
     double totalExportEnergy = 0.0;
     double totalLosses = 0.0;
+    int activeBaysCount = 0;
 
-    // First try to use busbar abstracts
-    bool hasBusbarData = false;
-    _busbarAbstract.forEach((busName, busData) {
-      final import = busData['totalImport'] ?? 0.0;
-      final export = busData['totalExport'] ?? 0.0;
-      final losses = busData['totalLosses'] ?? 0.0;
+    // Only consider Line and Feeder bay types
+    _bayEnergyData.forEach((bayId, bayData) {
+      final bay = _baysMap[bayId];
+      if (bay != null) {
+        final bayType = bay.bayType.toLowerCase();
 
-      if (import > 0 || export > 0) {
-        hasBusbarData = true;
-        totalImportEnergy += import;
-        totalExportEnergy += export;
-        totalLosses += losses;
+        // Only include Line and Feeder bay types
+        if (bayType == 'line' || bayType == 'feeder') {
+          final import = bayData['import'] ?? 0.0;
+          final export = bayData['export'] ?? 0.0;
+
+          if (import > 0 || export > 0) {
+            totalImportEnergy += import;
+            totalExportEnergy += export;
+            totalLosses = totalImportEnergy - totalExportEnergy;
+            activeBaysCount++;
+
+            print(
+              'DEBUG: Including ${bay.name} (${bay.bayType}): Import=$import, Export=$export',
+            );
+          }
+        } else {
+          print(
+            'DEBUG: Excluding ${bay.name} (${bay.bayType}) - not a Line or Feeder',
+          );
+        }
       }
     });
-
-    // If no busbar data, use individual bay data
-    if (!hasBusbarData) {
-      print('DEBUG: No busbar data found, using individual bay data');
-      _bayEnergyData.forEach((bayId, bayData) {
-        totalImportEnergy += bayData['import'] ?? 0.0;
-        totalExportEnergy += bayData['export'] ?? 0.0;
-        totalLosses += bayData['losses'] ?? 0.0;
-      });
-    }
 
     final double lossPercentage = totalImportEnergy > 0
         ? (totalLosses / totalImportEnergy) * 100
@@ -819,16 +824,17 @@ class _EnergyTabState extends State<EnergyTab> {
         ? (totalExportEnergy / totalImportEnergy) * 100
         : 0.0;
 
-    final result = {
+    // Return Map<String, double> with explicit typing
+    final Map<String, double> result = {
       'totalImport': totalImportEnergy,
       'totalExport': totalExportEnergy,
       'totalLosses': totalLosses,
       'lossPercentage': lossPercentage,
       'efficiency': efficiency,
-      'activeBays': _bayEnergyData.length.toDouble(),
+      'activeBays': activeBaysCount.toDouble(),
     };
 
-    print('DEBUG: Substation totals: $result');
+    print('DEBUG: Substation totals (Lines & Feeders only): $result');
     return result;
   }
 
@@ -1295,7 +1301,7 @@ class _EnergyTabState extends State<EnergyTab> {
               ),
               DataColumn(
                 label: Text(
-                  'Import (kWh)',
+                  'Import (MWH)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isDarkMode ? Colors.white : null,
@@ -1304,7 +1310,7 @@ class _EnergyTabState extends State<EnergyTab> {
               ),
               DataColumn(
                 label: Text(
-                  'Export (kWh)',
+                  'Export (MWH)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isDarkMode ? Colors.white : null,
@@ -1313,7 +1319,7 @@ class _EnergyTabState extends State<EnergyTab> {
               ),
               DataColumn(
                 label: Text(
-                  'Losses (kWh)',
+                  'Losses (MWH)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isDarkMode ? Colors.white : null,
@@ -1413,7 +1419,7 @@ class _EnergyTabState extends State<EnergyTab> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '${data['lossPercentage']?.toStringAsFixed(1) ?? '0.0'}%',
+                        '${data['lossPercentage']?.toStringAsFixed(2) ?? '0.00'}%',
                         style: TextStyle(
                           fontSize: 12,
                           color: _getLossColor(data['lossPercentage'] ?? 0.0),
@@ -1424,7 +1430,7 @@ class _EnergyTabState extends State<EnergyTab> {
                   ),
                   DataCell(
                     Text(
-                      '${data['efficiency']?.toStringAsFixed(1) ?? '0.0'}%',
+                      '${data['efficiency']?.toStringAsFixed(2) ?? '0.00'}%',
                       style: const TextStyle(
                         fontWeight: FontWeight.w500,
                         color: Colors.teal,
@@ -1492,7 +1498,7 @@ class _EnergyTabState extends State<EnergyTab> {
               ),
               DataColumn(
                 label: Text(
-                  'Import (kWh)',
+                  'Import (MWH)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isDarkMode ? Colors.white : null,
@@ -1501,7 +1507,7 @@ class _EnergyTabState extends State<EnergyTab> {
               ),
               DataColumn(
                 label: Text(
-                  'Export (kWh)',
+                  'Export (MWH)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isDarkMode ? Colors.white : null,
@@ -1510,7 +1516,7 @@ class _EnergyTabState extends State<EnergyTab> {
               ),
               DataColumn(
                 label: Text(
-                  'Losses (kWh)',
+                  'Losses (MWH)',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isDarkMode ? Colors.white : null,
@@ -1611,7 +1617,7 @@ class _EnergyTabState extends State<EnergyTab> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '${data['lossPercentage']?.toStringAsFixed(1) ?? '0.0'}%',
+                        '${data['lossPercentage']?.toStringAsFixed(2) ?? '0.00'}%',
                         style: TextStyle(
                           fontSize: 12,
                           color: _getLossColor(data['lossPercentage'] ?? 0.0),
@@ -1622,7 +1628,7 @@ class _EnergyTabState extends State<EnergyTab> {
                   ),
                   DataCell(
                     Text(
-                      '${data['efficiency']?.toStringAsFixed(1) ?? '0.0'}%',
+                      '${data['efficiency']?.toStringAsFixed(2) ?? '0.00'}%',
                       style: const TextStyle(
                         fontWeight: FontWeight.w500,
                         color: Colors.teal,
@@ -1685,35 +1691,35 @@ class _EnergyTabState extends State<EnergyTab> {
           children: [
             _buildAbstractRow(
               'Total Import Energy',
-              '${_substationAbstract['totalImport']?.toStringAsFixed(2)} kWh',
+              '${_substationAbstract['totalImport']?.toStringAsFixed(2)} MWH',
               Icons.flash_on,
               Colors.green,
               isDarkMode,
             ),
             _buildAbstractRow(
               'Total Export Energy',
-              '${_substationAbstract['totalExport']?.toStringAsFixed(2)} kWh',
+              '${_substationAbstract['totalExport']?.toStringAsFixed(2)} MWH',
               Icons.flash_off,
               Colors.orange,
               isDarkMode,
             ),
             _buildAbstractRow(
               'Total Energy Losses',
-              '${_substationAbstract['totalLosses']?.toStringAsFixed(2)} kWh',
+              '${_substationAbstract['totalLosses']?.toStringAsFixed(2)} MWH',
               Icons.battery_alert,
               Colors.red,
               isDarkMode,
             ),
             _buildAbstractRow(
               'Overall Loss Percentage',
-              '${_substationAbstract['lossPercentage']?.toStringAsFixed(1)}%',
+              '${_substationAbstract['lossPercentage']?.toStringAsFixed(2)}%',
               Icons.trending_down,
               _getLossColor(_substationAbstract['lossPercentage'] ?? 0.0),
               isDarkMode,
             ),
             _buildAbstractRow(
               'Overall Efficiency',
-              '${_substationAbstract['efficiency']?.toStringAsFixed(1)}%',
+              '${_substationAbstract['efficiency']?.toStringAsFixed(2)}%',
               Icons.speed,
               Colors.teal,
               isDarkMode,
@@ -3229,9 +3235,9 @@ class _EnergyTabState extends State<EnergyTab> {
       'Bay Name',
       'Bay Type',
       'Voltage Level',
-      'Import Energy (kWh)',
-      'Export Energy (kWh)',
-      'Energy Losses (kWh)',
+      'Import Energy (MWH)',
+      'Export Energy (MWH)',
+      'Energy Losses (MWH)',
       'Loss Percentage (%)',
       'Efficiency (%)',
     ];
@@ -3292,9 +3298,9 @@ class _EnergyTabState extends State<EnergyTab> {
 
     List<String> headers = [
       'Busbar',
-      'Total Import (kWh)',
-      'Total Export (kWh)',
-      'Total Losses (kWh)',
+      'Total Import (MWH)',
+      'Total Export (MWH)',
+      'Total Losses (MWH)',
       'Loss Percentage (%)',
       'Efficiency (%)',
       'Active Bays',
@@ -3357,15 +3363,15 @@ class _EnergyTabState extends State<EnergyTab> {
       ['Metric', 'Value'],
       [
         'Total Import Energy',
-        '${_substationAbstract['totalImport']?.toStringAsFixed(2) ?? '0.00'} kWh',
+        '${_substationAbstract['totalImport']?.toStringAsFixed(2) ?? '0.00'} MWH',
       ],
       [
         'Total Export Energy',
-        '${_substationAbstract['totalExport']?.toStringAsFixed(2) ?? '0.00'} kWh',
+        '${_substationAbstract['totalExport']?.toStringAsFixed(2) ?? '0.00'} MWH',
       ],
       [
         'Total Energy Losses',
-        '${_substationAbstract['totalLosses']?.toStringAsFixed(2) ?? '0.00'} kWh',
+        '${_substationAbstract['totalLosses']?.toStringAsFixed(2) ?? '0.00'} MWH',
       ],
       [
         'Overall Loss Percentage',

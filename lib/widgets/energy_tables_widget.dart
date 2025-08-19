@@ -358,7 +358,8 @@ class EnergyTablesWidget extends StatelessWidget {
       headers.add('$voltage BUS');
     }
 
-    headers.addAll(['ABSTRACT OF S/S', 'TOTAL']);
+    // Removed 'TOTAL' from headers - only add ABSTRACT OF S/S
+    headers.add('ABSTRACT OF S/S');
 
     return headers
         .map(
@@ -410,39 +411,46 @@ class EnergyTablesWidget extends StatelessWidget {
         ),
       ];
 
-      double rowTotal = 0.0;
-
-      // Add bus voltage columns
+      // Add bus voltage columns with proper difference and loss% calculations
       for (String voltage in uniqueBusVoltages) {
         final busbarsOfVoltage = sldController.allBays.where(
           (bay) => bay.bayType == 'Busbar' && bay.voltageLevel == voltage,
         );
 
         double totalForVoltage = 0.0;
+        double totalImportForVoltage = 0.0;
+        double totalExportForVoltage = 0.0;
 
+        // First, calculate total import and export for this voltage level
         for (var busbar in busbarsOfVoltage) {
           final busSummary = sldController.busEnergySummary[busbar.id];
           if (busSummary != null) {
-            switch (index) {
-              case 0: // Import
-                totalForVoltage += busSummary['totalImp'] ?? 0.0;
-                break;
-              case 1: // Export
-                totalForVoltage += busSummary['totalExp'] ?? 0.0;
-                break;
-              case 2: // Difference
-                totalForVoltage += busSummary['difference'] ?? 0.0;
-                break;
-              case 3: // Loss
-                if ((busSummary['totalImp'] ?? 0.0) > 0) {
-                  totalForVoltage =
-                      ((busSummary['difference'] ?? 0.0) /
-                          (busSummary['totalImp'] ?? 1.0)) *
-                      100;
-                }
-                break;
-            }
+            totalImportForVoltage += busSummary['totalImp'] ?? 0.0;
+            totalExportForVoltage += busSummary['totalExp'] ?? 0.0;
           }
+        }
+
+        // Calculate values based on row type
+        switch (index) {
+          case 0: // Import
+            totalForVoltage = totalImportForVoltage;
+            break;
+          case 1: // Export
+            totalForVoltage = totalExportForVoltage;
+            break;
+          case 2: // Difference
+            totalForVoltage = totalImportForVoltage - totalExportForVoltage;
+            break;
+          case 3: // Loss %
+            if (totalImportForVoltage > 0) {
+              totalForVoltage =
+                  ((totalImportForVoltage - totalExportForVoltage) /
+                      totalImportForVoltage) *
+                  100;
+            } else {
+              totalForVoltage = 0.0;
+            }
+            break;
         }
 
         cells.add(
@@ -457,8 +465,6 @@ class EnergyTablesWidget extends StatelessWidget {
             ),
           ),
         );
-
-        if (index != 3) rowTotal += totalForVoltage;
       }
 
       // Add abstract column
@@ -477,17 +483,7 @@ class EnergyTablesWidget extends StatelessWidget {
         ),
       );
 
-      if (index != 3) rowTotal += abstractValue;
-
-      // Add total column
-      cells.add(
-        DataCell(
-          Text(
-            index == 3 ? 'N/A' : rowTotal.toStringAsFixed(2),
-            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
-          ),
-        ),
-      );
+      // Removed TOTAL column - no longer adding it to cells
 
       return DataRow(cells: cells);
     }).toList();

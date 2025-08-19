@@ -8,6 +8,7 @@ import 'dart:convert';
 
 import '../../models/power_pulse/powerpulse_models.dart';
 import '../../services/power_pulse_service/powerpulse_services.dart';
+import 'bookmark_bottom_sheet.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -929,7 +930,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         _sharePost();
         break;
       case 'bookmark':
-        _bookmarkPost();
+        _showBookmarkSheet();
         break;
       case 'delete':
         _deletePost();
@@ -938,6 +939,23 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         _reportPost();
         break;
     }
+  }
+
+  void _showBookmarkSheet() {
+    final currentUser = AuthService.currentUser;
+    if (currentUser == null) {
+      _showLoginPrompt();
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => BookmarkBottomSheet(post: _post),
+    ).then((_) {
+      // Optionally refresh UI or show feedback
+    });
   }
 
   void _sharePost() {
