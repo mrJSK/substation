@@ -374,7 +374,11 @@ class _EnergyTabState extends State<EnergyTab> {
         if (!_busbarAbstract.containsKey(busKey)) continue;
 
         // ✅ Find connected bays using same logic as EnergyDataService
-        final connectedBays = _getConnectedBaysForBusbar(busbar);
+        final connectedBays = _getConnectedBaysForBusbar(
+          busbar,
+          busbarEnergyMaps,
+        );
+
         print(
           'DEBUG: Found ${connectedBays.length} bays connected to ${busbar.name}',
         );
@@ -481,36 +485,20 @@ class _EnergyTabState extends State<EnergyTab> {
   }
 
   // ✅ HELPER: Get connected bays for a busbar (using all non-busbar bays for now)
-  List<Bay> _getConnectedBaysForBusbar(Bay busbar) {
-    // Since bay connections are not available, we'll include all non-busbar bays
-    // This matches the logic you would use in a real system where you know which bays are connected
-
-    // For your case, based on the voltage levels:
-    // - 132kV busbar connects to: Lines and Transformers (typically high voltage equipment)
-    // - 33kV busbar connects to: Feeders and other medium voltage equipment
-
-    final connectedBays = <Bay>[];
-
-    for (var bay in _baysMap.values) {
-      if (bay.bayType == 'Busbar') continue; // Skip busbars
-
-      // ✅ VOLTAGE-BASED CONNECTION LOGIC
-      if (busbar.voltageLevel == '132kV') {
-        // 132kV busbar typically connects to transformers and incoming lines
-        if (bay.bayType == 'Transformer' || bay.bayType == 'Line') {
-          connectedBays.add(bay);
-        }
-      } else if (busbar.voltageLevel == '33kV') {
-        // 33kV busbar typically connects to feeders and outgoing equipment
-        if (bay.bayType == 'Feeder') {
-          connectedBays.add(bay);
-        }
+  List<Bay> _getConnectedBaysForBusbar(
+    Bay busbar,
+    Map<String, BusbarEnergyMap> busbarEnergyMaps,
+  ) {
+    final List<Bay> connectedBays = [];
+    // Iterate through all bays in your map (any bay, any voltage, any type)
+    for (final bay in _baysMap.values) {
+      if (bay.id == busbar.id) continue; // Skip the busbar itself
+      // Look for an explicit mapping for this bay to this busbar
+      final key = '${busbar.id}-${bay.id}';
+      if (busbarEnergyMaps.containsKey(key)) {
+        connectedBays.add(bay);
       }
     }
-
-    print(
-      'DEBUG: Connected bays for ${busbar.name} (${busbar.voltageLevel}): ${connectedBays.map((b) => '${b.name}(${b.bayType})').join(', ')}',
-    );
     return connectedBays;
   }
 

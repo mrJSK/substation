@@ -450,43 +450,43 @@ class EnergyDataService {
     for (var busbar in busbarBays) {
       double totalImp = 0.0;
       double totalExp = 0.0;
-      int connectedBayCount = 0;
       int configuredBayCount = 0;
 
-      final List<Bay> connectedBays = _getConnectedBays(busbar, sldController);
+      // Find all bays explicitly mapped to this busbar
+      Iterable<String> mappedBayKeys = _busbarEnergyMaps.keys.where(
+        (key) => key.startsWith('${busbar.id}-'),
+      );
 
-      for (var connectedBay in connectedBays) {
-        if (connectedBay.bayType != 'Busbar') {
-          connectedBayCount++;
-          final key = '${busbar.id}-${connectedBay.id}';
-          final busbarMap = _busbarEnergyMaps[key];
-          final energyData = bayEnergyData[connectedBay.id];
+      for (var key in mappedBayKeys) {
+        final busbarMap = _busbarEnergyMaps[key];
+        final bayId = key.substring(key.indexOf('-') + 1);
+        final energyData = bayEnergyData[bayId];
 
-          // ONLY include if explicit mapping exists
-          if (energyData != null && busbarMap != null) {
-            configuredBayCount++;
+        if (busbarMap != null && energyData != null) {
+          configuredBayCount++;
 
-            if (busbarMap.importContribution ==
-                EnergyContributionType.busImport) {
-              totalImp += energyData.adjustedImportConsumed;
-            } else if (busbarMap.importContribution ==
-                EnergyContributionType.busExport) {
-              totalExp += energyData.adjustedImportConsumed;
-            }
-
-            if (busbarMap.exportContribution ==
-                EnergyContributionType.busImport) {
-              totalImp += energyData.adjustedExportConsumed;
-            } else if (busbarMap.exportContribution ==
-                EnergyContributionType.busExport) {
-              totalExp += energyData.adjustedExportConsumed;
-            }
-
-            print(
-              '✅ Applied ${connectedBay.name} to ${busbar.name}: Import mapping=${busbarMap.importContribution}, Export mapping=${busbarMap.exportContribution}',
-            );
+          // Apply exactly what was configured in the mapping
+          if (busbarMap.importContribution ==
+              EnergyContributionType.busImport) {
+            totalImp += energyData.adjustedImportConsumed;
+          } else if (busbarMap.importContribution ==
+              EnergyContributionType.busExport) {
+            totalExp += energyData.adjustedImportConsumed;
           }
-          // NO else clause - no default inclusion
+
+          if (busbarMap.exportContribution ==
+              EnergyContributionType.busImport) {
+            totalImp += energyData.adjustedExportConsumed;
+          } else if (busbarMap.exportContribution ==
+              EnergyContributionType.busExport) {
+            totalExp += energyData.adjustedExportConsumed;
+          }
+
+          print(
+            '✅ Applied $bayId to ${busbar.name} with '
+            'Import mapping=${busbarMap.importContribution} and '
+            'Export mapping=${busbarMap.exportContribution}',
+          );
         }
       }
 
@@ -498,12 +498,12 @@ class EnergyDataService {
         'totalExp': totalExp,
         'netConsumption': losses,
         'lossPercentage': lossPercentage,
-        'connectedBayCount': connectedBayCount.toDouble(),
         'configuredBayCount': configuredBayCount.toDouble(),
       };
 
       print(
-        '🎯 FINAL: ${busbar.name} → Import=$totalImp, Export=$totalExp, Loss%=${lossPercentage.toStringAsFixed(2)}%',
+        '🎯 FINAL: ${busbar.name} → Import=$totalImp, Export=$totalExp, '
+        'Loss%=${lossPercentage.toStringAsFixed(2)}%',
       );
     }
 
