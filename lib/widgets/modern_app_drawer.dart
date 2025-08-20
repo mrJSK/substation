@@ -5,8 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:substation_manager/screens/power_pulse/dashboard_screen.dart';
 import '../models/user_model.dart';
 import '../models/app_state_data.dart';
-import '../screens/notification_preferences_screen.dart';
-import '../screens/user_profile_screen.dart';
+import '../screens/common/notification_preferences_screen.dart';
+import '../screens/common/user_profile_screen.dart';
 
 class ModernAppDrawer extends StatelessWidget {
   final AppUser user;

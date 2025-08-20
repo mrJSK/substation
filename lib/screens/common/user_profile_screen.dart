@@ -3,11 +3,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../models/user_model.dart';
-import '../../services/user_service.dart'; // Fixed import path
-import 'admin/admin_dashboard_screen.dart';
-import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
-import 'substation_dashboard/substation_user_dashboard_screen.dart'; // Fixed import path
+import '../../../models/user_model.dart';
+import '../../../services/user_service.dart'; // Fixed import path
+import '../admin/admin_dashboard_screen.dart';
+import '../subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
+import '../substation_dashboard/substation_user_dashboard_screen.dart'; // Fixed import path
 
 class UserProfileScreen extends StatefulWidget {
   final AppUser currentUser;

@@ -10,9 +10,9 @@ import '../../models/equipment_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/user_model.dart';
 import '../../utils/snackbar_utils.dart';
-import '../busbar_configuration_screen.dart';
+import 'busbar_configuration_screen.dart';
 import 'substation_detail_screen.dart';
-import '../export_master_data_screen.dart';
+import 'export_master_data_screen.dart';
 
 class SubdivisionAssetManagementScreen extends StatefulWidget {
   final String subdivisionId;

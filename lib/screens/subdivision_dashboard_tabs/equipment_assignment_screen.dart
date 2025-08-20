@@ -4,17 +4,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import '../models/equipment_model.dart';
-import '../utils/snackbar_utils.dart';
-import '../../equipment_icons/transformer_icon.dart';
-import '../../equipment_icons/busbar_icon.dart';
-import '../../equipment_icons/circuit_breaker_icon.dart';
-import '../../equipment_icons/ct_icon.dart';
-import '../../equipment_icons/ground_icon.dart';
-import '../../equipment_icons/isolator_icon.dart';
-import '../../equipment_icons/pt_icon.dart';
-import '../../equipment_icons/line_icon.dart';
-import '../../equipment_icons/feeder_icon.dart';
+import '../../models/equipment_model.dart';
+import '../../utils/snackbar_utils.dart';
+import '../../../equipment_icons/transformer_icon.dart';
+import '../../../equipment_icons/busbar_icon.dart';
+import '../../../equipment_icons/circuit_breaker_icon.dart';
+import '../../../equipment_icons/ct_icon.dart';
+import '../../../equipment_icons/ground_icon.dart';
+import '../../../equipment_icons/isolator_icon.dart';
+import '../../../equipment_icons/pt_icon.dart';
+import '../../../equipment_icons/line_icon.dart';
+import '../../../equipment_icons/feeder_icon.dart';
 
 class EquipmentAssignmentScreen extends StatefulWidget {
   final String bayId;

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
-import '../models/app_state_data.dart';
-import '../screens/home_screen.dart'; // Import your home screen
+import '../../models/app_state_data.dart';
+import 'home_screen.dart'; // Import your home screen
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});

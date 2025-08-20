@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/user_model.dart';
-import '../models/notification_preferences_model.dart';
-import '../utils/snackbar_utils.dart';
+import '../../models/user_model.dart';
+import '../../models/notification_preferences_model.dart';
+import '../../utils/snackbar_utils.dart';
 
 class NotificationPreferencesScreen extends StatefulWidget {
   final AppUser currentUser;

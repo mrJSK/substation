@@ -5,8 +5,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'models/app_state_data.dart';
-import 'screens/home_screen.dart';
-import 'screens/splash_screen.dart';
+import 'screens/common/home_screen.dart';
+import 'screens/common/splash_screen.dart';
 import 'services/fcm_service.dart';
 
 void main() async {

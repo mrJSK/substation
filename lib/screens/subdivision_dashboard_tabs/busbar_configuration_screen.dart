@@ -1,8 +1,8 @@
 // lib/screens/busbar_configuration_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../models/bay_model.dart';
-import '../models/busbar_energy_map.dart';
+import '../../models/bay_model.dart';
+import '../../models/busbar_energy_map.dart';
 
 class BusbarConfigurationScreen extends StatefulWidget {
   final Bay busbar;

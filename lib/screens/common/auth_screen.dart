@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/user_model.dart';
-import '../services/user_service.dart';
-import '../screens/admin/admin_dashboard_screen.dart';
-import '../screens/substation_dashboard/substation_user_dashboard_screen.dart';
-import '../screens/subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
+import '../../models/user_model.dart';
+import '../../services/user_service.dart';
+import '../admin/admin_dashboard_screen.dart';
+import '../substation_dashboard/substation_user_dashboard_screen.dart';
+import '../subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
 import 'user_profile_screen.dart';
 
 class AuthScreen extends StatefulWidget {

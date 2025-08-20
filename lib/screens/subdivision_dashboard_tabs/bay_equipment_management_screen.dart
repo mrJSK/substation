@@ -3,21 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:substation_manager/models/equipment_model.dart';
 import 'package:substation_manager/models/user_model.dart';
-import '../utils/snackbar_utils.dart';
+import '../../utils/snackbar_utils.dart';
 import 'equipment_assignment_screen.dart'; // For adding and editing equipment
 import 'package:vector_math/vector_math_64.dart'
     show Matrix4; // Make sure this import is present
 
 // Import all your equipment icon painters
-import '../../equipment_icons/transformer_icon.dart';
-import '../../equipment_icons/busbar_icon.dart';
-import '../../equipment_icons/circuit_breaker_icon.dart';
-import '../../equipment_icons/ct_icon.dart';
-import '../../equipment_icons/ground_icon.dart';
-import '../../equipment_icons/isolator_icon.dart';
-import '../../equipment_icons/pt_icon.dart';
-import '../../equipment_icons/line_icon.dart';
-import '../../equipment_icons/feeder_icon.dart';
+import '../../../equipment_icons/transformer_icon.dart';
+import '../../../equipment_icons/busbar_icon.dart';
+import '../../../equipment_icons/circuit_breaker_icon.dart';
+import '../../../equipment_icons/ct_icon.dart';
+import '../../../equipment_icons/ground_icon.dart';
+import '../../../equipment_icons/isolator_icon.dart';
+import '../../../equipment_icons/pt_icon.dart';
+import '../../../equipment_icons/line_icon.dart';
+import '../../../equipment_icons/feeder_icon.dart';
 
 // --- Data structure for rendering equipment on canvas ---
 class EquipmentRenderData {

@@ -3,13 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 
-import '../models/user_model.dart';
-import '../models/app_state_data.dart';
-import '../screens/auth_screen.dart';
-import '../screens/admin/admin_dashboard_screen.dart';
-import 'substation_dashboard/substation_user_dashboard_screen.dart';
-import 'subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
-import '../utils/snackbar_utils.dart';
+import '../../models/user_model.dart';
+import '../../models/app_state_data.dart';
+import 'auth_screen.dart';
+import '../admin/admin_dashboard_screen.dart';
+import '../substation_dashboard/substation_user_dashboard_screen.dart';
+import '../subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
+import '../../utils/snackbar_utils.dart';
 
 class HomeRouter extends StatelessWidget {
   const HomeRouter({super.key});

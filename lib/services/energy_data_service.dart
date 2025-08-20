@@ -15,7 +15,7 @@ import '../models/logsheet_models.dart';
 import '../models/energy_readings_data.dart';
 import '../controllers/sld_controller.dart';
 import '../widgets/energy_assessment_dialog.dart';
-import '../screens/busbar_configuration_screen.dart';
+import '../screens/subdivision_dashboard_tabs/busbar_configuration_screen.dart';
 import '../utils/snackbar_utils.dart';
 
 class EnergyDataService {
