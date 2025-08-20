@@ -91,7 +91,7 @@ class _TrippingShutdownEntryScreenState
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _ensureFCMTokenStored(); // UPDATED: Use the corrected FCM method
+    _ensureFCMTokenStored();
     _initializeForm();
   }
 
@@ -107,12 +107,10 @@ class _TrippingShutdownEntryScreenState
     super.dispose();
   }
 
-  // UPDATED: Fixed FCM token storage to use userId as document ID
   Future<void> _ensureFCMTokenStored() async {
     try {
       final messaging = FirebaseMessaging.instance;
 
-      // Request permission
       NotificationSettings settings = await messaging.requestPermission(
         alert: true,
         badge: true,
@@ -120,13 +118,11 @@ class _TrippingShutdownEntryScreenState
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        // Get FCM token
         String? token = await messaging.getToken();
         if (token != null) {
           await _saveFCMToken(token);
         }
 
-        // Listen for token refresh
         FirebaseMessaging.instance.onTokenRefresh.listen(_saveFCMToken);
       }
     } catch (e) {
@@ -134,16 +130,14 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // UPDATED: Store FCM token by userId (not by token)
   Future<void> _saveFCMToken(String token) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Store by userId as document ID (matching Cloud Function expectations)
       await FirebaseFirestore.instance
           .collection('fcmTokens')
-          .doc(user.uid) // FIXED: Use userId as document ID
+          .doc(user.uid)
           .set({
             'userId': user.uid,
             'token': token,
@@ -293,6 +287,7 @@ class _TrippingShutdownEntryScreenState
         : (_endTime ?? TimeOfDay.now());
 
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     final DateTime? pickedDate = await showDatePicker(
       context: context,
@@ -304,10 +299,12 @@ class _TrippingShutdownEntryScreenState
           colorScheme: theme.colorScheme.copyWith(
             primary: theme.colorScheme.primary,
             onPrimary: theme.colorScheme.onPrimary,
-            surface: theme.colorScheme.surface,
-            onSurface: theme.colorScheme.onSurface,
+            surface: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+            onSurface: isDarkMode ? Colors.white : Colors.black87,
           ),
-          dialogBackgroundColor: theme.colorScheme.surface,
+          dialogBackgroundColor: isDarkMode
+              ? const Color(0xFF2C2C2E)
+              : Colors.white,
         ),
         child: child!,
       ),
@@ -322,10 +319,12 @@ class _TrippingShutdownEntryScreenState
             colorScheme: theme.colorScheme.copyWith(
               primary: theme.colorScheme.primary,
               onPrimary: theme.colorScheme.onPrimary,
-              surface: theme.colorScheme.surface,
-              onSurface: theme.colorScheme.onSurface,
+              surface: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+              onSurface: isDarkMode ? Colors.white : Colors.black87,
             ),
-            dialogBackgroundColor: theme.colorScheme.surface,
+            dialogBackgroundColor: isDarkMode
+                ? const Color(0xFF2C2C2E)
+                : Colors.white,
           ),
           child: child!,
         ),
@@ -362,7 +361,6 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // UPDATED: Enhanced save method with corrected notification flow
   Future<void> _saveEvent() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -460,7 +458,6 @@ class _TrippingShutdownEntryScreenState
 
     setState(() => _isSaving = true);
 
-    // Show notification preview for new events
     if (widget.entryToEdit == null &&
         (_selectedEventType == 'Tripping' ||
             _selectedEventType == 'Shutdown')) {
@@ -492,7 +489,6 @@ class _TrippingShutdownEntryScreenState
           : null;
 
       if (widget.entryToEdit == null) {
-        // Creating new event(s)
         if (_selectedMultiBays.isEmpty) {
           SnackBarUtils.showSnackBar(
             context,
@@ -556,14 +552,11 @@ class _TrippingShutdownEntryScreenState
                 : null,
           );
 
-          // UPDATED: Save with substationName for Cloud Function
           await FirebaseFirestore.instance
               .collection('trippingShutdownEntries')
               .add(
-                newEntry.toFirestore()..addAll({
-                  'substationName':
-                      widget.substationName, // Required for Cloud Function
-                }),
+                newEntry.toFirestore()
+                  ..addAll({'substationName': widget.substationName}),
               );
         }
 
@@ -574,7 +567,6 @@ class _TrippingShutdownEntryScreenState
           );
         }
       } else {
-        // Editing existing event
         if (widget.currentUser.role == UserRole.substationUser &&
             !_isClosingEvent) {
           SnackBarUtils.showSnackBar(
@@ -690,16 +682,16 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // UPDATED: Enhanced notification preview
   Future<void> _showNotificationPreview() async {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final selectedBay = _selectedMultiBays.first;
 
     return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: theme.colorScheme.surface,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         title: Row(
           children: [
             Icon(
@@ -715,7 +707,7 @@ class _TrippingShutdownEntryScreenState
               'Notification Preview',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
+                color: isDarkMode ? Colors.white : Colors.black87,
               ),
             ),
           ],
@@ -743,15 +735,21 @@ class _TrippingShutdownEntryScreenState
                 _selectedEventType == 'Tripping'
                     ? '⚡ Tripping Event Alert'
                     : '🔌 Shutdown Event Alert',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
+                  color: isDarkMode ? Colors.white : Colors.black87,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 '${selectedBay.name} at ${widget.substationName} - ${selectedBay.voltageLevel}',
-                style: const TextStyle(fontSize: 14),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.8)
+                      : Colors.black87,
+                ),
               ),
               const SizedBox(height: 12),
               Container(
@@ -764,7 +762,9 @@ class _TrippingShutdownEntryScreenState
                   'This notification will be sent to subdivision managers, division managers, and higher officials in the hierarchy based on their notification preferences.',
                   style: TextStyle(
                     fontSize: 12,
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    color: isDarkMode
+                        ? Colors.blue.shade300
+                        : Colors.blue.shade700,
                   ),
                 ),
               ),
@@ -791,27 +791,34 @@ class _TrippingShutdownEntryScreenState
     }
 
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     TextEditingController reasonController = TextEditingController();
 
     return await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: theme.colorScheme.surface,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         title: Text(
           'Reason for Modification',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface,
+            color: isDarkMode ? Colors.white : Colors.black87,
           ),
         ),
         content: TextFormField(
           controller: reasonController,
+          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
           decoration: InputDecoration(
             hintText: 'Enter reason for modification...',
+            hintStyle: TextStyle(
+              color: isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey,
+            ),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             filled: true,
-            fillColor: theme.colorScheme.primary.withOpacity(0.05),
+            fillColor: isDarkMode
+                ? const Color(0xFF3C3C3E)
+                : theme.colorScheme.primary.withOpacity(0.05),
           ),
           maxLength: 200,
           maxLines: 3,
@@ -822,7 +829,11 @@ class _TrippingShutdownEntryScreenState
             onPressed: () => Navigator.of(context).pop(),
             child: Text(
               'Cancel',
-              style: TextStyle(color: theme.colorScheme.onSurface),
+              style: TextStyle(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.7)
+                    : theme.colorScheme.onSurface,
+              ),
             ),
           ),
           ElevatedButton(
@@ -841,6 +852,25 @@ class _TrippingShutdownEntryScreenState
     );
   }
 
+  IconData _getBayTypeIcon(String bayType) {
+    switch (bayType.toLowerCase()) {
+      case 'transformer':
+        return Icons.electrical_services;
+      case 'feeder':
+        return Icons.power;
+      case 'line':
+        return Icons.power_input;
+      case 'busbar':
+        return Icons.horizontal_rule;
+      case 'capacitor bank':
+        return Icons.battery_charging_full;
+      case 'reactor':
+        return Icons.device_hub;
+      default:
+        return Icons.electrical_services;
+    }
+  }
+
   Widget _buildFormCard({
     required String title,
     required Widget child,
@@ -848,14 +878,17 @@ class _TrippingShutdownEntryScreenState
     Color? iconColor,
   }) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isDarkMode
+                ? Colors.black.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -886,9 +919,10 @@ class _TrippingShutdownEntryScreenState
                 ],
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
               ],
@@ -910,9 +944,14 @@ class _TrippingShutdownEntryScreenState
     IconData? icon,
   }) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.grey.shade700
+              : theme.colorScheme.outline.withOpacity(0.3),
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Material(
@@ -932,7 +971,9 @@ class _TrippingShutdownEntryScreenState
                   ),
                   child: Icon(
                     icon ?? Icons.schedule,
-                    color: enabled ? theme.colorScheme.primary : Colors.grey,
+                    color: enabled
+                        ? theme.colorScheme.primary
+                        : (isDarkMode ? Colors.grey.shade600 : Colors.grey),
                     size: 20,
                   ),
                 ),
@@ -945,7 +986,9 @@ class _TrippingShutdownEntryScreenState
                         label,
                         style: TextStyle(
                           fontSize: 14,
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.7)
+                              : theme.colorScheme.onSurface.withOpacity(0.7),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -957,8 +1000,10 @@ class _TrippingShutdownEntryScreenState
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                           color: enabled
-                              ? theme.colorScheme.onSurface
-                              : Colors.grey,
+                              ? (isDarkMode ? Colors.white : Colors.black87)
+                              : (isDarkMode
+                                    ? Colors.grey.shade600
+                                    : Colors.grey),
                         ),
                       ),
                     ],
@@ -966,7 +1011,9 @@ class _TrippingShutdownEntryScreenState
                 ),
                 Icon(
                   Icons.arrow_forward_ios,
-                  color: enabled ? theme.colorScheme.primary : Colors.grey,
+                  color: enabled
+                      ? theme.colorScheme.primary
+                      : (isDarkMode ? Colors.grey.shade600 : Colors.grey),
                   size: 16,
                 ),
               ],
@@ -984,12 +1031,18 @@ class _TrippingShutdownEntryScreenState
     required Function(String, bool) onSelectionChanged,
     required bool enabled,
   }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
         ),
         const SizedBox(height: 12),
         Wrap(
@@ -998,20 +1051,29 @@ class _TrippingShutdownEntryScreenState
           children: options.map((option) {
             bool isSelected = selectedValues.contains(option);
             return FilterChip(
-              label: Text(option),
+              label: Text(
+                option,
+                style: TextStyle(
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : (isDarkMode ? Colors.white : Colors.black87),
+                ),
+              ),
               selected: isSelected,
               onSelected: enabled
                   ? (selected) => onSelectionChanged(option, selected)
                   : null,
-              selectedColor: Theme.of(
-                context,
-              ).colorScheme.primary.withOpacity(0.2),
-              checkmarkColor: Theme.of(context).colorScheme.primary,
-              backgroundColor: Colors.grey.shade100,
+              selectedColor: theme.colorScheme.primary.withOpacity(0.2),
+              checkmarkColor: theme.colorScheme.primary,
+              backgroundColor: isDarkMode
+                  ? Colors.grey.shade800
+                  : Colors.grey.shade100,
               side: BorderSide(
                 color: isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.grey.shade300,
+                    ? theme.colorScheme.primary
+                    : (isDarkMode
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade300),
               ),
             );
           }).toList(),
@@ -1023,6 +1085,7 @@ class _TrippingShutdownEntryScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     bool isEditingExisting = widget.entryToEdit != null;
     bool isClosedEvent =
         isEditingExisting && widget.entryToEdit!.status == 'CLOSED';
@@ -1033,9 +1096,11 @@ class _TrippingShutdownEntryScreenState
         (_selectedEventType == 'Shutdown') || (_isClosingEvent);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: isDarkMode
+          ? const Color(0xFF1C1C1E)
+          : const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
@@ -1056,7 +1121,6 @@ class _TrippingShutdownEntryScreenState
           ),
         ),
         actions: [
-          // UPDATED: Enhanced notification indicator
           if (!isEditingExisting)
             Container(
               margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
@@ -1072,7 +1136,9 @@ class _TrippingShutdownEntryScreenState
                   Icon(
                     Icons.notifications_active,
                     size: 14,
-                    color: Colors.blue.shade700,
+                    color: isDarkMode
+                        ? Colors.blue.shade300
+                        : Colors.blue.shade700,
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -1080,7 +1146,9 @@ class _TrippingShutdownEntryScreenState
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w500,
-                      color: Colors.blue.shade700,
+                      color: isDarkMode
+                          ? Colors.blue.shade300
+                          : Colors.blue.shade700,
                     ),
                   ),
                 ],
@@ -1130,11 +1198,13 @@ class _TrippingShutdownEntryScreenState
               child: Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
+                  color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: isDarkMode
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.black.withOpacity(0.1),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -1152,7 +1222,7 @@ class _TrippingShutdownEntryScreenState
                       'Loading event details...',
                       style: TextStyle(
                         fontSize: 16,
-                        color: theme.colorScheme.onSurface,
+                        color: isDarkMode ? Colors.white : Colors.black87,
                       ),
                     ),
                   ],
@@ -1165,14 +1235,18 @@ class _TrippingShutdownEntryScreenState
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  // UPDATED: Enhanced notification info card
                   if (!isEditingExisting)
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Colors.blue.shade50, Colors.green.shade50],
+                          colors: isDarkMode
+                              ? [
+                                  Colors.blue.shade800.withOpacity(0.3),
+                                  Colors.green.shade800.withOpacity(0.3),
+                                ]
+                              : [Colors.blue.shade50, Colors.green.shade50],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -1184,12 +1258,16 @@ class _TrippingShutdownEntryScreenState
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.blue.shade100,
+                              color: isDarkMode
+                                  ? Colors.blue.shade800.withOpacity(0.5)
+                                  : Colors.blue.shade100,
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
                               Icons.notifications_active,
-                              color: Colors.blue.shade700,
+                              color: isDarkMode
+                                  ? Colors.blue.shade300
+                                  : Colors.blue.shade700,
                               size: 20,
                             ),
                           ),
@@ -1203,7 +1281,9 @@ class _TrippingShutdownEntryScreenState
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
-                                    color: Colors.blue.shade700,
+                                    color: isDarkMode
+                                        ? Colors.blue.shade300
+                                        : Colors.blue.shade700,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -1211,7 +1291,9 @@ class _TrippingShutdownEntryScreenState
                                   'Creating this event will automatically send notifications to subdivision, division, circle, zone managers, and admins based on their notification preferences.',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.blue.shade600,
+                                    color: isDarkMode
+                                        ? Colors.blue.shade300
+                                        : Colors.blue.shade600,
                                   ),
                                 ),
                               ],
@@ -1221,7 +1303,6 @@ class _TrippingShutdownEntryScreenState
                       ),
                     ),
 
-                  // Bay Selection Card
                   _buildFormCard(
                     title: isMultiBaySelectionMode
                         ? 'Select Bay(s)'
@@ -1249,14 +1330,27 @@ class _TrippingShutdownEntryScreenState
                             selectedItems: _selectedMultiBays,
                             itemAsString: (Bay bay) =>
                                 '${bay.name} (${bay.bayType})',
-                            dropdownDecoratorProps:
-                                const DropDownDecoratorProps(
-                                  dropdownSearchDecoration: InputDecoration(
-                                    labelText: 'Select Bay(s)',
-                                    border: OutlineInputBorder(),
-                                    helperText: 'Select one or more bays',
-                                  ),
+                            dropdownDecoratorProps: DropDownDecoratorProps(
+                              dropdownSearchDecoration: InputDecoration(
+                                labelText: 'Select Bay(s)',
+                                labelStyle: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.7)
+                                      : null,
                                 ),
+                                border: OutlineInputBorder(),
+                                helperText: 'Select one or more bays',
+                                helperStyle: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.6)
+                                      : null,
+                                ),
+                                filled: isDarkMode,
+                                fillColor: isDarkMode
+                                    ? const Color(0xFF2C2C2E)
+                                    : null,
+                              ),
+                            ),
                             enabled: isFormEnabled,
                             onChanged: (List<Bay> newValue) {
                               setState(() {
@@ -1291,29 +1385,55 @@ class _TrippingShutdownEntryScreenState
                             },
                           )
                         else
-                          DropdownSearch<Bay>(
-                            items: _allBays,
-                            selectedItem: _selectedBay,
-                            itemAsString: (Bay bay) =>
-                                '${bay.name} (${bay.bayType})',
-                            dropdownDecoratorProps:
-                                const DropDownDecoratorProps(
-                                  dropdownSearchDecoration: InputDecoration(
-                                    labelText: 'Selected Bay',
-                                    border: OutlineInputBorder(),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isDarkMode
+                                    ? Colors.grey.shade700
+                                    : Colors.grey.shade300,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    _selectedBay != null
+                                        ? _getBayTypeIcon(_selectedBay!.bayType)
+                                        : Icons.electrical_services,
+                                    color: theme.colorScheme.primary,
+                                    size: 20,
                                   ),
                                 ),
-                            enabled: false,
-                            onChanged: (Bay? newValue) {},
-                            popupProps: const PopupProps.menu(
-                              showSearchBox: true,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _selectedBay != null
+                                        ? '${_selectedBay!.name} (${_selectedBay!.bayType})'
+                                        : 'No bay selected',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: isDarkMode
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                       ],
                     ),
                   ),
 
-                  // Event Type Card
                   _buildFormCard(
                     title: 'Event Type',
                     icon: Icons.flash_on,
@@ -1321,9 +1441,16 @@ class _TrippingShutdownEntryScreenState
                         ? Colors.red
                         : Colors.orange,
                     child: DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Event Type',
+                        labelStyle: TextStyle(
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.7)
+                              : null,
+                        ),
                         border: OutlineInputBorder(),
+                        filled: isDarkMode,
+                        fillColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
                       ),
                       value: _selectedEventType,
                       items: _eventTypes.map((type) {
@@ -1341,7 +1468,14 @@ class _TrippingShutdownEntryScreenState
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
-                              Text(type),
+                              Text(
+                                type,
+                                style: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
+                              ),
                             ],
                           ),
                         );
@@ -1356,10 +1490,16 @@ class _TrippingShutdownEntryScreenState
                           : null,
                       validator: (value) =>
                           value == null ? 'Please select event type' : null,
+                      dropdownColor: isDarkMode
+                          ? const Color(0xFF2C2C2E)
+                          : Colors.white,
+                      iconEnabledColor: theme.colorScheme.primary,
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
                     ),
                   ),
 
-                  // Date Time Card
                   _buildFormCard(
                     title: 'Event Timing',
                     icon: Icons.schedule,
@@ -1388,7 +1528,6 @@ class _TrippingShutdownEntryScreenState
                     ),
                   ),
 
-                  // Flags/Cause Card
                   _buildFormCard(
                     title: 'Event Details',
                     icon: Icons.description,
@@ -1400,9 +1539,14 @@ class _TrippingShutdownEntryScreenState
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Flags/Cause of Event (per Bay):',
-                                style: TextStyle(fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
                               ),
                               const SizedBox(height: 12),
                               ..._selectedMultiBays.map((bay) {
@@ -1414,10 +1558,24 @@ class _TrippingShutdownEntryScreenState
                                   padding: const EdgeInsets.only(bottom: 16.0),
                                   child: TextFormField(
                                     controller: _bayFlagsControllers[bay.id],
+                                    style: TextStyle(
+                                      color: isDarkMode
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
                                     decoration: InputDecoration(
                                       labelText: 'Flags/Cause for ${bay.name}',
+                                      labelStyle: TextStyle(
+                                        color: isDarkMode
+                                            ? Colors.white.withOpacity(0.7)
+                                            : null,
+                                      ),
                                       border: const OutlineInputBorder(),
                                       alignLabelWithHint: true,
+                                      filled: isDarkMode,
+                                      fillColor: isDarkMode
+                                          ? const Color(0xFF2C2C2E)
+                                          : null,
                                     ),
                                     maxLines: 3,
                                     enabled: isFormEnabled,
@@ -1444,10 +1602,22 @@ class _TrippingShutdownEntryScreenState
                         else
                           TextFormField(
                             controller: _flagsCauseController,
-                            decoration: const InputDecoration(
+                            style: TextStyle(
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                            decoration: InputDecoration(
                               labelText: 'Flags/Cause of Event',
+                              labelStyle: TextStyle(
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.7)
+                                    : null,
+                              ),
                               border: OutlineInputBorder(),
                               alignLabelWithHint: true,
+                              filled: isDarkMode,
+                              fillColor: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : null,
                             ),
                             maxLines: 3,
                             enabled: isFormEnabled,
@@ -1469,7 +1639,6 @@ class _TrippingShutdownEntryScreenState
                     ),
                   ),
 
-                  // Conditional Fields
                   if (_showReasonForNonFeeder)
                     _buildFormCard(
                       title: 'Non-Feeder Bay Reason',
@@ -1477,10 +1646,22 @@ class _TrippingShutdownEntryScreenState
                       iconColor: Colors.blue,
                       child: TextFormField(
                         controller: _reasonForNonFeederController,
-                        decoration: const InputDecoration(
+                        style: TextStyle(
+                          color: isDarkMode ? Colors.white : Colors.black87,
+                        ),
+                        decoration: InputDecoration(
                           labelText:
                               'Reason for Tripping/Shutdown (Non-Feeder Bay)',
+                          labelStyle: TextStyle(
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.7)
+                                : null,
+                          ),
                           border: OutlineInputBorder(),
+                          filled: isDarkMode,
+                          fillColor: isDarkMode
+                              ? const Color(0xFF2C2C2E)
+                              : null,
                         ),
                         maxLines: 2,
                         enabled: isFormEnabled,
@@ -1493,14 +1674,23 @@ class _TrippingShutdownEntryScreenState
                       icon: Icons.refresh,
                       iconColor: Colors.green,
                       child: SwitchListTile(
-                        title: const Text('Auto-reclose (A/R) occurred'),
+                        title: Text(
+                          'Auto-reclose (A/R) occurred',
+                          style: TextStyle(
+                            color: isDarkMode ? Colors.white : Colors.black87,
+                          ),
+                        ),
                         value: _hasAutoReclose,
                         onChanged: isFormEnabled
                             ? (bool value) =>
                                   setState(() => _hasAutoReclose = value)
                             : null,
-                        secondary: const Icon(Icons.power_settings_new),
+                        secondary: Icon(
+                          Icons.power_settings_new,
+                          color: Colors.green,
+                        ),
                         contentPadding: EdgeInsets.zero,
+                        activeColor: Colors.green,
                       ),
                     ),
 
@@ -1533,16 +1723,27 @@ class _TrippingShutdownEntryScreenState
                       iconColor: Colors.purple,
                       child: TextFormField(
                         controller: _distanceController,
-                        decoration: const InputDecoration(
+                        style: TextStyle(
+                          color: isDarkMode ? Colors.white : Colors.black87,
+                        ),
+                        decoration: InputDecoration(
                           labelText: 'Fault Distance (Km)',
+                          labelStyle: TextStyle(
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.7)
+                                : null,
+                          ),
                           border: OutlineInputBorder(),
+                          filled: isDarkMode,
+                          fillColor: isDarkMode
+                              ? const Color(0xFF2C2C2E)
+                              : null,
                         ),
                         keyboardType: TextInputType.number,
                         enabled: isFormEnabled,
                       ),
                     ),
 
-                  // Shutdown Specific Fields
                   if (_selectedEventType == 'Shutdown')
                     _buildFormCard(
                       title: 'Shutdown Details',
@@ -1551,15 +1752,31 @@ class _TrippingShutdownEntryScreenState
                       child: Column(
                         children: [
                           DropdownButtonFormField<String>(
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Shutdown Type',
+                              labelStyle: TextStyle(
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.7)
+                                    : null,
+                              ),
                               border: OutlineInputBorder(),
+                              filled: isDarkMode,
+                              fillColor: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : null,
                             ),
                             value: _selectedShutdownType,
                             items: _shutdownTypes.map((type) {
                               return DropdownMenuItem<String>(
                                 value: type,
-                                child: Text(type),
+                                child: Text(
+                                  type,
+                                  style: TextStyle(
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
+                                ),
                               );
                             }).toList(),
                             onChanged: isFormEnabled
@@ -1572,13 +1789,32 @@ class _TrippingShutdownEntryScreenState
                                       ? 'Please select shutdown type'
                                       : null
                                 : null,
+                            dropdownColor: isDarkMode
+                                ? const Color(0xFF2C2C2E)
+                                : Colors.white,
+                            iconEnabledColor: theme.colorScheme.primary,
+                            style: TextStyle(
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
                             controller: _shutdownPersonNameController,
-                            decoration: const InputDecoration(
+                            style: TextStyle(
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                            decoration: InputDecoration(
                               labelText: 'Name of Person Taking Shutdown',
+                              labelStyle: TextStyle(
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.7)
+                                    : null,
+                              ),
                               border: OutlineInputBorder(),
+                              filled: isDarkMode,
+                              fillColor: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : null,
                             ),
                             enabled: isFormEnabled,
                             validator: _selectedEventType == 'Shutdown'
@@ -1591,10 +1827,22 @@ class _TrippingShutdownEntryScreenState
                           const SizedBox(height: 16),
                           TextFormField(
                             controller: _shutdownPersonDesignationController,
-                            decoration: const InputDecoration(
+                            style: TextStyle(
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                            decoration: InputDecoration(
                               labelText:
                                   'Designation of Person Taking Shutdown',
+                              labelStyle: TextStyle(
+                                color: isDarkMode
+                                    ? Colors.white.withOpacity(0.7)
+                                    : null,
+                              ),
                               border: OutlineInputBorder(),
+                              filled: isDarkMode,
+                              fillColor: isDarkMode
+                                  ? const Color(0xFF2C2C2E)
+                                  : null,
                             ),
                             enabled: isFormEnabled,
                             validator: _selectedEventType == 'Shutdown'
@@ -1608,13 +1856,14 @@ class _TrippingShutdownEntryScreenState
                       ),
                     ),
 
-                  // Status Information
                   if (isReadOnly)
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: isDarkMode
+                            ? Colors.blue.shade800.withOpacity(0.3)
+                            : Colors.blue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue.withOpacity(0.3)),
                       ),
@@ -1622,7 +1871,9 @@ class _TrippingShutdownEntryScreenState
                         children: [
                           Icon(
                             Icons.info_outline,
-                            color: Colors.blue.shade700,
+                            color: isDarkMode
+                                ? Colors.blue.shade300
+                                : Colors.blue.shade700,
                             size: 20,
                           ),
                           const SizedBox(width: 12),
@@ -1633,7 +1884,9 @@ class _TrippingShutdownEntryScreenState
                                   : 'This event is already closed.',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.blue.shade700,
+                                color: isDarkMode
+                                    ? Colors.blue.shade300
+                                    : Colors.blue.shade700,
                               ),
                             ),
                           ),
@@ -1641,7 +1894,6 @@ class _TrippingShutdownEntryScreenState
                       ),
                     ),
 
-                  // Bottom spacing for FAB
                   const SizedBox(height: 100),
                 ],
               ),

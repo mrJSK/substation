@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+import 'package:provider/provider.dart';
+import '../models/app_state_data.dart';
+import '../screens/home_screen.dart'; // Import your home screen
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -7,144 +11,85 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeInAnimation;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _progressAnimation;
+class _SplashScreenState extends State<SplashScreen> {
+  late VideoPlayerController _videoController;
+  bool _isVideoInitialized = false;
+  bool _hasNavigated = false;
 
   @override
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
-      duration: const Duration(seconds: 4),
-      vsync: this,
-    );
+    _videoController = VideoPlayerController.asset('assets/video.mp4')
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() {
+            _isVideoInitialized = true;
+          });
+          _videoController.play();
+        }
+      });
 
-    _fadeInAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
-      ),
-    );
+    // Listen for video completion and navigate
+    _videoController.addListener(() {
+      if (_videoController.value.isInitialized &&
+          !_videoController.value.isPlaying &&
+          _videoController.value.position >= _videoController.value.duration &&
+          !_hasNavigated) {
+        _hasNavigated = true;
+        _navigateToNextScreen();
+      }
+    });
+  }
 
-    _slideAnimation =
-        Tween<Offset>(begin: const Offset(-1.0, 0.0), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: _controller,
-            curve: const Interval(0.3, 0.8, curve: Curves.easeOutCubic),
-          ),
-        );
+  void _navigateToNextScreen() async {
+    if (!mounted) return;
 
-    _progressAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.7, 1.0, curve: Curves.linear),
-      ),
-    );
+    // Wait for AppStateData to be initialized (same logic as your original FutureBuilder)
+    final appStateData = context.read<AppStateData>();
 
-    _controller.forward();
+    // Wait up to 5 seconds for initialization to complete
+    final startTime = DateTime.now();
+    while (!appStateData.isInitialized &&
+        DateTime.now().difference(startTime).inSeconds < 5) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
+    // Navigate to HomeRouter (same as your original main.dart)
+    if (mounted) {
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const HomeRouter()));
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _videoController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
-      body: Center(
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SlideTransition(
-                position: _slideAnimation,
-                child: FadeTransition(
-                  opacity: _fadeInAnimation,
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.factory,
-                      size: 40,
-                      color: colorScheme.primary,
-                    ),
-                  ),
+      backgroundColor: Colors.black,
+      body: _isVideoInitialized
+          ? SizedBox.expand(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _videoController.value.size.width,
+                  height: _videoController.value.size.height,
+                  child: VideoPlayer(_videoController),
                 ),
               ),
-              const SizedBox(height: 16),
-              FadeTransition(
-                opacity: _fadeInAnimation,
-                child: Text(
-                  'Substation Manager Pro',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
+            )
+          : const Center(
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: 200,
-                child: AnimatedBuilder(
-                  animation: _progressAnimation,
-                  builder: (context, child) {
-                    return LinearProgressIndicator(
-                      value: _progressAnimation.value,
-                      backgroundColor: colorScheme.primary.withOpacity(0.2),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        colorScheme.primary,
-                      ),
-                      minHeight: 4,
-                      borderRadius: BorderRadius.circular(4),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              FadeTransition(
-                opacity: _fadeInAnimation,
-                child: Text(
-                  'Powering tomorrow...',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }

@@ -25,13 +25,23 @@ class SubstationUserTrippingTab extends StatefulWidget {
       _SubstationUserTrippingTabState();
 }
 
+// **KEY FIX: Add AutomaticKeepAliveClientMixin**
 class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  // **KEY FIX: Override wantKeepAlive**
+  @override
+  bool get wantKeepAlive => true;
+
   bool _isLoading = true;
   List<TrippingShutdownEntry> _todayEvents = [];
   List<TrippingShutdownEntry> _openEvents = [];
   bool _hasAnyBays = false;
   late AnimationController _animationController;
+
+  // **KEY FIX: Add data initialization tracking**
+  bool _isDataInitialized = false;
+  String? _lastLoadedSubstationId;
+  DateTime? _lastLoadedDate;
 
   @override
   void initState() {
@@ -40,7 +50,8 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _loadTrippingData();
+    // **KEY FIX: Only initialize once**
+    _initializeDataOnce();
   }
 
   @override
@@ -52,10 +63,32 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   @override
   void didUpdateWidget(SubstationUserTrippingTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedDate != widget.selectedDate ||
-        oldWidget.substationId != widget.substationId) {
-      _loadTrippingData();
+
+    // **KEY FIX: Only reload if substation or date actually changed**
+    final bool shouldReload =
+        oldWidget.substationId != widget.substationId ||
+        !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
+
+    if (shouldReload) {
+      _isDataInitialized = false;
+      _initializeDataOnce();
     }
+  }
+
+  // **KEY FIX: Prevent multiple Firebase calls**
+  Future<void> _initializeDataOnce() async {
+    if (_isDataInitialized &&
+        _lastLoadedSubstationId == widget.substationId &&
+        _lastLoadedDate != null &&
+        DateUtils.isSameDay(_lastLoadedDate!, widget.selectedDate)) {
+      // Data already loaded for this substation and date
+      return;
+    }
+
+    await _loadTrippingData();
+    _isDataInitialized = true;
+    _lastLoadedSubstationId = widget.substationId;
+    _lastLoadedDate = widget.selectedDate;
   }
 
   Future<void> _loadTrippingData() async {
@@ -70,13 +103,15 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
 
     setState(() => _isLoading = true);
-
     try {
       // First check if there are any bays in this substation
       await _checkForBays();
-
       if (_hasAnyBays) {
-        await Future.wait([_loadTodayEvents(), _loadOpenEvents()]);
+        // **OPTIMIZATION: Load both today's and open events in parallel**
+        await Future.wait([
+          _loadTodayEventsOptimized(),
+          _loadOpenEventsOptimized(),
+        ]);
       }
 
       // Start animation after data is loaded
@@ -98,13 +133,17 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   }
 
   Future<void> _checkForBays() async {
+    // **KEY FIX: Only check if not already checked for this substation**
+    if (_lastLoadedSubstationId == widget.substationId && _hasAnyBays) {
+      return;
+    }
+
     try {
       final baysSnapshot = await FirebaseFirestore.instance
           .collection('bays')
           .where('substationId', isEqualTo: widget.substationId)
           .limit(1)
           .get();
-
       _hasAnyBays = baysSnapshot.docs.isNotEmpty;
     } catch (e) {
       print('Error checking for bays: $e');
@@ -112,7 +151,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  Future<void> _loadTodayEvents() async {
+  Future<void> _loadTodayEventsOptimized() async {
     final startOfDay = DateTime(
       widget.selectedDate.year,
       widget.selectedDate.month,
@@ -136,7 +175,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
         .toList();
   }
 
-  Future<void> _loadOpenEvents() async {
+  Future<void> _loadOpenEventsOptimized() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('trippingShutdownEntries')
         .where('substationId', isEqualTo: widget.substationId)
@@ -148,6 +187,23 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     _openEvents = snapshot.docs
         .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
         .toList();
+  }
+
+  // **KEY FIX: Method to refresh data after adding/editing events**
+  Future<void> _refreshTrippingData() async {
+    if (!_hasAnyBays) return;
+
+    try {
+      await Future.wait([
+        _loadTodayEventsOptimized(),
+        _loadOpenEventsOptimized(),
+      ]);
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      print('Error refreshing tripping data: $e');
+    }
   }
 
   Color _getEventTypeColor(String eventType) {
@@ -172,7 +228,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  // Updated navigation methods with substationName parameter
+  // Updated navigation methods with optimized refresh
   void _navigateToAddEvent() {
     if (!_hasAnyBays) {
       SnackBarUtils.showSnackBar(
@@ -188,17 +244,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: widget.substationId,
-              substationName:
-                  widget.substationName, // ✅ Added required parameter
+              substationName: widget.substationName,
               currentUser: widget.currentUser,
               entryToEdit: null, // null for new entry
               isViewOnly: false,
             ),
           ),
         )
-        .then((_) {
-          // Refresh data when returning from add screen
-          _loadTrippingData();
+        .then((result) {
+          // **KEY FIX: Only refresh if data was actually saved**
+          if (result == true) {
+            _refreshTrippingData();
+          }
         });
   }
 
@@ -211,16 +268,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: widget.substationId,
-              substationName:
-                  widget.substationName, // ✅ Added required parameter
+              substationName: widget.substationName,
               currentUser: widget.currentUser,
               entryToEdit: event,
               isViewOnly: isViewOnly,
             ),
           ),
         )
-        .then((_) {
-          _loadTrippingData();
+        .then((result) {
+          // **KEY FIX: Only refresh if data was actually modified**
+          if (result == true) {
+            _refreshTrippingData();
+          }
         });
   }
 
@@ -230,16 +289,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: widget.substationId,
-              substationName:
-                  widget.substationName, // ✅ Added required parameter
+              substationName: widget.substationName,
               currentUser: widget.currentUser,
               entryToEdit: event,
               isViewOnly: false,
             ),
           ),
         )
-        .then((_) {
-          _loadTrippingData();
+        .then((result) {
+          // **KEY FIX: Only refresh if data was actually modified**
+          if (result == true) {
+            _refreshTrippingData();
+          }
         });
   }
 
@@ -418,7 +479,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: isDarkMode
-                          ? Colors.blue.shade800!.withOpacity(0.3)
+                          ? Colors.blue.shade800.withOpacity(0.3)
                           : Colors.blue.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: Colors.blue.withOpacity(0.2)),
@@ -528,7 +589,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     Widget? action,
   }) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
@@ -572,6 +632,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
 
   @override
   Widget build(BuildContext context) {
+    // **KEY FIX: Call super.build for AutomaticKeepAliveClientMixin**
+    super.build(context);
+
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
@@ -598,8 +661,8 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
               gradient: LinearGradient(
                 colors: isDarkMode
                     ? [
-                        Colors.red.shade800!.withOpacity(0.3),
-                        Colors.orange.shade800!.withOpacity(0.3),
+                        Colors.red.shade800.withOpacity(0.3),
+                        Colors.orange.shade800.withOpacity(0.3),
                       ]
                     : [Colors.red.shade50, Colors.orange.shade50],
                 begin: Alignment.topLeft,
@@ -673,7 +736,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       ),
                       decoration: BoxDecoration(
                         color: isDarkMode
-                            ? Colors.blue.shade800!.withOpacity(0.3)
+                            ? Colors.blue.shade800.withOpacity(0.3)
                             : Colors.blue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue.withOpacity(0.3)),
@@ -823,10 +886,8 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                 ),
                               ],
                             ),
-                            indicatorSize: TabBarIndicatorSize
-                                .tab, // Make indicator fill the tab
-                            dividerColor:
-                                Colors.transparent, // Remove divider line
+                            indicatorSize: TabBarIndicatorSize.tab,
+                            dividerColor: Colors.transparent,
                             tabs: [
                               Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -905,9 +966,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                             ],
                           ),
                         ),
-
                         const SizedBox(height: 16),
-
                         // Tab content
                         Expanded(
                           child: TabBarView(
@@ -933,7 +992,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                           )
                                           .toList(),
                                     ),
-
                               // Open Events
                               _openEvents.isEmpty
                                   ? _buildEmptyState(

@@ -61,7 +61,7 @@ class _ReadingTemplateManagementScreenState
     'dropdown',
     'group',
   ];
-  final List<String> _frequencies = ['hourly', 'daily', 'monthly'];
+  final List<String> _frequencies = ['hourly', 'daily'];
 
   // HARDCODED TEMPLATES - Your default energy fields
   final List<ReadingField> _defaultEnergyFields = [
@@ -92,34 +92,6 @@ class _ReadingTemplateManagementScreenState
       isMandatory: true,
       unit: 'MWH',
       frequency: ReadingFrequency.daily,
-    ),
-    ReadingField(
-      name: 'Previous Month Reading (Import)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
-    ),
-    ReadingField(
-      name: 'Current Month Reading (Import)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
-    ),
-    ReadingField(
-      name: 'Previous Month Reading (Export)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
-    ),
-    ReadingField(
-      name: 'Current Month Reading (Export)',
-      dataType: ReadingFieldDataType.number,
-      isMandatory: true,
-      unit: 'MWH',
-      frequency: ReadingFrequency.monthly,
     ),
   ];
 

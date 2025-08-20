@@ -12,7 +12,7 @@ import '../../models/user_model.dart';
 import '../../models/reading_models.dart';
 import '../../models/logsheet_models.dart';
 import '../../utils/snackbar_utils.dart';
-import 'bay_readings_status_screen.dart';
+import 'substation_dashboard/bay_readings_status_screen.dart';
 
 enum DisplayMode { charts, readings }
 

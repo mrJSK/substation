@@ -5,7 +5,7 @@ import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/reading_models.dart';
 import '../../utils/snackbar_utils.dart';
-import '../bay_readings_status_screen.dart';
+import 'bay_readings_status_screen.dart';
 
 class SubstationUserOperationsTab extends StatefulWidget {
   final String substationId;
@@ -26,27 +26,65 @@ class SubstationUserOperationsTab extends StatefulWidget {
       _SubstationUserOperationsTabState();
 }
 
+// **KEY FIX: Add AutomaticKeepAliveClientMixin**
 class _SubstationUserOperationsTabState
-    extends State<SubstationUserOperationsTab> {
+    extends State<SubstationUserOperationsTab>
+    with AutomaticKeepAliveClientMixin {
+  // **KEY FIX: Override wantKeepAlive**
+  @override
+  bool get wantKeepAlive => true;
+
   bool _isLoading = true;
+  bool _isLoadingProgress = false;
   List<Map<String, dynamic>> _hourlySlots = [];
   Map<String, bool> _slotCompletionStatus = {};
   List<Bay> _baysWithHourlyAssignments = [];
   bool _hasAnyBaysWithReadings = false;
 
+  // **KEY FIX: Add data loaded flag**
+  bool _isDataInitialized = false;
+  String? _lastLoadedSubstationId;
+  DateTime? _lastLoadedDate;
+
+  // Cache variables
+  Map<String, Bay> _preLoadedBays = {};
+
   @override
   void initState() {
     super.initState();
-    _loadHourlySlots();
+    // **KEY FIX: Only load once**
+    _initializeDataOnce();
   }
 
   @override
   void didUpdateWidget(SubstationUserOperationsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedDate != widget.selectedDate ||
-        oldWidget.substationId != widget.substationId) {
-      _loadHourlySlots();
+
+    // **KEY FIX: Only reload if substation or date actually changed**
+    final bool shouldReload =
+        oldWidget.substationId != widget.substationId ||
+        !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
+
+    if (shouldReload) {
+      _isDataInitialized = false;
+      _initializeDataOnce();
     }
+  }
+
+  // **KEY FIX: Prevent multiple Firebase calls**
+  Future<void> _initializeDataOnce() async {
+    if (_isDataInitialized &&
+        _lastLoadedSubstationId == widget.substationId &&
+        _lastLoadedDate != null &&
+        DateUtils.isSameDay(_lastLoadedDate!, widget.selectedDate)) {
+      // Data already loaded for this substation and date
+      return;
+    }
+
+    await _loadHourlySlots();
+    _isDataInitialized = true;
+    _lastLoadedSubstationId = widget.substationId;
+    _lastLoadedDate = widget.selectedDate;
   }
 
   Future<void> _loadHourlySlots() async {
@@ -59,55 +97,37 @@ class _SubstationUserOperationsTabState
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isLoadingProgress = true;
+    });
 
     try {
-      // First check if there are any bays with hourly reading assignments
+      // Step 1: Pre-load all bays for this substation
+      await _preLoadBays();
+
+      // Step 2: Check if there are any bays with hourly reading assignments
       await _checkForBaysWithHourlyAssignments();
 
       if (!_hasAnyBaysWithReadings) {
         setState(() {
           _isLoading = false;
+          _isLoadingProgress = false;
           _hourlySlots = [];
         });
         return;
       }
 
-      final DateTime now = DateTime.now();
-      final bool isToday = DateUtils.isSameDay(widget.selectedDate, now);
+      // Step 3: Generate hourly slots
+      _generateHourlySlots();
 
-      _hourlySlots.clear();
-      _slotCompletionStatus.clear();
+      // Update UI with slots before checking completion status
+      setState(() {
+        _isLoadingProgress = false;
+      });
 
-      // Generate hourly slots (0-23)
-      for (int hour = 0; hour < 24; hour++) {
-        final DateTime slotDateTime = DateTime(
-          widget.selectedDate.year,
-          widget.selectedDate.month,
-          widget.selectedDate.day,
-          hour,
-        );
-
-        // Skip future hours for today
-        if (isToday && hour > now.hour) {
-          continue;
-        }
-
-        final bool isCurrentHour = isToday && hour == now.hour;
-        final bool isPastHour = isToday && hour < now.hour;
-
-        _hourlySlots.add({
-          'hour': hour,
-          'displayTime': '${hour.toString().padLeft(2, '0')}:00',
-          'slotDateTime': slotDateTime,
-          'isCurrentHour': isCurrentHour,
-          'isPastHour': isPastHour,
-          'isFuture': false,
-        });
-      }
-
-      // Check completion status for each slot
-      await _checkSlotCompletionStatus();
+      // Step 4: Check completion status for each slot
+      await _checkSlotCompletionStatusOptimized();
     } catch (e) {
       if (mounted) {
         SnackBarUtils.showSnackBar(
@@ -118,58 +138,76 @@ class _SubstationUserOperationsTabState
       }
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isLoadingProgress = false;
+        });
       }
     }
   }
 
+  Future<void> _preLoadBays() async {
+    // **KEY FIX: Only load if not already loaded**
+    if (_preLoadedBays.isNotEmpty &&
+        _lastLoadedSubstationId == widget.substationId) {
+      return;
+    }
+
+    final baysSnapshot = await FirebaseFirestore.instance
+        .collection('bays')
+        .where('substationId', isEqualTo: widget.substationId)
+        .get();
+
+    _preLoadedBays = {
+      for (var doc in baysSnapshot.docs) doc.id: Bay.fromFirestore(doc),
+    };
+  }
+
   Future<void> _checkForBaysWithHourlyAssignments() async {
     try {
-      // Get all bays for this substation
-      final baysSnapshot = await FirebaseFirestore.instance
-          .collection('bays')
-          .where('substationId', isEqualTo: widget.substationId)
-          .get();
-
-      if (baysSnapshot.docs.isEmpty) {
+      if (_preLoadedBays.isEmpty) {
         _hasAnyBaysWithReadings = false;
         _baysWithHourlyAssignments = [];
         return;
       }
 
-      List<String> bayIds = baysSnapshot.docs.map((doc) => doc.id).toList();
+      final List<String> bayIds = _preLoadedBays.keys.toList();
       _baysWithHourlyAssignments.clear();
 
-      // Check for reading assignments with hourly frequency
+      // Optimized: Single query instead of multiple
       final assignmentsSnapshot = await FirebaseFirestore.instance
           .collection('bayReadingAssignments')
-          .where('bayId', whereIn: bayIds)
+          .where('bayId', whereIn: bayIds.take(10).toList()) // Firestore limit
           .get();
+
+      // If we have more than 10 bays, fetch the rest
+      if (bayIds.length > 10) {
+        for (int i = 10; i < bayIds.length; i += 10) {
+          final batch = bayIds.skip(i).take(10).toList();
+          final additionalSnapshot = await FirebaseFirestore.instance
+              .collection('bayReadingAssignments')
+              .where('bayId', whereIn: batch)
+              .get();
+          assignmentsSnapshot.docs.addAll(additionalSnapshot.docs);
+        }
+      }
 
       for (var doc in assignmentsSnapshot.docs) {
         final String bayId = doc['bayId'] as String;
         final assignedFieldsData =
             (doc.data() as Map)['assignedFields'] as List;
 
-        final List<ReadingField> allFields = assignedFieldsData
-            .map(
-              (fieldMap) =>
-                  ReadingField.fromMap(fieldMap as Map<String, dynamic>),
-            )
-            .toList();
-
-        // Check if there are any mandatory hourly fields
-        final hasHourlyMandatoryFields = allFields.any(
-          (field) =>
-              field.isMandatory &&
-              field.frequency.toString().split('.').last == 'hourly',
-        );
+        final hasHourlyMandatoryFields = assignedFieldsData.any((fieldMap) {
+          final field = ReadingField.fromMap(fieldMap as Map<String, dynamic>);
+          return field.isMandatory &&
+              field.frequency.toString().split('.').last == 'hourly';
+        });
 
         if (hasHourlyMandatoryFields) {
-          final Bay bay = Bay.fromFirestore(
-            baysSnapshot.docs.firstWhere((bayDoc) => bayDoc.id == bayId),
-          );
-          _baysWithHourlyAssignments.add(bay);
+          final Bay? bay = _preLoadedBays[bayId];
+          if (bay != null) {
+            _baysWithHourlyAssignments.add(bay);
+          }
         }
       }
 
@@ -181,7 +219,51 @@ class _SubstationUserOperationsTabState
     }
   }
 
-  Future<void> _checkSlotCompletionStatus() async {
+  void _generateHourlySlots() {
+    final DateTime now = DateTime.now();
+    final bool isToday = DateUtils.isSameDay(widget.selectedDate, now);
+    _hourlySlots.clear();
+    _slotCompletionStatus.clear();
+
+    // Generate hourly slots starting from 01:00 to 00:00 (next day)
+    for (int i = 0; i < 24; i++) {
+      int hour = (i + 1) % 24; // This gives us: 1, 2, 3, ..., 23, 0
+
+      DateTime slotDateTime = DateTime(
+        widget.selectedDate.year,
+        widget.selectedDate.month,
+        widget.selectedDate.day,
+        hour,
+      );
+
+      if (hour == 0) {
+        slotDateTime = slotDateTime.add(const Duration(days: 1));
+      }
+
+      if (isToday && slotDateTime.isAfter(now)) {
+        continue;
+      }
+
+      final bool isCurrentHour =
+          isToday &&
+          slotDateTime.hour == now.hour &&
+          DateUtils.isSameDay(slotDateTime, now);
+      final bool isPastHour = isToday && slotDateTime.isBefore(now);
+
+      _hourlySlots.add({
+        'hour': hour,
+        'displayTime': '${hour.toString().padLeft(2, '0')}:00',
+        'slotDateTime': slotDateTime,
+        'isCurrentHour': isCurrentHour,
+        'isPastHour': isPastHour,
+        'isFuture': false,
+      });
+
+      _slotCompletionStatus['$hour'] = false;
+    }
+  }
+
+  Future<void> _checkSlotCompletionStatusOptimized() async {
     try {
       if (_baysWithHourlyAssignments.isEmpty) {
         for (var slot in _hourlySlots) {
@@ -190,42 +272,54 @@ class _SubstationUserOperationsTabState
         return;
       }
 
-      // Check each hour slot
+      // Single optimized query
+      final allLogsheetsSnapshot = await FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('substationId', isEqualTo: widget.substationId)
+          .where('frequency', isEqualTo: 'hourly')
+          .where(
+            'readingTimestamp',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(
+              DateTime(
+                widget.selectedDate.year,
+                widget.selectedDate.month,
+                widget.selectedDate.day,
+              ),
+            ),
+          )
+          .where(
+            'readingTimestamp',
+            isLessThan: Timestamp.fromDate(
+              DateTime(
+                widget.selectedDate.year,
+                widget.selectedDate.month,
+                widget.selectedDate.day + 1,
+              ),
+            ),
+          )
+          .get();
+
+      // Create lookup map
+      final Map<String, Set<int>> bayHourReadings = {};
+      for (var doc in allLogsheetsSnapshot.docs) {
+        final data = doc.data();
+        final bayId = data['bayId'] as String;
+        final readingHour = data['readingHour'] as int?;
+
+        if (readingHour != null) {
+          bayHourReadings.putIfAbsent(bayId, () => <int>{});
+          bayHourReadings[bayId]!.add(readingHour);
+        }
+      }
+
+      // Check completion status
       for (var slot in _hourlySlots) {
         final int hour = slot['hour'];
         bool allBaysComplete = true;
 
-        // Check if all bays with hourly assignments have readings for this hour
         for (var bay in _baysWithHourlyAssignments) {
-          final logsheetQuery = await FirebaseFirestore.instance
-              .collection('logsheetEntries')
-              .where('bayId', isEqualTo: bay.id)
-              .where('frequency', isEqualTo: 'hourly')
-              .where('readingHour', isEqualTo: hour)
-              .where(
-                'readingTimestamp',
-                isGreaterThanOrEqualTo: Timestamp.fromDate(
-                  DateTime(
-                    widget.selectedDate.year,
-                    widget.selectedDate.month,
-                    widget.selectedDate.day,
-                  ),
-                ),
-              )
-              .where(
-                'readingTimestamp',
-                isLessThan: Timestamp.fromDate(
-                  DateTime(
-                    widget.selectedDate.year,
-                    widget.selectedDate.month,
-                    widget.selectedDate.day + 1,
-                  ),
-                ),
-              )
-              .limit(1)
-              .get();
-
-          if (logsheetQuery.docs.isEmpty) {
+          if (!bayHourReadings.containsKey(bay.id) ||
+              !bayHourReadings[bay.id]!.contains(hour)) {
             allBaysComplete = false;
             break;
           }
@@ -233,9 +327,68 @@ class _SubstationUserOperationsTabState
 
         _slotCompletionStatus['$hour'] = allBaysComplete;
       }
+
+      if (mounted) {
+        setState(() {});
+      }
     } catch (e) {
       print('Error checking slot completion: $e');
     }
+  }
+
+  // Method to refresh only specific slot status
+  Future<void> _refreshSlotStatus(int hour) async {
+    if (_baysWithHourlyAssignments.isEmpty) {
+      setState(() {
+        _slotCompletionStatus['$hour'] = true;
+      });
+      return;
+    }
+
+    bool allBaysComplete = true;
+    for (var bay in _baysWithHourlyAssignments) {
+      final hasReading = await _checkBayHasReadingForHour(bay.id, hour);
+      if (!hasReading) {
+        allBaysComplete = false;
+        break;
+      }
+    }
+
+    setState(() {
+      _slotCompletionStatus['$hour'] = allBaysComplete;
+    });
+  }
+
+  Future<bool> _checkBayHasReadingForHour(String bayId, int hour) async {
+    final logsheetQuery = await FirebaseFirestore.instance
+        .collection('logsheetEntries')
+        .where('bayId', isEqualTo: bayId)
+        .where('frequency', isEqualTo: 'hourly')
+        .where('readingHour', isEqualTo: hour)
+        .where(
+          'readingTimestamp',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(
+            DateTime(
+              widget.selectedDate.year,
+              widget.selectedDate.month,
+              widget.selectedDate.day,
+            ),
+          ),
+        )
+        .where(
+          'readingTimestamp',
+          isLessThan: Timestamp.fromDate(
+            DateTime(
+              widget.selectedDate.year,
+              widget.selectedDate.month,
+              widget.selectedDate.day + 1,
+            ),
+          ),
+        )
+        .limit(1)
+        .get();
+
+    return logsheetQuery.docs.isNotEmpty;
   }
 
   Color _getSlotStatusColor(Map<String, dynamic> slot) {
@@ -280,6 +433,9 @@ class _SubstationUserOperationsTabState
 
   @override
   Widget build(BuildContext context) {
+    // **KEY FIX: Call super.build for AutomaticKeepAliveClientMixin**
+    super.build(context);
+
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
@@ -498,7 +654,6 @@ class _SubstationUserOperationsTabState
                               : theme.colorScheme.onSurface.withOpacity(0.6),
                         ),
                         onTap: () {
-                          // Fixed navigation
                           Navigator.of(context)
                               .push(
                                 MaterialPageRoute(
@@ -512,8 +667,10 @@ class _SubstationUserOperationsTabState
                                   ),
                                 ),
                               )
-                              .then((_) {
-                                _loadHourlySlots();
+                              .then((result) {
+                                if (result == true) {
+                                  _refreshSlotStatus(slot['hour']);
+                                }
                               });
                         },
                       ),

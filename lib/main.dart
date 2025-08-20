@@ -3,11 +3,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
-import 'firebase_options.dart'; // Fixed import path
-import 'models/app_state_data.dart'; // Fixed import path
-import 'screens/home_screen.dart'; // Fixed import path
-import 'screens/splash_screen.dart'; // Fixed import path
-import 'services/fcm_service.dart'; // Fixed import path
+import 'firebase_options.dart';
+import 'models/app_state_data.dart';
+import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
+import 'services/fcm_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,7 +49,6 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'Substation Manager Pro',
       debugShowCheckedModeBanner: false,
-
       // Define light theme
       theme: ThemeData(
         brightness: Brightness.light,
@@ -179,7 +178,6 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: Colors.white,
       ),
-
       // Define dark theme
       darkTheme: ThemeData(
         brightness: Brightness.dark,
@@ -309,22 +307,10 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: Colors.black,
       ),
-
       themeMode: appStateData.themeMode,
 
-      // Use a FutureBuilder to wait for AppStateData to be initialized
-      home: FutureBuilder<bool>(
-        future: appStateData.isInitialized ? Future.value(true) : null,
-        builder: (context, snapshot) {
-          // If AppStateData is still loading, show the SplashScreen
-          if (!appStateData.isInitialized) {
-            return const SplashScreen();
-          }
-
-          // Once AppStateData is initialized, HomeRouter handles further routing
-          return const HomeRouter();
-        },
-      ),
+      // KEY CHANGE: Always show SplashScreen first, let it control navigation
+      home: const SplashScreen(),
     );
   }
 }
