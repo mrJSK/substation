@@ -1138,33 +1138,6 @@ class _TrippingShutdownEntryScreenState
                 color: theme.colorScheme.onSurface,
               ),
             ),
-            if (_cache.isInitialized) ...[
-              const SizedBox(width: 12),
-              // Cache indicator
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.withOpacity(0.3)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.offline_bolt, size: 10, color: Colors.green),
-                    const SizedBox(width: 2),
-                    Text(
-                      'CACHED',
-                      style: TextStyle(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.green,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
         actions: [
@@ -1282,74 +1255,6 @@ class _TrippingShutdownEntryScreenState
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  if (!isEditingExisting)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: isDarkMode
-                              ? [
-                                  Colors.blue.shade800.withOpacity(0.3),
-                                  Colors.green.shade800.withOpacity(0.3),
-                                ]
-                              : [Colors.blue.shade50, Colors.green.shade50],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: isDarkMode
-                                  ? Colors.blue.shade800.withOpacity(0.5)
-                                  : Colors.blue.shade100,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.notifications_active,
-                              color: isDarkMode
-                                  ? Colors.blue.shade300
-                                  : Colors.blue.shade700,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Hierarchical Notifications Enabled',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDarkMode
-                                        ? Colors.blue.shade300
-                                        : Colors.blue.shade700,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Creating this event will automatically send notifications to subdivision, division, circle, zone managers, and admins based on their notification preferences.',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDarkMode
-                                        ? Colors.blue.shade300
-                                        : Colors.blue.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                   _buildFormCard(
                     title: isMultiBaySelectionMode
                         ? 'Select Bay(s)'

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../models/signature_models.dart';
 
 class SignatureDialog extends StatefulWidget {
@@ -61,7 +60,12 @@ class _SignatureDialogState extends State<SignatureDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final bool isDarkMode = theme.brightness == Brightness.dark;
+
     return Dialog(
+      backgroundColor: colorScheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: 650,
@@ -74,7 +78,7 @@ class _SignatureDialogState extends State<SignatureDialog> {
             const SizedBox(height: 16),
             _buildDescription(context),
             const SizedBox(height: 20),
-            _buildSignatureList(),
+            _buildSignatureList(context),
             const SizedBox(height: 16),
             _buildActionButtons(context),
           ],
@@ -84,17 +88,20 @@ class _SignatureDialogState extends State<SignatureDialog> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+            color: colorScheme.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             Icons.draw_outlined,
-            color: Theme.of(context).colorScheme.primary,
+            color: colorScheme.primary,
             size: 24,
           ),
         ),
@@ -105,15 +112,17 @@ class _SignatureDialogState extends State<SignatureDialog> {
             children: [
               Text(
                 'Add Signatures',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
                 ),
               ),
+              const SizedBox(height: 4),
               Text(
                 'Configure approval signatures for the report',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -128,23 +137,26 @@ class _SignatureDialogState extends State<SignatureDialog> {
   }
 
   Widget _buildDescription(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: colorScheme.surfaceVariant,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.shade200),
+        border: Border.all(color: colorScheme.outline),
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+          Icon(Icons.info_outline, color: colorScheme.primary, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               'Add the name and designation of officials who will sign this energy report. You can add multiple signatories as needed.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.blue.shade700),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         ],
@@ -152,7 +164,10 @@ class _SignatureDialogState extends State<SignatureDialog> {
     );
   }
 
-  Widget _buildSignatureList() {
+  Widget _buildSignatureList(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+
     return Expanded(
       child: Form(
         key: _formKey,
@@ -162,17 +177,21 @@ class _SignatureDialogState extends State<SignatureDialog> {
               children: [
                 Text(
                   'Signatories (${_signatureEntries.length})',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
                   ),
                 ),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: _addEmptySignatureEntry,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add Another'),
+                  icon: Icon(Icons.add, size: 18, color: colorScheme.primary),
+                  label: Text(
+                    'Add Another',
+                    style: TextStyle(color: colorScheme.primary),
+                  ),
                   style: TextButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: colorScheme.primary,
                   ),
                 ),
               ],
@@ -182,7 +201,7 @@ class _SignatureDialogState extends State<SignatureDialog> {
               child: ListView.builder(
                 itemCount: _signatureEntries.length,
                 itemBuilder: (context, index) {
-                  return _buildSignatureEntryCard(index);
+                  return _buildSignatureEntryCard(context, index);
                 },
               ),
             ),
@@ -192,13 +211,17 @@ class _SignatureDialogState extends State<SignatureDialog> {
     );
   }
 
-  Widget _buildSignatureEntryCard(int index) {
+  Widget _buildSignatureEntryCard(BuildContext context, int index) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final bool isDarkMode = theme.brightness == Brightness.dark;
     final entry = _signatureEntries[index];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: colorScheme.surface,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -212,15 +235,13 @@ class _SignatureDialogState extends State<SignatureDialog> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withOpacity(0.1),
+                    color: colorScheme.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     'Signatory ${index + 1}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.primary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -232,9 +253,7 @@ class _SignatureDialogState extends State<SignatureDialog> {
                     icon: const Icon(Icons.delete_outline, size: 20),
                     tooltip: 'Remove this signatory',
                     style: IconButton.styleFrom(
-                      foregroundColor: Colors.red.shade600,
-                      backgroundColor: Colors.red.shade50,
-                      padding: const EdgeInsets.all(8),
+                      foregroundColor: colorScheme.error,
                     ),
                   ),
               ],
@@ -257,7 +276,13 @@ class _SignatureDialogState extends State<SignatureDialog> {
                         horizontal: 12,
                         vertical: 16,
                       ),
+                      filled: true,
+                      fillColor: colorScheme.surfaceVariant,
+                      labelStyle: TextStyle(color: colorScheme.onSurface),
+                      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                      prefixIconColor: colorScheme.onSurfaceVariant,
                     ),
+                    style: TextStyle(color: colorScheme.onSurface),
                     validator: (value) {
                       if (value?.trim().isEmpty ?? true) {
                         return 'Name is required';
@@ -282,7 +307,13 @@ class _SignatureDialogState extends State<SignatureDialog> {
                         horizontal: 12,
                         vertical: 16,
                       ),
+                      filled: true,
+                      fillColor: colorScheme.surfaceVariant,
+                      labelStyle: TextStyle(color: colorScheme.onSurface),
+                      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                      prefixIconColor: colorScheme.onSurfaceVariant,
                     ),
+                    style: TextStyle(color: colorScheme.onSurface),
                     validator: (value) {
                       if (value?.trim().isEmpty ?? true) {
                         return 'Designation is required';
@@ -307,7 +338,13 @@ class _SignatureDialogState extends State<SignatureDialog> {
                   horizontal: 12,
                   vertical: 16,
                 ),
+                filled: true,
+                fillColor: colorScheme.surfaceVariant,
+                labelStyle: TextStyle(color: colorScheme.onSurface),
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                prefixIconColor: colorScheme.onSurfaceVariant,
               ),
+              style: TextStyle(color: colorScheme.onSurface),
             ),
           ],
         ),
@@ -316,35 +353,44 @@ class _SignatureDialogState extends State<SignatureDialog> {
   }
 
   Widget _buildActionButtons(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final bool isDarkMode = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.only(top: 16),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
         children: [
           TextButton.icon(
             onPressed: _clearAllEntries,
-            icon: const Icon(Icons.clear_all, size: 18),
-            label: const Text('Clear All'),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.orange.shade600,
+            icon: Icon(Icons.clear_all, size: 18, color: colorScheme.error),
+            label: Text(
+              'Clear All',
+              style: TextStyle(color: colorScheme.error),
             ),
           ),
           const Spacer(),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-            style: TextButton.styleFrom(foregroundColor: Colors.grey.shade600),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
           ),
           const SizedBox(width: 12),
           ElevatedButton.icon(
             onPressed: _saveSignatures,
-            icon: const Icon(Icons.save, size: 18),
+            icon: Icon(Icons.save, size: 18, color: colorScheme.onPrimary),
             label: Text(
               'Save ${_signatureEntries.length} Signature${_signatureEntries.length != 1 ? 's' : ''}',
+              style: TextStyle(color: colorScheme.onPrimary),
             ),
             style: ElevatedButton.styleFrom(
+              foregroundColor: colorScheme.onPrimary,
+              backgroundColor: colorScheme.primary,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
           ),
@@ -364,14 +410,24 @@ class _SignatureDialogState extends State<SignatureDialog> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear All Signatures'),
-        content: const Text(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        title: Text(
+          'Clear All Signatures',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+        content: Text(
           'Are you sure you want to clear all signature entries? This action cannot be undone.',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -384,10 +440,12 @@ class _SignatureDialogState extends State<SignatureDialog> {
               });
               Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(
               'Clear All',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(context).colorScheme.onError),
             ),
           ),
         ],
@@ -413,9 +471,12 @@ class _SignatureDialogState extends State<SignatureDialog> {
 
       if (signatures.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please add at least one valid signature entry.'),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: const Text(
+              'Please add at least one valid signature entry.',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         return;

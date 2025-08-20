@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../models/reading_models.dart';
-import '../models/user_model.dart';
-import '../utils/snackbar_utils.dart';
+import '../../models/reading_models.dart';
+import '../../models/user_model.dart';
+import '../../utils/snackbar_utils.dart';
 
 class BayReadingAssignmentScreen extends StatefulWidget {
   final String bayId;

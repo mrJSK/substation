@@ -325,33 +325,6 @@ class _SubstationUserOperationsTabState
                     size: 32,
                   ),
                   const SizedBox(width: 12),
-                  // Cache indicator
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.green.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.offline_bolt, size: 12, color: Colors.green),
-                        const SizedBox(width: 4),
-                        Text(
-                          'CACHED',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
               const SizedBox(height: 8),
