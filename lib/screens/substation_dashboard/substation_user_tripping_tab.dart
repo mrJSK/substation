@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../models/tripping_shutdown_model.dart';
 import '../../models/user_model.dart';
+import '../../services/comprehensive_cache_service.dart';
 import '../../utils/snackbar_utils.dart';
 import 'tripping_shutdown_entry_screen.dart';
 
@@ -25,23 +25,18 @@ class SubstationUserTrippingTab extends StatefulWidget {
       _SubstationUserTrippingTabState();
 }
 
-// **KEY FIX: Add AutomaticKeepAliveClientMixin**
 class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  // **KEY FIX: Override wantKeepAlive**
   @override
   bool get wantKeepAlive => true;
+
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
 
   bool _isLoading = true;
   List<TrippingShutdownEntry> _todayEvents = [];
   List<TrippingShutdownEntry> _openEvents = [];
   bool _hasAnyBays = false;
   late AnimationController _animationController;
-
-  // **KEY FIX: Add data initialization tracking**
-  bool _isDataInitialized = false;
-  String? _lastLoadedSubstationId;
-  DateTime? _lastLoadedDate;
 
   @override
   void initState() {
@@ -50,8 +45,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    // **KEY FIX: Only initialize once**
-    _initializeDataOnce();
+    _loadTrippingData();
   }
 
   @override
@@ -64,31 +58,14 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   void didUpdateWidget(SubstationUserTrippingTab oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // **KEY FIX: Only reload if substation or date actually changed**
+    // Only reload if substation or date actually changed
     final bool shouldReload =
         oldWidget.substationId != widget.substationId ||
         !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
 
     if (shouldReload) {
-      _isDataInitialized = false;
-      _initializeDataOnce();
+      _loadTrippingData();
     }
-  }
-
-  // **KEY FIX: Prevent multiple Firebase calls**
-  Future<void> _initializeDataOnce() async {
-    if (_isDataInitialized &&
-        _lastLoadedSubstationId == widget.substationId &&
-        _lastLoadedDate != null &&
-        DateUtils.isSameDay(_lastLoadedDate!, widget.selectedDate)) {
-      // Data already loaded for this substation and date
-      return;
-    }
-
-    await _loadTrippingData();
-    _isDataInitialized = true;
-    _lastLoadedSubstationId = widget.substationId;
-    _lastLoadedDate = widget.selectedDate;
   }
 
   Future<void> _loadTrippingData() async {
@@ -103,21 +80,33 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
 
     setState(() => _isLoading = true);
+
     try {
-      // First check if there are any bays in this substation
-      await _checkForBays();
+      // ✅ USE CACHE - No Firebase queries!
+      if (!_cache.isInitialized) {
+        throw Exception('Cache not initialized - please restart the app');
+      }
+
+      // Check if substation has any bays
+      final substationData = _cache.substationData!;
+      _hasAnyBays = substationData.bays.isNotEmpty;
+
       if (_hasAnyBays) {
-        // **OPTIMIZATION: Load both today's and open events in parallel**
-        await Future.wait([
-          _loadTodayEventsOptimized(),
-          _loadOpenEventsOptimized(),
-        ]);
+        // Get today's events from cache
+        _todayEvents = _cache.getTrippingEventsForDate(widget.selectedDate);
+
+        // Get open events from cache
+        _openEvents = _cache.getOpenTrippingEvents();
       }
 
       // Start animation after data is loaded
       _animationController.forward();
+
+      print(
+        '✅ Tripping tab loaded ${_todayEvents.length} today events and ${_openEvents.length} open events from cache',
+      );
     } catch (e) {
-      print('Error loading tripping data: $e');
+      print('❌ Error loading tripping data from cache: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -132,78 +121,13 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  Future<void> _checkForBays() async {
-    // **KEY FIX: Only check if not already checked for this substation**
-    if (_lastLoadedSubstationId == widget.substationId && _hasAnyBays) {
-      return;
-    }
-
-    try {
-      final baysSnapshot = await FirebaseFirestore.instance
-          .collection('bays')
-          .where('substationId', isEqualTo: widget.substationId)
-          .limit(1)
-          .get();
-      _hasAnyBays = baysSnapshot.docs.isNotEmpty;
-    } catch (e) {
-      print('Error checking for bays: $e');
-      _hasAnyBays = false;
-    }
-  }
-
-  Future<void> _loadTodayEventsOptimized() async {
-    final startOfDay = DateTime(
-      widget.selectedDate.year,
-      widget.selectedDate.month,
-      widget.selectedDate.day,
-    );
-    final endOfDay = startOfDay.add(const Duration(days: 1));
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('trippingShutdownEntries')
-        .where('substationId', isEqualTo: widget.substationId)
-        .where(
-          'startTime',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
-        )
-        .where('startTime', isLessThan: Timestamp.fromDate(endOfDay))
-        .orderBy('startTime', descending: true)
-        .get();
-
-    _todayEvents = snapshot.docs
-        .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
-        .toList();
-  }
-
-  Future<void> _loadOpenEventsOptimized() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('trippingShutdownEntries')
-        .where('substationId', isEqualTo: widget.substationId)
-        .where('status', isEqualTo: 'OPEN')
-        .orderBy('startTime', descending: true)
-        .limit(10)
-        .get();
-
-    _openEvents = snapshot.docs
-        .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
-        .toList();
-  }
-
-  // **KEY FIX: Method to refresh data after adding/editing events**
+  // Method to refresh data after adding/editing events
   Future<void> _refreshTrippingData() async {
     if (!_hasAnyBays) return;
 
-    try {
-      await Future.wait([
-        _loadTodayEventsOptimized(),
-        _loadOpenEventsOptimized(),
-      ]);
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      print('Error refreshing tripping data: $e');
-    }
+    // ✅ Data is already in cache after save operation
+    // Just reload from cache
+    _loadTrippingData();
   }
 
   Color _getEventTypeColor(String eventType) {
@@ -252,7 +176,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
         )
         .then((result) {
-          // **KEY FIX: Only refresh if data was actually saved**
+          // Only refresh if data was actually saved
           if (result == true) {
             _refreshTrippingData();
           }
@@ -276,7 +200,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
         )
         .then((result) {
-          // **KEY FIX: Only refresh if data was actually modified**
+          // Only refresh if data was actually modified
           if (result == true) {
             _refreshTrippingData();
           }
@@ -297,7 +221,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
         )
         .then((result) {
-          // **KEY FIX: Only refresh if data was actually modified**
+          // Only refresh if data was actually modified
           if (result == true) {
             _refreshTrippingData();
           }
@@ -632,8 +556,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
 
   @override
   Widget build(BuildContext context) {
-    // **KEY FIX: Call super.build for AutomaticKeepAliveClientMixin**
-    super.build(context);
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -652,7 +575,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          // Enhanced Header with notification indicator
+          // Enhanced Header with notification indicator and cache indicator
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -728,42 +651,81 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         ],
                       ),
                     ),
-                    // Auto-notify indicator
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDarkMode
-                            ? Colors.blue.shade800.withOpacity(0.3)
-                            : Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.notifications_active,
-                            size: 14,
-                            color: isDarkMode
-                                ? Colors.blue.shade300
-                                : Colors.blue.shade700,
+                    // Cache status and Auto-notify indicators
+                    Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Auto-notify',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: isDarkMode
-                                  ? Colors.blue.shade300
-                                  : Colors.blue.shade700,
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.green.withOpacity(0.3),
                             ),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.offline_bolt,
+                                size: 10,
+                                color: Colors.green,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                'CACHED',
+                                style: TextStyle(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDarkMode
+                                ? Colors.blue.shade800.withOpacity(0.3)
+                                : Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.blue.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.notifications_active,
+                                size: 14,
+                                color: isDarkMode
+                                    ? Colors.blue.shade300
+                                    : Colors.blue.shade700,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Auto-notify',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDarkMode
+                                      ? Colors.blue.shade300
+                                      : Colors.blue.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -824,7 +786,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'Loading events...',
+                            'Loading from cache...',
                             style: TextStyle(
                               fontSize: 16,
                               color: isDarkMode

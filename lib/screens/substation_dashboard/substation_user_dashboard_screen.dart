@@ -6,15 +6,15 @@ import 'package:intl/intl.dart';
 import '../../models/app_state_data.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/user_model.dart';
+import '../../services/comprehensive_cache_service.dart';
 import '../../utils/snackbar_utils.dart';
-import '../../widgets/modern_app_drawer.dart'; // Add this import
+import '../../widgets/modern_app_drawer.dart';
 import 'substation_user_operations_tab.dart';
 import 'substation_user_energy_tab.dart';
 import 'substation_user_tripping_tab.dart';
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
-  // Removed drawer parameter since we're using bottom modal
 
   const SubstationUserDashboardScreen({super.key, required this.currentUser});
 
@@ -26,6 +26,8 @@ class SubstationUserDashboardScreen extends StatefulWidget {
 class _SubstationUserDashboardScreenState
     extends State<SubstationUserDashboardScreen>
     with TickerProviderStateMixin {
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
+
   Substation? _selectedSubstationForLogsheet;
   List<Substation> _accessibleSubstations = [];
   bool _isLoadingSubstations = true;
@@ -44,7 +46,7 @@ class _SubstationUserDashboardScreenState
 
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_handleTabSelection);
-    _loadAccessibleSubstations();
+    _loadAccessibleSubstationsAndInitializeCache();
     _animationController.forward();
   }
 
@@ -61,7 +63,7 @@ class _SubstationUserDashboardScreenState
     });
   }
 
-  Future<void> _loadAccessibleSubstations() async {
+  Future<void> _loadAccessibleSubstationsAndInitializeCache() async {
     setState(() => _isLoadingSubstations = true);
 
     try {
@@ -82,13 +84,27 @@ class _SubstationUserDashboardScreenState
       if (user.role == UserRole.substationUser) {
         final substationId = user.assignedLevels?['substationId'];
         if (substationId != null) {
-          final substationDoc = await FirebaseFirestore.instance
-              .collection('substations')
-              .doc(substationId)
-              .get();
+          // ✅ INITIALIZE COMPREHENSIVE CACHE
+          try {
+            await _cache.initializeForUser(user);
+            print('✅ Comprehensive cache initialized successfully');
 
-          if (substationDoc.exists) {
-            substations.add(Substation.fromFirestore(substationDoc));
+            // Get substation from cache instead of Firebase
+            final substationData = _cache.substationData;
+            if (substationData != null) {
+              substations.add(substationData.substation);
+            }
+          } catch (cacheError) {
+            print('❌ Cache initialization failed: $cacheError');
+            // Fallback to Firebase query
+            final substationDoc = await FirebaseFirestore.instance
+                .collection('substations')
+                .doc(substationId)
+                .get();
+
+            if (substationDoc.exists) {
+              substations.add(Substation.fromFirestore(substationDoc));
+            }
           }
         }
       }
@@ -99,7 +115,12 @@ class _SubstationUserDashboardScreenState
           _selectedSubstationForLogsheet = substations.first;
         }
       });
+
+      print(
+        '✅ Dashboard initialized with ${substations.length} accessible substations',
+      );
     } catch (e) {
+      print('❌ Error loading substations: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -138,6 +159,41 @@ class _SubstationUserDashboardScreenState
       setState(() {
         _singleDate = picked;
       });
+    }
+  }
+
+  Future<void> _refreshData() async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Refreshing data...'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+
+      // ✅ FORCE CACHE REFRESH
+      await _cache.forceRefresh();
+
+      // Trigger rebuild of all tabs
+      setState(() {});
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Data refreshed successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to refresh data: $e'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -192,7 +248,7 @@ class _SubstationUserDashboardScreenState
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: _loadAccessibleSubstations,
+                onPressed: _loadAccessibleSubstationsAndInitializeCache,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: theme.colorScheme.primary,
                   foregroundColor: theme.colorScheme.onPrimary,
@@ -222,13 +278,44 @@ class _SubstationUserDashboardScreenState
       appBar: AppBar(
         backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
-        title: Text(
-          'Substation Operations',
-          style: TextStyle(
-            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+        title: Row(
+          children: [
+            Text(
+              'Substation Operations',
+              style: TextStyle(
+                color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (_cache.isInitialized) ...[
+              const SizedBox(width: 12),
+              // Cache status indicator
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.offline_bolt, size: 12, color: Colors.green),
+                    const SizedBox(width: 4),
+                    Text(
+                      'CACHED',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
         leading: IconButton(
           icon: Icon(
@@ -248,6 +335,14 @@ class _SubstationUserDashboardScreenState
               color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
             tooltip: 'Select Date',
+          ),
+          IconButton(
+            onPressed: _refreshData,
+            icon: Icon(
+              Icons.refresh,
+              color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+            ),
+            tooltip: 'Refresh Data',
           ),
         ],
         bottom: _accessibleSubstations.isNotEmpty
@@ -296,7 +391,6 @@ class _SubstationUserDashboardScreenState
               )
             : null,
       ),
-      // Removed drawer: widget.drawer since we're using bottom modal
       body: SafeArea(
         child: _isLoadingSubstations
             ? Center(
@@ -316,7 +410,9 @@ class _SubstationUserDashboardScreenState
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Loading substation data...',
+                          _cache.isInitialized
+                              ? 'Loading from cache...'
+                              : 'Initializing cache and loading data...',
                           style: TextStyle(
                             color: isDarkMode
                                 ? Colors.white
@@ -324,6 +420,20 @@ class _SubstationUserDashboardScreenState
                             fontSize: 16,
                           ),
                         ),
+                        if (!_cache.isInitialized) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'This may take a moment on first launch',
+                            style: TextStyle(
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.6)
+                                  : theme.colorScheme.onSurface.withOpacity(
+                                      0.6,
+                                    ),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -333,19 +443,59 @@ class _SubstationUserDashboardScreenState
             ? _buildEmptyState(theme, isDarkMode)
             : Column(
                 children: [
-                  // Date Display
+                  // Date Display with performance indicator
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
-                    child: Text(
-                      DateFormat('EEEE, dd MMMM yyyy').format(_singleDate),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: theme.colorScheme.primary,
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          DateFormat('EEEE, dd MMMM yyyy').format(_singleDate),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        if (_cache.isInitialized) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.blue.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.flash_on,
+                                  size: 10,
+                                  color: Colors.blue,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'INSTANT',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
 

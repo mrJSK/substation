@@ -7,6 +7,7 @@ import 'package:dropdown_search/dropdown_search.dart';
 import '../../../models/user_model.dart';
 import '../../../models/bay_model.dart';
 import '../../../models/tripping_shutdown_model.dart';
+import '../../../services/comprehensive_cache_service.dart';
 import '../../../utils/snackbar_utils.dart';
 import 'package:collection/collection.dart';
 
@@ -34,7 +35,9 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
 class _TrippingShutdownEntryScreenState
     extends State<TrippingShutdownEntryScreen>
     with SingleTickerProviderStateMixin {
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isClosingEvent = false;
@@ -156,16 +159,16 @@ class _TrippingShutdownEntryScreenState
 
   Future<void> _initializeForm() async {
     setState(() => _isLoading = true);
-    try {
-      final baysSnapshot = await FirebaseFirestore.instance
-          .collection('bays')
-          .where('substationId', isEqualTo: widget.substationId)
-          .orderBy('name')
-          .get();
 
-      _allBays = baysSnapshot.docs
-          .map((doc) => Bay.fromFirestore(doc))
-          .toList();
+    try {
+      // ✅ USE CACHE - No Firebase queries!
+      if (!_cache.isInitialized) {
+        throw Exception('Cache not initialized - please restart the app');
+      }
+
+      // Get bays from cache
+      final substationData = _cache.substationData!;
+      _allBays = substationData.bays.map((bayData) => bayData.bay).toList();
 
       if (_allBays.isEmpty) {
         if (mounted) {
@@ -213,9 +216,13 @@ class _TrippingShutdownEntryScreenState
         _hasAutoReclose = false;
       }
 
+      print(
+        '✅ Tripping entry form initialized from cache with ${_allBays.length} bays',
+      );
+
       _animationController.forward();
     } catch (e) {
-      print("Error initializing form: $e");
+      print("❌ Error initializing form from cache: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -552,12 +559,17 @@ class _TrippingShutdownEntryScreenState
                 : null,
           );
 
-          await FirebaseFirestore.instance
+          // Save to Firebase
+          final docRef = await FirebaseFirestore.instance
               .collection('trippingShutdownEntries')
               .add(
                 newEntry.toFirestore()
                   ..addAll({'substationName': widget.substationName}),
               );
+
+          // ✅ UPDATE CACHE
+          final savedEntry = newEntry.copyWith(id: docRef.id);
+          _cache.addTrippingEvent(savedEntry);
         }
 
         if (mounted) {
@@ -636,6 +648,7 @@ class _TrippingShutdownEntryScreenState
               : null,
         );
 
+        // Update in Firebase
         await FirebaseFirestore.instance
             .collection('trippingShutdownEntries')
             .doc(updatedEntry.id)
@@ -643,6 +656,9 @@ class _TrippingShutdownEntryScreenState
               updatedEntry.toFirestore()
                 ..addAll({'substationName': widget.substationName}),
             );
+
+        // ✅ UPDATE CACHE
+        _cache.updateTrippingEvent(updatedEntry);
 
         if (widget.currentUser.role == UserRole.subdivisionManager &&
             modificationReason != null &&
@@ -1106,19 +1122,50 @@ class _TrippingShutdownEntryScreenState
           icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          isEditingExisting
-              ? isClosedEvent
-                    ? 'View Event Details'
-                    : _isClosingEvent
-                    ? 'Close Event'
-                    : 'Edit Event'
-              : 'New Event Entry',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface,
-          ),
+        title: Row(
+          children: [
+            Text(
+              isEditingExisting
+                  ? isClosedEvent
+                        ? 'View Event Details'
+                        : _isClosingEvent
+                        ? 'Close Event'
+                        : 'Edit Event'
+                  : 'New Event Entry',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            if (_cache.isInitialized) ...[
+              const SizedBox(width: 12),
+              // Cache indicator
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.offline_bolt, size: 10, color: Colors.green),
+                    const SizedBox(width: 2),
+                    Text(
+                      'CACHED',
+                      style: TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
           if (!isEditingExisting)
@@ -1219,7 +1266,7 @@ class _TrippingShutdownEntryScreenState
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Loading event details...',
+                      'Loading from cache...',
                       style: TextStyle(
                         fontSize: 16,
                         color: isDarkMode ? Colors.white : Colors.black87,

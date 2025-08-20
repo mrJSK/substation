@@ -1,14 +1,15 @@
 // lib/screens/bay_readings_overview_screen.dart
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 import '../../../models/bay_model.dart';
 import '../../../models/user_model.dart';
-import '../../../models/reading_models.dart'; // For ReadingFieldDataType, ReadingFrequency
-import '../../../models/logsheet_models.dart'; // For LogsheetEntry
+import '../../../models/reading_models.dart';
+import '../../../models/logsheet_models.dart';
+import '../../../models/enhanced_bay_data.dart';
+import '../../../services/comprehensive_cache_service.dart';
 import '../../../utils/snackbar_utils.dart';
-import 'bay_readings_status_screen.dart'; // Screen 2: List of bays for a slot
+import 'bay_readings_status_screen.dart';
 
 class BayReadingsOverviewScreen extends StatefulWidget {
   final String substationId;
@@ -30,124 +31,43 @@ class BayReadingsOverviewScreen extends StatefulWidget {
 }
 
 class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
-  bool _isLoading = true;
-  DateTime _selectedDate = DateTime.now(); // Date for which to view slots
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
 
-  // Maps to store computed completion statuses for each slot (e.g., '00', '2025-07-01')
-  // Slot Key -> IsComplete (True if ALL bays are complete for that slot)
+  bool _isLoading = true;
+  DateTime _selectedDate = DateTime.now();
+
+  // Maps to store computed completion statuses for each slot
   final Map<String, bool> _overallSlotCompletionStatus = {};
 
   // Data cached for efficient status checking
-  List<Bay> _allBaysInSubstation = [];
-  Map<String, List<ReadingField>> _bayMandatoryFields = {};
-  Map<String, Map<String, LogsheetEntry>> _logsheetEntriesForDate =
-      {}; // bayId -> slotKey -> LogsheetEntry
+  List<EnhancedBayData> _baysWithAssignments = [];
 
   @override
   void initState() {
     super.initState();
-    _loadAllDataAndCalculateStatuses();
+    _loadDataFromCacheAndCalculateStatuses();
   }
 
-  Future<void> _loadAllDataAndCalculateStatuses() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Future<void> _loadDataFromCacheAndCalculateStatuses() async {
+    setState(() => _isLoading = true);
 
     try {
-      // 1. Fetch all bays for the current substation
-      final baysSnapshot = await FirebaseFirestore.instance
-          .collection('bays')
-          .where('substationId', isEqualTo: widget.substationId)
-          .orderBy('name')
-          .get();
-      _allBaysInSubstation = baysSnapshot.docs
-          .map((doc) => Bay.fromFirestore(doc))
-          .toList();
-
-      // 2. Fetch all reading assignments for these bays to get mandatory fields
-      final List<String> bayIds = _allBaysInSubstation
-          .map((bay) => bay.id)
-          .toList();
-      if (bayIds.isEmpty) {
-        // No bays, nothing to do
-        _isLoading = false;
-        setState(() {});
-        return;
-      }
-      final assignmentsSnapshot = await FirebaseFirestore.instance
-          .collection('bayReadingAssignments')
-          .where('bayId', whereIn: bayIds)
-          .get();
-
-      _bayMandatoryFields.clear();
-      for (var doc in assignmentsSnapshot.docs) {
-        final assignedFieldsData =
-            (doc.data())['assignedFields'] as List<dynamic>;
-        final List<ReadingField> allFields = assignedFieldsData
-            .map(
-              (fieldMap) =>
-                  ReadingField.fromMap(fieldMap as Map<String, dynamic>),
-            )
-            .toList();
-
-        // Store only the mandatory fields relevant to this frequencyType
-        _bayMandatoryFields[doc['bayId'] as String] = allFields
-            .where(
-              (field) =>
-                  field.isMandatory &&
-                  field.frequency.toString().split('.').last ==
-                      widget.frequencyType,
-            )
-            .toList();
+      // ✅ USE CACHE - No Firebase queries!
+      if (!_cache.isInitialized) {
+        throw Exception('Cache not initialized - please restart the app');
       }
 
-      // 3. Fetch ALL logsheet entries for the selected date and frequencyType
-      // This is crucial for efficient in-memory processing.
-      _logsheetEntriesForDate.clear();
-      final startOfSelectedDate = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-      );
-      final endOfSelectedDate = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        23,
-        59,
-        59,
-        999,
-      );
+      // Get bays with assignments for the specified frequency from cache
+      _baysWithAssignments = _cache.getBaysWithReadings(widget.frequencyType);
 
-      final logsheetsSnapshot = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where(
-            'substationId',
-            isEqualTo: widget.substationId,
-          ) // Requires substationId in logsheet entry model
-          .where('frequency', isEqualTo: widget.frequencyType)
-          .where(
-            'readingTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfSelectedDate),
-          )
-          .where(
-            'readingTimestamp',
-            isLessThanOrEqualTo: Timestamp.fromDate(endOfSelectedDate),
-          )
-          .get();
-
-      for (var doc in logsheetsSnapshot.docs) {
-        final entry = LogsheetEntry.fromFirestore(doc);
-        final slotKey = _getTimeKeyFromLogsheetEntry(entry);
-        _logsheetEntriesForDate.putIfAbsent(entry.bayId, () => {});
-        _logsheetEntriesForDate[entry.bayId]![slotKey] = entry;
-      }
-
-      // 4. Calculate overall slot statuses
+      // Calculate overall slot statuses from cache
       _calculateSlotCompletionStatuses();
+
+      print(
+        '✅ Loaded ${_baysWithAssignments.length} bays from cache for ${widget.frequencyType} overview',
+      );
     } catch (e) {
-      print("Error loading data for ReadingSlotOverviewScreen: $e");
+      print("Error loading data from cache: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -156,53 +76,10 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
         );
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  // Helper to get the time key string from a logsheet entry based on frequency
-  String _getTimeKeyFromLogsheetEntry(LogsheetEntry entry) {
-    if (entry.frequency == ReadingFrequency.hourly.toString().split('.').last &&
-        entry.readingHour != null) {
-      return entry.readingHour!.toString().padLeft(2, '0');
-    } else if (entry.frequency ==
-        ReadingFrequency.daily.toString().split('.').last) {
-      return DateFormat('yyyy-MM-dd').format(entry.readingTimestamp.toDate());
-    }
-    return ''; // Should not happen for hourly/daily
-  }
-
-  // Function to determine if a specific bay's logsheet is complete for a given slot
-  bool _isBayLogsheetCompleteForSlot(
-    String bayId,
-    String slotTimeKey, // e.g., '00' for hourly, '2025-07-01' for daily
-  ) {
-    final List<ReadingField> mandatoryFields = _bayMandatoryFields[bayId] ?? [];
-    if (mandatoryFields.isEmpty) {
-      return true; // No mandatory fields assigned for this bay/frequency, so considered complete
-    }
-
-    final LogsheetEntry? relevantLogsheet =
-        _logsheetEntriesForDate[bayId]?[slotTimeKey];
-
-    if (relevantLogsheet == null) {
-      return false; // No logsheet found for this bay and slot
-    }
-
-    // Check if all mandatory fields in this logsheet entry have non-empty values
-    return mandatoryFields.every((field) {
-      final value = relevantLogsheet.values[field.name];
-      if (field.dataType ==
-              ReadingFieldDataType.boolean.toString().split('.').last &&
-          value is Map &&
-          value.containsKey('value')) {
-        return value['value'] !=
-            null; // Boolean value itself matters for completion
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
-      return value != null && (value is! String || value.isNotEmpty);
-    });
+    }
   }
 
   void _calculateSlotCompletionStatuses() {
@@ -211,23 +88,58 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
 
     for (String slotKey in slotKeys) {
       bool allBaysCompleteForThisSlot = true;
-      if (_allBaysInSubstation.isEmpty) {
+
+      if (_baysWithAssignments.isEmpty) {
         allBaysCompleteForThisSlot =
             true; // If no bays, it's vacuously complete
       } else {
-        for (Bay bay in _allBaysInSubstation) {
-          if (!_bayMandatoryFields.containsKey(bay.id) ||
-              _bayMandatoryFields[bay.id]!.isEmpty) {
-            // If bay has no mandatory fields for this frequency, it's considered complete for this slot.
-            continue;
+        for (EnhancedBayData bayData in _baysWithAssignments) {
+          // Check if bay has mandatory fields for this frequency
+          final mandatoryFields = bayData.getReadingFields(
+            widget.frequencyType,
+            mandatoryOnly: true,
+          );
+          if (mandatoryFields.isEmpty) {
+            continue; // No mandatory fields, considered complete
           }
-          if (!_isBayLogsheetCompleteForSlot(bay.id, slotKey)) {
+
+          // ✅ USE CACHE - Check completion from cached data
+          final DateTime slotDate = _getSlotDateTime(slotKey);
+          final int? slotHour = widget.frequencyType == 'hourly'
+              ? int.parse(slotKey)
+              : null;
+
+          if (!bayData.isComplete(
+            slotDate,
+            widget.frequencyType,
+            hour: slotHour,
+          )) {
             allBaysCompleteForThisSlot = false;
             break; // One incomplete bay makes the whole slot incomplete
           }
         }
       }
       _overallSlotCompletionStatus[slotKey] = allBaysCompleteForThisSlot;
+    }
+  }
+
+  DateTime _getSlotDateTime(String slotKey) {
+    if (widget.frequencyType == 'hourly') {
+      int hourValue = int.parse(slotKey);
+      DateTime slotDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        hourValue,
+      );
+
+      // For hour 00, it's actually the next day at midnight
+      if (hourValue == 0) {
+        slotDateTime = slotDateTime.add(const Duration(days: 1));
+      }
+      return slotDateTime;
+    } else {
+      return _selectedDate; // Use the selected date itself for daily
     }
   }
 
@@ -299,7 +211,8 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
       setState(() {
         _selectedDate = picked;
       });
-      await _loadAllDataAndCalculateStatuses(); // Recalculate statuses for new date
+      // ✅ Recalculate from cache for new date
+      _calculateSlotCompletionStatuses();
     }
   }
 
@@ -339,7 +252,7 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
                     CircularProgressIndicator(color: theme.colorScheme.primary),
                     const SizedBox(height: 16),
                     Text(
-                      'Loading readings...',
+                      'Loading from cache...',
                       style: TextStyle(
                         fontSize: 16,
                         color: isDarkMode ? Colors.white : Colors.black87,
@@ -382,13 +295,51 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
                           size: 20,
                         ),
                       ),
-                      title: Text(
-                        'Readings Date',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: isDarkMode ? Colors.white : Colors.black87,
-                        ),
+                      title: Row(
+                        children: [
+                          Text(
+                            'Readings Date',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isDarkMode ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Cache status indicator
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.green.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.offline_bolt,
+                                  size: 10,
+                                  color: Colors.green,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'CACHED',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                       subtitle: Text(
                         DateFormat('EEEE, dd MMMM yyyy').format(_selectedDate),
@@ -706,10 +657,11 @@ class _ReadingSlotOverviewScreenState extends State<BayReadingsOverviewScreen> {
                                                     ),
                                               ),
                                             )
-                                            .then(
-                                              (_) =>
-                                                  _loadAllDataAndCalculateStatuses(), // Update status on return
-                                            );
+                                            .then((_) {
+                                              // ✅ Recalculate from cache on return
+                                              _calculateSlotCompletionStatuses();
+                                              setState(() {});
+                                            });
                                       },
                               ),
                             );

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
-import '../../models/reading_models.dart';
+import '../../models/enhanced_bay_data.dart';
+import '../../services/comprehensive_cache_service.dart';
 import '../../utils/snackbar_utils.dart';
 import 'bay_readings_status_screen.dart';
 
@@ -26,65 +26,39 @@ class SubstationUserOperationsTab extends StatefulWidget {
       _SubstationUserOperationsTabState();
 }
 
-// **KEY FIX: Add AutomaticKeepAliveClientMixin**
 class _SubstationUserOperationsTabState
     extends State<SubstationUserOperationsTab>
     with AutomaticKeepAliveClientMixin {
-  // **KEY FIX: Override wantKeepAlive**
   @override
   bool get wantKeepAlive => true;
+
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
 
   bool _isLoading = true;
   bool _isLoadingProgress = false;
   List<Map<String, dynamic>> _hourlySlots = [];
   Map<String, bool> _slotCompletionStatus = {};
-  List<Bay> _baysWithHourlyAssignments = [];
+  List<EnhancedBayData> _baysWithHourlyAssignments = [];
   bool _hasAnyBaysWithReadings = false;
-
-  // **KEY FIX: Add data loaded flag**
-  bool _isDataInitialized = false;
-  String? _lastLoadedSubstationId;
-  DateTime? _lastLoadedDate;
-
-  // Cache variables
-  Map<String, Bay> _preLoadedBays = {};
 
   @override
   void initState() {
     super.initState();
-    // **KEY FIX: Only load once**
-    _initializeDataOnce();
+    _loadHourlySlots();
   }
 
   @override
   void didUpdateWidget(SubstationUserOperationsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // **KEY FIX: Only reload if substation or date actually changed**
+    // Only reload if substation or date actually changed
     final bool shouldReload =
         oldWidget.substationId != widget.substationId ||
         !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
 
     if (shouldReload) {
-      _isDataInitialized = false;
-      _initializeDataOnce();
+      _loadHourlySlots();
     }
-  }
-
-  // **KEY FIX: Prevent multiple Firebase calls**
-  Future<void> _initializeDataOnce() async {
-    if (_isDataInitialized &&
-        _lastLoadedSubstationId == widget.substationId &&
-        _lastLoadedDate != null &&
-        DateUtils.isSameDay(_lastLoadedDate!, widget.selectedDate)) {
-      // Data already loaded for this substation and date
-      return;
-    }
-
-    await _loadHourlySlots();
-    _isDataInitialized = true;
-    _lastLoadedSubstationId = widget.substationId;
-    _lastLoadedDate = widget.selectedDate;
   }
 
   Future<void> _loadHourlySlots() async {
@@ -103,11 +77,14 @@ class _SubstationUserOperationsTabState
     });
 
     try {
-      // Step 1: Pre-load all bays for this substation
-      await _preLoadBays();
+      // ✅ USE CACHE - No Firebase queries!
+      if (!_cache.isInitialized) {
+        throw Exception('Cache not initialized - please restart the app');
+      }
 
-      // Step 2: Check if there are any bays with hourly reading assignments
-      await _checkForBaysWithHourlyAssignments();
+      // Get bays with hourly readings from cache
+      _baysWithHourlyAssignments = _cache.getBaysWithReadings('hourly');
+      _hasAnyBaysWithReadings = _baysWithHourlyAssignments.isNotEmpty;
 
       if (!_hasAnyBaysWithReadings) {
         setState(() {
@@ -118,7 +95,7 @@ class _SubstationUserOperationsTabState
         return;
       }
 
-      // Step 3: Generate hourly slots
+      // Generate hourly slots
       _generateHourlySlots();
 
       // Update UI with slots before checking completion status
@@ -126,9 +103,14 @@ class _SubstationUserOperationsTabState
         _isLoadingProgress = false;
       });
 
-      // Step 4: Check completion status for each slot
-      await _checkSlotCompletionStatusOptimized();
+      // Check completion status for each slot from cache
+      _checkSlotCompletionStatus();
+
+      print(
+        '✅ Operations tab loaded ${_baysWithHourlyAssignments.length} bays from cache',
+      );
     } catch (e) {
+      print('❌ Error loading hourly slots from cache: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -143,79 +125,6 @@ class _SubstationUserOperationsTabState
           _isLoadingProgress = false;
         });
       }
-    }
-  }
-
-  Future<void> _preLoadBays() async {
-    // **KEY FIX: Only load if not already loaded**
-    if (_preLoadedBays.isNotEmpty &&
-        _lastLoadedSubstationId == widget.substationId) {
-      return;
-    }
-
-    final baysSnapshot = await FirebaseFirestore.instance
-        .collection('bays')
-        .where('substationId', isEqualTo: widget.substationId)
-        .get();
-
-    _preLoadedBays = {
-      for (var doc in baysSnapshot.docs) doc.id: Bay.fromFirestore(doc),
-    };
-  }
-
-  Future<void> _checkForBaysWithHourlyAssignments() async {
-    try {
-      if (_preLoadedBays.isEmpty) {
-        _hasAnyBaysWithReadings = false;
-        _baysWithHourlyAssignments = [];
-        return;
-      }
-
-      final List<String> bayIds = _preLoadedBays.keys.toList();
-      _baysWithHourlyAssignments.clear();
-
-      // Optimized: Single query instead of multiple
-      final assignmentsSnapshot = await FirebaseFirestore.instance
-          .collection('bayReadingAssignments')
-          .where('bayId', whereIn: bayIds.take(10).toList()) // Firestore limit
-          .get();
-
-      // If we have more than 10 bays, fetch the rest
-      if (bayIds.length > 10) {
-        for (int i = 10; i < bayIds.length; i += 10) {
-          final batch = bayIds.skip(i).take(10).toList();
-          final additionalSnapshot = await FirebaseFirestore.instance
-              .collection('bayReadingAssignments')
-              .where('bayId', whereIn: batch)
-              .get();
-          assignmentsSnapshot.docs.addAll(additionalSnapshot.docs);
-        }
-      }
-
-      for (var doc in assignmentsSnapshot.docs) {
-        final String bayId = doc['bayId'] as String;
-        final assignedFieldsData =
-            (doc.data() as Map)['assignedFields'] as List;
-
-        final hasHourlyMandatoryFields = assignedFieldsData.any((fieldMap) {
-          final field = ReadingField.fromMap(fieldMap as Map<String, dynamic>);
-          return field.isMandatory &&
-              field.frequency.toString().split('.').last == 'hourly';
-        });
-
-        if (hasHourlyMandatoryFields) {
-          final Bay? bay = _preLoadedBays[bayId];
-          if (bay != null) {
-            _baysWithHourlyAssignments.add(bay);
-          }
-        }
-      }
-
-      _hasAnyBaysWithReadings = _baysWithHourlyAssignments.isNotEmpty;
-    } catch (e) {
-      print('Error checking for bays with hourly assignments: $e');
-      _hasAnyBaysWithReadings = false;
-      _baysWithHourlyAssignments = [];
     }
   }
 
@@ -263,76 +172,37 @@ class _SubstationUserOperationsTabState
     }
   }
 
-  Future<void> _checkSlotCompletionStatusOptimized() async {
-    try {
-      if (_baysWithHourlyAssignments.isEmpty) {
-        for (var slot in _hourlySlots) {
-          _slotCompletionStatus['${slot['hour']}'] = true;
-        }
-        return;
-      }
-
-      // Single optimized query
-      final allLogsheetsSnapshot = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where('substationId', isEqualTo: widget.substationId)
-          .where('frequency', isEqualTo: 'hourly')
-          .where(
-            'readingTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(
-              DateTime(
-                widget.selectedDate.year,
-                widget.selectedDate.month,
-                widget.selectedDate.day,
-              ),
-            ),
-          )
-          .where(
-            'readingTimestamp',
-            isLessThan: Timestamp.fromDate(
-              DateTime(
-                widget.selectedDate.year,
-                widget.selectedDate.month,
-                widget.selectedDate.day + 1,
-              ),
-            ),
-          )
-          .get();
-
-      // Create lookup map
-      final Map<String, Set<int>> bayHourReadings = {};
-      for (var doc in allLogsheetsSnapshot.docs) {
-        final data = doc.data();
-        final bayId = data['bayId'] as String;
-        final readingHour = data['readingHour'] as int?;
-
-        if (readingHour != null) {
-          bayHourReadings.putIfAbsent(bayId, () => <int>{});
-          bayHourReadings[bayId]!.add(readingHour);
-        }
-      }
-
-      // Check completion status
+  void _checkSlotCompletionStatus() {
+    if (_baysWithHourlyAssignments.isEmpty) {
       for (var slot in _hourlySlots) {
-        final int hour = slot['hour'];
-        bool allBaysComplete = true;
+        _slotCompletionStatus['${slot['hour']}'] = true;
+      }
+      setState(() {});
+      return;
+    }
 
-        for (var bay in _baysWithHourlyAssignments) {
-          if (!bayHourReadings.containsKey(bay.id) ||
-              !bayHourReadings[bay.id]!.contains(hour)) {
-            allBaysComplete = false;
-            break;
-          }
+    // ✅ USE CACHE - Check completion from cached data
+    for (var slot in _hourlySlots) {
+      final int hour = slot['hour'];
+      bool allBaysComplete = true;
+
+      for (var bayData in _baysWithHourlyAssignments) {
+        final entry = bayData.getReading(
+          widget.selectedDate,
+          'hourly',
+          hour: hour,
+        );
+        if (entry == null) {
+          allBaysComplete = false;
+          break;
         }
-
-        _slotCompletionStatus['$hour'] = allBaysComplete;
       }
 
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      print('Error checking slot completion: $e');
+      _slotCompletionStatus['$hour'] = allBaysComplete;
+    }
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -345,10 +215,15 @@ class _SubstationUserOperationsTabState
       return;
     }
 
+    // ✅ USE CACHE - Check completion from updated cache data
     bool allBaysComplete = true;
-    for (var bay in _baysWithHourlyAssignments) {
-      final hasReading = await _checkBayHasReadingForHour(bay.id, hour);
-      if (!hasReading) {
+    for (var bayData in _baysWithHourlyAssignments) {
+      final entry = bayData.getReading(
+        widget.selectedDate,
+        'hourly',
+        hour: hour,
+      );
+      if (entry == null) {
         allBaysComplete = false;
         break;
       }
@@ -357,38 +232,6 @@ class _SubstationUserOperationsTabState
     setState(() {
       _slotCompletionStatus['$hour'] = allBaysComplete;
     });
-  }
-
-  Future<bool> _checkBayHasReadingForHour(String bayId, int hour) async {
-    final logsheetQuery = await FirebaseFirestore.instance
-        .collection('logsheetEntries')
-        .where('bayId', isEqualTo: bayId)
-        .where('frequency', isEqualTo: 'hourly')
-        .where('readingHour', isEqualTo: hour)
-        .where(
-          'readingTimestamp',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(
-            DateTime(
-              widget.selectedDate.year,
-              widget.selectedDate.month,
-              widget.selectedDate.day,
-            ),
-          ),
-        )
-        .where(
-          'readingTimestamp',
-          isLessThan: Timestamp.fromDate(
-            DateTime(
-              widget.selectedDate.year,
-              widget.selectedDate.month,
-              widget.selectedDate.day + 1,
-            ),
-          ),
-        )
-        .limit(1)
-        .get();
-
-    return logsheetQuery.docs.isNotEmpty;
   }
 
   Color _getSlotStatusColor(Map<String, dynamic> slot) {
@@ -433,8 +276,7 @@ class _SubstationUserOperationsTabState
 
   @override
   Widget build(BuildContext context) {
-    // **KEY FIX: Call super.build for AutomaticKeepAliveClientMixin**
-    super.build(context);
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -458,7 +300,7 @@ class _SubstationUserOperationsTabState
 
     return Column(
       children: [
-        // Header with date info
+        // Header with date info and cache indicator
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -474,10 +316,43 @@ class _SubstationUserOperationsTabState
           ),
           child: Column(
             children: [
-              Icon(
-                Icons.access_time,
-                color: theme.colorScheme.primary,
-                size: 32,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.access_time,
+                    color: theme.colorScheme.primary,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 12),
+                  // Cache indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.offline_bolt, size: 12, color: Colors.green),
+                        const SizedBox(width: 4),
+                        Text(
+                          'CACHED',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
@@ -506,8 +381,21 @@ class _SubstationUserOperationsTabState
         Expanded(
           child: _isLoading
               ? Center(
-                  child: CircularProgressIndicator(
-                    color: theme.colorScheme.primary,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Loading from cache...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: isDarkMode ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ],
                   ),
                 )
               : !_hasAnyBaysWithReadings

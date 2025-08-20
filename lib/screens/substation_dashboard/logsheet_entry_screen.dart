@@ -6,6 +6,8 @@ import '../../models/bay_model.dart';
 import '../../models/reading_models.dart';
 import '../../models/logsheet_models.dart';
 import '../../models/user_model.dart';
+import '../../models/enhanced_bay_data.dart';
+import '../../services/comprehensive_cache_service.dart';
 import '../../utils/snackbar_utils.dart';
 import '../../equipment_icons/energy_meter_icon.dart';
 import '../../equipment_icons/feeder_icon.dart';
@@ -122,20 +124,19 @@ class LogsheetEntryScreen extends StatefulWidget {
   State<LogsheetEntryScreen> createState() => _LogsheetEntryScreenState();
 }
 
-// **KEY FIX: Add AutomaticKeepAliveClientMixin**
 class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  // **KEY FIX: Override wantKeepAlive**
   @override
   bool get wantKeepAlive => true;
 
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
   bool _isLoading = true;
   bool _isSaving = false;
   late AnimationController _animationController;
 
   Bay? _currentBay;
-  DocumentSnapshot? _bayReadingAssignmentDoc;
   LogsheetEntry? _existingLogsheetEntry;
   LogsheetEntry? _previousLogsheetEntry;
   List<ReadingField> _filteredReadingFields = [];
@@ -149,13 +150,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
   bool _isFirstDataEntryForThisBayFrequency = false;
 
-  // **KEY FIX: Add data initialization tracking**
-  bool _isDataInitialized = false;
-  String? _lastLoadedCacheKey;
-
-  // **KEY FIX: Cache variables for efficiency**
-  static final Map<String, dynamic> _cache = {};
-
   @override
   void initState() {
     super.initState();
@@ -163,7 +157,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _initializeDataOnce();
+    _initializeScreenData();
     _animationController.forward();
   }
 
@@ -179,108 +173,53 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     super.dispose();
   }
 
-  // **KEY FIX: Generate cache key for this specific screen instance**
-  String get _cacheKey =>
-      '${widget.bayId}_${widget.frequency}_${widget.readingDate.toIso8601String().split('T')[0]}_${widget.readingHour ?? 'daily'}';
-
-  // **KEY FIX: Prevent multiple Firebase calls**
-  Future<void> _initializeDataOnce() async {
-    if (_isDataInitialized && _lastLoadedCacheKey == _cacheKey) {
-      // Data already loaded for this exact screen configuration
-      return;
-    }
-
-    // Check cache first
-    if (await _loadFromCache()) {
-      _isDataInitialized = true;
-      _lastLoadedCacheKey = _cacheKey;
-      return;
-    }
-
-    await _initializeScreenData();
-    _isDataInitialized = true;
-    _lastLoadedCacheKey = _cacheKey;
-  }
-
-  Future<bool> _loadFromCache() async {
-    final cachedData = _cache[_cacheKey];
-    if (cachedData != null &&
-        DateTime.now().difference(cachedData['timestamp']).inMinutes < 10) {
-      setState(() {
-        _currentBay = cachedData['currentBay'];
-        _bayReadingAssignmentDoc = cachedData['bayReadingAssignmentDoc'];
-        _existingLogsheetEntry = cachedData['existingLogsheetEntry'];
-        _previousLogsheetEntry = cachedData['previousLogsheetEntry'];
-        _filteredReadingFields = List<ReadingField>.from(
-          cachedData['filteredReadingFields'],
-        );
-        _isFirstDataEntryForThisBayFrequency =
-            cachedData['isFirstDataEntryForThisBayFrequency'];
-        _isLoading = false;
-      });
-
-      _initializeReadingFieldControllers();
-      return true;
-    }
-    return false;
-  }
-
-  void _saveToCache() {
-    _cache[_cacheKey] = {
-      'currentBay': _currentBay,
-      'bayReadingAssignmentDoc': _bayReadingAssignmentDoc,
-      'existingLogsheetEntry': _existingLogsheetEntry,
-      'previousLogsheetEntry': _previousLogsheetEntry,
-      'filteredReadingFields': _filteredReadingFields,
-      'isFirstDataEntryForThisBayFrequency':
-          _isFirstDataEntryForThisBayFrequency,
-      'timestamp': DateTime.now(),
-    };
-
-    // Clean old cache entries (keep only last 15)
-    if (_cache.length > 15) {
-      final sortedKeys = _cache.keys.toList()..sort();
-      final oldestKeys = sortedKeys.take(_cache.length - 15);
-      for (final key in oldestKeys) {
-        _cache.remove(key);
-      }
-    }
-  }
-
   Future<void> _initializeScreenData() async {
     setState(() => _isLoading = true);
 
     try {
-      // **OPTIMIZATION: Load bay and assignment data in parallel**
-      final results = await Future.wait([
-        _loadBayData(),
-        _loadBayAssignmentData(),
-      ]);
-
-      if (_currentBay == null) {
-        if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Error: Bay not found.',
-            isError: true,
-          );
-          Navigator.of(context).pop();
-        }
-        return;
+      // ✅ USE CACHE - No Firebase queries!
+      if (!_cache.isInitialized) {
+        throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Load logsheet entries after we have the assignment data
-      if (_bayReadingAssignmentDoc != null) {
-        await _fetchAndInitializeLogsheetEntries();
-      } else {
-        _filteredReadingFields = [];
-        _isFirstDataEntryForThisBayFrequency = true;
+      // Get bay data from cache
+      final bayData = _cache.getBayById(widget.bayId);
+      if (bayData == null) {
+        throw Exception('Bay not found in cache');
       }
 
-      // Save to cache after successful load
-      _saveToCache();
+      _currentBay = bayData.bay;
+
+      // Get reading fields for this frequency
+      _filteredReadingFields = bayData.getReadingFields(
+        widget.frequency,
+        mandatoryOnly: false,
+      );
+
+      // Get existing reading from cache
+      _existingLogsheetEntry = bayData.getReading(
+        widget.readingDate,
+        widget.frequency,
+        hour: widget.readingHour,
+      );
+
+      // Get previous reading for auto-populate from cache
+      final previousDate = _calculatePreviousDate();
+      _previousLogsheetEntry = bayData.getReading(
+        previousDate,
+        widget.frequency,
+        hour: widget.readingHour,
+      );
+
+      // Check if this is first data entry
+      _isFirstDataEntryForThisBayFrequency =
+          _existingLogsheetEntry == null && _previousLogsheetEntry == null;
+
+      _initializeReadingFieldControllers();
+
+      print('✅ Loaded logsheet data from cache for bay: ${_currentBay!.name}');
     } catch (e) {
-      print("Error initializing logsheet entry screen: $e");
+      print("Error initializing screen data: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -290,65 +229,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         Navigator.of(context).pop();
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-  }
-
-  Future<void> _loadBayData() async {
-    final bayDoc = await FirebaseFirestore.instance
-        .collection('bays')
-        .doc(widget.bayId)
-        .get();
-
-    if (bayDoc.exists) {
-      _currentBay = Bay.fromFirestore(bayDoc);
-    }
-  }
-
-  Future<void> _loadBayAssignmentData() async {
-    final assignmentSnapshot = await FirebaseFirestore.instance
-        .collection('bayReadingAssignments')
-        .where('bayId', isEqualTo: widget.bayId)
-        .limit(1)
-        .get();
-
-    if (assignmentSnapshot.docs.isNotEmpty) {
-      _bayReadingAssignmentDoc = assignmentSnapshot.docs.first;
-      final assignedFieldsData =
-          (_bayReadingAssignmentDoc!.data() as Map)['assignedFields'] as List;
-
-      final List<ReadingField> allAssignedReadingFields = assignedFieldsData
-          .map(
-            (fieldMap) =>
-                ReadingField.fromMap(fieldMap as Map<String, dynamic>),
-          )
-          .toList();
-
-      _filteredReadingFields = allAssignedReadingFields
-          .where(
-            (field) =>
-                field.frequency.toString().split('.').last == widget.frequency,
-          )
-          .toList();
-    }
-  }
-
-  Future<void> _fetchAndInitializeLogsheetEntries() async {
-    // **OPTIMIZATION: Load current and previous entries in parallel**
-    DateTime queryPreviousDate = _calculatePreviousDate();
-
-    final results = await Future.wait([
-      _getLogsheetForDate(widget.readingDate),
-      _getLogsheetForDate(queryPreviousDate),
-    ]);
-
-    _existingLogsheetEntry = results[0];
-    _previousLogsheetEntry = results[1];
-
-    _isFirstDataEntryForThisBayFrequency =
-        _existingLogsheetEntry == null && _previousLogsheetEntry == null;
-
-    _initializeReadingFieldControllers();
   }
 
   DateTime _calculatePreviousDate() {
@@ -379,40 +263,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         return widget.readingDate.subtract(const Duration(days: 1));
       }
     }
-  }
-
-  Future<LogsheetEntry?> _getLogsheetForDate(DateTime date) async {
-    Query logsheetQuery = FirebaseFirestore.instance
-        .collection('logsheetEntries')
-        .where('bayId', isEqualTo: widget.bayId)
-        .where('frequency', isEqualTo: widget.frequency);
-
-    DateTime start, end;
-    if (widget.frequency == 'hourly' && widget.readingHour != null) {
-      start = DateTime(date.year, date.month, date.day, widget.readingHour!);
-      end = start
-          .add(const Duration(hours: 1))
-          .subtract(const Duration(milliseconds: 1));
-    } else {
-      start = DateTime(date.year, date.month, date.day);
-      end = DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
-    }
-
-    logsheetQuery = logsheetQuery
-        .where(
-          'readingTimestamp',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
-        )
-        .where(
-          'readingTimestamp',
-          isLessThanOrEqualTo: Timestamp.fromDate(end),
-        );
-
-    final snapshot = await logsheetQuery.limit(1).get();
-    if (snapshot.docs.isNotEmpty) {
-      return LogsheetEntry.fromFirestore(snapshot.docs.first);
-    }
-    return null;
   }
 
   void _initializeReadingFieldControllers() {
@@ -496,20 +346,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     }
   }
 
-  // **KEY FIX: Optimized save method**
   Future<void> _saveLogsheetEntry() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_currentBay == null ||
-        (_bayReadingAssignmentDoc == null &&
-            _filteredReadingFields.any(
-              (field) => !field.name.contains('Reading'),
-            ))) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'Missing bay or assignment data.',
-        isError: true,
-      );
+    if (_currentBay == null) {
+      SnackBarUtils.showSnackBar(context, 'Missing bay data.', isError: true);
       return;
     }
 
@@ -582,7 +423,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
       final logsheetData = LogsheetEntry(
         bayId: widget.bayId,
-        templateId: _bayReadingAssignmentDoc?.id ?? 'HARDCODED_ENERGY_ACCOUNT',
+        templateId: 'CACHE_TEMPLATE', // Using cache-based template ID
         readingTimestamp: Timestamp.fromDate(entryTimestamp),
         recordedBy: widget.currentUser.uid,
         recordedAt: Timestamp.now(),
@@ -594,9 +435,14 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       );
 
       if (_existingLogsheetEntry == null) {
-        await FirebaseFirestore.instance
+        // Create new entry
+        final docRef = await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .add(logsheetData.toFirestore());
+
+        // ✅ UPDATE CACHE
+        final savedEntry = logsheetData.copyWith(id: docRef.id);
+        _cache.updateBayReading(widget.bayId, savedEntry);
 
         if (mounted) {
           SnackBarUtils.showSnackBar(
@@ -605,13 +451,20 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
           );
           Navigator.of(
             context,
-          ).pop(true); // **KEY FIX: Return true to indicate data was saved**
+          ).pop(true); // Return true to indicate data was saved
         }
       } else {
+        // Update existing entry
         await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .doc(_existingLogsheetEntry!.id)
             .update(logsheetData.toFirestore());
+
+        // ✅ UPDATE CACHE
+        final updatedEntry = logsheetData.copyWith(
+          id: _existingLogsheetEntry!.id,
+        );
+        _cache.updateBayReading(widget.bayId, updatedEntry);
 
         if (mounted) {
           SnackBarUtils.showSnackBar(
@@ -620,12 +473,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
           );
           Navigator.of(
             context,
-          ).pop(true); // **KEY FIX: Return true to indicate data was saved**
+          ).pop(true); // Return true to indicate data was saved
         }
       }
-
-      // **KEY FIX: Clear cache after successful save**
-      _cache.remove(_cacheKey);
     } catch (e) {
       print("Error saving logsheet entry: $e");
       if (mounted) {
@@ -1263,8 +1113,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
   @override
   Widget build(BuildContext context) {
-    // **KEY FIX: Call super.build for AutomaticKeepAliveClientMixin**
-    super.build(context);
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -1336,6 +1185,31 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 ],
               ),
             ),
+          // Add cache status indicator
+          Container(
+            margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.offline_bolt, size: 12, color: Colors.blue),
+                const SizedBox(width: 4),
+                Text(
+                  'CACHED',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
       body: _isLoading

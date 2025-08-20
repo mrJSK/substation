@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
 import '../../models/bay_model.dart';
-import '../../models/reading_models.dart';
-import '../../models/logsheet_models.dart';
+import '../../models/enhanced_bay_data.dart';
+import '../../services/comprehensive_cache_service.dart';
 import '../../utils/snackbar_utils.dart';
 import 'logsheet_entry_screen.dart';
 
@@ -27,32 +26,24 @@ class SubstationUserEnergyTab extends StatefulWidget {
       _SubstationUserEnergyTabState();
 }
 
-// **KEY FIX: Add AutomaticKeepAliveClientMixin**
 class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  // **KEY FIX: Override wantKeepAlive**
   @override
   bool get wantKeepAlive => true;
 
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
+
   bool _isLoading = true;
   bool _isDailyReadingAvailable = false;
-  List<Bay> _baysWithDailyAssignments = [];
+  List<EnhancedBayData> _baysWithDailyAssignments = [];
   bool _hasAnyBaysWithReadings = false;
   late AnimationController _animationController;
-
-  // **KEY FIX: Add data initialization tracking**
-  bool _isDataInitialized = false;
-  String? _lastLoadedSubstationId;
-  DateTime? _lastLoadedDate;
 
   // Track completion status for each bay
   Map<String, bool> _bayCompletionStatus = {};
   Map<String, bool> _bayEnergyCompletionStatus = {};
   Map<String, int> _bayMandatoryFieldsCount = {};
   Map<String, Map<String, dynamic>> _bayLastReadings = {};
-
-  // Cache for pre-loaded bay data
-  Map<String, Bay> _preLoadedBays = {};
 
   // Required energy fields for calculation
   static const List<String> REQUIRED_ENERGY_FIELDS = [
@@ -69,8 +60,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    // **KEY FIX: Only initialize once**
-    _initializeDataOnce();
+    _loadEnergyData();
   }
 
   @override
@@ -83,31 +73,14 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
   void didUpdateWidget(SubstationUserEnergyTab oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // **KEY FIX: Only reload if substation or date actually changed**
+    // Only reload if substation or date actually changed
     final bool shouldReload =
         oldWidget.substationId != widget.substationId ||
         !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
 
     if (shouldReload) {
-      _isDataInitialized = false;
-      _initializeDataOnce();
+      _loadEnergyData();
     }
-  }
-
-  // **KEY FIX: Prevent multiple Firebase calls**
-  Future<void> _initializeDataOnce() async {
-    if (_isDataInitialized &&
-        _lastLoadedSubstationId == widget.substationId &&
-        _lastLoadedDate != null &&
-        DateUtils.isSameDay(_lastLoadedDate!, widget.selectedDate)) {
-      // Data already loaded for this substation and date
-      return;
-    }
-
-    await _loadEnergyData();
-    _isDataInitialized = true;
-    _lastLoadedSubstationId = widget.substationId;
-    _lastLoadedDate = widget.selectedDate;
   }
 
   Future<void> _loadEnergyData() async {
@@ -121,12 +94,16 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     }
 
     setState(() => _isLoading = true);
-    try {
-      // Step 1: Pre-load all bays for this substation
-      await _preLoadBays();
 
-      // Step 2: Check if there are any bays with daily reading assignments
-      await _checkForBaysWithDailyAssignments();
+    try {
+      // ✅ USE CACHE - No Firebase queries!
+      if (!_cache.isInitialized) {
+        throw Exception('Cache not initialized - please restart the app');
+      }
+
+      // Get bays with daily readings from cache
+      _baysWithDailyAssignments = _cache.getBaysWithReadings('daily');
+      _hasAnyBaysWithReadings = _baysWithDailyAssignments.isNotEmpty;
 
       if (!_hasAnyBaysWithReadings) {
         setState(() {
@@ -138,16 +115,21 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
       final DateTime now = DateTime.now();
       final bool isToday = DateUtils.isSameDay(widget.selectedDate, now);
-      // Daily readings are available after 8 AM (changed from 00 to 8 for production)
+      // Daily readings are available after 8 AM
       _isDailyReadingAvailable = !isToday || now.hour >= 8;
 
       if (_isDailyReadingAvailable) {
-        await _checkDailyReadingCompletionOptimized();
-        await _loadLastReadingsForAutoPopulateOptimized();
+        _checkDailyReadingCompletion();
+        _loadLastReadingsForAutoPopulate();
       }
 
       _animationController.forward();
+
+      print(
+        '✅ Energy tab loaded ${_baysWithDailyAssignments.length} bays from cache',
+      );
     } catch (e) {
+      print('❌ Error loading energy data from cache: $e');
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -162,289 +144,95 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     }
   }
 
-  Future<void> _preLoadBays() async {
-    // **KEY FIX: Only load if not already loaded**
-    if (_preLoadedBays.isNotEmpty &&
-        _lastLoadedSubstationId == widget.substationId) {
-      return;
-    }
+  void _checkDailyReadingCompletion() {
+    _bayCompletionStatus.clear();
+    _bayEnergyCompletionStatus.clear();
+    _bayMandatoryFieldsCount.clear();
 
-    final baysSnapshot = await FirebaseFirestore.instance
-        .collection('bays')
-        .where('substationId', isEqualTo: widget.substationId)
-        .orderBy('name')
-        .get();
-
-    _preLoadedBays = {
-      for (var doc in baysSnapshot.docs) doc.id: Bay.fromFirestore(doc),
-    };
-  }
-
-  Future<void> _checkForBaysWithDailyAssignments() async {
-    try {
-      if (_preLoadedBays.isEmpty) {
-        _hasAnyBaysWithReadings = false;
-        _baysWithDailyAssignments = [];
-        return;
-      }
-
-      final List<String> bayIds = _preLoadedBays.keys.toList();
-      _baysWithDailyAssignments.clear();
-      _bayMandatoryFieldsCount.clear();
-
-      // Optimized: Handle Firestore 'whereIn' limit of 10
-      final assignmentsSnapshot = await FirebaseFirestore.instance
-          .collection('bayReadingAssignments')
-          .where('bayId', whereIn: bayIds.take(10).toList())
-          .get();
-
-      // If we have more than 10 bays, fetch the rest in batches
-      if (bayIds.length > 10) {
-        for (int i = 10; i < bayIds.length; i += 10) {
-          final batch = bayIds.skip(i).take(10).toList();
-          final additionalSnapshot = await FirebaseFirestore.instance
-              .collection('bayReadingAssignments')
-              .where('bayId', whereIn: batch)
-              .get();
-          assignmentsSnapshot.docs.addAll(additionalSnapshot.docs);
-        }
-      }
-
-      for (var doc in assignmentsSnapshot.docs) {
-        final String bayId = doc['bayId'] as String;
-        final assignedFieldsData =
-            (doc.data() as Map)['assignedFields'] as List;
-
-        final List<ReadingField> allFields = assignedFieldsData
-            .map(
-              (fieldMap) =>
-                  ReadingField.fromMap(fieldMap as Map<String, dynamic>),
-            )
-            .toList();
-
-        // Check if there are any mandatory daily fields
-        final dailyMandatoryFields = allFields
-            .where(
-              (field) =>
-                  field.isMandatory &&
-                  field.frequency.toString().split('.').last == 'daily',
-            )
-            .toList();
-
-        if (dailyMandatoryFields.isNotEmpty) {
-          final Bay? bay = _preLoadedBays[bayId];
-          if (bay != null) {
-            _baysWithDailyAssignments.add(bay);
-            _bayMandatoryFieldsCount[bayId] = dailyMandatoryFields.length;
-          }
-        }
-      }
-
-      _hasAnyBaysWithReadings = _baysWithDailyAssignments.isNotEmpty;
-    } catch (e) {
-      print('Error checking for bays with daily assignments: $e');
-      _hasAnyBaysWithReadings = false;
-      _baysWithDailyAssignments = [];
-    }
-  }
-
-  Future<void> _checkDailyReadingCompletionOptimized() async {
-    try {
-      _bayCompletionStatus.clear();
-      _bayEnergyCompletionStatus.clear();
-
-      // **OPTIMIZATION: Single query to get all logsheet entries for the date**
-      final allLogsheetsSnapshot = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where('substationId', isEqualTo: widget.substationId)
-          .where('frequency', isEqualTo: 'daily')
-          .where(
-            'readingTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(
-              DateTime(
-                widget.selectedDate.year,
-                widget.selectedDate.month,
-                widget.selectedDate.day,
-              ),
-            ),
-          )
-          .where(
-            'readingTimestamp',
-            isLessThan: Timestamp.fromDate(
-              DateTime(
-                widget.selectedDate.year,
-                widget.selectedDate.month,
-                widget.selectedDate.day + 1,
-              ),
-            ),
-          )
-          .get();
-
-      // Create a lookup map for faster processing
-      final Map<String, LogsheetEntry> bayLogsheetEntries = {};
-      for (var doc in allLogsheetsSnapshot.docs) {
-        final entry = LogsheetEntry.fromFirestore(doc);
-        bayLogsheetEntries[entry.bayId] = entry;
-      }
-
-      // Check completion for each bay
-      for (var bay in _baysWithDailyAssignments) {
-        bool isComplete = false;
-        bool hasEnergyReadings = false;
-
-        final LogsheetEntry? entry = bayLogsheetEntries[bay.id];
-        if (entry != null) {
-          isComplete = true;
-
-          // Check if all required energy fields are present and have valid values
-          hasEnergyReadings = REQUIRED_ENERGY_FIELDS.every((fieldName) {
-            final value = entry.values[fieldName];
-            if (value == null) return false;
-            final stringValue = value.toString().trim();
-            if (stringValue.isEmpty) return false;
-            // Check if it's a valid number
-            final numValue = double.tryParse(stringValue);
-            return numValue != null && numValue >= 0;
-          });
-        }
-
-        _bayCompletionStatus[bay.id] = isComplete;
-        _bayEnergyCompletionStatus[bay.id] = hasEnergyReadings;
-      }
-    } catch (e) {
-      print('Error checking daily reading completion: $e');
-      for (var bay in _baysWithDailyAssignments) {
-        _bayCompletionStatus[bay.id] = false;
-        _bayEnergyCompletionStatus[bay.id] = false;
-      }
-    }
-  }
-
-  Future<void> _loadLastReadingsForAutoPopulateOptimized() async {
-    try {
-      _bayLastReadings.clear();
-
-      // Get previous day for auto-populate
-      final previousDay = widget.selectedDate.subtract(const Duration(days: 1));
-      final startOfPreviousDay = DateTime(
-        previousDay.year,
-        previousDay.month,
-        previousDay.day,
+    // ✅ USE CACHE - Check completion from cached data
+    for (var bayData in _baysWithDailyAssignments) {
+      final mandatoryFields = bayData.getReadingFields(
+        'daily',
+        mandatoryOnly: true,
       );
-      final endOfPreviousDay = DateTime(
-        previousDay.year,
-        previousDay.month,
-        previousDay.day,
-        23,
-        59,
-        59,
-      );
+      _bayMandatoryFieldsCount[bayData.id] = mandatoryFields.length;
 
-      // **OPTIMIZATION: Single query to get all previous day readings**
-      final previousDaySnapshot = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where('substationId', isEqualTo: widget.substationId)
-          .where('frequency', isEqualTo: 'daily')
-          .where(
-            'readingTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfPreviousDay),
-          )
-          .where(
-            'readingTimestamp',
-            isLessThanOrEqualTo: Timestamp.fromDate(endOfPreviousDay),
-          )
-          .orderBy('readingTimestamp', descending: true)
-          .get();
-
-      // Process previous day readings
-      final Map<String, LogsheetEntry> previousDayEntries = {};
-      for (var doc in previousDaySnapshot.docs) {
-        final entry = LogsheetEntry.fromFirestore(doc);
-        // Keep only the latest entry for each bay
-        if (!previousDayEntries.containsKey(entry.bayId)) {
-          previousDayEntries[entry.bayId] = entry;
-        }
-      }
-
-      // Set up auto-populate data for each bay
-      for (var bay in _baysWithDailyAssignments) {
-        final LogsheetEntry? yesterdayEntry = previousDayEntries[bay.id];
-        if (yesterdayEntry != null) {
-          _bayLastReadings[bay.id] = {
-            'Previous Day Reading (Import)':
-                yesterdayEntry.values['Current Day Reading (Import)'],
-            'Previous Day Reading (Export)':
-                yesterdayEntry.values['Current Day Reading (Export)'],
-            'lastReadingDate': DateFormat('dd-MMM-yyyy').format(previousDay),
-          };
-        }
-      }
-    } catch (e) {
-      print('Error loading last readings for auto-populate: $e');
-    }
-  }
-
-  // Method to refresh specific bay status (called when returning from entry screen)
-  Future<void> _refreshBayStatus(String bayId) async {
-    try {
-      final logsheetQuery = await FirebaseFirestore.instance
-          .collection('logsheetEntries')
-          .where('bayId', isEqualTo: bayId)
-          .where('frequency', isEqualTo: 'daily')
-          .where(
-            'readingTimestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(
-              DateTime(
-                widget.selectedDate.year,
-                widget.selectedDate.month,
-                widget.selectedDate.day,
-              ),
-            ),
-          )
-          .where(
-            'readingTimestamp',
-            isLessThan: Timestamp.fromDate(
-              DateTime(
-                widget.selectedDate.year,
-                widget.selectedDate.month,
-                widget.selectedDate.day + 1,
-              ),
-            ),
-          )
-          .limit(1)
-          .get();
-
-      bool isComplete = false;
+      final entry = bayData.getReading(widget.selectedDate, 'daily');
+      bool isComplete = entry != null;
       bool hasEnergyReadings = false;
 
-      if (logsheetQuery.docs.isNotEmpty) {
-        final entry = LogsheetEntry.fromFirestore(logsheetQuery.docs.first);
-        isComplete = true;
-
+      if (isComplete && entry != null) {
+        // Check if all required energy fields are present and have valid values
         hasEnergyReadings = REQUIRED_ENERGY_FIELDS.every((fieldName) {
           final value = entry.values[fieldName];
           if (value == null) return false;
           final stringValue = value.toString().trim();
           if (stringValue.isEmpty) return false;
+          // Check if it's a valid number
           final numValue = double.tryParse(stringValue);
           return numValue != null && numValue >= 0;
         });
       }
 
-      setState(() {
-        _bayCompletionStatus[bayId] = isComplete;
-        _bayEnergyCompletionStatus[bayId] = hasEnergyReadings;
-      });
-    } catch (e) {
-      print('Error refreshing bay status: $e');
+      _bayCompletionStatus[bayData.id] = isComplete;
+      _bayEnergyCompletionStatus[bayData.id] = hasEnergyReadings;
     }
+  }
+
+  void _loadLastReadingsForAutoPopulate() {
+    _bayLastReadings.clear();
+
+    // Get previous day for auto-populate
+    final previousDay = widget.selectedDate.subtract(const Duration(days: 1));
+
+    // ✅ USE CACHE - Get previous day readings from cache
+    for (var bayData in _baysWithDailyAssignments) {
+      final yesterdayEntry = bayData.getReading(previousDay, 'daily');
+      if (yesterdayEntry != null) {
+        _bayLastReadings[bayData.id] = {
+          'Previous Day Reading (Import)':
+              yesterdayEntry.values['Current Day Reading (Import)'],
+          'Previous Day Reading (Export)':
+              yesterdayEntry.values['Current Day Reading (Export)'],
+          'lastReadingDate': DateFormat('dd-MMM-yyyy').format(previousDay),
+        };
+      }
+    }
+  }
+
+  // Method to refresh specific bay status (called when returning from entry screen)
+  Future<void> _refreshBayStatus(String bayId) async {
+    // ✅ Data is already in cache after save operation
+    // Just recalculate completion status for this bay
+    final bayData = _cache.getBayById(bayId);
+    if (bayData == null) return;
+
+    final entry = bayData.getReading(widget.selectedDate, 'daily');
+    bool isComplete = entry != null;
+    bool hasEnergyReadings = false;
+
+    if (isComplete && entry != null) {
+      hasEnergyReadings = REQUIRED_ENERGY_FIELDS.every((fieldName) {
+        final value = entry.values[fieldName];
+        if (value == null) return false;
+        final stringValue = value.toString().trim();
+        if (stringValue.isEmpty) return false;
+        final numValue = double.tryParse(stringValue);
+        return numValue != null && numValue >= 0;
+      });
+    }
+
+    setState(() {
+      _bayCompletionStatus[bayId] = isComplete;
+      _bayEnergyCompletionStatus[bayId] = hasEnergyReadings;
+    });
   }
 
   Future<bool> validateEnergyDataForCalculation() async {
     final List<String> incompleteBays = [];
-    for (var bay in _baysWithDailyAssignments) {
-      if (!(_bayEnergyCompletionStatus[bay.id] ?? false)) {
-        incompleteBays.add(bay.name);
+    for (var bayData in _baysWithDailyAssignments) {
+      if (!(_bayEnergyCompletionStatus[bayData.id] ?? false)) {
+        incompleteBays.add(bayData.name);
       }
     }
 
@@ -464,13 +252,14 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     return true;
   }
 
-  Widget _buildBayCard(Bay bay, int index) {
+  Widget _buildBayCard(EnhancedBayData bayData, int index) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
-    final bool isComplete = _bayCompletionStatus[bay.id] ?? false;
-    final bool hasEnergyReadings = _bayEnergyCompletionStatus[bay.id] ?? false;
-    final int mandatoryFields = _bayMandatoryFieldsCount[bay.id] ?? 0;
-    final bool hasLastReading = _bayLastReadings.containsKey(bay.id);
+    final bool isComplete = _bayCompletionStatus[bayData.id] ?? false;
+    final bool hasEnergyReadings =
+        _bayEnergyCompletionStatus[bayData.id] ?? false;
+    final int mandatoryFields = _bayMandatoryFieldsCount[bayData.id] ?? 0;
+    final bool hasLastReading = _bayLastReadings.containsKey(bayData.id);
 
     // Status colors based on energy completion
     Color statusColor = hasEnergyReadings
@@ -522,20 +311,21 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                                 builder: (context) => LogsheetEntryScreen(
                                   substationId: widget.substationId,
                                   substationName: widget.substationName,
-                                  bayId: bay.id,
+                                  bayId: bayData.id,
                                   readingDate: widget.selectedDate,
                                   frequency: 'daily',
                                   readingHour: null,
                                   currentUser: widget.currentUser,
                                   forceReadOnly: false,
-                                  autoPopulateData: _bayLastReadings[bay.id],
+                                  autoPopulateData:
+                                      _bayLastReadings[bayData.id],
                                 ),
                               ),
                             )
                             .then((result) {
-                              // **KEY FIX: Only refresh this specific bay**
+                              // Only refresh this specific bay
                               if (result == true) {
-                                _refreshBayStatus(bay.id);
+                                _refreshBayStatus(bayData.id);
                               }
                             });
                       }
@@ -555,7 +345,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(
-                              _getBayTypeIcon(bay.bayType),
+                              _getBayTypeIcon(bayData.bayType),
                               color: statusColor,
                               size: 24,
                             ),
@@ -567,7 +357,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  bay.name,
+                                  bayData.name,
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
@@ -578,7 +368,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Voltage Level: ${bay.voltageLevel}',
+                                  'Voltage Level: ${bayData.voltageLevel}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: isDarkMode
@@ -682,7 +472,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Previous readings will be auto-populated from ${_bayLastReadings[bay.id]!['lastReadingDate']}',
+                                  'Previous readings will be auto-populated from ${_bayLastReadings[bayData.id]!['lastReadingDate']}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: isDarkMode
@@ -786,6 +576,30 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                         color: isDarkMode
                             ? Colors.white.withOpacity(0.7)
                             : theme.colorScheme.onSurface.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Cache indicator
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.offline_bolt, size: 12, color: Colors.green),
+                    const SizedBox(width: 4),
+                    Text(
+                      'CACHED',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green,
                       ),
                     ),
                   ],
@@ -906,8 +720,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   @override
   Widget build(BuildContext context) {
-    // **KEY FIX: Call super.build for AutomaticKeepAliveClientMixin**
-    super.build(context);
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -931,7 +744,20 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
     if (_isLoading) {
       return Center(
-        child: CircularProgressIndicator(color: theme.colorScheme.primary),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: theme.colorScheme.primary),
+            const SizedBox(height: 16),
+            Text(
+              'Loading from cache...',
+              style: TextStyle(
+                fontSize: 16,
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
+            ),
+          ],
+        ),
       );
     }
 

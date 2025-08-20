@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../models/user_model.dart';
 import '../../../models/tripping_shutdown_model.dart';
 import '../../../models/bay_model.dart';
+import '../../../services/comprehensive_cache_service.dart';
 import '../../../utils/snackbar_utils.dart';
 import 'tripping_shutdown_entry_screen.dart';
 
@@ -35,6 +36,8 @@ class TrippingShutdownOverviewScreen extends StatefulWidget {
 class _TrippingShutdownOverviewScreenState
     extends State<TrippingShutdownOverviewScreen>
     with TickerProviderStateMixin {
+  final ComprehensiveCacheService _cache = ComprehensiveCacheService();
+
   bool _isLoading = true;
   Map<String, List<TrippingShutdownEntry>> _groupedEntriesByBayType = {};
   List<String> _sortedBayTypes = [];
@@ -75,7 +78,7 @@ class _TrippingShutdownOverviewScreenState
         );
 
     if (widget.substationId.isNotEmpty) {
-      _fetchTrippingShutdownEvents();
+      _fetchTrippingShutdownEventsFromCache();
     } else {
       _isLoading = false;
     }
@@ -96,7 +99,7 @@ class _TrippingShutdownOverviewScreenState
         widget.startDate != oldWidget.startDate ||
         widget.endDate != oldWidget.endDate) {
       if (widget.substationId.isNotEmpty) {
-        _fetchTrippingShutdownEvents();
+        _fetchTrippingShutdownEventsFromCache();
       } else {
         setState(() {
           _isLoading = false;
@@ -108,7 +111,7 @@ class _TrippingShutdownOverviewScreenState
     }
   }
 
-  Future<void> _fetchTrippingShutdownEvents() async {
+  Future<void> _fetchTrippingShutdownEventsFromCache() async {
     setState(() {
       _isLoading = true;
       _groupedEntriesByBayType.clear();
@@ -117,63 +120,53 @@ class _TrippingShutdownOverviewScreenState
     });
 
     try {
-      // Fetch bays first
-      final baysSnapshot = await FirebaseFirestore.instance
-          .collection('bays')
-          .where('substationId', isEqualTo: widget.substationId)
-          .orderBy('name')
-          .get();
-
-      for (var doc in baysSnapshot.docs) {
-        final bay = Bay.fromFirestore(doc);
-        _baysMap[bay.id] = bay;
+      // ✅ USE CACHE - No Firebase queries for bays!
+      if (!_cache.isInitialized) {
+        throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Build events query
-      Query eventsQuery = FirebaseFirestore.instance
-          .collection('trippingShutdownEntries')
-          .where('substationId', isEqualTo: widget.substationId);
+      // Get bays from cache
+      final substationData = _cache.substationData!;
+      for (var bayData in substationData.bays) {
+        _baysMap[bayData.id] = bayData.bay;
+      }
 
-      // Apply start date filter
-      if (widget.startDate != null) {
-        eventsQuery = eventsQuery.where(
-          'startTime',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate!),
-        );
+      // Get tripping events from cache with date filtering
+      List<TrippingShutdownEntry> fetchedEntries;
+
+      if (widget.startDate == null && widget.endDate == null) {
+        // No date filter - get all recent events from cache
+        fetchedEntries = substationData.recentTrippingEvents;
       } else {
-        // If no start date is provided, query from a very old date
-        eventsQuery = eventsQuery.where(
-          'startTime',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime.utc(1900)),
-        );
+        // Filter by date range
+        fetchedEntries = substationData.recentTrippingEvents.where((entry) {
+          final entryDate = entry.startTime.toDate();
+
+          bool isAfterStart =
+              widget.startDate == null ||
+              entryDate.isAfter(widget.startDate!) ||
+              DateUtils.isSameDay(entryDate, widget.startDate!);
+
+          bool isBeforeEnd =
+              widget.endDate == null ||
+              entryDate.isBefore(widget.endDate!.add(const Duration(days: 1)));
+
+          return isAfterStart && isBeforeEnd;
+        }).toList();
       }
 
-      // Apply end date filter
-      if (widget.endDate != null) {
-        // To include the entire end day, add one day and subtract one second
-        eventsQuery = eventsQuery.where(
-          'startTime',
-          isLessThanOrEqualTo: Timestamp.fromDate(
-            widget.endDate!
-                .add(const Duration(days: 1))
-                .subtract(const Duration(seconds: 1)),
-          ),
-        );
-      } else {
-        // If no end date is provided, query up to a very future date
-        eventsQuery = eventsQuery.where(
-          'startTime',
-          isLessThanOrEqualTo: Timestamp.fromDate(DateTime.utc(2200)),
-        );
+      // If date range extends beyond cached events (30 days), fetch additional data from Firebase
+      final DateTime cacheStartDate = DateTime.now().subtract(
+        const Duration(days: 30),
+      );
+      final bool needsAdditionalData =
+          widget.startDate != null &&
+          widget.startDate!.isBefore(cacheStartDate);
+
+      if (needsAdditionalData) {
+        // Fetch older events from Firebase for extended date range
+        await _fetchAdditionalEventsFromFirebase(fetchedEntries);
       }
-
-      eventsQuery = eventsQuery.orderBy('startTime', descending: true);
-
-      final entriesSnapshot = await eventsQuery.get();
-
-      List<TrippingShutdownEntry> fetchedEntries = entriesSnapshot.docs
-          .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
-          .toList();
 
       // Apply role-based filtering
       final bool isDivisionOrHigher = [
@@ -197,6 +190,9 @@ class _TrippingShutdownOverviewScreenState
         return false;
       }).toList();
 
+      // Sort by start time (descending)
+      fetchedEntries.sort((a, b) => b.startTime.compareTo(a.startTime));
+
       // Group entries by bay type
       for (var entry in fetchedEntries) {
         final Bay? bay = _baysMap[entry.bayId];
@@ -212,11 +208,13 @@ class _TrippingShutdownOverviewScreenState
 
       _sortedBayTypes = _groupedEntriesByBayType.keys.toList()..sort();
 
+      print('✅ Loaded ${fetchedEntries.length} tripping events from cache');
+
       // Start animations after data is loaded
       _fadeAnimationController.forward();
       _slideAnimationController.forward();
     } catch (e) {
-      print("Error fetching tripping/shutdown events: $e");
+      print("Error fetching tripping/shutdown events from cache: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -226,10 +224,54 @@ class _TrippingShutdownOverviewScreenState
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
+    }
+  }
+
+  // Fallback method to fetch older events when date range extends beyond cache
+  Future<void> _fetchAdditionalEventsFromFirebase(
+    List<TrippingShutdownEntry> existingEntries,
+  ) async {
+    try {
+      print(
+        '📡 Fetching additional events from Firebase for extended date range...',
+      );
+
+      Query eventsQuery = FirebaseFirestore.instance
+          .collection('trippingShutdownEntries')
+          .where('substationId', isEqualTo: widget.substationId);
+
+      // Only fetch events older than what we have in cache
+      final DateTime cacheStartDate = DateTime.now().subtract(
+        const Duration(days: 30),
+      );
+      eventsQuery = eventsQuery.where(
+        'startTime',
+        isLessThan: Timestamp.fromDate(cacheStartDate),
+      );
+
+      if (widget.startDate != null) {
+        eventsQuery = eventsQuery.where(
+          'startTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate!),
+        );
+      }
+
+      eventsQuery = eventsQuery.orderBy('startTime', descending: true);
+
+      final entriesSnapshot = await eventsQuery.get();
+      final olderEntries = entriesSnapshot.docs
+          .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+          .toList();
+
+      // Merge with existing entries
+      existingEntries.addAll(olderEntries);
+
+      print('✅ Fetched ${olderEntries.length} additional events from Firebase');
+    } catch (e) {
+      print('❌ Error fetching additional events: $e');
+      // Continue with cache-only data if Firebase fetch fails
     }
   }
 
@@ -295,17 +337,23 @@ class _TrippingShutdownOverviewScreenState
 
     if (confirm) {
       try {
+        // Delete from Firebase
         await FirebaseFirestore.instance
             .collection('trippingShutdownEntries')
             .doc(entryId)
             .delete();
+
+        // ✅ Force cache refresh after deletion
+        await _cache.forceRefresh();
+
         if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
             '$eventType event deleted successfully!',
           );
         }
-        _fetchTrippingShutdownEvents(); // Re-fetch events after deletion
+
+        _fetchTrippingShutdownEventsFromCache(); // Re-fetch events after deletion
       } catch (e) {
         print("Error deleting event: $e");
         if (mounted) {
@@ -325,7 +373,7 @@ class _TrippingShutdownOverviewScreenState
       MaterialPageRoute(
         builder: (context) => TrippingShutdownEntryScreen(
           substationId: widget.substationId,
-          substationName: widget.substationName, // ✅ Added required parameter
+          substationName: widget.substationName,
           currentUser: widget.currentUser,
           entryToEdit: entry,
           isViewOnly: true,
@@ -340,15 +388,19 @@ class _TrippingShutdownOverviewScreenState
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: widget.substationId,
-              substationName:
-                  widget.substationName, // ✅ Added required parameter
+              substationName: widget.substationName,
               currentUser: widget.currentUser,
               entryToEdit: entry,
               isViewOnly: false,
             ),
           ),
         )
-        .then((_) => _fetchTrippingShutdownEvents());
+        .then((_) {
+          // ✅ Refresh cache and reload after editing
+          _cache.forceRefresh().then(
+            (_) => _fetchTrippingShutdownEventsFromCache(),
+          );
+        });
   }
 
   void _navigateToCreateEvent() {
@@ -366,14 +418,18 @@ class _TrippingShutdownOverviewScreenState
           MaterialPageRoute(
             builder: (context) => TrippingShutdownEntryScreen(
               substationId: widget.substationId,
-              substationName:
-                  widget.substationName, // ✅ Added required parameter
+              substationName: widget.substationName,
               currentUser: widget.currentUser,
               isViewOnly: false,
             ),
           ),
         )
-        .then((_) => _fetchTrippingShutdownEvents());
+        .then((_) {
+          // ✅ Refresh cache and reload after creating
+          _cache.forceRefresh().then(
+            (_) => _fetchTrippingShutdownEventsFromCache(),
+          );
+        });
   }
 
   // Get color for different bay types
@@ -803,38 +859,75 @@ class _TrippingShutdownOverviewScreenState
                           ],
                         ),
                       ),
-                      // Auto-notify indicator
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.blue.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.notifications_active,
-                              size: 14,
-                              color: Colors.blue.shade700,
+                      // Cache status and Auto-notify indicators
+                      Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Auto-notify',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade700,
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.green.withOpacity(0.3),
                               ),
                             ),
-                          ],
-                        ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.offline_bolt,
+                                  size: 10,
+                                  color: Colors.green,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'CACHED',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.blue.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.notifications_active,
+                                  size: 14,
+                                  color: Colors.blue.shade700,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Auto-notify',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -896,7 +989,7 @@ class _TrippingShutdownOverviewScreenState
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'Loading events...',
+                            'Loading from cache...',
                             style: TextStyle(
                               fontSize: 16,
                               color: isDarkMode
@@ -971,8 +1064,8 @@ class _TrippingShutdownOverviewScreenState
                         padding: const EdgeInsets.only(
                           left: 16,
                           right: 16,
-                          bottom: 100, // Space for FAB
-                        ),
+                          bottom: 100,
+                        ), // Space for FAB
                         itemCount: _sortedBayTypes.length,
                         itemBuilder: (context, index) {
                           final String bayType = _sortedBayTypes[index];
