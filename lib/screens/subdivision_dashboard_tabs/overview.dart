@@ -1,5 +1,3 @@
-// lib/screens/subdivision_dashboard_tabs/overview.dart
-
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -31,46 +29,37 @@ class OverviewScreen extends StatefulWidget {
 
 class _OverviewScreenState extends State<OverviewScreen> {
   Substation? _selectedSubstation;
-
-  // Timeframe control
   String _selectedTimeframe = '7 days';
   late DateTime _endDate;
   late DateTime _startDate;
 
-  // Bay selection and caching
-  final Map<String, List<Bay>> _bayCache = {}; // substationId -> bays
-  final Map<String, List<String>> _selectedBayCache =
-      {}; // substationId -> selected bayIds
+  final Map<String, List<Bay>> _bayCache = {};
+  final Map<String, List<String>> _selectedBayCache = {};
   List<String> _selectedBayIds = [];
   bool _isBaysLoading = false;
 
-  // Field filtering and caching
-  final Map<String, Set<String>> _availableFieldCache =
-      {}; // substationId -> field names
-  Set<String> _availableFields = {}; // derived from sample data
-  Set<String> _selectedFields = {}; // chosen by user
+  final Map<String, Set<String>> _availableFieldCache = {};
+  Set<String> _availableFields = {};
+  Set<String> _selectedFields = {};
 
-  // Firestore results and parsing
   bool _isLoading = false;
   String? _errorMessage;
   List<LogsheetEntry> _entries = [];
-  Map<String, Bay> _viewerBaysMap = {}; // bayId -> Bay
-
-  // Parsed time-series: bayId -> fieldName -> List<TimePoint>
+  Map<String, Bay> _viewerBaysMap = {};
   Map<String, Map<String, List<TimePoint>>> _series = {};
-
-  // Min/Max summaries: bayId -> fieldName -> SummaryStats
   Map<String, Map<String, SummaryStats>> _summaries = {};
 
-  // Chart interaction - Initialize immediately to avoid late initialization error
   final TooltipBehavior _tooltipBehavior = TooltipBehavior(
     enable: true,
     activationMode: ActivationMode.singleTap,
+    color: Colors.grey[800],
+    textStyle: const TextStyle(color: Colors.white, fontSize: 12),
   );
 
   final Legend _legend = const Legend(
     isVisible: true,
     overflowMode: LegendItemOverflowMode.wrap,
+    textStyle: TextStyle(fontSize: 12),
   );
 
   final DateFormat _dtFmt = DateFormat('yyyy-MM-dd HH:mm');
@@ -78,17 +67,14 @@ class _OverviewScreenState extends State<OverviewScreen> {
   @override
   void initState() {
     super.initState();
-
     _endDate = DateTime.now();
     _applyTimeframe(_selectedTimeframe);
-
     if (widget.accessibleSubstations.isNotEmpty) {
       _selectedSubstation = widget.accessibleSubstations.first;
       _fetchBaysForSelectedSubstation();
     }
   }
 
-  // Timeframe utilities
   void _applyTimeframe(String label) {
     final now = DateTime.now();
     DateTime start;
@@ -100,47 +86,18 @@ class _OverviewScreenState extends State<OverviewScreen> {
         start = now.subtract(const Duration(days: 7));
         break;
       case '1 month':
-        start = DateTime(
-          now.year,
-          now.month - 1,
-          now.day,
-          now.hour,
-          now.minute,
-          now.second,
-        );
+        start = DateTime(now.year, now.month - 1, now.day);
         break;
       case '6 months':
-        start = DateTime(
-          now.year,
-          now.month - 6,
-          now.day,
-          now.hour,
-          now.minute,
-          now.second,
-        );
+        start = DateTime(now.year, now.month - 6, now.day);
         break;
       case '1 year':
-        start = DateTime(
-          now.year - 1,
-          now.month,
-          now.day,
-          now.hour,
-          now.minute,
-          now.second,
-        );
+        start = DateTime(now.year - 1, now.month, now.day);
         break;
       case '3 years':
-        start = DateTime(
-          now.year - 3,
-          now.month,
-          now.day,
-          now.hour,
-          now.minute,
-          now.second,
-        );
+        start = DateTime(now.year - 3, now.month, now.day);
         break;
       case 'max':
-        // Far past to include all
         start = DateTime(2000, 1, 1);
         break;
       default:
@@ -153,13 +110,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
     });
   }
 
-  // Accessors
   List<Bay> get _bays {
     if (_selectedSubstation == null) return [];
     return _bayCache[_selectedSubstation!.id] ?? [];
   }
 
-  // UI
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -167,22 +122,20 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
     return SafeArea(
       child: Scaffold(
-        backgroundColor: isDark
-            ? const Color(0xFF1C1C1E)
-            : const Color(0xFFFAFAFA),
+        backgroundColor: isDark ? Colors.grey[900] : Colors.grey[50],
         body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(theme, isDark),
-              const SizedBox(height: 16),
-              _buildSelectorsCard(theme, isDark),
-              const SizedBox(height: 16),
-              _buildFieldsFilterCard(theme, isDark),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              _buildSelectors(theme, isDark),
+              const SizedBox(height: 12),
+              _buildFieldsFilter(theme, isDark),
+              const SizedBox(height: 12),
               _buildActionBar(theme, isDark),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               _buildResults(theme, isDark),
             ],
           ),
@@ -194,64 +147,47 @@ class _OverviewScreenState extends State<OverviewScreen> {
   Widget _buildHeader(ThemeData theme, bool isDark) {
     return Row(
       children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            Icons.show_chart,
-            color: theme.colorScheme.primary,
-            size: 20,
-          ),
-        ),
-        const SizedBox(width: 12),
+        Icon(Icons.show_chart, color: theme.colorScheme.primary, size: 24),
+        const SizedBox(width: 8),
         Text(
           'Overview',
           style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : theme.colorScheme.onSurface,
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.white : Colors.grey[900],
+            letterSpacing: 0.5,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSelectorsCard(ThemeData theme, bool isDark) {
+  Widget _buildSelectors(ThemeData theme, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withOpacity(0.3)
-                : Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: isDark ? Colors.grey[850] : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Selection',
+            'Filters',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : theme.colorScheme.onSurface,
+              color: isDark ? Colors.white : Colors.grey[900],
             ),
           ),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(child: _buildSubstationSelector(theme, isDark)),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(child: _buildTimeframeSelector(theme, isDark)),
             ],
           ),
@@ -271,33 +207,30 @@ class _OverviewScreenState extends State<OverviewScreen> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white : theme.colorScheme.onSurface,
+            color: isDark ? Colors.white70 : Colors.grey[700],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: BoxDecoration(
-            color: theme.colorScheme.primary.withOpacity(0.1),
+            color: isDark ? Colors.grey[800] : Colors.grey[100],
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: theme.colorScheme.primary.withOpacity(0.2),
+              color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
             ),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<Substation>(
               value: _selectedSubstation,
               isExpanded: true,
-              dropdownColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+              dropdownColor: isDark ? Colors.grey[850] : Colors.white,
               items: widget.accessibleSubstations.map((s) {
                 return DropdownMenuItem(
                   value: s,
                   child: Text(
                     s.name,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.white : null,
-                    ),
+                    style: const TextStyle(fontSize: 14),
                     overflow: TextOverflow.ellipsis,
                   ),
                 );
@@ -305,7 +238,6 @@ class _OverviewScreenState extends State<OverviewScreen> {
               onChanged: (Substation? newValue) {
                 if (newValue == null || newValue.id == _selectedSubstation?.id)
                   return;
-                // cache current selection
                 if (_selectedSubstation != null) {
                   _selectedBayCache[_selectedSubstation!.id] = List.from(
                     _selectedBayIds,
@@ -328,16 +260,13 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 _fetchBaysForSelectedSubstation();
               },
               icon: Icon(
-                Icons.keyboard_arrow_down,
+                Icons.arrow_drop_down,
                 color: theme.colorScheme.primary,
                 size: 20,
               ),
-              hint: Text(
+              hint: const Text(
                 'Select Substation',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.white : null,
-                ),
+                style: TextStyle(fontSize: 14),
               ),
             ),
           ),
@@ -364,32 +293,29 @@ class _OverviewScreenState extends State<OverviewScreen> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white : theme.colorScheme.onSurface,
+            color: isDark ? Colors.white70 : Colors.grey[700],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: BoxDecoration(
-            color: theme.colorScheme.secondary.withOpacity(0.1),
+            color: isDark ? Colors.grey[800] : Colors.grey[100],
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: theme.colorScheme.secondary.withOpacity(0.3),
+              color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
             ),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: _selectedTimeframe,
               isExpanded: true,
-              dropdownColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+              dropdownColor: isDark ? Colors.grey[850] : Colors.white,
               items: options
                   .map(
                     (opt) => DropdownMenuItem(
                       value: opt,
-                      child: Text(
-                        opt,
-                        style: TextStyle(color: isDark ? Colors.white : null),
-                      ),
+                      child: Text(opt, style: const TextStyle(fontSize: 14)),
                     ),
                   )
                   .toList(),
@@ -404,7 +330,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 });
               },
               icon: Icon(
-                Icons.keyboard_arrow_down,
+                Icons.arrow_drop_down,
                 color: theme.colorScheme.secondary,
                 size: 20,
               ),
@@ -418,38 +344,29 @@ class _OverviewScreenState extends State<OverviewScreen> {
   Widget _buildBaySelector(ThemeData theme, bool isDark) {
     if (_bays.isEmpty) {
       return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withOpacity(0.1)
-                : Colors.grey.shade200,
-          ),
+          color: isDark ? Colors.grey[850] : Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
             Icon(
               Icons.info_outline,
-              color: isDark
-                  ? Colors.white.withOpacity(0.6)
-                  : Colors.grey.shade600,
+              color: isDark ? Colors.white70 : Colors.grey[600],
+              size: 18,
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 _selectedSubstation == null
-                    ? 'Please select a substation'
+                    ? 'Select a substation'
                     : _isBaysLoading
-                    ? 'Loading bays for ${_selectedSubstation!.name}...'
-                    : 'No bays available for ${_selectedSubstation!.name}',
+                    ? 'Loading bays...'
+                    : 'No bays available',
                 style: TextStyle(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.6)
-                      : Colors.grey.shade600,
                   fontSize: 13,
+                  color: isDark ? Colors.white70 : Colors.grey[600],
                 ),
               ),
             ),
@@ -471,102 +388,76 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: isDark ? Colors.white : null,
+                  color: isDark ? Colors.white70 : Colors.grey[700],
                 ),
               ),
             ),
-            ElevatedButton.icon(
+            TextButton.icon(
               onPressed: _showBaySelectionDialog,
               icon: const Icon(Icons.list, size: 16),
               label: const Text('Select Bays', style: TextStyle(fontSize: 13)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+              style: TextButton.styleFrom(
                 foregroundColor: theme.colorScheme.primary,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
               ),
             ),
           ],
         ),
         if (_selectedBayIds.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: theme.colorScheme.primary.withOpacity(0.2),
-              ),
-            ),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _selectedBayIds.map((bayId) {
-                final bay = _bays.firstWhere(
-                  (b) => b.id == bayId,
-                  orElse: () => Bay(
-                    id: bayId,
-                    name: 'Unknown',
-                    bayType: 'Unknown',
-                    voltageLevel: 'Unknown',
-                    substationId: _selectedSubstation?.id ?? '',
-                    createdBy: '',
-                    createdAt: Timestamp.now(),
-                  ),
-                );
-                return Chip(
-                  label: Text(
-                    '${bay.name} (${bay.bayType})',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  onDeleted: () {
-                    setState(() {
-                      _selectedBayIds.remove(bayId);
-                      if (_selectedSubstation != null) {
-                        _selectedBayCache[_selectedSubstation!.id] = List.from(
-                          _selectedBayIds,
-                        );
-                      }
-                      _entries.clear();
-                      _series.clear();
-                      _summaries.clear();
-                      _errorMessage = null;
-                    });
-                  },
-                  deleteIconColor: Colors.red,
-                  backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
-                  side: BorderSide(
-                    color: theme.colorScheme.primary.withOpacity(0.3),
-                  ),
-                );
-              }).toList(),
-            ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _selectedBayIds.map((bayId) {
+              final bay = _bays.firstWhere(
+                (b) => b.id == bayId,
+                orElse: () => Bay(
+                  id: bayId,
+                  name: 'Unknown',
+                  bayType: 'Unknown',
+                  voltageLevel: 'Unknown',
+                  substationId: _selectedSubstation?.id ?? '',
+                  createdBy: '',
+                  createdAt: Timestamp.now(),
+                ),
+              );
+              return Chip(
+                label: Text(bay.name, style: const TextStyle(fontSize: 12)),
+                onDeleted: () {
+                  setState(() {
+                    _selectedBayIds.remove(bayId);
+                    if (_selectedSubstation != null) {
+                      _selectedBayCache[_selectedSubstation!.id] = List.from(
+                        _selectedBayIds,
+                      );
+                    }
+                    _entries.clear();
+                    _series.clear();
+                    _summaries.clear();
+                    _errorMessage = null;
+                  });
+                },
+                deleteIconColor: Colors.red,
+                backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100],
+                side: BorderSide(
+                  color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                ),
+              );
+            }).toList(),
           ),
         ],
       ],
     );
   }
 
-  Widget _buildFieldsFilterCard(ThemeData theme, bool isDark) {
+  Widget _buildFieldsFilter(ThemeData theme, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withOpacity(0.3)
-                : Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: isDark ? Colors.grey[850] : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -575,15 +466,15 @@ class _OverviewScreenState extends State<OverviewScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Reading Fields',
+                  'Fields',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : theme.colorScheme.onSurface,
+                    color: isDark ? Colors.white : Colors.grey[900],
                   ),
                 ),
               ),
-              TextButton.icon(
+              TextButton(
                 onPressed: _availableFields.isEmpty
                     ? null
                     : () {
@@ -596,52 +487,45 @@ class _OverviewScreenState extends State<OverviewScreen> {
                           }
                         });
                       },
-                icon: Icon(
-                  _selectedFields.length == _availableFields.length
-                      ? Icons.deselect
-                      : Icons.select_all,
-                  size: 16,
-                ),
-                label: Text(
+                child: Text(
                   _selectedFields.length == _availableFields.length
                       ? 'Deselect All'
                       : 'Select All',
-                ),
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.primary,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              TextButton.icon(
+              TextButton(
                 onPressed: _selectedFields.isNotEmpty
-                    ? () => setState(() {
-                        _selectedFields.clear();
-                      })
+                    ? () => setState(() => _selectedFields.clear())
                     : null,
-                icon: const Icon(Icons.clear, size: 16),
-                label: const Text('Clear'),
-                style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                child: const Text(
+                  'Clear',
+                  style: TextStyle(fontSize: 13, color: Colors.orange),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-
-          // Empty state
           if (_availableFields.isEmpty)
             Text(
-              'No fields yet. Fetch data to discover fields.',
+              'No fields available. Fetch data to view fields.',
               style: TextStyle(
-                fontSize: 12,
-                color: isDark ? Colors.white70 : Colors.grey.shade600,
+                fontSize: 13,
+                color: isDark ? Colors.white70 : Colors.grey[600],
               ),
             )
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: (_availableFields.toList()..sort())
-                  .map(
-                    (field) => FilterChip(
+            SizedBox(
+              height: 40,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: (_availableFields.toList()..sort()).map((field) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: FilterChip(
                       label: Text(field, style: const TextStyle(fontSize: 12)),
                       selected: _selectedFields.contains(field),
                       onSelected: (selected) {
@@ -653,9 +537,14 @@ class _OverviewScreenState extends State<OverviewScreen> {
                           }
                         });
                       },
+                      selectedColor: theme.colorScheme.primary.withOpacity(0.2),
+                      backgroundColor: isDark
+                          ? Colors.grey[800]
+                          : Colors.grey[100],
                     ),
-                  )
-                  .toList(),
+                  );
+                }).toList(),
+              ),
             ),
         ],
       ),
@@ -666,19 +555,22 @@ class _OverviewScreenState extends State<OverviewScreen> {
     final canRun = _selectedSubstation != null && _selectedBayIds.isNotEmpty;
     return SizedBox(
       width: double.infinity,
-      height: 48,
-      child: ElevatedButton.icon(
+      height: 44,
+      child: ElevatedButton(
         onPressed: canRun ? _fetchAndBuildSeries : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: theme.colorScheme.primary,
           foregroundColor: theme.colorScheme.onPrimary,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           elevation: 0,
         ),
-        icon: _isLoading
-            ? const SizedBox(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isLoading)
+              const SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
@@ -686,10 +578,14 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   color: Colors.white,
                 ),
               )
-            : const Icon(Icons.show_chart, size: 18),
-        label: Text(
-          _isLoading ? 'Loading...' : 'Fetch & Plot',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            else
+              const Icon(Icons.show_chart, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              _isLoading ? 'Loading...' : 'Fetch & Plot',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+          ],
         ),
       ),
     );
@@ -706,197 +602,85 @@ class _OverviewScreenState extends State<OverviewScreen> {
       return _buildNoDataMessage(isDark);
     }
 
-    final bayIds = _series.keys.toList();
-    bayIds.sort((a, b) {
-      final an = _viewerBaysMap[a]?.name ?? a;
-      final bn = _viewerBaysMap[b]?.name ?? b;
-      return an.compareTo(bn);
-    });
-
+    final bayIds = _series.keys.toList()
+      ..sort(
+        (a, b) => (_viewerBaysMap[a]?.name ?? a).compareTo(
+          _viewerBaysMap[b]?.name ?? b,
+        ),
+      );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // One chart per bay
-        for (final bayId in bayIds) ...[
-          _buildBayChartCard(theme, isDark, bayId),
-          const SizedBox(height: 16),
-        ],
-      ],
+      children: bayIds
+          .map(
+            (bayId) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildBayChart(theme, isDark, bayId),
+            ),
+          )
+          .toList(),
     );
   }
 
-  Widget _buildBayChartCard(ThemeData theme, bool isDark, String bayId) {
+  Widget _buildBayChart(ThemeData theme, bool isDark, String bayId) {
     final bay = _viewerBaysMap[bayId];
     final fieldsMap = _series[bayId] ?? {};
-    final allFields = fieldsMap.keys.toList();
-
-    if (allFields.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: isDark
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Text(
-                    bay?.name ?? 'Unknown',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: Colors.orange,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white70 : Colors.grey.shade700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.orange.withOpacity(0.1)
-                    : Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: Colors.orange.shade700,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'No readings available for this bay in the selected time range.',
-                      style: TextStyle(
-                        color: Colors.orange.shade700,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Respect selected fields; if none selected, show nothing
     final fields =
-        allFields
+        fieldsMap.keys
             .where(
               (f) => _selectedFields.isEmpty || _selectedFields.contains(f),
             )
             .toList()
           ..sort();
+
     if (fields.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: isDark
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          color: isDark ? Colors.grey[850] : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.blue.shade200),
-                  ),
-                  child: Text(
-                    bay?.name ?? 'Unknown',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: Colors.blue,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white70 : Colors.grey.shade700,
-                  ),
-                ),
-              ],
+            Text(
+              bay?.name ?? 'Unknown',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : Colors.grey[900],
+              ),
             ),
-            const SizedBox(height: 12),
+            Text(
+              '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white70 : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.blue.withOpacity(0.1)
-                    : Colors.blue.shade50,
+                color: isDark ? Colors.grey[800] : Colors.grey[100],
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
               ),
               child: Row(
                 children: [
                   Icon(
                     Icons.filter_alt_off,
-                    color: Colors.blue.shade700,
-                    size: 20,
+                    color: isDark ? Colors.white70 : Colors.grey[600],
+                    size: 18,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'No selected fields to display. Please select reading fields above.',
+                      'No selected fields to display.',
                       style: TextStyle(
-                        color: Colors.blue.shade700,
                         fontSize: 13,
+                        color: isDark ? Colors.white70 : Colors.grey[600],
                       ),
                     ),
                   ),
@@ -908,27 +692,23 @@ class _OverviewScreenState extends State<OverviewScreen> {
       );
     }
 
-    // Prepare series and detect global min/max for better Y axis range
     final palette = _sfPalette();
     double? globalMin;
     double? globalMax;
-
     final List<CartesianSeries<TimePoint, DateTime>> seriesList = [];
     for (int i = 0; i < fields.length; i++) {
       final field = fields[i];
-      final points = List<TimePoint>.from(fieldsMap[field] ?? []);
-      points.sort((a, b) => a.time.compareTo(b.time));
-
+      final points = List<TimePoint>.from(fieldsMap[field] ?? [])
+        ..sort((a, b) => a.time.compareTo(b.time));
       if (points.isEmpty) continue;
 
-      // track min/max across visible fields
       for (final p in points) {
-        globalMin = (globalMin == null)
+        globalMin = globalMin == null
             ? p.value
-            : (p.value < globalMin! ? p.value : globalMin);
-        globalMax = (globalMax == null)
+            : (p.value < globalMin ? p.value : globalMin);
+        globalMax = globalMax == null
             ? p.value
-            : (p.value > globalMax! ? p.value : globalMax);
+            : (p.value > globalMax ? p.value : globalMax);
       }
 
       seriesList.add(
@@ -939,8 +719,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
           yValueMapper: (p, _) => p.value,
           markerSettings: const MarkerSettings(
             isVisible: true,
-            width: 6,
-            height: 6,
+            width: 4,
+            height: 4,
           ),
           dataLabelSettings: const DataLabelSettings(isVisible: false),
           width: 2,
@@ -948,81 +728,55 @@ class _OverviewScreenState extends State<OverviewScreen> {
       );
     }
 
-    // If after filtering there's nothing to plot
     if (seriesList.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: isDark
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          color: isDark ? Colors.grey[850] : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Text(
-                    bay?.name ?? 'Unknown',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white70 : Colors.grey.shade700,
-                  ),
-                ),
-              ],
+            Text(
+              bay?.name ?? 'Unknown',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : Colors.grey[900],
+              ),
             ),
-            const SizedBox(height: 12),
+            Text(
+              '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white70 : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.grey.withOpacity(0.1)
-                    : Colors.grey.shade50,
+                color: isDark ? Colors.grey[800] : Colors.grey[100],
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
               ),
               child: Row(
                 children: [
                   Icon(
                     Icons.show_chart_outlined,
-                    color: Colors.grey.shade600,
-                    size: 20,
+                    color: isDark ? Colors.white70 : Colors.grey[600],
+                    size: 18,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'No data points available for the selected fields in the chosen time range.',
+                      'No data available for selected fields.',
                       style: TextStyle(
-                        color: Colors.grey.shade600,
                         fontSize: 13,
+                        color: isDark ? Colors.white70 : Colors.grey[600],
                       ),
                     ),
                   ),
@@ -1034,11 +788,9 @@ class _OverviewScreenState extends State<OverviewScreen> {
       );
     }
 
-    // Y-axis padding to avoid flat line look when data is constant/sparse
     double? axisMin = globalMin;
     double? axisMax = globalMax;
     if (axisMin != null && axisMax != null && axisMin == axisMax) {
-      // expand a bit
       final pad = (axisMin.abs() * 0.1).clamp(0.1, 10.0);
       axisMin -= pad;
       axisMax += pad;
@@ -1047,40 +799,23 @@ class _OverviewScreenState extends State<OverviewScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withOpacity(0.3)
-                : Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: isDark ? Colors.grey[850] : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Text(
-                  bay?.name ?? 'Unknown',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: Colors.green,
-                  ),
+              Text(
+                bay?.name ?? 'Unknown',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : Colors.grey[900],
                 ),
               ),
               const SizedBox(width: 8),
@@ -1088,22 +823,21 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
                 style: TextStyle(
                   fontSize: 12,
-                  color: isDark ? Colors.white70 : Colors.grey.shade700,
+                  color: isDark ? Colors.white70 : Colors.grey[600],
                 ),
               ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   '${seriesList.length} field${seriesList.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.green,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -1112,7 +846,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
           ),
           const SizedBox(height: 12),
           ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 280),
+            constraints: const BoxConstraints(minHeight: 260),
             child: SfCartesianChart(
               enableAxisAnimation: true,
               tooltipBehavior: _tooltipBehavior,
@@ -1121,17 +855,16 @@ class _OverviewScreenState extends State<OverviewScreen> {
               primaryXAxis: DateTimeAxis(
                 majorGridLines: const MajorGridLines(width: 0.5),
                 edgeLabelPlacement: EdgeLabelPlacement.shift,
-                // For data possibly ≤1 day and sparse, show readable labels
                 intervalType: DateTimeIntervalType.auto,
                 dateFormat: DateFormat('MMMd HH:mm'),
+                labelStyle: const TextStyle(fontSize: 12),
               ),
               primaryYAxis: NumericAxis(
                 majorGridLines: const MajorGridLines(width: 0.5),
-                // guard against nulls
                 minimum: axisMin,
                 maximum: axisMax,
-                // nice tick distribution
                 rangePadding: ChartRangePadding.round,
+                labelStyle: const TextStyle(fontSize: 12),
               ),
               series: seriesList,
             ),
@@ -1150,55 +883,165 @@ class _OverviewScreenState extends State<OverviewScreen> {
     List<String> fields,
   ) {
     final baySummaries = _summaries[bayId] ?? {};
-    if (baySummaries.isEmpty) {
-      return SizedBox(
-        width: double.infinity,
-        child: Text(
-          'No summary available.',
-          style: TextStyle(
-            color: isDark ? Colors.white70 : Colors.grey.shade700,
-            fontSize: 12,
-          ),
-        ),
-      );
+    final availableFields = fields
+        .where((f) => baySummaries.containsKey(f))
+        .toList();
+    if (availableFields.isEmpty) {
+      return const SizedBox.shrink();
     }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Summary (Min/Max)',
+          'Summary',
           style: TextStyle(
+            fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : null,
+            color: isDark ? Colors.white : Colors.grey[900],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: MaterialStateColor.resolveWith(
+                (states) => theme.colorScheme.primary.withOpacity(0.1),
+              ),
+              dataRowMinHeight: 44,
+              dataRowMaxHeight: 48,
+              columnSpacing: 16,
+              horizontalMargin: 12,
+              headingTextStyle: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: theme.colorScheme.primary,
+              ),
+              dataTextStyle: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white : Colors.grey[900],
+              ),
+              columns: const [
+                DataColumn(label: Text('Field')),
+                DataColumn(label: Text('Min'), numeric: true),
+                DataColumn(label: Text('Min Time')),
+                DataColumn(label: Text('Max'), numeric: true),
+                DataColumn(label: Text('Max Time')),
+              ],
+              rows: availableFields.map((field) {
+                final summary = baySummaries[field]!;
+                final isCurrentField =
+                    field.toLowerCase().contains('current') ||
+                    field.toLowerCase().contains('amp');
+                final isVoltageField =
+                    field.toLowerCase().contains('voltage') ||
+                    field.toLowerCase().contains('volt');
+
+                return DataRow(
+                  color: MaterialStateColor.resolveWith(
+                    (states) => isCurrentField
+                        ? Colors.blue.withOpacity(0.05)
+                        : isVoltageField
+                        ? Colors.orange.withOpacity(0.05)
+                        : Colors.transparent,
+                  ),
+                  cells: [
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: isCurrentField
+                                  ? Colors.blue
+                                  : isVoltageField
+                                  ? Colors.orange
+                                  : Colors.grey,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            field,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        _fmtNum(summary.min),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        DateFormat('MMM dd HH:mm').format(summary.minAt),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        _fmtNum(summary.max),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        DateFormat('MMM dd HH:mm').format(summary.maxAt),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
           ),
         ),
         const SizedBox(height: 8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: fields.map((f) {
-            final s = baySummaries[f];
-            if (s == null) return const SizedBox.shrink();
-            return Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF3C3C3E) : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.1)
-                      : Colors.grey.shade200,
-                ),
-              ),
-              child: Text(
-                '$f: min ${_fmtNum(s.min)} at ${_dtFmt.format(s.minAt)}, max ${_fmtNum(s.max)} at ${_dtFmt.format(s.maxAt)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.white : null,
-                ),
-              ),
-            );
-          }).toList(),
+          spacing: 12,
+          children: [
+            _buildLegendItem(Colors.blue, 'Current', isDark),
+            _buildLegendItem(Colors.orange, 'Voltage', isDark),
+            _buildLegendItem(Colors.grey, 'Other', isDark),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String label, bool isDark) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? Colors.white70 : Colors.grey[600],
+          ),
         ),
       ],
     );
@@ -1206,20 +1049,19 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
   Widget _buildErrorMessage(String error, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isDark ? Colors.red.withOpacity(0.1) : Colors.red.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.shade200),
+        color: isDark ? Colors.red.withOpacity(0.2) : Colors.red[50],
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, color: Colors.red.shade700),
+          Icon(Icons.error_outline, color: Colors.red[700], size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               error,
-              style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+              style: TextStyle(fontSize: 13, color: Colors.red[700]),
             ),
           ),
         ],
@@ -1229,36 +1071,30 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
   Widget _buildNoDataMessage(bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(24),
       child: Center(
         child: Column(
           children: [
             Icon(
               Icons.search_off,
-              size: 48,
-              color: isDark
-                  ? Colors.white.withOpacity(0.4)
-                  : Colors.grey.shade400,
+              size: 36,
+              color: isDark ? Colors.white70 : Colors.grey[400],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
-              'No data to display',
+              'No Data',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: isDark
-                    ? Colors.white.withOpacity(0.6)
-                    : Colors.grey.shade600,
+                color: isDark ? Colors.white70 : Colors.grey[600],
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
-              'Select bays and tap "Fetch & Plot" to view reading data.',
+              'Select bays and tap Fetch & Plot.',
               style: TextStyle(
                 fontSize: 13,
-                color: isDark
-                    ? Colors.white.withOpacity(0.5)
-                    : Colors.grey.shade500,
+                color: isDark ? Colors.white70 : Colors.grey[500],
               ),
               textAlign: TextAlign.center,
             ),
@@ -1268,12 +1104,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
     );
   }
 
-  // Dialog for bay multi-select
   Future<void> _showBaySelectionDialog() async {
     if (_bays.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
-        'No bays available. Please select a substation first.',
+        'No bays available. Select a substation.',
         isError: true,
       );
       return;
@@ -1287,24 +1122,21 @@ class _OverviewScreenState extends State<OverviewScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return Dialog(
-              backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+              backgroundColor: isDark ? Colors.grey[900] : Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: SizedBox(
                 width: double.maxFinite,
-                height: 500,
+                height: 450,
                 child: Column(
                   children: [
                     Container(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
                       decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF2C2C2E)
-                            : theme.colorScheme.primary.withOpacity(0.1),
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(12),
-                          topRight: Radius.circular(12),
+                        color: isDark ? Colors.grey[850] : Colors.grey[100],
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(10),
                         ),
                       ),
                       child: Row(
@@ -1321,83 +1153,67 @@ class _OverviewScreenState extends State<OverviewScreen> {
                               ),
                             ),
                           ),
-                          InkWell(
-                            onTap: () => Navigator.of(context).pop(),
-                            borderRadius: BorderRadius.circular(4),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                Icons.close,
-                                size: 20,
-                                color: isDark
-                                    ? Colors.white
-                                    : theme.colorScheme.onSurface.withOpacity(
-                                        0.7,
-                                      ),
-                              ),
-                            ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close, size: 20),
+                            color: isDark ? Colors.white70 : Colors.grey[600],
                           ),
                         ],
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
                           Expanded(
                             child: Text(
-                              '${tempSelected.length} of ${_bays.length} bays selected',
+                              '${tempSelected.length}/${_bays.length} bays selected',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w500,
-                                color: isDark ? Colors.white : null,
+                                color: isDark
+                                    ? Colors.white70
+                                    : Colors.grey[700],
                               ),
                             ),
                           ),
                           Row(
                             children: [
-                              TextButton.icon(
+                              TextButton(
                                 onPressed: () {
                                   setDialogState(() {
                                     if (tempSelected.length == _bays.length) {
                                       tempSelected.clear();
                                     } else {
-                                      tempSelected
-                                        ..clear()
-                                        ..addAll(_bays.map((b) => b.id));
+                                      tempSelected.clear();
+                                      tempSelected.addAll(
+                                        _bays.map((b) => b.id),
+                                      );
                                     }
                                   });
                                 },
-                                icon: Icon(
-                                  tempSelected.length == _bays.length
-                                      ? Icons.deselect
-                                      : Icons.select_all,
-                                  size: 16,
-                                ),
-                                label: Text(
+                                child: Text(
                                   tempSelected.length == _bays.length
                                       ? 'Deselect All'
                                       : 'Select All',
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: theme.colorScheme.primary,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: theme.colorScheme.primary,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              TextButton.icon(
+                              TextButton(
                                 onPressed: tempSelected.isNotEmpty
                                     ? () => setDialogState(
                                         () => tempSelected.clear(),
                                       )
                                     : null,
-                                icon: const Icon(Icons.clear, size: 16),
-                                label: const Text(
+                                child: const Text(
                                   'Clear',
-                                  style: TextStyle(fontSize: 13),
-                                ),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.orange,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.orange,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1405,36 +1221,30 @@ class _OverviewScreenState extends State<OverviewScreen> {
                         ],
                       ),
                     ),
-                    Divider(
-                      height: 1,
-                      color: isDark ? Colors.white.withOpacity(0.1) : null,
-                    ),
+                    const Divider(height: 1),
                     Expanded(
                       child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         itemCount: _bays.length,
                         itemBuilder: (context, index) {
                           final bay = _bays[index];
                           final isSelected = tempSelected.contains(bay.id);
                           return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
+                            margin: const EdgeInsets.only(bottom: 6),
                             decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF2C2C2E)
-                                  : Colors.white,
+                              color: isDark ? Colors.grey[850] : Colors.white,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: isSelected
-                                    ? theme.colorScheme.primary.withOpacity(0.3)
+                                    ? theme.colorScheme.primary
                                     : (isDark
-                                          ? Colors.white.withOpacity(0.1)
-                                          : Colors.grey.shade300),
-                                width: isSelected ? 2 : 1,
+                                          ? Colors.grey[700]!
+                                          : Colors.grey[300]!),
                               ),
                             ),
                             child: CheckboxListTile(
                               title: Text(
-                                '${bay.name} (${bay.bayType})',
+                                bay.name,
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: isSelected
@@ -1442,20 +1252,16 @@ class _OverviewScreenState extends State<OverviewScreen> {
                                       : FontWeight.w500,
                                   color: isSelected
                                       ? theme.colorScheme.primary
-                                      : (isDark ? Colors.white : null),
+                                      : null,
                                 ),
                               ),
                               subtitle: Text(
                                 'Voltage: ${bay.voltageLevel}',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: isSelected
-                                      ? theme.colorScheme.primary.withOpacity(
-                                          0.7,
-                                        )
-                                      : (isDark
-                                            ? Colors.white.withOpacity(0.6)
-                                            : Colors.grey.shade600),
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.grey[600],
                                 ),
                               ),
                               value: isSelected,
@@ -1475,33 +1281,35 @@ class _OverviewScreenState extends State<OverviewScreen> {
                         },
                       ),
                     ),
-                    Divider(
-                      height: 1,
-                      color: isDark ? Colors.white.withOpacity(0.1) : null,
-                    ),
+                    const Divider(height: 1),
                     Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          ElevatedButton.icon(
+                          ElevatedButton(
                             onPressed: () =>
                                 Navigator.of(context).pop(tempSelected),
-                            icon: const Icon(Icons.check, size: 16),
-                            label: Text(
-                              'Select (${tempSelected.length})',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: theme.colorScheme.primary,
                               foregroundColor: theme.colorScheme.onPrimary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.check, size: 16),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Select (${tempSelected.length})',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -1532,12 +1340,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
     }
   }
 
-  // Data fetching and parsing
-
   Future<void> _fetchBaysForSelectedSubstation() async {
     if (_selectedSubstation == null) return;
-
-    // Use cache if available to save reads
     if (_bayCache.containsKey(_selectedSubstation!.id)) {
       setState(() {
         _selectedBayIds = List.from(
@@ -1596,10 +1400,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
     });
 
     try {
-      // Load bay meta for viewer labels
       _viewerBaysMap.clear();
-      // If large list, consider chunking whereIn to <=10 ids per query
-      // Here we chunk for safety.
       const chunkSize = 10;
       for (int i = 0; i < _selectedBayIds.length; i += chunkSize) {
         final chunk = _selectedBayIds.sublist(
@@ -1615,7 +1416,6 @@ class _OverviewScreenState extends State<OverviewScreen> {
         }
       }
 
-      // Range
       final queryStart = DateTime(
         _startDate.year,
         _startDate.month,
@@ -1623,7 +1423,6 @@ class _OverviewScreenState extends State<OverviewScreen> {
       ).toUtc();
       final queryEnd = _endDate.toUtc();
 
-      // Fetch entries, chunk on bayIds for whereIn
       List<LogsheetEntry> all = [];
       for (int i = 0; i < _selectedBayIds.length; i += chunkSize) {
         final chunk = _selectedBayIds.sublist(
@@ -1661,7 +1460,6 @@ class _OverviewScreenState extends State<OverviewScreen> {
         return;
       }
 
-      // Discover available fields from sample of the dataset (to avoid huge iteration costs)
       final fields = <String>{};
       for (final e in all.take(200)) {
         e.values.forEach((key, value) {
@@ -1669,24 +1467,19 @@ class _OverviewScreenState extends State<OverviewScreen> {
         });
       }
 
-      // Update caches for fields
       if (_selectedSubstation != null) {
         _availableFieldCache[_selectedSubstation!.id] = fields;
       }
-      // If no previously selected fields or selectedFields not subset of new fields, refresh selection
       if (_selectedFields.isEmpty || !fields.containsAll(_selectedFields)) {
         _selectedFields = {...fields};
       }
       _availableFields = fields;
 
-      // Build series (bay -> field -> time-series)
       final Map<String, Map<String, List<TimePoint>>> series = {};
       for (final e in all) {
         final dt = e.readingTimestamp.toDate().toLocal();
         e.values.forEach((key, raw) {
           final String field = key.toString();
-
-          // Only prepare all fields; chips will show/hide in chart
           final double? val = _extractNumeric(raw);
           if (val == null) return;
 
@@ -1696,10 +1489,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
         });
       }
 
-      // Remove bays with no data
       series.removeWhere((bayId, fieldMap) => fieldMap.isEmpty);
 
-      // Compute summaries
       final Map<String, Map<String, SummaryStats>> summaries = {};
       series.forEach((bayId, fieldMap) {
         summaries[bayId] = {};
@@ -1745,33 +1536,20 @@ class _OverviewScreenState extends State<OverviewScreen> {
     }
   }
 
-  // Converts various value shapes into doubles suitable for charting
-  // - Primitive num -> double
-  // - Map with { value, unit } -> parses value as num, boolean -> 1/0
-  // - Boolean -> 1 for ON/true, 0 for OFF/false
   double? _extractNumeric(dynamic raw) {
     if (raw == null) return null;
-
-    if (raw is num) {
-      return raw.toDouble();
-    }
-    if (raw is bool) {
-      return raw ? 1.0 : 0.0;
-    }
+    if (raw is num) return raw.toDouble();
+    if (raw is bool) return raw ? 1.0 : 0.0;
     if (raw is Map) {
       final hasValue = raw.containsKey('value');
       if (!hasValue) return null;
       final v = raw['value'];
       if (v is num) return v.toDouble();
       if (v is bool) return v ? 1.0 : 0.0;
-      if (v is String) {
-        final parsed = double.tryParse(v);
-        return parsed;
-      }
+      if (v is String) return double.tryParse(v);
       return null;
     }
     if (raw is String) {
-      // Try parse numeric embedded text, else support ON/OFF
       final lower = raw.toLowerCase();
       if (lower == 'on') return 1.0;
       if (lower == 'off') return 0.0;
@@ -1780,7 +1558,6 @@ class _OverviewScreenState extends State<OverviewScreen> {
     return null;
   }
 
-  // Palette for line colors (Syncfusion will cycle)
   List<Color> _sfPalette() {
     return [
       Colors.blue,
@@ -1799,17 +1576,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
   }
 
   String _fmtNum(double v) {
-    if (v.abs() >= 1000) {
-      return v.toStringAsFixed(0);
-    } else if (v.abs() >= 100) {
-      return v.toStringAsFixed(1);
-    } else {
-      return v.toStringAsFixed(2);
-    }
+    if (v.abs() >= 1000) return v.toStringAsFixed(0);
+    if (v.abs() >= 100) return v.toStringAsFixed(1);
+    return v.toStringAsFixed(2);
   }
 }
 
-// Simple data carriers
 class TimePoint {
   final DateTime time;
   final double value;
