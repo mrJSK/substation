@@ -91,6 +91,16 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
     _loadDataFromCache();
   }
 
+  // 🔧 FIX: Force refresh when returning from reading entry
+  @override
+  void didUpdateWidget(BayReadingsStatusScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Force refresh when returning from entry screen
+    if (mounted) {
+      _calculateCompletionStatuses();
+    }
+  }
+
   Future<void> _loadDataFromCache() async {
     setState(() => _isLoading = true);
 
@@ -140,11 +150,176 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
     }
   }
 
+  // 🔧 FIX: Enhanced refresh to ensure cache consistency
   Future<void> _refreshBayStatus(String bayId) async {
-    // ✅ Data is already in cache after save operation
-    // Just recalculate completion statuses from updated cache
-    _calculateCompletionStatuses();
-    setState(() {});
+    try {
+      // Force refresh the entire cache for this substation to ensure consistency
+      await _cache.refreshSubstationData(widget.substationId);
+
+      // Recalculate completion statuses from updated cache
+      _calculateCompletionStatuses();
+
+      if (mounted) {
+        setState(() {});
+      }
+
+      print('✅ Bay status refreshed for: $bayId');
+    } catch (e) {
+      print('❌ Error refreshing bay status: $e');
+      // Fallback to just recalculating from existing cache
+      _calculateCompletionStatuses();
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  // 🔧 FIX: Check if user has permission to modify existing readings
+  bool _canModifyExistingReading(AppUser user) {
+    return [
+      UserRole.admin,
+      UserRole.subdivisionManager,
+      UserRole.divisionManager,
+      UserRole.circleManager,
+      UserRole.zoneManager,
+    ].contains(user.role);
+  }
+
+  // 🔧 FIX: Show dialog for completed readings
+  Future<void> _showReadingCompletedDialog(EnhancedBayData bayData) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 24),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Reading Completed',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reading for ${bayData.name} has already been recorded for this ${widget.frequencyType == 'hourly' ? 'hour' : 'date'}.',
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.8)
+                    : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _canModifyExistingReading(widget.currentUser)
+                          ? 'You can view or modify this reading.'
+                          : 'You can only view this reading.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              // Navigate to view/edit mode based on permissions
+              _navigateToReadingEntry(
+                bayData,
+                forceReadOnly: !_canModifyExistingReading(widget.currentUser),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: Icon(
+              _canModifyExistingReading(widget.currentUser)
+                  ? Icons.edit
+                  : Icons.visibility,
+              size: 18,
+            ),
+            label: Text(
+              _canModifyExistingReading(widget.currentUser) ? 'Edit' : 'View',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🔧 FIX: Centralized navigation logic
+  void _navigateToReadingEntry(
+    EnhancedBayData bayData, {
+    bool forceReadOnly = false,
+  }) {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => LogsheetEntryScreen(
+              substationId: widget.substationId,
+              substationName: widget.substationName,
+              bayId: bayData.id,
+              readingDate: widget.selectedDate,
+              frequency: widget.frequencyType,
+              readingHour: widget.selectedHour,
+              currentUser: widget.currentUser,
+              forceReadOnly: forceReadOnly,
+            ),
+          ),
+        )
+        .then((result) {
+          // 🔧 FIX: Force complete refresh after any navigation
+          if (result == true) {
+            print('🔄 Refreshing after reading entry for bay: ${bayData.id}');
+            _refreshBayStatus(bayData.id);
+          }
+        });
   }
 
   @override
@@ -206,7 +381,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                 );
 
                 await _cache.forceRefresh();
-                _loadDataFromCache();
+                await _loadDataFromCache();
 
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -344,7 +519,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                               ],
                             ),
                           ),
-                          // Cache status indicator
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -520,6 +694,13 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                     offset: const Offset(0, 2),
                                   ),
                                 ],
+                                // 🔧 FIX: Add border for completed readings
+                                border: isBayComplete
+                                    ? Border.all(
+                                        color: Colors.green.withOpacity(0.3),
+                                        width: 1,
+                                      )
+                                    : null,
                               ),
                               child: ListTile(
                                 contentPadding: const EdgeInsets.all(16),
@@ -542,9 +723,10 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                     ),
                                   ),
                                   child: Icon(
+                                    // 🔧 FIX: Different icons for completed vs incomplete
                                     isBayComplete
-                                        ? Icons.check_circle
-                                        : Icons.cancel,
+                                        ? Icons.visibility
+                                        : Icons.edit,
                                     color: isBayComplete
                                         ? Colors.green
                                         : Colors.red,
@@ -605,8 +787,8 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                         const SizedBox(width: 8),
                                         Text(
                                           isBayComplete
-                                              ? 'Readings complete'
-                                              : 'Readings incomplete',
+                                              ? 'Reading completed'
+                                              : 'Reading pending',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: isBayComplete
@@ -630,37 +812,53 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                     ),
                                   ],
                                 ),
-                                trailing: Icon(
-                                  Icons.arrow_forward_ios,
-                                  color: theme.colorScheme.primary,
-                                  size: 16,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // 🔧 FIX: Show completed indicator
+                                    if (isBayComplete)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.green.withOpacity(
+                                              0.3,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Done',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.green.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      isBayComplete
+                                          ? Icons.visibility
+                                          : Icons.arrow_forward_ios,
+                                      color: theme.colorScheme.primary,
+                                      size: 16,
+                                    ),
+                                  ],
                                 ),
                                 onTap: () {
-                                  Navigator.of(context)
-                                      .push(
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              LogsheetEntryScreen(
-                                                substationId:
-                                                    widget.substationId,
-                                                substationName:
-                                                    widget.substationName,
-                                                bayId: bayData.id,
-                                                readingDate:
-                                                    widget.selectedDate,
-                                                frequency: widget.frequencyType,
-                                                readingHour:
-                                                    widget.selectedHour,
-                                                currentUser: widget.currentUser,
-                                              ),
-                                        ),
-                                      )
-                                      .then((result) {
-                                        // ✅ Refresh bay status after editing
-                                        if (result == true) {
-                                          _refreshBayStatus(bayData.id);
-                                        }
-                                      });
+                                  // 🔧 FIX: Handle completed readings differently
+                                  if (isBayComplete) {
+                                    _showReadingCompletedDialog(bayData);
+                                  } else {
+                                    _navigateToReadingEntry(bayData);
+                                  }
                                 },
                               ),
                             );

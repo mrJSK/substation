@@ -13,6 +13,7 @@ import '../../models/bay_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../utils/snackbar_utils.dart';
 import '../substation_dashboard/tripping_shutdown_entry_screen.dart';
+import 'tripping_details_screen.dart';
 
 class TrippingTab extends StatefulWidget {
   final AppUser currentUser;
@@ -1208,13 +1209,8 @@ class _TrippingTabState extends State<TrippingTab>
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => TrippingShutdownEntryScreen(
-          substationId: entry.substationId,
-          substationName: substationName,
-          currentUser: widget.currentUser,
-          entryToEdit: entry,
-          isViewOnly: true,
-        ),
+        builder: (context) =>
+            TrippingDetailsScreen(entry: entry, substationName: substationName),
       ),
     );
   }

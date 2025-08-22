@@ -30,46 +30,6 @@ class _EquipmentIcon extends StatelessWidget {
     final Size iconSize = Size(size, size);
 
     switch (type.toLowerCase()) {
-      case 'operations':
-        child = CustomPaint(
-          painter: FeederIconPainter(
-            color: color,
-            equipmentSize: iconSize,
-            symbolSize: iconSize,
-          ),
-          size: iconSize,
-        );
-        break;
-      case 'energy':
-        child = CustomPaint(
-          painter: EnergyMeterIconPainter(
-            color: color,
-            equipmentSize: iconSize,
-            symbolSize: iconSize,
-          ),
-          size: iconSize,
-        );
-        break;
-      case 'tripping':
-        child = CustomPaint(
-          painter: CircuitBreakerIconPainter(
-            color: color,
-            equipmentSize: iconSize,
-            symbolSize: iconSize,
-          ),
-          size: iconSize,
-        );
-        break;
-      case 'assets':
-        child = CustomPaint(
-          painter: CapacitorBankIconPainter(
-            color: color,
-            equipmentSize: iconSize,
-            symbolSize: iconSize,
-          ),
-          size: iconSize,
-        );
-        break;
       case 'transformer':
         child = Icon(Icons.electrical_services, size: size, color: color);
         break;
@@ -136,6 +96,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
   bool _isSaving = false;
   late AnimationController _animationController;
 
+  // 🔧 FIX: Add reading state tracking
+  bool _hasExistingReading = false;
+  bool _isReadOnlyDueToExistingReading = false;
+
   Bay? _currentBay;
   LogsheetEntry? _existingLogsheetEntry;
   LogsheetEntry? _previousLogsheetEntry;
@@ -173,6 +137,17 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     super.dispose();
   }
 
+  // 🔧 FIX: Check permission to modify existing readings
+  bool _canModifyExistingReading() {
+    return [
+      UserRole.admin,
+      UserRole.subdivisionManager,
+      UserRole.divisionManager,
+      UserRole.circleManager,
+      UserRole.zoneManager,
+    ].contains(widget.currentUser.role);
+  }
+
   Future<void> _initializeScreenData() async {
     setState(() => _isLoading = true);
 
@@ -201,6 +176,19 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         widget.readingDate,
         widget.frequency,
         hour: widget.readingHour,
+      );
+
+      // 🔧 FIX: Set reading state
+      _hasExistingReading = _existingLogsheetEntry != null;
+
+      // 🔧 FIX: Determine if should be read-only
+      _isReadOnlyDueToExistingReading =
+          _hasExistingReading &&
+          !_canModifyExistingReading() &&
+          !widget.forceReadOnly;
+
+      print(
+        '📊 Reading exists: $_hasExistingReading, Read-only: $_isReadOnlyDueToExistingReading',
       );
 
       // Get previous reading for auto-populate from cache
@@ -346,6 +334,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     }
   }
 
+  // 🔧 FIX: Enhanced save method with better error handling and cache sync
   Future<void> _saveLogsheetEntry() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -358,6 +347,16 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       SnackBarUtils.showSnackBar(
         context,
         'No reading fields to save for this slot.',
+        isError: true,
+      );
+      return;
+    }
+
+    // 🔧 FIX: Prevent saving if reading already exists and user doesn't have permission
+    if (_hasExistingReading && !_canModifyExistingReading()) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Reading already exists and cannot be modified.',
         isError: true,
       );
       return;
@@ -436,6 +435,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
       if (_existingLogsheetEntry == null) {
         // Create new entry
+        print('🔄 Saving new entry for bay: ${widget.bayId}');
+
         final docRef = await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .add(logsheetData.toFirestore());
@@ -444,17 +445,21 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         final savedEntry = logsheetData.copyWith(id: docRef.id);
         _cache.updateBayReading(widget.bayId, savedEntry);
 
+        // 🔧 FIX: Force cache refresh to ensure consistency
+        await _cache.refreshBayData(widget.bayId);
+
+        print('✅ Entry saved and cache updated');
+
         if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Logsheet entry saved successfully!',
-          );
+          SnackBarUtils.showSnackBar(context, 'Reading saved successfully!');
           Navigator.of(
             context,
           ).pop(true); // Return true to indicate data was saved
         }
       } else {
         // Update existing entry
+        print('🔄 Updating existing entry for bay: ${widget.bayId}');
+
         await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .doc(_existingLogsheetEntry!.id)
@@ -466,22 +471,24 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         );
         _cache.updateBayReading(widget.bayId, updatedEntry);
 
+        // 🔧 FIX: Force cache refresh to ensure consistency
+        await _cache.refreshBayData(widget.bayId);
+
+        print('✅ Entry updated and cache refreshed');
+
         if (mounted) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Logsheet entry updated successfully!',
-          );
+          SnackBarUtils.showSnackBar(context, 'Reading updated successfully!');
           Navigator.of(
             context,
           ).pop(true); // Return true to indicate data was saved
         }
       }
     } catch (e) {
-      print("Error saving logsheet entry: $e");
+      print("❌ Error saving logsheet entry: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to save logsheet: $e',
+          'Failed to save reading: $e',
           isError: true,
         );
       }
@@ -591,8 +598,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       isMandatory = false;
     }
 
+    // 🔧 FIX: Updated read-only logic
     final bool isReadOnly =
         widget.forceReadOnly ||
+        _isReadOnlyDueToExistingReading ||
         (widget.currentUser.role == UserRole.substationUser &&
             _existingLogsheetEntry != null) ||
         (isPreviousReadingField &&
@@ -616,6 +625,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             offset: const Offset(0, 2),
           ),
         ],
+        // 🔧 FIX: Add border for read-only fields
+        border: isReadOnly
+            ? Border.all(color: Colors.grey.withOpacity(0.3), width: 1)
+            : null,
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -677,13 +690,39 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    fieldName + (isMandatory ? ' *' : ''),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDarkMode ? Colors.white : Colors.black87,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fieldName + (isMandatory ? ' *' : ''),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDarkMode ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      // 🔧 FIX: Add read-only indicator
+                      if (isReadOnly)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Read Only',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -696,7 +735,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       color: isDarkMode ? Colors.white : Colors.black87,
                     ),
                     decoration: InputDecoration(
-                      hintText: 'Enter ${fieldName.toLowerCase()}',
+                      hintText: isReadOnly
+                          ? 'Value saved'
+                          : 'Enter ${fieldName.toLowerCase()}',
                       hintStyle: TextStyle(
                         color: isDarkMode
                             ? Colors.white.withOpacity(0.5)
@@ -714,6 +755,13 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                 ? const Color(0xFF3C3C3E)
                                 : theme.colorScheme.primary.withOpacity(0.05)),
                       suffixText: unit,
+                      prefixIcon: isReadOnly
+                          ? Icon(
+                              Icons.lock,
+                              color: Colors.grey.shade600,
+                              size: 16,
+                            )
+                          : null,
                     ),
                     validator: validator,
                   ),
@@ -746,13 +794,38 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    fieldName + (isMandatory ? ' *' : ''),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDarkMode ? Colors.white : Colors.black87,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fieldName + (isMandatory ? ' *' : ''),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDarkMode ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      if (isReadOnly)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Read Only',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -765,7 +838,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       color: isDarkMode ? Colors.white : Colors.black87,
                     ),
                     decoration: InputDecoration(
-                      hintText: unit != null && unit.isNotEmpty
+                      hintText: isReadOnly
+                          ? 'Value saved'
+                          : unit != null && unit.isNotEmpty
                           ? 'Enter value in $unit'
                           : 'Enter numerical value',
                       hintStyle: TextStyle(
@@ -785,6 +860,13 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                 ? const Color(0xFF3C3C3E)
                                 : theme.colorScheme.primary.withOpacity(0.05)),
                       suffixText: unit,
+                      prefixIcon: isReadOnly
+                          ? Icon(
+                              Icons.lock,
+                              color: Colors.grey.shade600,
+                              size: 16,
+                            )
+                          : null,
                     ),
                     keyboardType: TextInputType.number,
                     validator: (value) {
@@ -834,13 +916,40 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        fieldName + (isMandatory ? ' *' : ''),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: isDarkMode ? Colors.white : Colors.black87,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              fieldName + (isMandatory ? ' *' : ''),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : Colors.black87,
+                              ),
+                            ),
+                          ),
+                          if (isReadOnly)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Read Only',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Row(
@@ -912,8 +1021,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       ? const Color(0xFF3C3C3E)
                       : theme.colorScheme.primary.withOpacity(0.05),
                   prefixIcon: Icon(
-                    Icons.description,
+                    isReadOnly ? Icons.lock : Icons.description,
                     color: isReadOnly ? Colors.grey : Colors.purple[700],
+                    size: 16,
                   ),
                 ),
                 maxLines: 2,
@@ -952,13 +1062,38 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    fieldName + (isMandatory ? ' *' : ''),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDarkMode ? Colors.white : Colors.black87,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fieldName + (isMandatory ? ' *' : ''),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDarkMode ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      if (isReadOnly)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Read Only',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -977,10 +1112,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             ),
             IconButton(
               icon: Icon(
-                Icons.arrow_forward_ios,
+                isReadOnly ? Icons.lock : Icons.arrow_forward_ios,
                 size: 16,
                 color: isReadOnly
-                    ? (isDarkMode ? Colors.grey.shade600 : Colors.grey)
+                    ? Colors.grey.shade600
                     : (isDarkMode ? Colors.white : Colors.black87),
               ),
               onPressed: isReadOnly
@@ -1043,13 +1178,38 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    fieldName + (isMandatory ? ' *' : ''),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDarkMode ? Colors.white : Colors.black87,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fieldName + (isMandatory ? ' *' : ''),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDarkMode ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      if (isReadOnly)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Read Only',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
@@ -1072,6 +1232,13 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           : (isDarkMode
                                 ? const Color(0xFF3C3C3E)
                                 : theme.colorScheme.primary.withOpacity(0.05)),
+                      prefixIcon: isReadOnly
+                          ? Icon(
+                              Icons.lock,
+                              color: Colors.grey.shade600,
+                              size: 16,
+                            )
+                          : null,
                     ),
                     items: options!
                         .map(
@@ -1125,8 +1292,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       slotTitle += ' - Daily Reading';
     }
 
+    // 🔧 FIX: Updated read-only logic
     final bool isReadOnlyView =
         widget.forceReadOnly ||
+        _isReadOnlyDueToExistingReading ||
         (widget.currentUser.role == UserRole.substationUser &&
             _existingLogsheetEntry != null);
 
@@ -1138,7 +1307,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         title: Text(
-          _currentBay?.name ?? 'Reading Entry',
+          // 🔧 FIX: Dynamic title based on reading state
+          _hasExistingReading
+              ? 'View Reading Details'
+              : _currentBay?.name ?? 'Reading Entry',
           style: TextStyle(
             color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             fontSize: 18,
@@ -1150,13 +1322,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             Icons.arrow_back,
             color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
-          onPressed: () => Navigator.pop(
-            context,
-            false,
-          ), // Return false for no changes by default
+          onPressed: () => Navigator.pop(context, false),
         ),
         actions: [
-          if (_existingLogsheetEntry != null)
+          // 🔧 FIX: Enhanced status indicators
+          if (_hasExistingReading)
             Container(
               margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -1175,7 +1345,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'Saved',
+                    'Completed',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -1185,22 +1355,100 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 ],
               ),
             ),
-          // Add cache status indicator
         ],
       ),
       body: _isLoading
           ? Center(
-              child: CircularProgressIndicator(
-                color: theme.colorScheme.primary,
+              child: Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isDarkMode
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(
+                      color: theme.colorScheme.primary,
+                      strokeWidth: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Loading from cache...',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             )
           : Column(
               children: [
+                // 🔧 FIX: Add warning banner for existing readings
+                if (_hasExistingReading)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.green.shade700),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Reading Already Recorded',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                              if (_existingLogsheetEntry != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Recorded on ${DateFormat('dd MMM yyyy, HH:mm').format(_existingLogsheetEntry!.recordedAt.toDate())}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.green.shade600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 // Header
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.all(16),
+                  margin: EdgeInsets.fromLTRB(
+                    16,
+                    _hasExistingReading ? 0 : 16,
+                    16,
+                    16,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: isDarkMode
@@ -1361,7 +1609,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                 1,
                             itemBuilder: (context, index) {
                               if (index == _filteredReadingFields.length) {
-                                if (isReadOnlyView) {
+                                if (isReadOnlyView && !_hasExistingReading) {
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 12),
                                     padding: const EdgeInsets.all(16),
@@ -1419,7 +1667,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 ),
               ],
             ),
-      floatingActionButton: !isReadOnlyView && _filteredReadingFields.isNotEmpty
+      // 🔧 FIX: Don't show save button for existing readings unless user has permission
+      floatingActionButton:
+          !isReadOnlyView &&
+              !_isReadOnlyDueToExistingReading &&
+              _filteredReadingFields.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: _isSaving ? null : _saveLogsheetEntry,
               backgroundColor: theme.colorScheme.primary,
@@ -1439,8 +1691,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 _isSaving
                     ? 'Saving...'
                     : _existingLogsheetEntry == null
-                    ? 'Save Entry'
-                    : 'Update Entry',
+                    ? 'Save Reading'
+                    : 'Update Reading',
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             )

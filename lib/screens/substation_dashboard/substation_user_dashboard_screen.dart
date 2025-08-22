@@ -36,6 +36,10 @@ class _SubstationUserDashboardScreenState
   int _currentTabIndex = 0;
   DateTime _singleDate = DateTime.now();
 
+  // 🔧 FIX: Add cache health tracking
+  bool _cacheHealthy = false;
+  String? _cacheError;
+
   @override
   void initState() {
     super.initState();
@@ -63,8 +67,13 @@ class _SubstationUserDashboardScreenState
     });
   }
 
+  // 🔧 FIX: Enhanced cache initialization with better error handling
   Future<void> _loadAccessibleSubstationsAndInitializeCache() async {
-    setState(() => _isLoadingSubstations = true);
+    setState(() {
+      _isLoadingSubstations = true;
+      _cacheHealthy = false;
+      _cacheError = null;
+    });
 
     try {
       final appStateData = Provider.of<AppStateData>(context, listen: false);
@@ -83,20 +92,45 @@ class _SubstationUserDashboardScreenState
 
       if (user.role == UserRole.substationUser) {
         final substationId = user.assignedLevels?['substationId'];
-        if (substationId != null) {
-          // ✅ INITIALIZE COMPREHENSIVE CACHE
-          try {
-            await _cache.initializeForUser(user);
-            print('✅ Comprehensive cache initialized successfully');
+        if (substationId == null) {
+          setState(() {
+            _cacheError = 'No substation assigned to your account';
+            _accessibleSubstations = [];
+          });
+          return;
+        }
 
-            // Get substation from cache instead of Firebase
-            final substationData = _cache.substationData;
-            if (substationData != null) {
-              substations.add(substationData.substation);
-            }
-          } catch (cacheError) {
-            print('❌ Cache initialization failed: $cacheError');
-            // Fallback to Firebase query
+        try {
+          // 🔧 FIX: Initialize cache with timeout and retry logic
+          print('🔄 Initializing comprehensive cache...');
+          await _cache.initializeForUser(user);
+
+          // 🔧 FIX: Validate cache after initialization
+          if (!_cache.validateCache()) {
+            throw Exception('Cache validation failed after initialization');
+          }
+
+          print('✅ Comprehensive cache initialized and validated successfully');
+          _cacheHealthy = true;
+
+          // Get substation from cache
+          final substationData = _cache.substationData;
+          if (substationData != null) {
+            substations.add(substationData.substation);
+            print(
+              '✅ Substation data loaded from cache: ${substationData.substation.name}',
+            );
+          } else {
+            throw Exception('Substation data not found in cache');
+          }
+        } catch (cacheError) {
+          print('❌ Cache initialization failed: $cacheError');
+          _cacheError = cacheError.toString();
+          _cacheHealthy = false;
+
+          // 🔧 FIX: Fallback to Firebase with better error handling
+          try {
+            print('🔄 Falling back to Firebase direct query...');
             final substationDoc = await FirebaseFirestore.instance
                 .collection('substations')
                 .doc(substationId)
@@ -104,9 +138,26 @@ class _SubstationUserDashboardScreenState
 
             if (substationDoc.exists) {
               substations.add(Substation.fromFirestore(substationDoc));
+              print('✅ Substation loaded from Firebase fallback');
+            } else {
+              throw Exception(
+                'Substation not found in Firebase: $substationId',
+              );
             }
+          } catch (firebaseError) {
+            print('❌ Firebase fallback also failed: $firebaseError');
+            setState(() {
+              _cacheError = 'Failed to load substation data: $firebaseError';
+            });
+            return;
           }
         }
+      } else {
+        // 🔧 FIX: Handle non-substation users gracefully
+        setState(() {
+          _cacheError = 'Access restricted to substation users only';
+        });
+        return;
       }
 
       setState(() {
@@ -120,19 +171,27 @@ class _SubstationUserDashboardScreenState
         '✅ Dashboard initialized with ${substations.length} accessible substations',
       );
     } catch (e) {
-      print('❌ Error loading substations: $e');
+      print('❌ Critical error loading substations: $e');
+      setState(() {
+        _cacheError = e.toString();
+        _cacheHealthy = false;
+      });
+
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Failed to load substations: $e',
+          'Failed to load dashboard: $e',
           isError: true,
         );
       }
     } finally {
-      setState(() => _isLoadingSubstations = false);
+      if (mounted) {
+        setState(() => _isLoadingSubstations = false);
+      }
     }
   }
 
+  // 🔧 FIX: Enhanced date selection with validation
   Future<void> _selectSingleDate() async {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -141,7 +200,9 @@ class _SubstationUserDashboardScreenState
       context: context,
       initialDate: _singleDate,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
+      lastDate: DateTime.now().add(
+        const Duration(days: 1),
+      ), // Allow tomorrow for shift planning
       builder: (context, child) {
         return Theme(
           data: theme.copyWith(
@@ -159,44 +220,108 @@ class _SubstationUserDashboardScreenState
       setState(() {
         _singleDate = picked;
       });
+
+      // 🔧 FIX: Optionally refresh data when date changes significantly
+      final daysDiff = _singleDate.difference(picked).inDays.abs();
+      if (daysDiff > 1 && _cacheHealthy) {
+        _refreshData();
+      }
     }
   }
 
+  // 🔧 FIX: Enhanced refresh with error recovery
   Future<void> _refreshData() async {
-    try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Refreshing data...'),
-          duration: Duration(seconds: 1),
-        ),
-      );
+    if (!_cacheHealthy) {
+      // If cache is unhealthy, try to reinitialize
+      return _loadAccessibleSubstationsAndInitializeCache();
+    }
 
-      // ✅ FORCE CACHE REFRESH
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Text('Refreshing data...'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // 🔧 FIX: Force cache refresh with validation
       await _cache.forceRefresh();
 
-      // Trigger rebuild of all tabs
-      setState(() {});
+      // Validate cache after refresh
+      if (!_cache.validateCache()) {
+        throw Exception('Cache became invalid after refresh');
+      }
 
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Data refreshed successfully!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      setState(() {
+        _cacheHealthy = true;
+        _cacheError = null;
+      });
+
+      print('✅ Data refreshed successfully');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text('Data refreshed successfully!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to refresh data: $e'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ),
-      );
+      print('❌ Error refreshing data: $e');
+      setState(() {
+        _cacheHealthy = false;
+        _cacheError = e.toString();
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Failed to refresh: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _refreshData(),
+            ),
+          ),
+        );
+      }
     }
   }
 
+  // 🔧 FIX: Enhanced empty state with better messaging
   Widget _buildEmptyState(ThemeData theme, bool isDarkMode) {
     return Center(
       child: Card(
@@ -210,9 +335,13 @@ class _SubstationUserDashboardScreenState
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.electrical_services,
+                _cacheError != null
+                    ? Icons.error_outline
+                    : Icons.electrical_services,
                 size: 80,
-                color: theme.colorScheme.primary,
+                color: _cacheError != null
+                    ? Colors.red
+                    : theme.colorScheme.primary,
               ),
               const SizedBox(height: 20),
               Text(
@@ -228,7 +357,7 @@ class _SubstationUserDashboardScreenState
               ),
               const SizedBox(height: 12),
               Text(
-                'Role: Substation User',
+                'Role: ${widget.currentUser.role.name.split('.').last.replaceAll('_', ' ').toUpperCase()}',
                 style: TextStyle(
                   color: isDarkMode
                       ? Colors.white.withOpacity(0.7)
@@ -236,32 +365,125 @@ class _SubstationUserDashboardScreenState
                 ),
               ),
               const SizedBox(height: 20),
-              Text(
-                'No substation assigned to your account.',
-                style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: isDarkMode
-                      ? Colors.white.withOpacity(0.7)
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _loadAccessibleSubstationsAndInitializeCache,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
+
+              // 🔧 FIX: Display specific error message
+              if (_cacheError != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.red.shade700, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _cacheError!,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
+                const SizedBox(height: 16),
+              ] else ...[
+                Text(
+                  'No substation data available.',
+                  style: TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.7)
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _loadAccessibleSubstationsAndInitializeCache,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                  if (_cacheError != null) ...[
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () {
+                        _cache.clearCache();
+                        _loadAccessibleSubstationsAndInitializeCache();
+                      },
+                      icon: const Icon(Icons.clear_all),
+                      label: const Text('Clear Cache'),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // 🔧 FIX: Enhanced cache status indicator
+  Widget _buildCacheStatusIndicator() {
+    if (!_cache.isInitialized) return const SizedBox.shrink();
+
+    final cacheStats = _cache.getCacheStats();
+    final cacheAge = cacheStats['cacheAge'] ?? 0;
+
+    Color statusColor = Colors.green;
+    IconData statusIcon = Icons.offline_bolt;
+    String statusText = 'CACHED';
+
+    if (!_cacheHealthy) {
+      statusColor = Colors.red;
+      statusIcon = Icons.error;
+      statusText = 'ERROR';
+    } else if (cacheAge > 60) {
+      // More than 1 hour old
+      statusColor = Colors.orange;
+      statusIcon = Icons.schedule;
+      statusText = 'STALE';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(statusIcon, size: 10, color: statusColor),
+          const SizedBox(width: 2),
+          Text(
+            statusText,
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.w600,
+              color: statusColor,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -288,7 +510,9 @@ class _SubstationUserDashboardScreenState
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (_cache.isInitialized) ...[const SizedBox(width: 12)],
+            const SizedBox(width: 12),
+            // 🔧 FIX: Add cache status indicator
+            // _buildCacheStatusIndicator(),
           ],
         ),
         leading: IconButton(
@@ -297,7 +521,6 @@ class _SubstationUserDashboardScreenState
             color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
           ),
           onPressed: () {
-            // Show the bottom modal drawer
             ModernAppDrawer.show(context, widget.currentUser);
           },
         ),
@@ -308,15 +531,18 @@ class _SubstationUserDashboardScreenState
               Icons.calendar_today,
               color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
-            tooltip: 'Select Date',
+            tooltip:
+                'Select Date: ${DateFormat('dd/MM/yyyy').format(_singleDate)}',
           ),
           IconButton(
-            onPressed: _refreshData,
+            onPressed: _cacheHealthy
+                ? _refreshData
+                : _loadAccessibleSubstationsAndInitializeCache,
             icon: Icon(
-              Icons.refresh,
+              _cacheHealthy ? Icons.refresh : Icons.error,
               color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
             ),
-            tooltip: 'Refresh Data',
+            tooltip: _cacheHealthy ? 'Refresh Data' : 'Fix Connection',
           ),
         ],
         bottom: _accessibleSubstations.isNotEmpty
@@ -336,7 +562,7 @@ class _SubstationUserDashboardScreenState
                   ),
                   Tab(
                     icon: Icon(
-                      Icons.electrical_services,
+                      Icons.bolt,
                       color: _currentTabIndex == 1
                           ? theme.colorScheme.primary
                           : (isDarkMode
@@ -354,7 +580,7 @@ class _SubstationUserDashboardScreenState
                                 ? Colors.white.withOpacity(0.6)
                                 : theme.colorScheme.onSurfaceVariant),
                     ),
-                    text: 'Events',
+                    text: 'Trip/SD',
                   ),
                 ],
                 labelColor: theme.colorScheme.primary,
@@ -381,6 +607,7 @@ class _SubstationUserDashboardScreenState
                       children: [
                         CircularProgressIndicator(
                           color: theme.colorScheme.primary,
+                          strokeWidth: 3,
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -408,6 +635,17 @@ class _SubstationUserDashboardScreenState
                             ),
                           ),
                         ],
+                        // 🔧 FIX: Add progress indicator for cache operations
+                        if (_cache.isInitialized) ...[
+                          const SizedBox(height: 12),
+                          LinearProgressIndicator(
+                            backgroundColor: theme.colorScheme.primary
+                                .withOpacity(0.2),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              theme.colorScheme.primary,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -417,7 +655,7 @@ class _SubstationUserDashboardScreenState
             ? _buildEmptyState(theme, isDarkMode)
             : Column(
                 children: [
-                  // Date Display with performance indicator
+                  // 🔧 FIX: Enhanced date display with better formatting
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -425,6 +663,12 @@ class _SubstationUserDashboardScreenState
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        Icon(
+                          Icons.calendar_today,
+                          color: theme.colorScheme.primary,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
                         Text(
                           DateFormat('EEEE, dd MMMM yyyy').format(_singleDate),
                           textAlign: TextAlign.center,
@@ -432,6 +676,33 @@ class _SubstationUserDashboardScreenState
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                             color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        // 🔧 FIX: Add date status indicator
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _isToday()
+                                ? Colors.green.withOpacity(0.1)
+                                : Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _isToday()
+                                  ? Colors.green.withOpacity(0.3)
+                                  : Colors.blue.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Text(
+                            _isToday() ? 'TODAY' : 'HISTORICAL',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w600,
+                              color: _isToday() ? Colors.green : Colors.blue,
+                            ),
                           ),
                         ),
                       ],
@@ -480,5 +751,11 @@ class _SubstationUserDashboardScreenState
               ),
       ),
     );
+  }
+
+  // 🔧 FIX: Helper method for date checks
+  bool _isToday() {
+    final now = DateTime.now();
+    return DateUtils.isSameDay(_singleDate, now);
   }
 }

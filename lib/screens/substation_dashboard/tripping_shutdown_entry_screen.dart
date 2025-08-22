@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -43,13 +44,30 @@ class _TrippingShutdownEntryScreenState
   bool _isClosingEvent = false;
   late AnimationController _animationController;
 
+  bool _cacheHealthy = false;
+  String? _cacheError;
+
   List<Bay> _allBays = [];
   Bay? _selectedBay;
   List<Bay> _selectedMultiBays = [];
   Map<String, TextEditingController> _bayFlagsControllers = {};
+  // 🔧 FIX: Add reason controllers for ALL bay types
+  Map<String, TextEditingController> _bayReasonControllers = {};
 
   String? _selectedEventType;
   final List<String> _eventTypes = ['Tripping', 'Shutdown'];
+
+  // 🔧 FIX: Line reasons for Line bay tripping events only
+  final List<String> _lineReasons = [
+    'Bird Nest',
+    'Kite Thread',
+    'Polymer Flash',
+    'Disc Puncture',
+    'Tree',
+    'Other',
+  ];
+  String? _selectedLineReason;
+  String? _lineReasonDetails;
 
   DateTime? _startDate;
   TimeOfDay? _startTime;
@@ -57,14 +75,17 @@ class _TrippingShutdownEntryScreenState
   TimeOfDay? _endTime;
 
   final TextEditingController _flagsCauseController = TextEditingController();
-  final TextEditingController _reasonForNonFeederController =
-      TextEditingController();
+  final TextEditingController _reasonController = TextEditingController();
   final TextEditingController _distanceController = TextEditingController();
 
-  bool _showReasonForNonFeeder = false;
+  // 🔧 FIX: Updated conditional fields
   bool _showHasAutoReclose = false;
   bool _showPhaseFaults = false;
   bool _showDistance = false;
+  bool _showLineReason =
+      false; // Show pre-filled reason selection for Line bays only
+  bool _showFlags = false; // Show flags field for tripping events
+  bool _showReason = false; // 🔧 FIX: Show reason field for ALL tripping events
 
   bool _hasAutoReclose = false;
   List<String> _selectedPhaseFaults = [];
@@ -101,11 +122,12 @@ class _TrippingShutdownEntryScreenState
   @override
   void dispose() {
     _flagsCauseController.dispose();
-    _reasonForNonFeederController.dispose();
+    _reasonController.dispose();
     _distanceController.dispose();
     _shutdownPersonNameController.dispose();
     _shutdownPersonDesignationController.dispose();
     _bayFlagsControllers.forEach((key, controller) => controller.dispose());
+    _bayReasonControllers.forEach((key, controller) => controller.dispose());
     _animationController.dispose();
     super.dispose();
   }
@@ -158,17 +180,23 @@ class _TrippingShutdownEntryScreenState
   }
 
   Future<void> _initializeForm() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _cacheError = null;
+    });
 
     try {
-      // ✅ USE CACHE - No Firebase queries!
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Get bays from cache
+      if (!_cache.validateCache()) {
+        throw Exception('Cache validation failed - data may be stale');
+      }
+
       final substationData = _cache.substationData!;
       _allBays = substationData.bays.map((bayData) => bayData.bay).toList();
+      _cacheHealthy = true;
 
       if (_allBays.isEmpty) {
         if (mounted) {
@@ -192,7 +220,6 @@ class _TrippingShutdownEntryScreenState
         _startDate = entry.startTime.toDate();
         _startTime = TimeOfDay.fromDateTime(_startDate!);
         _flagsCauseController.text = entry.flagsCause;
-        _reasonForNonFeederController.text = entry.reasonForNonFeeder ?? '';
         _distanceController.text = entry.distance ?? '';
         _selectedPhaseFaults = entry.phaseFaults ?? [];
         _hasAutoReclose = entry.hasAutoReclose ?? false;
@@ -200,6 +227,16 @@ class _TrippingShutdownEntryScreenState
         _shutdownPersonNameController.text = entry.shutdownPersonName ?? '';
         _shutdownPersonDesignationController.text =
             entry.shutdownPersonDesignation ?? '';
+
+        // 🔧 FIX: Parse stored reason - for Line bays from flags, for others from reasonForNonFeeder
+        if (entry.eventType == 'Tripping') {
+          if (_selectedBay?.bayType == 'Line' && entry.flagsCause.isNotEmpty) {
+            _parseStoredLineReason(entry.flagsCause);
+          } else if (entry.reasonForNonFeeder != null &&
+              entry.reasonForNonFeeder!.isNotEmpty) {
+            _reasonController.text = entry.reasonForNonFeeder!;
+          }
+        }
 
         if (entry.status == 'CLOSED') {
           _endDate = entry.endTime!.toDate();
@@ -219,10 +256,14 @@ class _TrippingShutdownEntryScreenState
       print(
         '✅ Tripping entry form initialized from cache with ${_allBays.length} bays',
       );
-
       _animationController.forward();
     } catch (e) {
       print("❌ Error initializing form from cache: $e");
+      setState(() {
+        _cacheHealthy = false;
+        _cacheError = e.toString();
+      });
+
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -241,31 +282,67 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
+  // 🔧 FIX: Parse line reason from stored flags for Line bays
+  void _parseStoredLineReason(String flagsCause) {
+    for (String reason in _lineReasons) {
+      if (flagsCause.contains('Reason for Tripping: $reason')) {
+        _selectedLineReason = reason;
+        final parts = flagsCause.split('Reason for Tripping: $reason:');
+        if (parts.length > 1) {
+          final details = parts.last.trim();
+          if (details.isNotEmpty) {
+            _lineReasonDetails = details;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // 🔧 FIX: Updated conditional field logic
   void _updateConditionalFields() {
     setState(() {
       if (_selectedBay == null && _selectedMultiBays.isEmpty) {
-        _showReasonForNonFeeder = false;
         _showHasAutoReclose = false;
         _showPhaseFaults = false;
         _showDistance = false;
+        _showLineReason = false;
+        _showFlags = false;
+        _showReason = false;
       } else {
-        _showReasonForNonFeeder =
-            _selectedBay != null && _selectedBay!.bayType != 'Feeder';
+        // 🔧 FIX: FLAGS and REASON are mandatory for ALL tripping events
+        _showFlags = _selectedEventType == 'Tripping';
+        _showReason = _selectedEventType == 'Tripping';
+
         _showHasAutoReclose =
             _selectedBay != null &&
             _selectedBay!.bayType == 'Line' &&
-            _parseVoltageLevel(_selectedBay!.voltageLevel) >= 220;
+            _parseVoltageLevel(_selectedBay!.voltageLevel) >= 220 &&
+            _selectedEventType == 'Tripping';
+
         _showPhaseFaults = _selectedEventType == 'Tripping';
+
         _showDistance =
+            _selectedEventType == 'Tripping' &&
+            _selectedBay != null &&
+            _selectedBay!.bayType == 'Line';
+
+        // 🔧 FIX: Show pre-filled reason selection ONLY for Line bay tripping events
+        _showLineReason =
             _selectedEventType == 'Tripping' &&
             _selectedBay != null &&
             _selectedBay!.bayType == 'Line';
       }
 
-      if (!_showReasonForNonFeeder) _reasonForNonFeederController.clear();
       if (!_showPhaseFaults) _selectedPhaseFaults.clear();
       if (!_showDistance) _distanceController.clear();
+      if (!_showLineReason) {
+        _selectedLineReason = null;
+        _lineReasonDetails = null;
+      }
+      if (!_showReason) _reasonController.clear();
 
+      // Clear shutdown fields for tripping events
       bool isShutdown = _selectedEventType == 'Shutdown';
       if (!isShutdown) {
         _selectedShutdownType = null;
@@ -283,6 +360,74 @@ class _TrippingShutdownEntryScreenState
           _endDate != null &&
           _endTime != null;
     });
+  }
+
+  bool _canCreateEvents() {
+    return [
+      UserRole.admin,
+      UserRole.substationUser,
+      UserRole.subdivisionManager,
+    ].contains(widget.currentUser.role);
+  }
+
+  bool _canEditEvent(TrippingShutdownEntry? entry) {
+    if (entry == null) return _canCreateEvents();
+
+    if (entry.status == 'CLOSED') {
+      return [
+        UserRole.admin,
+        UserRole.subdivisionManager,
+      ].contains(widget.currentUser.role);
+    }
+
+    return [
+      UserRole.admin,
+      UserRole.substationUser,
+      UserRole.subdivisionManager,
+    ].contains(widget.currentUser.role);
+  }
+
+  // 🔧 FIX: Line reason dialog for Line bays only
+  Future<void> _showLineReasonDialog() async {
+    String? selectedReason = await showDialog<String>(
+      context: context,
+      builder: (context) => _LineReasonSelectionDialog(
+        initialReason: _selectedLineReason,
+        reasons: _lineReasons,
+      ),
+    );
+
+    if (selectedReason != null) {
+      String? details;
+      if (selectedReason != 'Other') {
+        details = await _showTowerNumberDialog(selectedReason);
+      } else {
+        details = await _showTextInputDialog('Enter other reason');
+      }
+
+      if (details != null && details.isNotEmpty) {
+        setState(() {
+          _selectedLineReason = selectedReason;
+          _lineReasonDetails = details;
+        });
+      }
+    }
+  }
+
+  // 🔧 FIX: Tower number dialog with numeric keypad
+  Future<String?> _showTowerNumberDialog(String reason) async {
+    return showDialog<String>(
+      context: context,
+      builder: (context) => _TowerNumberDialog(reason: reason),
+    );
+  }
+
+  // 🔧 FIX: Text input dialog for "Other" reason
+  Future<String?> _showTextInputDialog(String title) async {
+    return showDialog<String>(
+      context: context,
+      builder: (context) => _TextInputDialog(title: title),
+    );
   }
 
   Future<void> _selectDateTime(BuildContext context, bool isStart) async {
@@ -368,8 +513,27 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
+  // 🔧 FIX: Updated save logic with proper flags and reason handling
   Future<void> _saveEvent() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (widget.entryToEdit == null && !_canCreateEvents()) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'You do not have permission to create events.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (widget.entryToEdit != null && !_canEditEvent(widget.entryToEdit!)) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'You do not have permission to edit this event.',
+        isError: true,
+      );
+      return;
+    }
 
     final now = DateTime.now();
     if (_startDate != null && _startDate!.isAfter(now)) {
@@ -399,6 +563,18 @@ class _TrippingShutdownEntryScreenState
       return;
     }
 
+    // 🔧 FIX: Validation for Line bay pre-filled reason
+    if (_showLineReason &&
+        (_selectedLineReason == null || _lineReasonDetails == null)) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'Please select a reason for the line tripping event.',
+        isError: true,
+      );
+      return;
+    }
+
+    // 🔧 FIX: Shutdown validations
     if (_selectedEventType == 'Shutdown') {
       if (_selectedShutdownType == null) {
         SnackBarUtils.showSnackBar(
@@ -428,19 +604,76 @@ class _TrippingShutdownEntryScreenState
       }
     }
 
-    bool isFlagsCauseMandatoryGlobal =
-        _selectedEventType == 'Shutdown' || _isClosingEvent;
+    // 🔧 FIX: FLAGS validation for ALL tripping events
+    if (_selectedEventType == 'Tripping') {
+      if (widget.entryToEdit == null) {
+        // For new events, check bay-specific flags
+        for (var bay in _selectedMultiBays) {
+          final flagsController = _bayFlagsControllers[bay.id];
+          if (flagsController == null || flagsController.text.trim().isEmpty) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'FLAGS are mandatory for ${bay.name} tripping event.',
+              isError: true,
+            );
+            return;
+          }
 
-    if (widget.entryToEdit == null && isFlagsCauseMandatoryGlobal) {
-      for (var bay in _selectedMultiBays) {
-        final controller = _bayFlagsControllers[bay.id];
-        if (controller == null || controller.text.trim().isEmpty) {
+          // 🔧 FIX: Check reason for ALL bay types
+          if (bay.bayType == 'Line') {
+            // Line bays use pre-filled reason selection
+            if (_selectedLineReason == null || _lineReasonDetails == null) {
+              SnackBarUtils.showSnackBar(
+                context,
+                'Reason is mandatory for ${bay.name} tripping event.',
+                isError: true,
+              );
+              return;
+            }
+          } else {
+            // Non-Line bays use free-text reason
+            final reasonController = _bayReasonControllers[bay.id];
+            if (reasonController == null ||
+                reasonController.text.trim().isEmpty) {
+              SnackBarUtils.showSnackBar(
+                context,
+                'Reason is mandatory for ${bay.name} tripping event.',
+                isError: true,
+              );
+              return;
+            }
+          }
+        }
+      } else {
+        // For editing existing events
+        if (_flagsCauseController.text.trim().isEmpty && !_isClosingEvent) {
           SnackBarUtils.showSnackBar(
             context,
-            'Flags/Cause for ${bay.name} is mandatory.',
+            'FLAGS are mandatory for tripping events.',
             isError: true,
           );
           return;
+        }
+
+        // 🔧 FIX: Check reason for existing events
+        if (_selectedBay?.bayType == 'Line') {
+          if (_selectedLineReason == null || _lineReasonDetails == null) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Reason is mandatory for line tripping events.',
+              isError: true,
+            );
+            return;
+          }
+        } else {
+          if (_reasonController.text.trim().isEmpty && !_isClosingEvent) {
+            SnackBarUtils.showSnackBar(
+              context,
+              'Reason is mandatory for tripping events.',
+              isError: true,
+            );
+            return;
+          }
         }
       }
     }
@@ -464,6 +697,14 @@ class _TrippingShutdownEntryScreenState
     }
 
     setState(() => _isSaving = true);
+
+    if (widget.entryToEdit == null) {
+      final hasDuplicateEvent = await _checkForDuplicateEvent();
+      if (hasDuplicateEvent) {
+        setState(() => _isSaving = false);
+        return;
+      }
+    }
 
     if (widget.entryToEdit == null &&
         (_selectedEventType == 'Tripping' ||
@@ -507,8 +748,30 @@ class _TrippingShutdownEntryScreenState
         }
 
         for (Bay bay in _selectedMultiBays) {
-          final String baySpecificFlagsCause =
-              _bayFlagsControllers[bay.id]?.text.trim() ?? '';
+          // 🔧 FIX: Build flags/cause and reason based on event type and bay type
+          String baySpecificFlagsCause = '';
+          String? reasonForNonFeeder;
+
+          if (_selectedEventType == 'Tripping') {
+            // Get basic flags
+            baySpecificFlagsCause =
+                _bayFlagsControllers[bay.id]?.text.trim() ?? '';
+
+            if (bay.bayType == 'Line') {
+              // For Line bays, append the selected reason to flags
+              if (_selectedLineReason != null && _lineReasonDetails != null) {
+                if (baySpecificFlagsCause.isNotEmpty) {
+                  baySpecificFlagsCause += '\n';
+                }
+                baySpecificFlagsCause +=
+                    'Reason for Tripping: $_selectedLineReason: $_lineReasonDetails';
+              }
+            } else {
+              // For non-Line bays, store reason in reasonForNonFeeder field
+              reasonForNonFeeder = _bayReasonControllers[bay.id]?.text.trim();
+            }
+          }
+          // For shutdown events, FLAGS field is not used (empty)
 
           final newEntry = TrippingShutdownEntry(
             substationId: widget.substationId,
@@ -528,9 +791,7 @@ class _TrippingShutdownEntryScreenState
             status: status,
             flagsCause: baySpecificFlagsCause,
             reasonForNonFeeder:
-                _reasonForNonFeederController.text.trim().isNotEmpty
-                ? _reasonForNonFeederController.text.trim()
-                : null,
+                reasonForNonFeeder, // 🔧 FIX: Store reason for non-Line bays
             hasAutoReclose: _showHasAutoReclose ? _hasAutoReclose : null,
             phaseFaults:
                 _selectedEventType == 'Tripping' &&
@@ -559,7 +820,6 @@ class _TrippingShutdownEntryScreenState
                 : null,
           );
 
-          // Save to Firebase
           final docRef = await FirebaseFirestore.instance
               .collection('trippingShutdownEntries')
               .add(
@@ -567,7 +827,6 @@ class _TrippingShutdownEntryScreenState
                   ..addAll({'substationName': widget.substationName}),
               );
 
-          // ✅ UPDATE CACHE
           final savedEntry = newEntry.copyWith(id: docRef.id);
           _cache.addTrippingEvent(savedEntry);
         }
@@ -602,6 +861,29 @@ class _TrippingShutdownEntryScreenState
           return;
         }
 
+        // 🔧 FIX: Build updated flags/cause and reason for editing
+        String updatedFlagsCause = '';
+        String? updatedReasonForNonFeeder;
+
+        if (_selectedEventType == 'Tripping') {
+          updatedFlagsCause = _flagsCauseController.text.trim();
+
+          if (_selectedBay?.bayType == 'Line') {
+            // For Line bays, append the selected reason to flags
+            if (_selectedLineReason != null && _lineReasonDetails != null) {
+              if (updatedFlagsCause.isNotEmpty) {
+                updatedFlagsCause += '\n';
+              }
+              updatedFlagsCause +=
+                  'Reason for Tripping: $_selectedLineReason: $_lineReasonDetails';
+            }
+          } else {
+            // For non-Line bays, store reason in reasonForNonFeeder field
+            updatedReasonForNonFeeder = _reasonController.text.trim();
+          }
+        }
+        // For shutdown events, FLAGS field is not used (empty)
+
         final updatedEntry = widget.entryToEdit!.copyWith(
           bayId: _selectedBay!.id,
           bayName: _selectedBay!.name,
@@ -617,11 +899,9 @@ class _TrippingShutdownEntryScreenState
           ),
           endTime: eventEndTime,
           status: status,
-          flagsCause: _flagsCauseController.text.trim(),
+          flagsCause: updatedFlagsCause,
           reasonForNonFeeder:
-              _reasonForNonFeederController.text.trim().isNotEmpty
-              ? _reasonForNonFeederController.text.trim()
-              : null,
+              updatedReasonForNonFeeder, // 🔧 FIX: Update reason for non-Line bays
           hasAutoReclose: _showHasAutoReclose ? _hasAutoReclose : null,
           phaseFaults:
               _selectedEventType == 'Tripping' &&
@@ -648,7 +928,6 @@ class _TrippingShutdownEntryScreenState
               : null,
         );
 
-        // Update in Firebase
         await FirebaseFirestore.instance
             .collection('trippingShutdownEntries')
             .doc(updatedEntry.id)
@@ -657,7 +936,6 @@ class _TrippingShutdownEntryScreenState
                 ..addAll({'substationName': widget.substationName}),
             );
 
-        // ✅ UPDATE CACHE
         _cache.updateTrippingEvent(updatedEntry);
 
         if (widget.currentUser.role == UserRole.subdivisionManager &&
@@ -683,6 +961,8 @@ class _TrippingShutdownEntryScreenState
         }
       }
 
+      await _cache.forceRefresh();
+
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       print("Error saving event: $e");
@@ -696,6 +976,119 @@ class _TrippingShutdownEntryScreenState
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Future<bool> _checkForDuplicateEvent() async {
+    try {
+      final oneHourAgo = DateTime.now().subtract(const Duration(hours: 1));
+
+      for (var bay in _selectedMultiBays) {
+        final existingEvents = await FirebaseFirestore.instance
+            .collection('trippingShutdownEntries')
+            .where('bayId', isEqualTo: bay.id)
+            .where('eventType', isEqualTo: _selectedEventType)
+            .where('startTime', isGreaterThan: Timestamp.fromDate(oneHourAgo))
+            .where('status', isEqualTo: 'OPEN')
+            .get();
+
+        if (existingEvents.docs.isNotEmpty) {
+          final shouldProceed = await _showDuplicateEventDialog(bay.name);
+          if (!shouldProceed) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (e) {
+      print('Error checking for duplicate events: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _showDuplicateEventDialog(String bayName) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            backgroundColor: isDarkMode
+                ? const Color(0xFF2C2C2E)
+                : Colors.white,
+            title: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.orange),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Duplicate Event Warning',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'A similar ${_selectedEventType?.toLowerCase()} event for $bayName already exists within the last hour.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.8)
+                        : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    'Are you sure you want to create another event for the same bay?',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Proceed Anyway'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   Future<void> _showNotificationPreview() async {
@@ -1105,11 +1498,12 @@ class _TrippingShutdownEntryScreenState
     bool isEditingExisting = widget.entryToEdit != null;
     bool isClosedEvent =
         isEditingExisting && widget.entryToEdit!.status == 'CLOSED';
-    bool isReadOnly = widget.isViewOnly || isClosedEvent;
+    bool isReadOnly =
+        widget.isViewOnly ||
+        isClosedEvent ||
+        !_canEditEvent(widget.entryToEdit);
     bool isFormEnabled = !isReadOnly && !_isSaving;
     bool isMultiBaySelectionMode = !isEditingExisting;
-    bool isFlagsCauseMandatoryGlobal =
-        (_selectedEventType == 'Shutdown') || (_isClosingEvent);
 
     return Scaffold(
       backgroundColor: isDarkMode
@@ -1245,6 +1639,17 @@ class _TrippingShutdownEntryScreenState
                         color: isDarkMode ? Colors.white : Colors.black87,
                       ),
                     ),
+                    if (_cacheError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _cacheError!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1311,6 +1716,7 @@ class _TrippingShutdownEntryScreenState
                                   (bay) => true,
                                 );
 
+                                // Initialize controllers for FLAGS
                                 final Map<String, TextEditingController>
                                 newBayFlagsControllers = {};
                                 for (var bay in newValue) {
@@ -1325,6 +1731,27 @@ class _TrippingShutdownEntryScreenState
                                   }
                                 });
                                 _bayFlagsControllers = newBayFlagsControllers;
+
+                                // 🔧 FIX: Initialize controllers for REASON (non-Line bays only)
+                                final Map<String, TextEditingController>
+                                newBayReasonControllers = {};
+                                for (var bay in newValue) {
+                                  if (bay.bayType != 'Line') {
+                                    newBayReasonControllers[bay.id] =
+                                        _bayReasonControllers[bay.id] ??
+                                        TextEditingController();
+                                  }
+                                }
+
+                                _bayReasonControllers.forEach((id, controller) {
+                                  if (!newBayReasonControllers.containsKey(
+                                    id,
+                                  )) {
+                                    controller.dispose();
+                                  }
+                                });
+                                _bayReasonControllers = newBayReasonControllers;
+
                                 _updateConditionalFields();
                               });
                             },
@@ -1452,13 +1879,18 @@ class _TrippingShutdownEntryScreenState
                     ),
                   ),
 
+                  // Updated timing section with proper titles
                   _buildFormCard(
-                    title: 'Event Timing',
+                    title: _selectedEventType == 'Tripping'
+                        ? 'Trip Timing'
+                        : 'Shutdown Timing',
                     icon: Icons.schedule,
                     child: Column(
                       children: [
                         _buildDateTimeSelector(
-                          label: 'Start Date & Time',
+                          label: _selectedEventType == 'Tripping'
+                              ? 'Trip Start Time'
+                              : 'Shutdown Time',
                           date: _startDate,
                           time: _startTime,
                           isStart: true,
@@ -1468,7 +1900,7 @@ class _TrippingShutdownEntryScreenState
                         if (isEditingExisting && !isClosedEvent) ...[
                           const SizedBox(height: 16),
                           _buildDateTimeSelector(
-                            label: 'End Date & Time',
+                            label: 'Charging Time',
                             date: _endDate,
                             time: _endTime,
                             isStart: false,
@@ -1480,143 +1912,319 @@ class _TrippingShutdownEntryScreenState
                     ),
                   ),
 
-                  _buildFormCard(
-                    title: 'Event Details',
-                    icon: Icons.description,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (isMultiBaySelectionMode &&
-                            _selectedMultiBays.isNotEmpty)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Flags/Cause of Event (per Bay):',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: isDarkMode
-                                      ? Colors.white
-                                      : Colors.black87,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ..._selectedMultiBays.map((bay) {
-                                if (!_bayFlagsControllers.containsKey(bay.id)) {
-                                  _bayFlagsControllers[bay.id] =
-                                      TextEditingController(text: '');
-                                }
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 16.0),
-                                  child: TextFormField(
-                                    controller: _bayFlagsControllers[bay.id],
-                                    style: TextStyle(
-                                      color: isDarkMode
-                                          ? Colors.white
-                                          : Colors.black87,
+                  // 🔧 FIX: FLAGS section - MANDATORY for ALL tripping events
+                  if (_showFlags)
+                    _buildFormCard(
+                      title: 'FLAGS (Mandatory)',
+                      icon: Icons.flag,
+                      iconColor: Colors.red,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (isMultiBaySelectionMode &&
+                              _selectedMultiBays.isNotEmpty)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ..._selectedMultiBays.map((bay) {
+                                  if (!_bayFlagsControllers.containsKey(
+                                    bay.id,
+                                  )) {
+                                    _bayFlagsControllers[bay.id] =
+                                        TextEditingController(text: '');
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(
+                                      bottom: 16.0,
                                     ),
-                                    decoration: InputDecoration(
-                                      labelText: 'Flags/Cause for ${bay.name}',
-                                      labelStyle: TextStyle(
+                                    child: TextFormField(
+                                      controller: _bayFlagsControllers[bay.id],
+                                      style: TextStyle(
                                         color: isDarkMode
-                                            ? Colors.white.withOpacity(0.7)
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'FLAGS for ${bay.name}',
+                                        labelStyle: TextStyle(
+                                          color: isDarkMode
+                                              ? Colors.white.withOpacity(0.7)
+                                              : null,
+                                        ),
+                                        border: const OutlineInputBorder(),
+                                        alignLabelWithHint: true,
+                                        filled: isDarkMode,
+                                        fillColor: isDarkMode
+                                            ? const Color(0xFF2C2C2E)
                                             : null,
                                       ),
-                                      border: const OutlineInputBorder(),
-                                      alignLabelWithHint: true,
-                                      filled: isDarkMode,
-                                      fillColor: isDarkMode
-                                          ? const Color(0xFF2C2C2E)
-                                          : null,
-                                    ),
-                                    maxLines: 3,
-                                    enabled: isFormEnabled,
-                                    validator: (value) {
-                                      if (isFlagsCauseMandatoryGlobal) {
+                                      maxLines: 3,
+                                      enabled: isFormEnabled,
+                                      validator: (value) {
                                         if (value == null ||
                                             value.trim().isEmpty) {
-                                          if (_selectedEventType ==
-                                              'Shutdown') {
-                                            return 'Reason for Shutdown for ${bay.name} is mandatory.';
-                                          } else if (_isClosingEvent) {
-                                            return 'Reason for closing for ${bay.name} is mandatory.';
-                                          }
-                                          return 'Flags/Cause for ${bay.name} cannot be empty.';
+                                          return 'FLAGS are mandatory for ${bay.name}';
                                         }
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                );
-                              }).toList(),
-                            ],
-                          )
-                        else
-                          TextFormField(
-                            controller: _flagsCauseController,
-                            style: TextStyle(
-                              color: isDarkMode ? Colors.white : Colors.black87,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: 'Flags/Cause of Event',
-                              labelStyle: TextStyle(
+                                        return null;
+                                      },
+                                    ),
+                                  );
+                                }).toList(),
+                              ],
+                            )
+                          else
+                            TextFormField(
+                              controller: _flagsCauseController,
+                              style: TextStyle(
                                 color: isDarkMode
-                                    ? Colors.white.withOpacity(0.7)
+                                    ? Colors.white
+                                    : Colors.black87,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'FLAGS for Tripping Event',
+                                labelStyle: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.7)
+                                      : null,
+                                ),
+                                border: OutlineInputBorder(),
+                                alignLabelWithHint: true,
+                                filled: isDarkMode,
+                                fillColor: isDarkMode
+                                    ? const Color(0xFF2C2C2E)
                                     : null,
                               ),
-                              border: OutlineInputBorder(),
-                              alignLabelWithHint: true,
-                              filled: isDarkMode,
-                              fillColor: isDarkMode
-                                  ? const Color(0xFF2C2C2E)
-                                  : null,
-                            ),
-                            maxLines: 3,
-                            enabled: isFormEnabled,
-                            validator: (value) {
-                              if (isFlagsCauseMandatoryGlobal) {
+                              maxLines: 3,
+                              enabled: isFormEnabled,
+                              validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  if (_selectedEventType == 'Shutdown') {
-                                    return 'Reason for Shutdown is mandatory.';
-                                  } else if (_isClosingEvent) {
-                                    return 'Reason for closing the event is mandatory.';
-                                  }
-                                  return 'Flags/Cause cannot be empty.';
+                                  return 'FLAGS are mandatory for tripping events.';
                                 }
-                              }
-                              return null;
-                            },
-                          ),
-                      ],
+                                return null;
+                              },
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  if (_showReasonForNonFeeder)
+                  // 🔧 FIX: REASON section - MANDATORY for ALL tripping events
+                  if (_showReason)
                     _buildFormCard(
-                      title: 'Non-Feeder Bay Reason',
-                      icon: Icons.help_outline,
-                      iconColor: Colors.blue,
-                      child: TextFormField(
-                        controller: _reasonForNonFeederController,
-                        style: TextStyle(
-                          color: isDarkMode ? Colors.white : Colors.black87,
-                        ),
-                        decoration: InputDecoration(
-                          labelText:
-                              'Reason for Tripping/Shutdown (Non-Feeder Bay)',
-                          labelStyle: TextStyle(
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.7)
-                                : null,
-                          ),
-                          border: OutlineInputBorder(),
-                          filled: isDarkMode,
-                          fillColor: isDarkMode
-                              ? const Color(0xFF2C2C2E)
-                              : null,
-                        ),
-                        maxLines: 2,
-                        enabled: isFormEnabled,
+                      title: 'Reason for Tripping (Mandatory)',
+                      icon: Icons.report_problem,
+                      iconColor: Colors.amber,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 🔧 FIX: For Line bays, show pre-filled reason selection
+                          if (_showLineReason)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: isDarkMode
+                                          ? Colors.grey.shade700
+                                          : Colors.grey.shade300,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: InkWell(
+                                    onTap: isFormEnabled
+                                        ? _showLineReasonDialog
+                                        : null,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.list_alt,
+                                          color: theme.colorScheme.primary,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Select Pre-filled Reason for Line',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: isDarkMode
+                                                      ? Colors.white
+                                                            .withOpacity(0.7)
+                                                      : theme
+                                                            .colorScheme
+                                                            .onSurface
+                                                            .withOpacity(0.7),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _selectedLineReason != null &&
+                                                        _lineReasonDetails !=
+                                                            null
+                                                    ? '$_selectedLineReason: $_lineReasonDetails'
+                                                    : 'Tap to select reason',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w500,
+                                                  color:
+                                                      _selectedLineReason !=
+                                                          null
+                                                      ? (isDarkMode
+                                                            ? Colors.white
+                                                            : Colors.black87)
+                                                      : (isDarkMode
+                                                            ? Colors
+                                                                  .grey
+                                                                  .shade600
+                                                            : Colors.grey),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Icon(
+                                          Icons.arrow_forward_ios,
+                                          color: theme.colorScheme.primary,
+                                          size: 16,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                if (_selectedLineReason != null &&
+                                    _lineReasonDetails != null) ...[
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.green.withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.check_circle,
+                                          color: Colors.green,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Selected: $_selectedLineReason: $_lineReasonDetails',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.green.shade700,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            )
+                          // 🔧 FIX: For multi-bay selection (new events), show reason fields per bay
+                          else if (isMultiBaySelectionMode &&
+                              _selectedMultiBays.isNotEmpty)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ..._selectedMultiBays
+                                    .where((bay) => bay.bayType != 'Line')
+                                    .map((bay) {
+                                      if (!_bayReasonControllers.containsKey(
+                                        bay.id,
+                                      )) {
+                                        _bayReasonControllers[bay.id] =
+                                            TextEditingController(text: '');
+                                      }
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 16.0,
+                                        ),
+                                        child: TextFormField(
+                                          controller:
+                                              _bayReasonControllers[bay.id],
+                                          style: TextStyle(
+                                            color: isDarkMode
+                                                ? Colors.white
+                                                : Colors.black87,
+                                          ),
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                'Reason for ${bay.name} (${bay.bayType})',
+                                            labelStyle: TextStyle(
+                                              color: isDarkMode
+                                                  ? Colors.white.withOpacity(
+                                                      0.7,
+                                                    )
+                                                  : null,
+                                            ),
+                                            border: const OutlineInputBorder(),
+                                            alignLabelWithHint: true,
+                                            filled: isDarkMode,
+                                            fillColor: isDarkMode
+                                                ? const Color(0xFF2C2C2E)
+                                                : null,
+                                          ),
+                                          maxLines: 3,
+                                          enabled: isFormEnabled,
+                                          validator: (value) {
+                                            if (value == null ||
+                                                value.trim().isEmpty) {
+                                              return 'Reason is mandatory for ${bay.name}';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                      );
+                                    })
+                                    .toList(),
+                              ],
+                            )
+                          // 🔧 FIX: For single bay editing (non-Line bays), show single reason field
+                          else
+                            TextFormField(
+                              controller: _reasonController,
+                              style: TextStyle(
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : Colors.black87,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Reason for Tripping',
+                                labelStyle: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white.withOpacity(0.7)
+                                      : null,
+                                ),
+                                border: OutlineInputBorder(),
+                                alignLabelWithHint: true,
+                                filled: isDarkMode,
+                                fillColor: isDarkMode
+                                    ? const Color(0xFF2C2C2E)
+                                    : null,
+                              ),
+                              maxLines: 3,
+                              enabled: isFormEnabled,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Reason is mandatory for tripping events.';
+                                }
+                                return null;
+                              },
+                            ),
+                        ],
                       ),
                     ),
 
@@ -1698,7 +2306,7 @@ class _TrippingShutdownEntryScreenState
 
                   if (_selectedEventType == 'Shutdown')
                     _buildFormCard(
-                      title: 'Shutdown Details',
+                      title: 'Shutdown Additional Details',
                       icon: Icons.power_off,
                       iconColor: Colors.orange,
                       child: Column(
@@ -1833,7 +2441,9 @@ class _TrippingShutdownEntryScreenState
                             child: Text(
                               widget.isViewOnly
                                   ? 'This event is in view-only mode.'
-                                  : 'This event is already closed.',
+                                  : isClosedEvent
+                                  ? 'This event is already closed.'
+                                  : 'You do not have permission to edit this event.',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: isDarkMode
@@ -1881,6 +2491,449 @@ class _TrippingShutdownEntryScreenState
             )
           : null,
     );
+  }
+}
+
+// Tower Number Dialog with custom keyboard that allows hyphen
+class _TowerNumberDialog extends StatefulWidget {
+  final String reason;
+
+  const _TowerNumberDialog({required this.reason});
+
+  @override
+  State<_TowerNumberDialog> createState() => _TowerNumberDialogState();
+}
+
+class _TowerNumberDialogState extends State<_TowerNumberDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+      title: Text(
+        '${widget.reason} - Tower Number',
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Enter tower number or span range (e.g., 147 or 147-148):',
+            style: TextStyle(
+              fontSize: 14,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.7)
+                  : Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _controller,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+            decoration: InputDecoration(
+              hintText: 'e.g., 147 or 147-148',
+              hintStyle: TextStyle(
+                color: isDarkMode ? Colors.white.withOpacity(0.5) : Colors.grey,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              filled: true,
+              fillColor: isDarkMode
+                  ? const Color(0xFF3C3C3E)
+                  : Colors.grey.shade50,
+              prefixIcon: Icon(
+                Icons.cell_tower,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            keyboardType: TextInputType.text,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9\-]')),
+              LengthLimitingTextInputFormatter(10),
+            ],
+            autofocus: true,
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'Use hyphen (-) for span ranges between towers',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.blue.shade700,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildCustomNumberPad(),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+            ),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final value = _controller.text.trim();
+            if (value.isNotEmpty) {
+              Navigator.of(context).pop(value);
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: const Text('Confirm'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomNumberPad() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey.shade800 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Text(
+            'Quick Input Pad',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: isDarkMode ? Colors.white : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildNumberButton('1'),
+              _buildNumberButton('2'),
+              _buildNumberButton('3'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildNumberButton('4'),
+              _buildNumberButton('5'),
+              _buildNumberButton('6'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildNumberButton('7'),
+              _buildNumberButton('8'),
+              _buildNumberButton('9'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildSpecialButton('-', Icons.remove),
+              _buildNumberButton('0'),
+              _buildSpecialButton('⌫', Icons.backspace, isBackspace: true),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNumberButton(String number) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return Container(
+      width: 50,
+      height: 40,
+      child: ElevatedButton(
+        onPressed: () {
+          final currentText = _controller.text;
+          final newText = currentText + number;
+          _controller.text = newText;
+          _controller.selection = TextSelection.fromPosition(
+            TextPosition(offset: newText.length),
+          );
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isDarkMode ? Colors.grey.shade700 : Colors.white,
+          foregroundColor: isDarkMode ? Colors.white : Colors.black87,
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        child: Text(
+          number,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpecialButton(
+    String label,
+    IconData icon, {
+    bool isBackspace = false,
+  }) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return Container(
+      width: 50,
+      height: 40,
+      child: ElevatedButton(
+        onPressed: () {
+          if (isBackspace) {
+            final currentText = _controller.text;
+            if (currentText.isNotEmpty) {
+              final newText = currentText.substring(0, currentText.length - 1);
+              _controller.text = newText;
+              _controller.selection = TextSelection.fromPosition(
+                TextPosition(offset: newText.length),
+              );
+            }
+          } else {
+            final currentText = _controller.text;
+            final newText = currentText + label;
+            _controller.text = newText;
+            _controller.selection = TextSelection.fromPosition(
+              TextPosition(offset: newText.length),
+            );
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isDarkMode
+              ? Colors.blue.shade700
+              : Colors.blue.shade100,
+          foregroundColor: isDarkMode ? Colors.white : Colors.blue.shade700,
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        child: Icon(icon, size: 18),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+}
+
+// Line Reason Selection Dialog
+class _LineReasonSelectionDialog extends StatelessWidget {
+  final String? initialReason;
+  final List<String> reasons;
+
+  const _LineReasonSelectionDialog({
+    required this.initialReason,
+    required this.reasons,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+      title: Text(
+        'Select Reason for Line Tripping',
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: reasons.length,
+          itemBuilder: (context, index) {
+            final reason = reasons[index];
+            final isSelected = reason == initialReason;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? theme.colorScheme.primary.withOpacity(0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : (isDarkMode
+                            ? Colors.grey.shade700
+                            : Colors.grey.shade300),
+                ),
+              ),
+              child: ListTile(
+                leading: Icon(
+                  reason == 'Other' ? Icons.edit : Icons.report_problem,
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : (isDarkMode ? Colors.white : Colors.black87),
+                ),
+                title: Text(
+                  reason,
+                  style: TextStyle(
+                    color: isSelected
+                        ? theme.colorScheme.primary
+                        : (isDarkMode ? Colors.white : Colors.black87),
+                    fontWeight: isSelected
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
+                ),
+                onTap: () => Navigator.of(context).pop(reason),
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Text Input Dialog for "Other" reason
+class _TextInputDialog extends StatefulWidget {
+  final String title;
+
+  const _TextInputDialog({required this.title});
+
+  @override
+  State<_TextInputDialog> createState() => _TextInputDialogState();
+}
+
+class _TextInputDialogState extends State<_TextInputDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+      title: Text(
+        widget.title,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: isDarkMode ? Colors.white : Colors.black87,
+        ),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextFormField(
+            controller: _controller,
+            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+            decoration: InputDecoration(
+              hintText: 'Enter other reason details...',
+              hintStyle: TextStyle(
+                color: isDarkMode ? Colors.white.withOpacity(0.5) : Colors.grey,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              filled: true,
+              fillColor: isDarkMode
+                  ? const Color(0xFF3C3C3E)
+                  : Colors.grey.shade50,
+            ),
+            maxLines: 3,
+            maxLength: 200,
+            autofocus: true,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+            ),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final value = _controller.text.trim();
+            if (value.isNotEmpty) {
+              Navigator.of(context).pop(value);
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: const Text('Confirm'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 }
 

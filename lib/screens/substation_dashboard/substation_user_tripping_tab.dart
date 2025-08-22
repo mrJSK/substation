@@ -35,8 +35,14 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   bool _isLoading = true;
   List<TrippingShutdownEntry> _todayEvents = [];
   List<TrippingShutdownEntry> _openEvents = [];
+  List<TrippingShutdownEntry> _allRecentEvents = [];
   bool _hasAnyBays = false;
   late AnimationController _animationController;
+
+  // 🔧 FIX: Add cache health tracking and error handling
+  bool _cacheHealthy = false;
+  String? _cacheError;
+  Map<String, int> _eventStats = {};
 
   @override
   void initState() {
@@ -58,7 +64,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   void didUpdateWidget(SubstationUserTrippingTab oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Only reload if substation or date actually changed
     final bool shouldReload =
         oldWidget.substationId != widget.substationId ||
         !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
@@ -68,28 +73,39 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
+  // 🔧 FIX: Enhanced data loading with better error handling and validation
   Future<void> _loadTrippingData() async {
     if (widget.substationId.isEmpty) {
       setState(() {
         _isLoading = false;
         _todayEvents = [];
         _openEvents = [];
+        _allRecentEvents = [];
         _hasAnyBays = false;
+        _cacheHealthy = false;
+        _cacheError = 'No substation selected';
       });
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _cacheError = null;
+    });
 
     try {
-      // ✅ USE CACHE - No Firebase queries!
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Check if substation has any bays
+      // 🔧 FIX: Validate cache health before proceeding
+      if (!_cache.validateCache()) {
+        throw Exception('Cache validation failed - data may be stale');
+      }
+
       final substationData = _cache.substationData!;
       _hasAnyBays = substationData.bays.isNotEmpty;
+      _cacheHealthy = true;
 
       if (_hasAnyBays) {
         // Get today's events from cache
@@ -97,9 +113,17 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
 
         // Get open events from cache
         _openEvents = _cache.getOpenTrippingEvents();
+
+        // Get all recent events for statistics
+        _allRecentEvents = substationData.recentTrippingEvents;
+
+        // 🔧 FIX: Apply role-based filtering
+        _applyRoleBasedFiltering();
+
+        // Calculate statistics
+        _calculateEventStats();
       }
 
-      // Start animation after data is loaded
       _animationController.forward();
 
       print(
@@ -107,6 +131,11 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       );
     } catch (e) {
       print('❌ Error loading tripping data from cache: $e');
+      setState(() {
+        _cacheHealthy = false;
+        _cacheError = e.toString();
+      });
+
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -121,13 +150,94 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  // Method to refresh data after adding/editing events
-  Future<void> _refreshTrippingData() async {
-    if (!_hasAnyBays) return;
+  // 🔧 FIX: Apply role-based filtering for events
+  void _applyRoleBasedFiltering() {
+    final bool isDivisionOrHigher = [
+      UserRole.admin,
+      UserRole.zoneManager,
+      UserRole.circleManager,
+      UserRole.divisionManager,
+    ].contains(widget.currentUser.role);
 
-    // ✅ Data is already in cache after save operation
-    // Just reload from cache
-    _loadTrippingData();
+    final bool isSubdivisionManager =
+        widget.currentUser.role == UserRole.subdivisionManager;
+    final bool isSubstationUser =
+        widget.currentUser.role == UserRole.substationUser;
+
+    // Filter based on user role
+    if (isDivisionOrHigher) {
+      // Division level and above can only see closed events
+      _todayEvents = _todayEvents
+          .where((event) => event.status == 'CLOSED')
+          .toList();
+      _openEvents = []; // No open events for division level
+    } else if (isSubdivisionManager || isSubstationUser) {
+      // Subdivision manager and substation user can see all events
+      // No filtering needed
+    }
+  }
+
+  // 🔧 FIX: Calculate event statistics for better insights
+  void _calculateEventStats() {
+    _eventStats.clear();
+
+    // Count events by type
+    final trippingCount = _allRecentEvents
+        .where((e) => e.eventType == 'Tripping')
+        .length;
+    final shutdownCount = _allRecentEvents
+        .where((e) => e.eventType == 'Shutdown')
+        .length;
+    final openCount = _openEvents.length;
+    final todayCount = _todayEvents.length;
+
+    _eventStats = {
+      'tripping': trippingCount,
+      'shutdown': shutdownCount,
+      'open': openCount,
+      'today': todayCount,
+      'total': _allRecentEvents.length,
+    };
+  }
+
+  // 🔧 FIX: Enhanced refresh with cache synchronization
+  Future<void> _refreshTrippingData() async {
+    try {
+      // Force refresh the cache to ensure we have latest data
+      await _cache.forceRefresh();
+
+      // Reload from refreshed cache
+      await _loadTrippingData();
+
+      print('✅ Tripping data refreshed successfully');
+    } catch (e) {
+      print('❌ Error refreshing tripping data: $e');
+      // Fallback to just reloading from existing cache
+      await _loadTrippingData();
+    }
+  }
+
+  // 🔧 FIX: Check user permissions for event operations
+  bool _canCreateEvents() {
+    return [
+      UserRole.admin,
+      UserRole.substationUser,
+      UserRole.subdivisionManager,
+    ].contains(widget.currentUser.role);
+  }
+
+  bool _canEditEvent(TrippingShutdownEntry event) {
+    if (event.status == 'CLOSED') {
+      return [
+        UserRole.admin,
+        UserRole.subdivisionManager,
+      ].contains(widget.currentUser.role);
+    }
+    return [
+      UserRole.admin,
+      UserRole.substationUser,
+      UserRole.subdivisionManager,
+    ].contains(widget.currentUser.role);
   }
 
   Color _getEventTypeColor(String eventType) {
@@ -152,12 +262,21 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  // Updated navigation methods with optimized refresh
+  // 🔧 FIX: Enhanced navigation with permission checks
   void _navigateToAddEvent() {
     if (!_hasAnyBays) {
       SnackBarUtils.showSnackBar(
         context,
         'Cannot create events. No bays configured in this substation.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (!_canCreateEvents()) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'You do not have permission to create events.',
         isError: true,
       );
       return;
@@ -170,13 +289,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
               substationId: widget.substationId,
               substationName: widget.substationName,
               currentUser: widget.currentUser,
-              entryToEdit: null, // null for new entry
+              entryToEdit: null,
               isViewOnly: false,
             ),
           ),
         )
         .then((result) {
-          // Only refresh if data was actually saved
           if (result == true) {
             _refreshTrippingData();
           }
@@ -187,6 +305,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     TrippingShutdownEntry event, {
     bool isViewOnly = false,
   }) {
+    // Override viewOnly based on permissions and event status
+    final bool forceViewOnly = !_canEditEvent(event) || isViewOnly;
+
     Navigator.of(context)
         .push(
           MaterialPageRoute(
@@ -195,12 +316,11 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
               substationName: widget.substationName,
               currentUser: widget.currentUser,
               entryToEdit: event,
-              isViewOnly: isViewOnly,
+              isViewOnly: forceViewOnly,
             ),
           ),
         )
         .then((result) {
-          // Only refresh if data was actually modified
           if (result == true) {
             _refreshTrippingData();
           }
@@ -208,6 +328,15 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   }
 
   void _navigateToCloseEvent(TrippingShutdownEntry event) {
+    if (!_canEditEvent(event)) {
+      SnackBarUtils.showSnackBar(
+        context,
+        'You do not have permission to edit this event.',
+        isError: true,
+      );
+      return;
+    }
+
     Navigator.of(context)
         .push(
           MaterialPageRoute(
@@ -221,19 +350,20 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
         )
         .then((result) {
-          // Only refresh if data was actually modified
           if (result == true) {
             _refreshTrippingData();
           }
         });
   }
 
+  // 🔧 FIX: Enhanced event card with better visual indicators and permissions
   Widget _buildEventCard(TrippingShutdownEntry event) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
     final eventColor = _getEventTypeColor(event.eventType);
     final eventIcon = _getEventTypeIcon(event.eventType);
     final isOpen = event.status == 'OPEN';
+    final canEdit = _canEditEvent(event);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -250,8 +380,8 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
         ],
         border: isOpen
-            ? Border.all(color: Colors.orange.withOpacity(0.3), width: 1)
-            : null,
+            ? Border.all(color: Colors.orange.withOpacity(0.3), width: 2)
+            : Border.all(color: eventColor.withOpacity(0.2), width: 1),
       ),
       child: Column(
         children: [
@@ -282,7 +412,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ),
                   ),
                 ),
-                // Enhanced status badge
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -348,6 +477,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                             : theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
                     ),
+                    const Spacer(),
+                    // 🔧 FIX: Add event age indicator
+                    _buildEventAgeIndicator(event),
                   ],
                 ),
                 if (event.status == 'CLOSED' && event.endTime != null) ...[
@@ -370,7 +502,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ],
                   ),
                 ],
-                // Show duration for closed events
                 if (event.status == 'CLOSED' && event.endTime != null) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -396,7 +527,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ],
                   ),
                 ],
-                // Show flags/cause if available
                 if (event.flagsCause.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -437,14 +567,48 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ),
                   ),
                 ],
+                // 🔧 FIX: Add permission indicator for non-editable events
+                if (!canEdit && isOpen) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.lock,
+                          size: 12,
+                          color: Colors.amber.shade700,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'View only - Contact supervisor to edit',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.amber.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
             onTap: () {
-              _navigateToViewEvent(event, isViewOnly: event.status == 'CLOSED');
+              _navigateToViewEvent(event, isViewOnly: !canEdit);
             },
           ),
-          // Action buttons for open events
-          if (event.status == 'OPEN') ...[
+
+          // 🔧 FIX: Enhanced action buttons with permission-based visibility
+          if (isOpen && canEdit) ...[
             Divider(
               height: 1,
               color: isDarkMode
@@ -456,7 +620,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // View/Edit button
                   OutlinedButton.icon(
                     onPressed: () =>
                         _navigateToViewEvent(event, isViewOnly: false),
@@ -471,7 +634,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     label: const Text('Edit'),
                   ),
                   const SizedBox(width: 12),
-                  // Close event button
                   ElevatedButton.icon(
                     onPressed: () => _navigateToCloseEvent(event),
                     style: ElevatedButton.styleFrom(
@@ -487,13 +649,79 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                 ],
               ),
             ),
+          ] else if (isOpen && !canEdit) ...[
+            Divider(
+              height: 1,
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.2)
+                  : Colors.grey.shade300,
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          _navigateToViewEvent(event, isViewOnly: true),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey,
+                        side: BorderSide(color: Colors.grey),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: const Icon(Icons.visibility, size: 18),
+                      label: const Text('View Only'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ],
       ),
     );
   }
 
-  // Helper method to calculate duration
+  // 🔧 FIX: Add event age indicator
+  Widget _buildEventAgeIndicator(TrippingShutdownEntry event) {
+    final now = DateTime.now();
+    final eventTime = event.startTime.toDate();
+    final duration = now.difference(eventTime);
+
+    Color indicatorColor = Colors.grey;
+    String ageText = '';
+
+    if (duration.inMinutes < 60) {
+      indicatorColor = Colors.red;
+      ageText = '${duration.inMinutes}m ago';
+    } else if (duration.inHours < 24) {
+      indicatorColor = Colors.orange;
+      ageText = '${duration.inHours}h ago';
+    } else {
+      indicatorColor = Colors.grey;
+      ageText = '${duration.inDays}d ago';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: indicatorColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: indicatorColor.withOpacity(0.3)),
+      ),
+      child: Text(
+        ageText,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: indicatorColor,
+        ),
+      ),
+    );
+  }
+
   String _calculateDuration(DateTime start, DateTime end) {
     final duration = end.difference(start);
     if (duration.inDays > 0) {
@@ -554,9 +782,55 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     );
   }
 
+  // 🔧 FIX: Add cache status indicator
+  Widget _buildCacheStatusIndicator() {
+    if (!_cache.isInitialized) return const SizedBox.shrink();
+
+    final cacheStats = _cache.getCacheStats();
+    final cacheAge = cacheStats['cacheAge'] ?? 0;
+
+    Color statusColor = Colors.green;
+    IconData statusIcon = Icons.offline_bolt;
+    String statusText = 'LIVE';
+
+    if (!_cacheHealthy) {
+      statusColor = Colors.red;
+      statusIcon = Icons.error;
+      statusText = 'ERROR';
+    } else if (cacheAge > 60) {
+      statusColor = Colors.orange;
+      statusIcon = Icons.schedule;
+      statusText = 'STALE';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(statusIcon, size: 10, color: statusColor),
+          const SizedBox(width: 2),
+          Text(
+            statusText,
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.w600,
+              color: statusColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    super.build(context);
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -575,7 +849,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          // Enhanced Header with notification indicator and cache indicator
+          // 🔧 FIX: Enhanced header with cache status and statistics
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -651,6 +925,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         ],
                       ),
                     ),
+                    _buildCacheStatusIndicator(),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -678,6 +953,43 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ),
                   ],
                 ),
+
+                // 🔧 FIX: Add statistics row
+                if (_hasAnyBays && _eventStats.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildStatItem(
+                          'Today',
+                          '${_eventStats['today']}',
+                          Icons.today,
+                          Colors.red,
+                        ),
+                        _buildStatItem(
+                          'Open',
+                          '${_eventStats['open']}',
+                          Icons.pending_actions,
+                          Colors.orange,
+                        ),
+                        _buildStatItem(
+                          'Total',
+                          '${_eventStats['total']}',
+                          Icons.bar_chart,
+                          Colors.blue,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -707,6 +1019,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         children: [
                           CircularProgressIndicator(
                             color: theme.colorScheme.primary,
+                            strokeWidth: 3,
                           ),
                           const SizedBox(height: 16),
                           Text(
@@ -718,6 +1031,17 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                   : theme.colorScheme.onSurface,
                             ),
                           ),
+                          if (_cacheError != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              _cacheError!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.red,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -731,10 +1055,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     color: Colors.orange,
                   )
                 : DefaultTabController(
-                    length: 2, // Today and Open events
+                    length: 2,
                     child: Column(
                       children: [
-                        // Enhanced Sub-tabs
                         Container(
                           margin: const EdgeInsets.symmetric(horizontal: 16),
                           padding: const EdgeInsets.all(4),
@@ -853,11 +1176,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           ),
                         ),
                         const SizedBox(height: 16),
-                        // Tab content
                         Expanded(
                           child: TabBarView(
                             children: [
-                              // Today's Events
                               _todayEvents.isEmpty
                                   ? _buildEmptyState(
                                       icon: Icons.check_circle_outline,
@@ -870,7 +1191,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                       padding: const EdgeInsets.only(
                                         left: 16,
                                         right: 16,
-                                        bottom: 100, // Space for FAB
+                                        bottom: 100,
                                       ),
                                       children: _todayEvents
                                           .map(
@@ -878,7 +1199,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                           )
                                           .toList(),
                                     ),
-                              // Open Events
                               _openEvents.isEmpty
                                   ? _buildEmptyState(
                                       icon: Icons.check_circle_outline,
@@ -891,7 +1211,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                       padding: const EdgeInsets.only(
                                         left: 16,
                                         right: 16,
-                                        bottom: 100, // Space for FAB
+                                        bottom: 100,
                                       ),
                                       children: _openEvents
                                           .map(
@@ -908,8 +1228,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
         ],
       ),
-      // Enhanced FAB for adding new events
-      floatingActionButton: _hasAnyBays
+      floatingActionButton: (_hasAnyBays && _canCreateEvents())
           ? FloatingActionButton.extended(
               onPressed: _navigateToAddEvent,
               backgroundColor: Colors.red.shade600,
@@ -924,8 +1243,35 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                 borderRadius: BorderRadius.circular(16),
               ),
             )
-          : null, // Don't show FAB if no bays configured
+          : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  // Helper widget for statistics
+  Widget _buildStatItem(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 16),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: color.withOpacity(0.8)),
+        ),
+      ],
     );
   }
 }

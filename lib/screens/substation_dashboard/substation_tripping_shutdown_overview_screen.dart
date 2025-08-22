@@ -11,20 +11,20 @@ import '../../../utils/snackbar_utils.dart';
 import 'tripping_shutdown_entry_screen.dart';
 
 class TrippingShutdownOverviewScreen extends StatefulWidget {
-  final String substationId; // Now can be empty
-  final String substationName; // Now can be "N/A"
+  final String substationId;
+  final String substationName;
   final AppUser currentUser;
-  final DateTime? startDate; // NEW PARAMETER - Now nullable
-  final DateTime? endDate; // NEW PARAMETER - Now nullable
-  final bool canCreateTrippingEvents; // NEW PARAMETER
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final bool canCreateTrippingEvents;
 
   const TrippingShutdownOverviewScreen({
     super.key,
     required this.substationId,
     required this.substationName,
     required this.currentUser,
-    this.startDate, // No default value here, as it's nullable
-    this.endDate, // No default value here, as it's nullable
+    this.startDate,
+    this.endDate,
     this.canCreateTrippingEvents = true,
   });
 
@@ -43,7 +43,6 @@ class _TrippingShutdownOverviewScreenState
   List<String> _sortedBayTypes = [];
   Map<String, Bay> _baysMap = {};
 
-  // Animation controllers for enhanced UI
   late AnimationController _fadeAnimationController;
   late AnimationController _slideAnimationController;
   late Animation<double> _fadeAnimation;
@@ -52,8 +51,6 @@ class _TrippingShutdownOverviewScreenState
   @override
   void initState() {
     super.initState();
-
-    // Initialize animations
     _fadeAnimationController = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
@@ -78,7 +75,7 @@ class _TrippingShutdownOverviewScreenState
         );
 
     if (widget.substationId.isNotEmpty) {
-      _fetchTrippingShutdownEventsFromCache();
+      _fetchTrippingShutdownEvents();
     } else {
       _isLoading = false;
     }
@@ -94,12 +91,11 @@ class _TrippingShutdownOverviewScreenState
   @override
   void didUpdateWidget(covariant TrippingShutdownOverviewScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Check if substationId or date filters have changed
     if (widget.substationId != oldWidget.substationId ||
         widget.startDate != oldWidget.startDate ||
         widget.endDate != oldWidget.endDate) {
       if (widget.substationId.isNotEmpty) {
-        _fetchTrippingShutdownEventsFromCache();
+        _fetchTrippingShutdownEvents();
       } else {
         setState(() {
           _isLoading = false;
@@ -111,7 +107,7 @@ class _TrippingShutdownOverviewScreenState
     }
   }
 
-  Future<void> _fetchTrippingShutdownEventsFromCache() async {
+  Future<void> _fetchTrippingShutdownEvents() async {
     setState(() {
       _isLoading = true;
       _groupedEntriesByBayType.clear();
@@ -120,80 +116,66 @@ class _TrippingShutdownOverviewScreenState
     });
 
     try {
-      // ✅ USE CACHE - No Firebase queries for bays!
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Get bays from cache
+      // Bays from cache
       final substationData = _cache.substationData!;
       for (var bayData in substationData.bays) {
         _baysMap[bayData.id] = bayData.bay;
       }
 
-      // Get tripping events from cache with date filtering
+      // Filter events by date range from cache
       List<TrippingShutdownEntry> fetchedEntries;
-
       if (widget.startDate == null && widget.endDate == null) {
-        // No date filter - get all recent events from cache
         fetchedEntries = substationData.recentTrippingEvents;
       } else {
-        // Filter by date range
         fetchedEntries = substationData.recentTrippingEvents.where((entry) {
           final entryDate = entry.startTime.toDate();
-
-          bool isAfterStart =
+          final bool isAfterStart =
               widget.startDate == null ||
               entryDate.isAfter(widget.startDate!) ||
               DateUtils.isSameDay(entryDate, widget.startDate!);
-
-          bool isBeforeEnd =
+          final bool isBeforeEnd =
               widget.endDate == null ||
               entryDate.isBefore(widget.endDate!.add(const Duration(days: 1)));
-
           return isAfterStart && isBeforeEnd;
         }).toList();
       }
 
-      // If date range extends beyond cached events (30 days), fetch additional data from Firebase
+      // If requested date range extends beyond cache, fetch older events from Firebase
       final DateTime cacheStartDate = DateTime.now().subtract(
         const Duration(days: 30),
       );
       final bool needsAdditionalData =
           widget.startDate != null &&
           widget.startDate!.isBefore(cacheStartDate);
-
       if (needsAdditionalData) {
-        // Fetch older events from Firebase for extended date range
         await _fetchAdditionalEventsFromFirebase(fetchedEntries);
       }
 
-      // Apply role-based filtering
+      // Permissions & status filtering
       final bool isDivisionOrHigher = [
         UserRole.admin,
         UserRole.zoneManager,
         UserRole.circleManager,
         UserRole.divisionManager,
       ].contains(widget.currentUser.role);
-
       final bool isSubdivisionManager =
           widget.currentUser.role == UserRole.subdivisionManager;
       final bool isSubstationUser =
           widget.currentUser.role == UserRole.substationUser;
 
       fetchedEntries = fetchedEntries.where((entry) {
-        if (isDivisionOrHigher) {
-          return entry.status == 'CLOSED';
-        } else if (isSubdivisionManager || isSubstationUser) {
-          return true;
-        }
+        if (isDivisionOrHigher) return entry.status == 'CLOSED';
+        if (isSubdivisionManager || isSubstationUser) return true;
         return false;
       }).toList();
 
-      // Sort by start time (descending)
       fetchedEntries.sort((a, b) => b.startTime.compareTo(a.startTime));
 
-      // Group entries by bay type
+      // Group by bay type
       for (var entry in fetchedEntries) {
         final Bay? bay = _baysMap[entry.bayId];
         if (bay != null) {
@@ -208,13 +190,10 @@ class _TrippingShutdownOverviewScreenState
 
       _sortedBayTypes = _groupedEntriesByBayType.keys.toList()..sort();
 
-      print('✅ Loaded ${fetchedEntries.length} tripping events from cache');
-
-      // Start animations after data is loaded
+      // Animations
       _fadeAnimationController.forward();
       _slideAnimationController.forward();
     } catch (e) {
-      print("Error fetching tripping/shutdown events from cache: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -223,26 +202,18 @@ class _TrippingShutdownOverviewScreenState
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Fallback method to fetch older events when date range extends beyond cache
   Future<void> _fetchAdditionalEventsFromFirebase(
     List<TrippingShutdownEntry> existingEntries,
   ) async {
     try {
-      print(
-        '📡 Fetching additional events from Firebase for extended date range...',
-      );
-
       Query eventsQuery = FirebaseFirestore.instance
           .collection('trippingShutdownEntries')
           .where('substationId', isEqualTo: widget.substationId);
 
-      // Only fetch events older than what we have in cache
       final DateTime cacheStartDate = DateTime.now().subtract(
         const Duration(days: 30),
       );
@@ -250,29 +221,20 @@ class _TrippingShutdownOverviewScreenState
         'startTime',
         isLessThan: Timestamp.fromDate(cacheStartDate),
       );
-
       if (widget.startDate != null) {
         eventsQuery = eventsQuery.where(
           'startTime',
           isGreaterThanOrEqualTo: Timestamp.fromDate(widget.startDate!),
         );
       }
-
       eventsQuery = eventsQuery.orderBy('startTime', descending: true);
 
       final entriesSnapshot = await eventsQuery.get();
       final olderEntries = entriesSnapshot.docs
           .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
           .toList();
-
-      // Merge with existing entries
       existingEntries.addAll(olderEntries);
-
-      print('✅ Fetched ${olderEntries.length} additional events from Firebase');
-    } catch (e) {
-      print('❌ Error fetching additional events: $e');
-      // Continue with cache-only data if Firebase fetch fails
-    }
+    } catch (_) {}
   }
 
   Future<void> _confirmDeleteEntry(
@@ -286,7 +248,7 @@ class _TrippingShutdownOverviewScreenState
     final bool confirm =
         await showDialog(
           context: context,
-          builder: (BuildContext context) {
+          builder: (context) {
             return AlertDialog(
               backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : null,
               shape: RoundedRectangleBorder(
@@ -306,7 +268,7 @@ class _TrippingShutdownOverviewScreenState
                 'Are you sure you want to delete this $eventType event for $bayName?\n\nThis action cannot be undone.',
                 style: TextStyle(color: isDarkMode ? Colors.white : null),
               ),
-              actions: <Widget>[
+              actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
                   child: Text(
@@ -337,13 +299,12 @@ class _TrippingShutdownOverviewScreenState
 
     if (confirm) {
       try {
-        // Delete from Firebase
         await FirebaseFirestore.instance
             .collection('trippingShutdownEntries')
             .doc(entryId)
             .delete();
 
-        // ✅ Force cache refresh after deletion
+        // 🔧 FIX: Force cache refresh
         await _cache.forceRefresh();
 
         if (mounted) {
@@ -352,10 +313,8 @@ class _TrippingShutdownOverviewScreenState
             '$eventType event deleted successfully!',
           );
         }
-
-        _fetchTrippingShutdownEventsFromCache(); // Re-fetch events after deletion
+        await _fetchTrippingShutdownEvents();
       } catch (e) {
-        print("Error deleting event: $e");
         if (mounted) {
           SnackBarUtils.showSnackBar(
             context,
@@ -367,19 +326,23 @@ class _TrippingShutdownOverviewScreenState
     }
   }
 
-  // Updated navigation methods with substationName parameter
+  // Navigation methods
   void _navigateToViewEvent(TrippingShutdownEntry entry) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => TrippingShutdownEntryScreen(
-          substationId: widget.substationId,
-          substationName: widget.substationName,
-          currentUser: widget.currentUser,
-          entryToEdit: entry,
-          isViewOnly: true,
-        ),
-      ),
-    );
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => TrippingShutdownEntryScreen(
+              substationId: widget.substationId,
+              substationName: widget.substationName,
+              currentUser: widget.currentUser,
+              entryToEdit: entry,
+              isViewOnly: true,
+            ),
+          ),
+        )
+        .then((_) {
+          // No cache update on view
+        });
   }
 
   void _navigateToEditEvent(TrippingShutdownEntry entry) {
@@ -395,11 +358,10 @@ class _TrippingShutdownOverviewScreenState
             ),
           ),
         )
-        .then((_) {
-          // ✅ Refresh cache and reload after editing
-          _cache.forceRefresh().then(
-            (_) => _fetchTrippingShutdownEventsFromCache(),
-          );
+        .then((_) async {
+          // After edit, force cache update and reload (fixes logical cache issue)
+          await _cache.forceRefresh();
+          await _fetchTrippingShutdownEvents();
         });
   }
 
@@ -424,15 +386,14 @@ class _TrippingShutdownOverviewScreenState
             ),
           ),
         )
-        .then((_) {
-          // ✅ Refresh cache and reload after creating
-          _cache.forceRefresh().then(
-            (_) => _fetchTrippingShutdownEventsFromCache(),
-          );
+        .then((_) async {
+          // After create, force cache update and reload
+          await _cache.forceRefresh();
+          await _fetchTrippingShutdownEvents();
         });
   }
 
-  // Get color for different bay types
+  // Utility for bay type color
   Color _getBayTypeColor(String bayType) {
     switch (bayType.toLowerCase()) {
       case 'transformer':
@@ -452,7 +413,6 @@ class _TrippingShutdownOverviewScreenState
     }
   }
 
-  // Get icon for different bay types
   IconData _getBayTypeIcon(String bayType) {
     switch (bayType.toLowerCase()) {
       case 'transformer':
@@ -472,7 +432,7 @@ class _TrippingShutdownOverviewScreenState
     }
   }
 
-  // Enhanced event card widget
+  // Card widget
   Widget _buildEventCard(TrippingShutdownEntry entry) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -483,7 +443,6 @@ class _TrippingShutdownOverviewScreenState
     final String endTimeFormatted = entry.endTime != null
         ? DateFormat('dd.MMM.yyyy HH:mm').format(entry.endTime!.toDate())
         : 'N/A';
-
     final isOpen = entry.status == 'OPEN';
     final statusColor = isOpen ? Colors.orange : Colors.green;
     final statusIcon = isOpen ? Icons.hourglass_empty : Icons.check_circle;
@@ -661,7 +620,7 @@ class _TrippingShutdownOverviewScreenState
             ),
             onTap: () => _navigateToViewEvent(entry),
           ),
-          // Action buttons
+          // Actions
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -716,7 +675,6 @@ class _TrippingShutdownOverviewScreenState
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
-    // Handle empty substation case
     if (widget.substationId.isEmpty) {
       return Center(
         child: Container(
@@ -774,7 +732,6 @@ class _TrippingShutdownOverviewScreenState
       );
     }
 
-    // Define default dates for display
     final DateTime displayStartDate = widget.startDate ?? DateTime.utc(1900);
     final DateTime displayEndDate = widget.endDate ?? DateTime.utc(2200);
 
@@ -784,7 +741,6 @@ class _TrippingShutdownOverviewScreenState
           : const Color(0xFFF8F9FA),
       body: Column(
         children: [
-          // Enhanced Header
           if (widget.substationName != "N/A")
             Container(
               width: double.infinity,
@@ -859,7 +815,6 @@ class _TrippingShutdownOverviewScreenState
                           ],
                         ),
                       ),
-                      // Cache status and Auto-notify indicators
                       Column(
                         children: [
                           Container(
@@ -960,7 +915,6 @@ class _TrippingShutdownOverviewScreenState
               ),
             ),
 
-          // Content
           Expanded(
             child: _isLoading
                 ? Center(
@@ -1065,13 +1019,12 @@ class _TrippingShutdownOverviewScreenState
                           left: 16,
                           right: 16,
                           bottom: 100,
-                        ), // Space for FAB
+                        ),
                         itemCount: _sortedBayTypes.length,
                         itemBuilder: (context, index) {
                           final String bayType = _sortedBayTypes[index];
                           final List<TrippingShutdownEntry> entriesForType =
                               _groupedEntriesByBayType[bayType]!;
-
                           return Container(
                             margin: const EdgeInsets.only(bottom: 16),
                             decoration: BoxDecoration(

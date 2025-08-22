@@ -562,21 +562,6 @@ class _SubdivisionAssetManagementScreenState
           isDarkMode: isDarkMode,
         ),
         const SizedBox(height: 12),
-        // ✅ NEW: Configure Busbar Action
-        _buildActionCard(
-          theme: theme,
-          icon: Icons.settings,
-          title: 'Configure Busbar',
-          subtitle: _selectedSubstation != null
-              ? 'Configure energy mappings for ${_selectedSubstation!.name}\'s busbars'
-              : 'Select a substation to configure busbar energy mappings',
-          color: Colors.orange,
-          onTap: _selectedSubstation != null
-              ? () => _navigateToBusbarConfiguration(_selectedSubstation!)
-              : null,
-          isDarkMode: isDarkMode,
-        ),
-        const SizedBox(height: 12),
         _buildActionCard(
           theme: theme,
           icon: Icons.download,

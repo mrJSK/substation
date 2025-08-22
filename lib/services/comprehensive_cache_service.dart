@@ -233,6 +233,132 @@ class ComprehensiveCacheService {
     return _substationData?.getBayById(bayId);
   }
 
+  // 🔧 FIX: Add the missing refreshSubstationData method
+  Future<void> refreshSubstationData(String substationId) async {
+    try {
+      print('🔄 Refreshing substation data for: $substationId');
+
+      // Force refresh for the specific substation
+      if (_currentSubstationId == substationId && _currentUserId != null) {
+        await _performFullRefresh(substationId, _currentUserId!);
+        print('✅ Substation data refreshed successfully');
+      } else {
+        print(
+          '⚠️ Substation ID mismatch or user not set. Current: $_currentSubstationId, Requested: $substationId',
+        );
+        // Still try to refresh with available data
+        if (_currentUserId != null) {
+          await _performFullRefresh(substationId, _currentUserId!);
+        } else {
+          throw Exception('Cannot refresh: No current user ID available');
+        }
+      }
+    } catch (e) {
+      print('❌ Error refreshing substation data: $e');
+      rethrow;
+    }
+  }
+
+  // 🔧 FIX: Add method to refresh specific bay data
+  Future<void> refreshBayData(String bayId) async {
+    if (_substationData == null || _currentSubstationId == null) {
+      print('⚠️ Cannot refresh bay data: Cache not initialized');
+      return;
+    }
+
+    try {
+      print('🔄 Refreshing bay data for: $bayId');
+
+      // Find the bay in current cache
+      final bayData = getBayById(bayId);
+      if (bayData == null) {
+        print('⚠️ Bay not found in cache: $bayId');
+        return;
+      }
+
+      // Reload recent readings for this specific bay (last 7 days)
+      final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+      final readingsSnapshot = await FirebaseFirestore.instance
+          .collection('logsheetEntries')
+          .where('bayId', isEqualTo: bayId)
+          .where(
+            'readingTimestamp',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(sevenDaysAgo),
+          )
+          .get();
+
+      final Map<String, LogsheetEntry> recentReadings = {};
+      final Map<String, bool> completionStatus = {};
+
+      for (var readingDoc in readingsSnapshot.docs) {
+        final entry = LogsheetEntry.fromFirestore(readingDoc);
+        final dateKey = _getDateKey(entry.readingTimestamp.toDate());
+        recentReadings[dateKey] = entry;
+
+        final completionKey = _getCompletionKey(
+          entry.readingTimestamp.toDate(),
+          entry.frequency,
+          entry.readingHour,
+        );
+        completionStatus[completionKey] = true;
+      }
+
+      // Update the specific bay data in cache
+      final updatedBayData = EnhancedBayData(
+        bay: bayData.bay,
+        readingFields: bayData.readingFields,
+        recentReadings: recentReadings,
+        completionStatus: completionStatus,
+      );
+
+      // Replace the bay data in the cache
+      final updatedBays = _substationData!.bays.map((bay) {
+        return bay.id == bayId ? updatedBayData : bay;
+      }).toList();
+
+      _substationData = ComprehensiveSubstationData(
+        substation: _substationData!.substation,
+        bays: updatedBays,
+        recentTrippingEvents: _substationData!.recentTrippingEvents,
+        statistics: _substationData!.statistics,
+        hierarchyContext: _substationData!.hierarchyContext,
+        lastFullRefresh: _substationData!.lastFullRefresh,
+      );
+
+      print('✅ Bay data refreshed successfully for: $bayId');
+    } catch (e) {
+      print('❌ Error refreshing bay data for $bayId: $e');
+      // Don't rethrow, as this is a background operation
+    }
+  }
+
+  // 🔧 FIX: Add method to check if reading exists
+  bool hasReadingForDate(
+    String bayId,
+    DateTime date,
+    String frequency, {
+    int? hour,
+  }) {
+    final bayData = getBayById(bayId);
+    if (bayData == null) return false;
+
+    final reading = bayData.getReading(date, frequency, hour: hour);
+    return reading != null;
+  }
+
+  // 🔧 FIX: Add method to get reading for specific parameters
+  LogsheetEntry? getReadingForBay(
+    String bayId,
+    DateTime date,
+    String frequency, {
+    int? hour,
+  }) {
+    final bayData = getBayById(bayId);
+    if (bayData == null) return null;
+
+    return bayData.getReading(date, frequency, hour: hour);
+  }
+
   // Update methods (for real-time updates)
   void updateBayReading(String bayId, LogsheetEntry entry) {
     if (_substationData == null) return;
@@ -259,7 +385,66 @@ class ComprehensiveCacheService {
   Future<void> forceRefresh() async {
     if (_currentSubstationId != null && _currentUserId != null) {
       await _performFullRefresh(_currentSubstationId!, _currentUserId!);
+      print('🔄 Force refresh completed');
+    } else {
+      print('⚠️ Cannot force refresh: Missing substation ID or user ID');
     }
+  }
+
+  // 🔧 FIX: Add partial refresh method for better performance
+  Future<void> partialRefresh() async {
+    if (_substationData == null || _currentSubstationId == null) return;
+
+    try {
+      print('🔄 Starting partial refresh...');
+
+      // Only refresh readings from the last 2 days for better performance
+      final twoDaysAgo = DateTime.now().subtract(const Duration(days: 2));
+
+      for (var bayData in _substationData!.bays) {
+        final readingsSnapshot = await FirebaseFirestore.instance
+            .collection('logsheetEntries')
+            .where('bayId', isEqualTo: bayData.bay.id)
+            .where(
+              'readingTimestamp',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(twoDaysAgo),
+            )
+            .get();
+
+        // Update recent readings for this bay
+        for (var readingDoc in readingsSnapshot.docs) {
+          final entry = LogsheetEntry.fromFirestore(readingDoc);
+          updateBayReading(bayData.bay.id, entry);
+        }
+      }
+
+      print('✅ Partial refresh completed');
+    } catch (e) {
+      print('❌ Error during partial refresh: $e');
+      // Don't rethrow, fallback to using existing cache
+    }
+  }
+
+  // 🔧 FIX: Add cache validation method
+  bool validateCache() {
+    if (_substationData == null) {
+      print('❌ Cache validation failed: No data');
+      return false;
+    }
+
+    // Check if cache is too old
+    final timeSinceRefresh = DateTime.now().difference(
+      _substationData!.lastFullRefresh,
+    );
+    if (timeSinceRefresh > Duration(hours: 6)) {
+      print(
+        '⚠️ Cache validation warning: Data is ${timeSinceRefresh.inHours} hours old',
+      );
+      return false;
+    }
+
+    print('✅ Cache validation passed');
+    return true;
   }
 
   void clearCache() {
@@ -267,6 +452,30 @@ class ComprehensiveCacheService {
     _currentSubstationId = null;
     _currentUserId = null;
     print('🗑️ Cache cleared');
+  }
+
+  // 🔧 FIX: Add method to get cache statistics
+  Map<String, dynamic> getCacheStats() {
+    if (_substationData == null) {
+      return {
+        'initialized': false,
+        'substationId': null,
+        'userId': null,
+        'lastRefresh': null,
+      };
+    }
+
+    return {
+      'initialized': true,
+      'substationId': _currentSubstationId,
+      'userId': _currentUserId,
+      'lastRefresh': _substationData!.lastFullRefresh.toIso8601String(),
+      'totalBays': _substationData!.bays.length,
+      'totalEvents': _substationData!.recentTrippingEvents.length,
+      'cacheAge': DateTime.now()
+          .difference(_substationData!.lastFullRefresh)
+          .inMinutes,
+    };
   }
 
   // Helper methods

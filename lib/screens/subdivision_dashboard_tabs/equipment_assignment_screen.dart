@@ -1,4 +1,3 @@
-// lib/screens/equipment_assignment_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -72,8 +71,11 @@ class _GenericIconPainter extends CustomPainter {
   bool shouldRepaint(covariant _GenericIconPainter oldDelegate) => false;
 }
 
-class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
+class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen>
+    with TickerProviderStateMixin {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
   bool _isLoading = true;
   List<MasterEquipmentTemplate> _equipmentTemplates = [];
   MasterEquipmentTemplate? _selectedTemplate;
@@ -101,14 +103,47 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
 
   final Uuid _uuid = const Uuid();
 
+  Size _getSymbolPreviewSize(String? symbolKey) {
+    switch (symbolKey) {
+      case 'transformer':
+        return const Size(24, 24);
+      case 'busbar':
+        return const Size(32, 16);
+      case 'circuit_breaker':
+        return const Size(24, 24);
+      case 'ct':
+        return const Size(24, 24);
+      case 'ground':
+        return const Size(24, 16);
+      case 'isolator':
+        return const Size(24, 24);
+      case 'pt':
+        return const Size(24, 24);
+      case 'line':
+        return const Size(32, 8);
+      case 'feeder':
+        return const Size(24, 24);
+      default:
+        return const Size(24, 24); // Fallback for generic icon
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
     _fetchEquipmentTemplatesAndInitialize();
   }
 
   @override
   void dispose() {
+    _animationController.dispose();
     _makeController.dispose();
     _textControllers.forEach((key, controller) => controller.dispose());
     super.dispose();
@@ -119,9 +154,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       _isLoading = true;
     });
     try {
-      // No need to fetch bay type or existing transformer for conditional template filtering here.
-      // All templates are always available.
-
       final snapshot = await FirebaseFirestore.instance
           .collection('masterEquipmentTemplates')
           .orderBy('equipmentType')
@@ -134,6 +166,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       if (widget.equipmentToEdit != null) {
         _initializeForEdit(widget.equipmentToEdit!);
       }
+      _animationController.forward();
     } catch (e) {
       print("Error fetching equipment templates: $e");
       if (mounted) {
@@ -296,6 +329,68 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     });
   }
 
+  CustomPainter _getSymbolPreviewPainter(String? symbolKey, Color color) {
+    final symbolSize = _getSymbolPreviewSize(symbolKey);
+    switch (symbolKey) {
+      case 'transformer':
+        return TransformerIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'busbar':
+        return BusbarIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'circuit_breaker':
+        return CircuitBreakerIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'ct':
+        return CurrentTransformerIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'ground':
+        return GroundIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'isolator':
+        return IsolatorIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'pt':
+        return PotentialTransformerIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'line':
+        return LineIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      case 'feeder':
+        return FeederIconPainter(
+          color: color,
+          equipmentSize: symbolSize,
+          symbolSize: symbolSize,
+        );
+      default:
+        return _GenericIconPainter(color: color);
+    }
+  }
+
   Future<void> _saveEquipmentInstance() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -308,9 +403,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       );
       return;
     }
-
-    // No specific validation for Transformer bay type here anymore.
-    // That validation is moved to BayEquipmentManagementScreen's save button.
 
     setState(() {
       _isSavingEquipment = true;
@@ -380,7 +472,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
       };
 
       if (widget.equipmentToEdit != null) {
-        // Update existing equipment
         final updatedEquipment = widget.equipmentToEdit!.copyWith(
           make: _makeController.text.trim(),
           dateOfManufacturing: _dateOfManufacturing != null
@@ -390,9 +481,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               ? Timestamp.fromDate(_dateOfCommissioning!)
               : null,
           customFieldValues: allCustomFieldValues,
-          positionIndex: widget
-              .equipmentToEdit!
-              .positionIndex, // Preserve existing position index
+          positionIndex: widget.equipmentToEdit!.positionIndex,
         );
 
         await FirebaseFirestore.instance
@@ -408,12 +497,10 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           Navigator.of(context).pop();
         }
       } else {
-        // Create new equipment
         final newEquipmentInstanceRef = FirebaseFirestore.instance
             .collection('equipmentInstances')
             .doc();
 
-        // Determine a new positionIndex: Fetch current count of equipment in bay and add 1
         final existingEquipmentCount = await FirebaseFirestore.instance
             .collection('equipmentInstances')
             .where('bayId', isEqualTo: widget.bayId)
@@ -437,7 +524,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           dateOfCommissioning: _dateOfCommissioning != null
               ? Timestamp.fromDate(_dateOfCommissioning!)
               : null,
-          positionIndex: newPositionIndex, // Assign new position index
+          positionIndex: newPositionIndex,
         );
 
         await newEquipmentInstanceRef.set(newEquipmentInstance.toFirestore());
@@ -514,6 +601,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     required CustomField fieldDef,
     required Map<String, dynamic> currentValuesMap,
     required String prefix,
+    bool isNested = false,
   }) {
     final String fieldName = fieldDef.name;
     final String uniqueControllerKey = prefix.isEmpty
@@ -524,6 +612,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     final String? unit = fieldDef.units.isNotEmpty ? fieldDef.units : null;
     final List<String> options = fieldDef.options;
     final bool hasRemarksField = fieldDef.hasRemarksField;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     String? Function(String?)? validator;
     if (isMandatory) {
@@ -548,7 +638,38 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           ),
           decoration: InputDecoration(
             labelText: fieldName + (isMandatory ? ' *' : ''),
-            border: const OutlineInputBorder(),
+            labelStyle: TextStyle(
+              color: isDarkMode ? Colors.white70 : Colors.grey[700],
+              fontSize: 14,
+            ),
+            prefixIcon: Icon(
+              Icons.text_fields,
+              color: theme.colorScheme.primary,
+              size: 18,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            filled: true,
+            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            isDense: true,
+          ),
+          style: TextStyle(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : Colors.grey[900],
           ),
           onChanged: (value) => currentValuesMap[fieldName] = value,
           validator: validator,
@@ -564,8 +685,39 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           ),
           decoration: InputDecoration(
             labelText: fieldName + (isMandatory ? ' *' : ''),
-            border: const OutlineInputBorder(),
+            labelStyle: TextStyle(
+              color: isDarkMode ? Colors.white70 : Colors.grey[700],
+              fontSize: 14,
+            ),
+            prefixIcon: Icon(
+              Icons.numbers,
+              color: theme.colorScheme.secondary,
+              size: 18,
+            ),
             suffixText: unit,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            filled: true,
+            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            isDense: true,
+          ),
+          style: TextStyle(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : Colors.grey[900],
           ),
           keyboardType: TextInputType.number,
           onChanged: (value) =>
@@ -595,7 +747,13 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           children: [
             SwitchListTile(
               key: ValueKey(uniqueControllerKey),
-              title: Text(fieldName + (isMandatory ? ' *' : '')),
+              title: Text(
+                fieldName + (isMandatory ? ' *' : ''),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode ? Colors.white : Colors.grey[900],
+                ),
+              ),
               value: currentBooleanValue,
               onChanged: (value) {
                 setState(() {
@@ -608,13 +766,16 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               },
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
+              activeColor: theme.colorScheme.primary,
+              dense: true,
+              visualDensity: VisualDensity.compact,
             ),
             if (hasRemarksField && currentBooleanValue)
               Padding(
                 padding: const EdgeInsets.only(
                   left: 16.0,
                   right: 16.0,
-                  bottom: 8.0,
+                  top: 8.0,
                 ),
                 child: TextFormField(
                   key: ValueKey('${uniqueControllerKey}_remarks'),
@@ -629,14 +790,44 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                           : '',
                     ),
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Remarks (Optional)',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      vertical: 10.0,
-                      horizontal: 12.0,
+                    labelStyle: TextStyle(
+                      color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                      fontSize: 14,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.note,
+                      color: theme.colorScheme.primary,
+                      size: 18,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(
+                        color: isDarkMode
+                            ? Colors.grey[700]!
+                            : Colors.grey[300]!,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(
+                        color: isDarkMode
+                            ? Colors.grey[700]!
+                            : Colors.grey[300]!,
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
                     ),
                     isDense: true,
+                  ),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDarkMode ? Colors.white : Colors.grey[900],
                   ),
                   maxLines: 2,
                   minLines: 1,
@@ -655,7 +846,7 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                 child: Text(
                   '$fieldName is mandatory',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
+                    color: theme.colorScheme.error,
                     fontSize: 12,
                   ),
                 ),
@@ -668,23 +859,31 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           uniqueControllerKey,
           () => (currentValuesMap[fieldName] as Timestamp?)?.toDate(),
         );
-        fieldWidget = ListTile(
-          key: ValueKey(uniqueControllerKey),
-          title: Text(
-            fieldName +
-                (isMandatory ? ' *' : '') +
-                ': ' +
-                (currentDate == null
-                    ? 'Select Date'
-                    : DateFormat('yyyy-MM-dd').format(currentDate)),
-          ),
-          trailing: const Icon(Icons.calendar_today),
+        fieldWidget = GestureDetector(
           onTap: () async {
             final DateTime? picked = await showDatePicker(
               context: context,
               initialDate: currentDate ?? DateTime.now(),
               firstDate: DateTime(1900),
               lastDate: DateTime.now().add(const Duration(days: 365 * 100)),
+              builder: (context, child) {
+                return Theme(
+                  data: Theme.of(context).copyWith(
+                    colorScheme: Theme.of(context).colorScheme.copyWith(
+                      primary: theme.colorScheme.primary,
+                      onPrimary: theme.colorScheme.onPrimary,
+                      surface: theme.colorScheme.surface,
+                      onSurface: theme.colorScheme.onSurface,
+                    ),
+                    textButtonTheme: TextButtonThemeData(
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  child: child!,
+                );
+              },
             );
             if (picked != null) {
               setState(() {
@@ -693,6 +892,55 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               });
             }
           },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  color: theme.colorScheme.tertiary,
+                  size: 18,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fieldName + (isMandatory ? ' *' : ''),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDarkMode ? Colors.white : Colors.grey[900],
+                        ),
+                      ),
+                      Text(
+                        currentDate == null
+                            ? 'Select Date'
+                            : DateFormat('yyyy-MM-dd').format(currentDate),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: theme.colorScheme.tertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.edit_calendar,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
         );
         break;
       case 'dropdown':
@@ -704,10 +952,47 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           ),
           decoration: InputDecoration(
             labelText: fieldName + (isMandatory ? ' *' : ''),
-            border: const OutlineInputBorder(),
+            labelStyle: TextStyle(
+              color: isDarkMode ? Colors.white70 : Colors.grey[700],
+              fontSize: 14,
+            ),
+            prefixIcon: Icon(
+              Icons.arrow_drop_down_circle,
+              color: Colors.teal,
+              size: 18,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            filled: true,
+            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            isDense: true,
           ),
+          dropdownColor: isDarkMode ? Colors.grey[850] : Colors.white,
           items: options.map((option) {
-            return DropdownMenuItem(value: option, child: Text(option));
+            return DropdownMenuItem(
+              value: option,
+              child: Text(
+                option,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode ? Colors.white : Colors.grey[900],
+                ),
+              ),
+            );
           }).toList(),
           onChanged: (value) {
             setState(() {
@@ -725,37 +1010,67 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             : <String, dynamic>{};
         final String itemPrefix = '${uniqueControllerKey}_item_single';
 
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8.0),
-          elevation: 1,
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  fieldName,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.group,
+                        color: theme.colorScheme.primary,
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        fieldName,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDarkMode ? Colors.white : Colors.grey[900],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 if (fieldDef.nestedFields == null ||
                     fieldDef.nestedFields!.isEmpty)
                   Text(
-                    'This group has no nested fields defined in its template.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey.shade700,
+                    'This group has no nested fields defined.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDarkMode ? Colors.white70 : Colors.grey[700],
                     ),
                   )
                 else
                   ...fieldDef.nestedFields!.map((nestedField) {
                     return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
+                      padding: const EdgeInsets.only(top: 12.0),
                       child: _buildFieldInput(
                         fieldDef: nestedField,
                         currentValuesMap: itemValues,
                         prefix: itemPrefix,
+                        isNested: true,
                       ),
                     );
                   }).toList(),
@@ -764,11 +1079,14 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
           ),
         );
       default:
-        return Text('Unsupported data type: $dataType for ${fieldDef.name}');
+        return Text(
+          'Unsupported data type: $dataType for $fieldName',
+          style: TextStyle(fontSize: 13, color: theme.colorScheme.error),
+        );
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: EdgeInsets.symmetric(vertical: isNested ? 4.0 : 8.0),
       child: fieldWidget,
     );
   }
@@ -777,23 +1095,109 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     final fieldData = _userAddedCustomFields[index];
     final definition = fieldData['definition'] as Map<String, dynamic>;
     final dataType = definition['dataType'] as String;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     if (dataType == 'group') {
       return _buildUserAddedGroupInput(index);
     }
 
-    return Card(
-      key: ValueKey(fieldData['uuid']),
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: Container(
+        key: ValueKey(fieldData['uuid']),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: _getDataTypeColor(dataType, theme).withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _getDataTypeIcon(dataType),
+                    color: _getDataTypeColor(dataType, theme),
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    definition['name'].isNotEmpty
+                        ? definition['name']
+                        : 'Unnamed Field',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.grey[900],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _removeUserCustomField(index),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.error,
+                    size: 18,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error.withOpacity(0.05),
+                    minimumSize: const Size(32, 32),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               initialValue: definition['name'],
-              decoration: const InputDecoration(labelText: 'Field Name'),
+              decoration: InputDecoration(
+                labelText: 'Field Name',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  Icons.edit,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : Colors.grey[900],
+              ),
               onChanged: (value) => definition['name'] = value,
               validator: (value) => value == null || value.trim().isEmpty
                   ? 'Field name is required'
@@ -802,10 +1206,62 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: dataType,
-              decoration: const InputDecoration(labelText: 'Data Type'),
+              decoration: InputDecoration(
+                labelText: 'Data Type',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  _getDataTypeIcon(dataType),
+                  color: _getDataTypeColor(dataType, theme),
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
+              ),
+              dropdownColor: isDarkMode ? Colors.grey[850] : Colors.white,
               items: _dataTypes
                   .map(
-                    (type) => DropdownMenuItem(value: type, child: Text(type)),
+                    (type) => DropdownMenuItem(
+                      value: type,
+                      child: Row(
+                        children: [
+                          Icon(
+                            _getDataTypeIcon(type),
+                            color: _getDataTypeColor(type, theme),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            type,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDarkMode
+                                  ? Colors.white
+                                  : Colors.grey[900],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   )
                   .toList(),
               onChanged: (value) {
@@ -821,16 +1277,6 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               fieldData: fieldData,
               valueKey: 'value',
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                icon: Icon(
-                  Icons.remove_circle_outline,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                onPressed: () => _removeUserCustomField(index),
-              ),
-            ),
           ],
         ),
       ),
@@ -841,37 +1287,147 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     final groupData = _userAddedCustomFields[index];
     final definition = groupData['definition'] as Map<String, dynamic>;
     final nestedFields = definition['nestedFields'] as List;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-    return Card(
-      key: ValueKey(groupData['uuid']),
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: Container(
+        key: ValueKey(groupData['uuid']),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.group,
+                    color: theme.colorScheme.primary,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    definition['name'].isNotEmpty
+                        ? definition['name']
+                        : 'Unnamed Group',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.grey[900],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${nestedFields.length} field${nestedFields.length == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => _removeUserCustomField(index),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.error,
+                    size: 18,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error.withOpacity(0.05),
+                    minimumSize: const Size(32, 32),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               initialValue: definition['name'],
-              decoration: const InputDecoration(labelText: 'Group Name'),
+              decoration: InputDecoration(
+                labelText: 'Group Name',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  Icons.group,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : Colors.grey[900],
+              ),
               onChanged: (value) => definition['name'] = value,
               validator: (value) => value == null || value.trim().isEmpty
                   ? 'Group name is required'
                   : null,
             ),
             const SizedBox(height: 12),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Text(
-                'Fields in this Group',
-                style: Theme.of(context).textTheme.titleSmall,
+            if (nestedFields.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  'Fields in this Group',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDarkMode ? Colors.white : Colors.grey[900],
+                  ),
+                ),
               ),
-            ),
-            ListView.builder(
+            ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: nestedFields.length,
+              separatorBuilder: (context, index) => const Divider(height: 24),
               itemBuilder: (context, nestedIndex) {
                 final nestedFieldDef =
                     nestedFields[nestedIndex] as Map<String, dynamic>;
@@ -882,20 +1438,31 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                 );
               },
             ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: () => _addNestedFieldToUserAddedGroup(index),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Field to Group'),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _addNestedFieldToUserAddedGroup(index),
                 icon: Icon(
-                  Icons.remove_circle_outline,
-                  color: Theme.of(context).colorScheme.error,
+                  Icons.add_circle_outline,
+                  color: theme.colorScheme.primary,
+                  size: 18,
                 ),
-                onPressed: () => _removeUserCustomField(index),
+                label: Text(
+                  'Add Field to Group',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: theme.colorScheme.primary),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  backgroundColor: theme.colorScheme.primary.withOpacity(0.05),
+                ),
               ),
             ),
           ],
@@ -910,6 +1477,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     Map<String, dynamic> nestedFieldDef,
   ) {
     final groupData = _userAddedCustomFields[groupIndex];
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     if (groupData['value'] is! Map<String, dynamic>) {
       groupData['value'] = Map<String, dynamic>.from(groupData['value'] as Map);
@@ -918,70 +1487,185 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     final fieldName = nestedFieldDef['name'] as String? ?? '';
     final fieldUuid = nestedFieldDef['uuid'] as String;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextFormField(
-                  initialValue: fieldName,
-                  decoration: const InputDecoration(
-                    labelText: 'Nested Field Name',
-                    isDense: true,
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[850] : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: _getDataTypeColor(
+                      nestedFieldDef['dataType'],
+                      theme,
+                    ).withOpacity(0.15),
+                    shape: BoxShape.circle,
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      nestedFieldDef['name'] = value;
-                    });
-                  },
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Name is required'
-                      : null,
+                  child: Icon(
+                    _getDataTypeIcon(nestedFieldDef['dataType']),
+                    color: _getDataTypeColor(nestedFieldDef['dataType'], theme),
+                    size: 16,
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.remove_circle_outline, size: 22),
-                color: Theme.of(context).colorScheme.error,
-                padding: const EdgeInsets.all(12),
-                constraints: const BoxConstraints(),
-                splashRadius: 24,
-                onPressed: () =>
-                    _removeNestedFieldFromGroup(groupIndex, nestedIndex),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: nestedFieldDef['dataType'] as String? ?? 'text',
-            decoration: const InputDecoration(
-              labelText: 'Data Type',
-              isDense: true,
-              border: OutlineInputBorder(),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    fieldName.isNotEmpty ? fieldName : 'Unnamed Field',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.grey[900],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () =>
+                      _removeNestedFieldFromGroup(groupIndex, nestedIndex),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.error,
+                    size: 18,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error.withOpacity(0.05),
+                    minimumSize: const Size(32, 32),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
             ),
-            items: _dataTypes
-                .where((type) => type != 'group')
-                .map((type) => DropdownMenuItem(value: type, child: Text(type)))
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                groupValues.remove(fieldUuid);
-                nestedFieldDef['dataType'] = value!;
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          _buildValueInputForUserAddedField(
-            dataType: nestedFieldDef['dataType'] as String? ?? 'text',
-            fieldData: {'definition': nestedFieldDef},
-            groupValues: groupValues,
-            valueKey: fieldUuid,
-          ),
-          const Divider(height: 24, thickness: 1),
-        ],
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: fieldName,
+              decoration: InputDecoration(
+                labelText: 'Nested Field Name',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  Icons.edit,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : Colors.grey[900],
+              ),
+              onChanged: (value) {
+                setState(() {
+                  nestedFieldDef['name'] = value;
+                });
+              },
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Name is required'
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: nestedFieldDef['dataType'] as String? ?? 'text',
+              decoration: InputDecoration(
+                labelText: 'Data Type',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  _getDataTypeIcon(nestedFieldDef['dataType']),
+                  color: _getDataTypeColor(nestedFieldDef['dataType'], theme),
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
+              ),
+              dropdownColor: isDarkMode ? Colors.grey[850] : Colors.white,
+              items: _dataTypes.where((type) => type != 'group').map((type) {
+                return DropdownMenuItem(
+                  value: type,
+                  child: Row(
+                    children: [
+                      Icon(
+                        _getDataTypeIcon(type),
+                        color: _getDataTypeColor(type, theme),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        type,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDarkMode ? Colors.white : Colors.grey[900],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  groupValues.remove(fieldUuid);
+                  nestedFieldDef['dataType'] = value!;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildValueInputForUserAddedField(
+              dataType: nestedFieldDef['dataType'] as String? ?? 'text',
+              fieldData: {'definition': nestedFieldDef},
+              groupValues: groupValues,
+              valueKey: fieldUuid,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -994,6 +1678,8 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
   }) {
     final definition = fieldData['definition'] as Map<String, dynamic>;
     final valuesMap = groupValues ?? fieldData;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     switch (dataType) {
       case 'text':
@@ -1001,9 +1687,42 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         return TextFormField(
           key: ValueKey(valueKey),
           initialValue: valuesMap[valueKey] as String?,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Value',
-            border: OutlineInputBorder(),
+            labelStyle: TextStyle(
+              color: isDarkMode ? Colors.white70 : Colors.grey[700],
+              fontSize: 14,
+            ),
+            prefixIcon: Icon(
+              dataType == 'text' ? Icons.text_fields : Icons.numbers,
+              color: dataType == 'text'
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.secondary,
+              size: 18,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            filled: true,
+            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            isDense: true,
+          ),
+          style: TextStyle(
+            fontSize: 14,
+            color: isDarkMode ? Colors.white : Colors.grey[900],
           ),
           keyboardType: dataType == 'number'
               ? TextInputType.number
@@ -1012,28 +1731,51 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
         );
       case 'boolean':
         return SwitchListTile(
-          title: const Text('Value'),
+          title: Text(
+            'Value',
+            style: TextStyle(
+              fontSize: 14,
+              color: isDarkMode ? Colors.white : Colors.grey[900],
+            ),
+          ),
           value: valuesMap[valueKey] as bool? ?? false,
           onChanged: (newValue) {
             setState(() {
               valuesMap[valueKey] = newValue;
             });
           },
+          activeColor: theme.colorScheme.primary,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          visualDensity: VisualDensity.compact,
         );
       case 'date':
-        return ListTile(
-          title: Text(
-            valuesMap[valueKey] == null
-                ? 'Select Date'
-                : 'Date: ${DateFormat('yyyy-MM-dd').format(valuesMap[valueKey] as DateTime)}',
-          ),
-          trailing: const Icon(Icons.calendar_today),
+        return GestureDetector(
           onTap: () async {
             final DateTime? picked = await showDatePicker(
               context: context,
               initialDate: (valuesMap[valueKey] as DateTime?) ?? DateTime.now(),
               firstDate: DateTime(1900),
               lastDate: DateTime.now().add(const Duration(days: 36500)),
+              builder: (context, child) {
+                return Theme(
+                  data: Theme.of(context).copyWith(
+                    colorScheme: Theme.of(context).colorScheme.copyWith(
+                      primary: theme.colorScheme.primary,
+                      onPrimary: theme.colorScheme.onPrimary,
+                      surface: theme.colorScheme.surface,
+                      onSurface: theme.colorScheme.onSurface,
+                    ),
+                    textButtonTheme: TextButtonThemeData(
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  child: child!,
+                );
+              },
             );
             if (picked != null) {
               setState(() {
@@ -1041,13 +1783,96 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
               });
             }
           },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  color: theme.colorScheme.tertiary,
+                  size: 18,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Value',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDarkMode ? Colors.white : Colors.grey[900],
+                        ),
+                      ),
+                      Text(
+                        valuesMap[valueKey] == null
+                            ? 'Select Date'
+                            : DateFormat(
+                                'yyyy-MM-dd',
+                              ).format(valuesMap[valueKey] as DateTime),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: theme.colorScheme.tertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.edit_calendar,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
         );
       case 'dropdown':
         return Column(
           children: [
             TextFormField(
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Dropdown Options (comma-separated)',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  Icons.list,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : Colors.grey[900],
               ),
               onChanged: (value) {
                 setState(() {
@@ -1058,15 +1883,54 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
                 });
               },
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'Select Value'),
+              decoration: InputDecoration(
+                labelText: 'Select Value',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  Icons.arrow_drop_down_circle,
+                  color: Colors.teal,
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                isDense: true,
+              ),
+              dropdownColor: isDarkMode ? Colors.grey[850] : Colors.white,
               items:
                   (definition['options'] as List<dynamic>?)
                       ?.map(
                         (option) => DropdownMenuItem(
                           value: option.toString(),
-                          child: Text(option.toString()),
+                          child: Text(
+                            option.toString(),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDarkMode
+                                  ? Colors.white
+                                  : Colors.grey[900],
+                            ),
+                          ),
                         ),
                       )
                       .toList() ??
@@ -1082,369 +1946,955 @@ class _EquipmentAssignmentScreenState extends State<EquipmentAssignmentScreen> {
     }
   }
 
-  Size _getSymbolPreviewSize(String symbolKey) {
-    return const Size(32, 32);
-  }
-
-  CustomPainter _getSymbolPreviewPainter(String symbolKey, Color color) {
-    const Size equipmentDrawingSize = Size(100, 100);
-    switch (symbolKey.toLowerCase()) {
-      case 'transformer':
-        return TransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'busbar':
-        return BusbarIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'circuit breaker':
-        return CircuitBreakerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'current transformer':
-      case 'ct':
-        return CurrentTransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'ground':
-        return GroundIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'isolator':
-        return IsolatorIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: const Size(32, 32),
-        );
-      case 'voltage transformer':
-      case 'pt':
-        return PotentialTransformerIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'line':
-        return LineIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      case 'feeder':
-        return FeederIconPainter(
-          color: color,
-          equipmentSize: equipmentDrawingSize,
-          symbolSize: equipmentDrawingSize,
-        );
-      default:
-        return _GenericIconPainter(color: color);
-    }
-  }
-
   Widget _buildDatePickerTile({
     required String title,
     required DateTime? selectedDate,
     required void Function(DateTime) onDateSelected,
   }) {
-    return ListTile(
-      title: Text(
-        '$title: ${selectedDate == null ? '' : DateFormat('yyyy-MM-dd').format(selectedDate)}',
-      ),
-      trailing: const Icon(
-        Icons.calendar_today,
-        color: Color.fromARGB(255, 11, 35, 179),
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.grey.shade400),
-      ),
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return GestureDetector(
       onTap: () async {
         final DateTime? picked = await showDatePicker(
           context: context,
           initialDate: selectedDate ?? DateTime.now(),
           firstDate: DateTime(1950),
           lastDate: DateTime.now().add(const Duration(days: 365 * 20)),
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: Theme.of(context).colorScheme.copyWith(
+                  primary: theme.colorScheme.primary,
+                  onPrimary: theme.colorScheme.onPrimary,
+                  surface: theme.colorScheme.surface,
+                  onSurface: theme.colorScheme.onSurface,
+                ),
+                textButtonTheme: TextButtonThemeData(
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+              child: child!,
+            );
+          },
         );
         if (picked != null && picked != selectedDate) {
           onDateSelected(picked);
         }
       },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today,
+              color: theme.colorScheme.tertiary,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.grey[900],
+                    ),
+                  ),
+                  Text(
+                    selectedDate == null
+                        ? 'Select Date'
+                        : DateFormat('yyyy-MM-dd').format(selectedDate),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: theme.colorScheme.tertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.edit_calendar,
+              color: theme.colorScheme.primary,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
     );
+  }
+
+  Color _getDataTypeColor(String dataType, ThemeData theme) {
+    switch (dataType) {
+      case 'text':
+        return theme.colorScheme.primary;
+      case 'number':
+        return theme.colorScheme.secondary;
+      case 'boolean':
+        return Colors.orange;
+      case 'date':
+        return theme.colorScheme.tertiary;
+      case 'dropdown':
+        return Colors.teal;
+      case 'group':
+        return theme.colorScheme.primary;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getDataTypeIcon(String dataType) {
+    switch (dataType) {
+      case 'text':
+        return Icons.text_fields;
+      case 'number':
+        return Icons.numbers;
+      case 'boolean':
+        return Icons.toggle_on;
+      case 'date':
+        return Icons.calendar_today;
+      case 'dropdown':
+        return Icons.arrow_drop_down_circle;
+      case 'group':
+        return Icons.group;
+      default:
+        return Icons.help;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Message will not be dynamically set here as the rule is moved to the save button
-    String templateSelectionMessage = '';
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: isDarkMode ? Colors.grey[900] : Colors.grey[50],
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Loading equipment data...',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
+      backgroundColor: isDarkMode ? Colors.grey[900] : Colors.grey[50],
       appBar: AppBar(
-        title: Text(
-          widget.equipmentToEdit == null
-              ? 'Add Equipment to Bay: ${widget.bayName}'
-              : 'Edit Equipment in Bay: ${widget.bayName}',
+        backgroundColor: isDarkMode ? Colors.grey[900] : Colors.grey[50],
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios, color: theme.colorScheme.primary),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.equipmentToEdit == null
+                  ? 'Add Equipment'
+                  : 'Edit Equipment',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: isDarkMode ? Colors.white : Colors.grey[900],
+              ),
+            ),
+            Text(
+              widget.bayName,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.primary,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(
+            height: 1,
+            color: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+          ),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Bay: ${widget.bayName}',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    Text(
-                      'Substation ID: ${widget.substationId}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Select Equipment Type',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    if (templateSelectionMessage.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: Text(
-                          templateSelectionMessage,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontStyle: FontStyle.italic,
-                          ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDarkMode ? Colors.grey[850] : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDarkMode
+                              ? Colors.grey[700]!
+                              : Colors.grey[200]!,
                         ),
                       ),
-                    const SizedBox(height: 16),
-                    if (_equipmentTemplates.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Center(
-                          child: Text(
-                            'No equipment templates available. Please define them in Admin Dashboard > Master Equipment.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.grey.shade600,
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.info,
+                              color: theme.colorScheme.primary,
+                              size: 24,
                             ),
                           ),
-                        ),
-                      )
-                    else
-                      DropdownButtonFormField<MasterEquipmentTemplate>(
-                        value: _selectedTemplate,
-                        decoration: const InputDecoration(
-                          labelText: 'Equipment Template',
-                          prefixIcon: Icon(Icons.electrical_services),
-                          border: OutlineInputBorder(),
-                        ),
-                        items: _equipmentTemplates.map((template) {
-                          return DropdownMenuItem<MasterEquipmentTemplate>(
-                            value: template,
-                            // No longer disable items here based on transformer rule,
-                            // Validation happens on save.
-                            child: Row(
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                SizedBox(
-                                  width: _getSymbolPreviewSize(
-                                    template.symbolKey,
-                                  ).width,
-                                  height: _getSymbolPreviewSize(
-                                    template.symbolKey,
-                                  ).height,
-                                  child: CustomPaint(
-                                    painter: _getSymbolPreviewPainter(
-                                      template.symbolKey,
-                                      Theme.of(context).colorScheme.onSurface,
-                                    ),
+                                Text(
+                                  'Bay Information',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : Colors.grey[900],
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Text(template.equipmentType),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: widget.equipmentToEdit != null
-                            ? null // Cannot change template when editing existing equipment
-                            : (newValue) {
-                                _onTemplateSelected(newValue);
-                              },
-                        validator: (value) => value == null
-                            ? 'Please select an equipment type'
-                            : null,
-                      ),
-                    const SizedBox(height: 24),
-                    if (_selectedTemplate != null) ...[
-                      Text(
-                        'Equipment Properties',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 16.0),
-                      Card(
-                        elevation: 1,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              TextFormField(
-                                controller: _makeController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Make *',
-                                  border: OutlineInputBorder(),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Bay: ${widget.bayName}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: isDarkMode
+                                        ? Colors.white70
+                                        : Colors.grey[700],
+                                  ),
                                 ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Make is required';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16.0),
-                              _buildDatePickerTile(
-                                title: 'Date of Manufacturing',
-                                selectedDate: _dateOfManufacturing,
-                                onDateSelected: (date) {
-                                  setState(() {
-                                    _dateOfManufacturing = date;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 12.0),
-                              _buildDatePickerTile(
-                                title: 'Date of Commissioning',
-                                selectedDate: _dateOfCommissioning,
-                                onDateSelected: (date) {
-                                  setState(() {
-                                    _dateOfCommissioning = date;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Custom Properties (from Template)',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      if (_selectedTemplate!.equipmentCustomFields.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text(
-                            'This template has no custom fields defined.',
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        )
-                      else
-                        ..._selectedTemplate!.equipmentCustomFields.map((
-                          field,
-                        ) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: _buildFieldInput(
-                              fieldDef: field,
-                              currentValuesMap: _templateCustomFieldValues,
-                              prefix: 'template_field',
-                            ),
-                          );
-                        }).toList(),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Additional Custom Properties',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _userAddedCustomFields.length,
-                        itemBuilder: (context, index) {
-                          return _buildUserAddedFieldInput(index);
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _addUserCustomField,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Add Field'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.secondary,
-                                foregroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.onSecondary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _addUserGroupField,
-                              icon: const Icon(Icons.add_box_outlined),
-                              label: const Text('Add Group'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.secondary,
-                                foregroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.onSecondary,
-                              ),
+                                Text(
+                                  'Substation ID: ${widget.substationId}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: isDarkMode
+                                        ? Colors.white70
+                                        : Colors.grey[700],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 32),
-                      Center(
-                        child: _isSavingEquipment
-                            ? const CircularProgressIndicator()
-                            : ElevatedButton.icon(
-                                onPressed: _selectedTemplate != null
-                                    ? _saveEquipmentInstance
-                                    : null,
-                                icon: const Icon(Icons.save),
-                                label: Text(
-                                  widget.equipmentToEdit == null
-                                      ? 'Save Equipment to Bay'
-                                      : 'Update Equipment',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDarkMode ? Colors.grey[850] : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDarkMode
+                              ? Colors.grey[700]!
+                              : Colors.grey[200]!,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary.withOpacity(
+                                    0.15,
+                                  ),
+                                  shape: BoxShape.circle,
                                 ),
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size(double.infinity, 50),
+                                child: Icon(
+                                  Icons.electrical_services,
+                                  color: theme.colorScheme.primary,
+                                  size: 20,
                                 ),
                               ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Equipment Type',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.grey[900],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          if (_equipmentTemplates.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.error.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber,
+                                    color: theme.colorScheme.error,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'No equipment templates available. Create templates in Admin Dashboard.',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: theme.colorScheme.error,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            DropdownButtonFormField<MasterEquipmentTemplate>(
+                              value: _selectedTemplate,
+                              decoration: InputDecoration(
+                                labelText: 'Equipment Template',
+                                labelStyle: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white70
+                                      : Colors.grey[700],
+                                  fontSize: 14,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.electrical_services,
+                                  color: theme.colorScheme.primary,
+                                  size: 20,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(
+                                    color: isDarkMode
+                                        ? Colors.grey[700]!
+                                        : Colors.grey[300]!,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(
+                                    color: isDarkMode
+                                        ? Colors.grey[700]!
+                                        : Colors.grey[300]!,
+                                  ),
+                                ),
+                                filled: true,
+                                fillColor: isDarkMode
+                                    ? Colors.grey[800]
+                                    : Colors.grey[100],
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
+                                isDense: true,
+                              ),
+                              dropdownColor: isDarkMode
+                                  ? Colors.grey[850]
+                                  : Colors.white,
+                              isExpanded: true,
+                              items: _equipmentTemplates.map((template) {
+                                return DropdownMenuItem<
+                                  MasterEquipmentTemplate
+                                >(
+                                  value: template,
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: _getSymbolPreviewSize(
+                                          template.symbolKey,
+                                        ).width,
+                                        height: _getSymbolPreviewSize(
+                                          template.symbolKey,
+                                        ).height,
+                                        // child: CustomPaint(
+                                        //   painter: _getSymbolPreviewPainter(
+                                        //     template.symbolKey,
+                                        //     isDarkMode
+                                        //         ? Colors.white70
+                                        //         : Colors.grey[700],
+                                        //   ),
+                                        // ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              template.equipmentType,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                                color: isDarkMode
+                                                    ? Colors.white
+                                                    : Colors.grey[900],
+                                              ),
+                                            ),
+                                            Text(
+                                              template.id?.substring(0, 8) ??
+                                                  'No ID',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isDarkMode
+                                                    ? Colors.white70
+                                                    : Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: widget.equipmentToEdit != null
+                                  ? null
+                                  : (newValue) {
+                                      _onTemplateSelected(newValue);
+                                    },
+                              validator: (value) => value == null
+                                  ? 'Please select an equipment type'
+                                  : null,
+                            ),
+                        ],
                       ),
-                    ],
+                    ),
+                  ),
+                  if (_selectedTemplate != null) ...[
+                    const SizedBox(height: 16),
+                    FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDarkMode ? Colors.grey[850] : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDarkMode
+                                ? Colors.grey[700]!
+                                : Colors.grey[200]!,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.settings,
+                                    color: theme.colorScheme.primary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Equipment Properties',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : Colors.grey[900],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _makeController,
+                              decoration: InputDecoration(
+                                labelText: 'Make *',
+                                labelStyle: TextStyle(
+                                  color: isDarkMode
+                                      ? Colors.white70
+                                      : Colors.grey[700],
+                                  fontSize: 14,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.build,
+                                  color: theme.colorScheme.primary,
+                                  size: 18,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(
+                                    color: isDarkMode
+                                        ? Colors.grey[700]!
+                                        : Colors.grey[300]!,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(
+                                    color: isDarkMode
+                                        ? Colors.grey[700]!
+                                        : Colors.grey[300]!,
+                                  ),
+                                ),
+                                filled: true,
+                                fillColor: isDarkMode
+                                    ? Colors.grey[800]
+                                    : Colors.grey[100],
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
+                                isDense: true,
+                              ),
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : Colors.grey[900],
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Make is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDatePickerTile(
+                              title: 'Date of Manufacturing',
+                              selectedDate: _dateOfManufacturing,
+                              onDateSelected: (date) {
+                                setState(() {
+                                  _dateOfManufacturing = date;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDatePickerTile(
+                              title: 'Date of Commissioning',
+                              selectedDate: _dateOfCommissioning,
+                              onDateSelected: (date) {
+                                setState(() {
+                                  _dateOfCommissioning = date;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDarkMode ? Colors.grey[850] : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDarkMode
+                                ? Colors.grey[700]!
+                                : Colors.grey[200]!,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.tune,
+                                    color: theme.colorScheme.primary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Custom Properties (from Template)',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : Colors.grey[900],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${_selectedTemplate!.equipmentCustomFields.length} field${_selectedTemplate!.equipmentCustomFields.length == 1 ? '' : 's'}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            if (_selectedTemplate!
+                                .equipmentCustomFields
+                                .isEmpty)
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary.withOpacity(
+                                    0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: theme.colorScheme.primary,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'This template has no custom fields defined.',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: isDarkMode
+                                              ? Colors.white70
+                                              : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              ..._selectedTemplate!.equipmentCustomFields.map((
+                                field,
+                              ) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8.0,
+                                  ),
+                                  child: _buildFieldInput(
+                                    fieldDef: field,
+                                    currentValuesMap:
+                                        _templateCustomFieldValues,
+                                    prefix: 'template_field',
+                                  ),
+                                );
+                              }).toList(),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDarkMode ? Colors.grey[850] : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDarkMode
+                                ? Colors.grey[700]!
+                                : Colors.grey[200]!,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.add_circle_outline,
+                                    color: theme.colorScheme.primary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Additional Custom Properties',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : Colors.grey[900],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${_userAddedCustomFields.length} field${_userAddedCustomFields.length == 1 ? '' : 's'}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                              child: _userAddedCustomFields.isEmpty
+                                  ? Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary
+                                            .withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.info_outline,
+                                            color: theme.colorScheme.primary,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              'No additional fields added yet.',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: isDarkMode
+                                                    ? Colors.white70
+                                                    : Colors.grey[700],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      shrinkWrap: true,
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      itemCount: _userAddedCustomFields.length,
+                                      separatorBuilder: (context, index) =>
+                                          const SizedBox(height: 12),
+                                      itemBuilder: (context, index) {
+                                        return _buildUserAddedFieldInput(index);
+                                      },
+                                    ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _addUserCustomField,
+                                    icon: Icon(
+                                      Icons.add,
+                                      color: theme.colorScheme.primary,
+                                      size: 18,
+                                    ),
+                                    label: Text(
+                                      'Add Field',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      side: BorderSide(
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      backgroundColor: theme.colorScheme.primary
+                                          .withOpacity(0.05),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _addUserGroupField,
+                                    icon: Icon(
+                                      Icons.add_box_outlined,
+                                      color: theme.colorScheme.primary,
+                                      size: 18,
+                                    ),
+                                    label: Text(
+                                      'Add Group',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      side: BorderSide(
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      backgroundColor: theme.colorScheme.primary
+                                          .withOpacity(0.05),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[850] : Colors.white,
+          border: Border(
+            top: BorderSide(
+              color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+            ),
+          ),
+        ),
+        child: _isSavingEquipment
+            ? Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    theme.colorScheme.primary,
+                  ),
+                ),
+              )
+            : ElevatedButton.icon(
+                onPressed: _selectedTemplate != null
+                    ? _saveEquipmentInstance
+                    : null,
+                icon: Icon(
+                  Icons.save,
+                  size: 20,
+                  color: theme.colorScheme.onPrimary,
+                ),
+                label: Text(
+                  widget.equipmentToEdit == null
+                      ? 'Save Equipment to Bay'
+                      : 'Update Equipment',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onPrimary,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+      ),
     );
   }
 }

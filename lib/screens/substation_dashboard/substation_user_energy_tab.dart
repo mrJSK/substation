@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
-import '../../models/bay_model.dart';
 import '../../models/enhanced_bay_data.dart';
 import '../../services/comprehensive_cache_service.dart';
 import '../../utils/snackbar_utils.dart';
@@ -39,13 +38,14 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
   bool _hasAnyBaysWithReadings = false;
   late AnimationController _animationController;
 
-  // Track completion status for each bay
+  // 🔧 FIX: Enhanced state tracking
   Map<String, bool> _bayCompletionStatus = {};
   Map<String, bool> _bayEnergyCompletionStatus = {};
   Map<String, int> _bayMandatoryFieldsCount = {};
   Map<String, Map<String, dynamic>> _bayLastReadings = {};
+  bool _cacheHealthy = false;
+  String? _cacheError;
 
-  // Required energy fields for calculation
   static const List<String> REQUIRED_ENERGY_FIELDS = [
     'Current Day Reading (Import)',
     'Previous Day Reading (Import)',
@@ -73,7 +73,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
   void didUpdateWidget(SubstationUserEnergyTab oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Only reload if substation or date actually changed
     final bool shouldReload =
         oldWidget.substationId != widget.substationId ||
         !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
@@ -83,27 +82,37 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     }
   }
 
+  // 🔧 FIX: Enhanced data loading with better error handling
   Future<void> _loadEnergyData() async {
     if (widget.substationId.isEmpty) {
       setState(() {
         _isLoading = false;
         _isDailyReadingAvailable = false;
         _hasAnyBaysWithReadings = false;
+        _cacheHealthy = false;
+        _cacheError = 'No substation selected';
       });
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _cacheError = null;
+    });
 
     try {
-      // ✅ USE CACHE - No Firebase queries!
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Get bays with daily readings from cache
+      // 🔧 FIX: Validate cache health before proceeding
+      if (!_cache.validateCache()) {
+        throw Exception('Cache validation failed - data may be stale');
+      }
+
       _baysWithDailyAssignments = _cache.getBaysWithReadings('daily');
       _hasAnyBaysWithReadings = _baysWithDailyAssignments.isNotEmpty;
+      _cacheHealthy = true;
 
       if (!_hasAnyBaysWithReadings) {
         setState(() {
@@ -113,9 +122,21 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
         return;
       }
 
+      // 🔧 FIX: Enhanced availability check
       final DateTime now = DateTime.now();
       final bool isToday = DateUtils.isSameDay(widget.selectedDate, now);
-      // Daily readings are available after 8 AM
+      final bool isFutureDate = widget.selectedDate.isAfter(now);
+
+      // Don't allow readings for future dates
+      if (isFutureDate) {
+        setState(() {
+          _isDailyReadingAvailable = false;
+          _cacheError = 'Cannot enter readings for future dates';
+        });
+        return;
+      }
+
+      // Daily readings are available after 8 AM for today, always available for past dates
       _isDailyReadingAvailable = !isToday || now.hour >= 8;
 
       if (_isDailyReadingAvailable) {
@@ -130,6 +151,11 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
       );
     } catch (e) {
       print('❌ Error loading energy data from cache: $e');
+      setState(() {
+        _cacheHealthy = false;
+        _cacheError = e.toString();
+      });
+
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -144,12 +170,12 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     }
   }
 
+  // 🔧 FIX: Enhanced completion checking with validation
   void _checkDailyReadingCompletion() {
     _bayCompletionStatus.clear();
     _bayEnergyCompletionStatus.clear();
     _bayMandatoryFieldsCount.clear();
 
-    // ✅ USE CACHE - Check completion from cached data
     for (var bayData in _baysWithDailyAssignments) {
       final mandatoryFields = bayData.getReadingFields(
         'daily',
@@ -161,17 +187,48 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
       bool isComplete = entry != null;
       bool hasEnergyReadings = false;
 
-      if (isComplete && entry != null) {
-        // Check if all required energy fields are present and have valid values
+      if (isComplete) {
+        // Validate energy fields more thoroughly
         hasEnergyReadings = REQUIRED_ENERGY_FIELDS.every((fieldName) {
           final value = entry.values[fieldName];
           if (value == null) return false;
           final stringValue = value.toString().trim();
           if (stringValue.isEmpty) return false;
-          // Check if it's a valid number
           final numValue = double.tryParse(stringValue);
           return numValue != null && numValue >= 0;
         });
+
+        // Additional validation: ensure import/export values are logical
+        if (hasEnergyReadings) {
+          final currentImport = double.tryParse(
+            entry.values['Current Day Reading (Import)']?.toString() ?? '',
+          );
+          final previousImport = double.tryParse(
+            entry.values['Previous Day Reading (Import)']?.toString() ?? '',
+          );
+          final currentExport = double.tryParse(
+            entry.values['Current Day Reading (Export)']?.toString() ?? '',
+          );
+          final previousExport = double.tryParse(
+            entry.values['Previous Day Reading (Export)']?.toString() ?? '',
+          );
+
+          // Validate that current readings are not less than previous readings (unless meter reset)
+          if (currentImport != null &&
+              previousImport != null &&
+              currentImport < previousImport) {
+            print(
+              '⚠️ Warning: Current import reading less than previous for bay ${bayData.name}',
+            );
+          }
+          if (currentExport != null &&
+              previousExport != null &&
+              currentExport < previousExport) {
+            print(
+              '⚠️ Warning: Current export reading less than previous for bay ${bayData.name}',
+            );
+          }
+        }
       }
 
       _bayCompletionStatus[bayData.id] = isComplete;
@@ -179,79 +236,144 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     }
   }
 
+  // 🔧 FIX: Enhanced auto-populate with error handling
   void _loadLastReadingsForAutoPopulate() {
     _bayLastReadings.clear();
 
-    // Get previous day for auto-populate
     final previousDay = widget.selectedDate.subtract(const Duration(days: 1));
 
-    // ✅ USE CACHE - Get previous day readings from cache
     for (var bayData in _baysWithDailyAssignments) {
-      final yesterdayEntry = bayData.getReading(previousDay, 'daily');
-      if (yesterdayEntry != null) {
-        _bayLastReadings[bayData.id] = {
-          'Previous Day Reading (Import)':
-              yesterdayEntry.values['Current Day Reading (Import)'],
-          'Previous Day Reading (Export)':
-              yesterdayEntry.values['Current Day Reading (Export)'],
-          'lastReadingDate': DateFormat('dd-MMM-yyyy').format(previousDay),
-        };
+      try {
+        final yesterdayEntry = bayData.getReading(previousDay, 'daily');
+        if (yesterdayEntry != null) {
+          final importReading =
+              yesterdayEntry.values['Current Day Reading (Import)'];
+          final exportReading =
+              yesterdayEntry.values['Current Day Reading (Export)'];
+
+          // Only add if both readings are valid numbers
+          if (importReading != null && exportReading != null) {
+            final importValue = double.tryParse(importReading.toString());
+            final exportValue = double.tryParse(exportReading.toString());
+
+            if (importValue != null && exportValue != null) {
+              _bayLastReadings[bayData.id] = {
+                'Previous Day Reading (Import)': importReading,
+                'Previous Day Reading (Export)': exportReading,
+                'lastReadingDate': DateFormat(
+                  'dd-MMM-yyyy',
+                ).format(previousDay),
+                'validatedValues': true,
+              };
+            }
+          }
+        }
+      } catch (e) {
+        print('❌ Error loading auto-populate data for bay ${bayData.name}: $e');
       }
     }
   }
 
-  // Method to refresh specific bay status (called when returning from entry screen)
+  // 🔧 FIX: Enhanced refresh with cache synchronization
   Future<void> _refreshBayStatus(String bayId) async {
-    // ✅ Data is already in cache after save operation
-    // Just recalculate completion status for this bay
-    final bayData = _cache.getBayById(bayId);
-    if (bayData == null) return;
+    try {
+      // Force refresh the specific bay data
+      await _cache.refreshBayData(bayId);
 
-    final entry = bayData.getReading(widget.selectedDate, 'daily');
-    bool isComplete = entry != null;
-    bool hasEnergyReadings = false;
+      final bayData = _cache.getBayById(bayId);
+      if (bayData == null) {
+        print('⚠️ Bay data not found after refresh: $bayId');
+        return;
+      }
 
-    if (isComplete && entry != null) {
-      hasEnergyReadings = REQUIRED_ENERGY_FIELDS.every((fieldName) {
-        final value = entry.values[fieldName];
-        if (value == null) return false;
-        final stringValue = value.toString().trim();
-        if (stringValue.isEmpty) return false;
-        final numValue = double.tryParse(stringValue);
-        return numValue != null && numValue >= 0;
+      final entry = bayData.getReading(widget.selectedDate, 'daily');
+      bool isComplete = entry != null;
+      bool hasEnergyReadings = false;
+
+      if (isComplete) {
+        hasEnergyReadings = REQUIRED_ENERGY_FIELDS.every((fieldName) {
+          final value = entry.values[fieldName];
+          if (value == null) return false;
+          final stringValue = value.toString().trim();
+          if (stringValue.isEmpty) return false;
+          final numValue = double.tryParse(stringValue);
+          return numValue != null && numValue >= 0;
+        });
+      }
+
+      setState(() {
+        _bayCompletionStatus[bayId] = isComplete;
+        _bayEnergyCompletionStatus[bayId] = hasEnergyReadings;
       });
-    }
 
-    setState(() {
-      _bayCompletionStatus[bayId] = isComplete;
-      _bayEnergyCompletionStatus[bayId] = hasEnergyReadings;
-    });
+      print(
+        '✅ Bay status refreshed: $bayId - Complete: $isComplete, Energy: $hasEnergyReadings',
+      );
+    } catch (e) {
+      print('❌ Error refreshing bay status: $e');
+    }
   }
 
+  // 🔧 FIX: Enhanced validation with detailed feedback
   Future<bool> validateEnergyDataForCalculation() async {
     final List<String> incompleteBays = [];
+    final List<String> invalidDataBays = [];
+
     for (var bayData in _baysWithDailyAssignments) {
-      if (!(_bayEnergyCompletionStatus[bayData.id] ?? false)) {
+      final hasEnergyReadings = _bayEnergyCompletionStatus[bayData.id] ?? false;
+
+      if (!hasEnergyReadings) {
         incompleteBays.add(bayData.name);
+      } else {
+        // Additional validation for data integrity
+        final entry = bayData.getReading(widget.selectedDate, 'daily');
+        if (entry != null) {
+          final currentImport = double.tryParse(
+            entry.values['Current Day Reading (Import)']?.toString() ?? '',
+          );
+          final previousImport = double.tryParse(
+            entry.values['Previous Day Reading (Import)']?.toString() ?? '',
+          );
+
+          if (currentImport != null && previousImport != null) {
+            final consumption = currentImport - previousImport;
+            // Flag unusually high consumption (>10000 units per day) for review
+            if (consumption > 10000) {
+              invalidDataBays.add(
+                '${bayData.name} (High consumption: ${consumption.toStringAsFixed(2)})',
+              );
+            }
+          }
+        }
       }
     }
 
     if (incompleteBays.isNotEmpty) {
       SnackBarUtils.showSnackBar(
         context,
-        'Energy calculation incomplete. Missing energy readings for: ${incompleteBays.join(', ')}',
+        'Energy calculation incomplete. Missing readings: ${incompleteBays.join(', ')}',
         isError: true,
       );
       return false;
     }
 
+    if (invalidDataBays.isNotEmpty) {
+      // Show warning but don't prevent calculation
+      SnackBarUtils.showSnackBar(
+        context,
+        'Warning: Unusual readings detected: ${invalidDataBays.join(', ')}',
+        isError: false,
+      );
+    }
+
     SnackBarUtils.showSnackBar(
       context,
-      'All energy readings are complete and ready for calculation!',
+      'All energy readings validated and ready for calculation!',
     );
     return true;
   }
 
+  // 🔧 FIX: Enhanced bay card with better status indicators
   Widget _buildBayCard(EnhancedBayData bayData, int index) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -261,7 +383,13 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     final int mandatoryFields = _bayMandatoryFieldsCount[bayData.id] ?? 0;
     final bool hasLastReading = _bayLastReadings.containsKey(bayData.id);
 
-    // Status colors based on energy completion
+    // 🔧 FIX: Check if reading already exists to prevent duplicate entry
+    final bool hasExistingReading = _cache.hasReadingForDate(
+      bayData.id,
+      widget.selectedDate,
+      'daily',
+    );
+
     Color statusColor = hasEnergyReadings
         ? Colors.green
         : (isComplete ? Colors.blue : Colors.orange);
@@ -270,7 +398,14 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
         : (isComplete ? Icons.assignment_turned_in : Icons.pending);
     String statusText = hasEnergyReadings
         ? 'Energy Complete'
-        : (isComplete ? 'Readings Complete' : 'Pending');
+        : (isComplete ? 'Basic Complete' : 'Pending');
+
+    // Override for existing readings
+    if (hasExistingReading && !hasEnergyReadings) {
+      statusColor = Colors.amber;
+      statusIcon = Icons.warning;
+      statusText = 'Needs Review';
+    }
 
     return AnimatedBuilder(
       animation: _animationController,
@@ -297,7 +432,10 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                   offset: const Offset(0, 2),
                 ),
               ],
-              border: Border.all(color: statusColor.withOpacity(0.3), width: 1),
+              border: Border.all(
+                color: statusColor.withOpacity(0.3),
+                width: hasExistingReading ? 2 : 1,
+              ),
             ),
             child: Material(
               color: Colors.transparent,
@@ -305,29 +443,13 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                 borderRadius: BorderRadius.circular(12),
                 onTap: _isDailyReadingAvailable
                     ? () {
-                        Navigator.of(context)
-                            .push(
-                              MaterialPageRoute(
-                                builder: (context) => LogsheetEntryScreen(
-                                  substationId: widget.substationId,
-                                  substationName: widget.substationName,
-                                  bayId: bayData.id,
-                                  readingDate: widget.selectedDate,
-                                  frequency: 'daily',
-                                  readingHour: null,
-                                  currentUser: widget.currentUser,
-                                  forceReadOnly: false,
-                                  autoPopulateData:
-                                      _bayLastReadings[bayData.id],
-                                ),
-                              ),
-                            )
-                            .then((result) {
-                              // Only refresh this specific bay
-                              if (result == true) {
-                                _refreshBayStatus(bayData.id);
-                              }
-                            });
+                        // 🔧 FIX: Handle existing readings appropriately
+                        if (hasExistingReading &&
+                            !_canModifyExistingReading()) {
+                          _showReadingExistsDialog(bayData);
+                        } else {
+                          _navigateToReadingEntry(bayData);
+                        }
                       }
                     : null,
                 child: Padding(
@@ -336,7 +458,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                     children: [
                       Row(
                         children: [
-                          // Bay Icon
                           Container(
                             width: 48,
                             height: 48,
@@ -351,7 +472,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                             ),
                           ),
                           const SizedBox(width: 16),
-                          // Bay Details
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -404,7 +524,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                               ],
                             ),
                           ),
-                          // Status Badge
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
@@ -437,15 +556,51 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                           if (_isDailyReadingAvailable) ...[
                             const SizedBox(width: 12),
                             Icon(
-                              Icons.arrow_forward_ios,
+                              hasExistingReading
+                                  ? Icons.visibility
+                                  : Icons.arrow_forward_ios,
                               color: theme.colorScheme.primary,
                               size: 16,
                             ),
                           ],
                         ],
                       ),
-                      // Auto-populate indicator
-                      if (hasLastReading && !isComplete) ...[
+
+                      // 🔧 FIX: Enhanced status indicators
+                      if (hasExistingReading) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.green.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                size: 16,
+                                color: Colors.green.shade700,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  hasEnergyReadings
+                                      ? 'Reading completed with all energy values'
+                                      : 'Basic reading completed - energy values may need review',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.green.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (hasLastReading && !isComplete) ...[
                         const SizedBox(height: 12),
                         Container(
                           padding: const EdgeInsets.all(8),
@@ -496,6 +651,140 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     );
   }
 
+  // 🔧 FIX: Check permission to modify existing readings
+  bool _canModifyExistingReading() {
+    return [
+      UserRole.admin,
+      UserRole.subdivisionManager,
+      UserRole.divisionManager,
+      UserRole.circleManager,
+      UserRole.zoneManager,
+    ].contains(widget.currentUser.role);
+  }
+
+  // 🔧 FIX: Show dialog for existing readings
+  Future<void> _showReadingExistsDialog(EnhancedBayData bayData) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 24),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Reading Already Exists',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'A reading for ${bayData.name} has already been recorded for ${DateFormat('dd MMM yyyy').format(widget.selectedDate)}.',
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.8)
+                    : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You can view the reading details.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDarkMode ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToReadingEntry(bayData, forceReadOnly: true);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: Icon(Icons.visibility, size: 18),
+            label: Text('View Details'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🔧 FIX: Centralized navigation logic
+  void _navigateToReadingEntry(
+    EnhancedBayData bayData, {
+    bool forceReadOnly = false,
+  }) {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => LogsheetEntryScreen(
+              substationId: widget.substationId,
+              substationName: widget.substationName,
+              bayId: bayData.id,
+              readingDate: widget.selectedDate,
+              frequency: 'daily',
+              readingHour: null,
+              currentUser: widget.currentUser,
+              forceReadOnly: forceReadOnly,
+              autoPopulateData: _bayLastReadings[bayData.id],
+            ),
+          ),
+        )
+        .then((result) {
+          if (result == true) {
+            _refreshBayStatus(bayData.id);
+          }
+        });
+  }
+
   IconData _getBayTypeIcon(String bayType) {
     switch (bayType.toLowerCase()) {
       case 'transformer':
@@ -515,6 +804,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
     }
   }
 
+  // 🔧 FIX: Enhanced header with better status tracking
   Widget _buildHeader() {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -581,11 +871,38 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                   ],
                 ),
               ),
+              // 🔧 FIX: Cache health indicator
+              if (_cacheHealthy)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.offline_bolt, size: 10, color: Colors.green),
+                      const SizedBox(width: 2),
+                      Text(
+                        'LIVE',
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
           if (_isDailyReadingAvailable && totalBays > 0) ...[
             const SizedBox(height: 16),
-            // General Progress
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -631,7 +948,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
               ),
             ),
             const SizedBox(height: 8),
-            // Energy Progress
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -668,7 +984,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                 ],
               ),
             ),
-            // Validation Button
             if (energyCompleteBays == totalBays && totalBays > 0) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -688,6 +1003,31 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                 ),
               ),
             ],
+          ] else if (!_isDailyReadingAvailable) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule, color: Colors.orange, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Readings will be available after 08:00 AM IST',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ],
       ),
@@ -696,7 +1036,7 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    super.build(context);
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -705,14 +1045,40 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
-          child: Text(
-            'Please select a substation to view energy data.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              fontStyle: FontStyle.italic,
-              color: isDarkMode ? Colors.white.withOpacity(0.6) : Colors.grey,
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.location_off,
+                size: 64,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey.shade400,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No Substation Selected',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please select a substation to view energy data.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.grey,
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -720,28 +1086,50 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
 
     if (_isLoading) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: theme.colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              'Loading from cache...',
-              style: TextStyle(
-                fontSize: 16,
-                color: isDarkMode ? Colors.white : Colors.black87,
-              ),
+        child: Card(
+          elevation: 4,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  color: theme.colorScheme.primary,
+                  strokeWidth: 3,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Loading from cache...',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                ),
+                if (_cacheError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _cacheError!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.red,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ),
       );
     }
 
     return Column(
       children: [
-        // Header
         _buildHeader(),
-        // Content
         Expanded(
           child: !_hasAnyBaysWithReadings
               ? Center(
@@ -806,7 +1194,8 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Daily readings for today will be available after 08:00 AM IST.',
+                          _cacheError ??
+                              'Daily readings for today will be available after 08:00 AM IST.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,

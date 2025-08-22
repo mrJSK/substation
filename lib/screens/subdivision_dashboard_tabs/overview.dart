@@ -43,7 +43,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
   Set<String> _selectedFields = {};
 
   bool _isLoading = false;
-  String? _errorMessage;
+  String? _error_dbg;
   List<LogsheetEntry> _entries = [];
   Map<String, Bay> _viewerBaysMap = {};
   Map<String, Map<String, List<TimePoint>>> _series = {};
@@ -123,53 +123,88 @@ class _OverviewScreenState extends State<OverviewScreen> {
     return SafeArea(
       child: Scaffold(
         backgroundColor: isDark ? Colors.grey[900] : Colors.grey[50],
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(theme, isDark),
-              const SizedBox(height: 12),
-              _buildSelectors(theme, isDark),
-              const SizedBox(height: 12),
-              _buildFieldsFilter(theme, isDark),
-              const SizedBox(height: 12),
-              _buildActionBar(theme, isDark),
-              const SizedBox(height: 12),
-              _buildResults(theme, isDark),
-            ],
-          ),
+        floatingActionButton: _buildFloatingActionButton(theme, isDark),
+        body: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              backgroundColor: isDark ? Colors.grey[900] : Colors.grey[50],
+              pinned: true,
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.show_chart,
+                    color: theme.colorScheme.primary,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Overview',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.grey[900],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildFiltersSection(theme, isDark),
+                    const SizedBox(height: 16),
+                    _buildFieldsFilterSection(theme, isDark),
+                    const SizedBox(height: 16),
+                    _buildResults(theme, isDark),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader(ThemeData theme, bool isDark) {
-    return Row(
-      children: [
-        Icon(Icons.show_chart, color: theme.colorScheme.primary, size: 24),
-        const SizedBox(width: 8),
-        Text(
-          'Overview',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : Colors.grey[900],
-            letterSpacing: 0.5,
+  Widget _buildFloatingActionButton(ThemeData theme, bool isDark) {
+    final canRun = _selectedSubstation != null && _selectedBayIds.isNotEmpty;
+    return FloatingActionButton.extended(
+      onPressed: canRun ? _fetchAndBuildSeries : null,
+      backgroundColor: canRun ? theme.colorScheme.primary : Colors.grey[400],
+      label: Row(
+        children: [
+          if (_isLoading)
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          else
+            const Icon(Icons.show_chart, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            _isLoading ? 'Loading...' : 'Fetch & Plot',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildSelectors(ThemeData theme, bool isDark) {
+  Widget _buildFiltersSection(ThemeData theme, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[850] : Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          color: isDark ? Colors.grey[700]! : Colors.grey[200]!,
         ),
       ),
       child: Column(
@@ -178,7 +213,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
           Text(
             'Filters',
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               color: isDark ? Colors.white : Colors.grey[900],
             ),
@@ -255,7 +290,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   _entries.clear();
                   _series.clear();
                   _summaries.clear();
-                  _errorMessage = null;
+                  _error_dbg = null;
                 });
                 _fetchBaysForSelectedSubstation();
               },
@@ -326,7 +361,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   _entries.clear();
                   _series.clear();
                   _summaries.clear();
-                  _errorMessage = null;
+                  _error_dbg = null;
                 });
               },
               icon: Icon(
@@ -433,7 +468,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                     _entries.clear();
                     _series.clear();
                     _summaries.clear();
-                    _errorMessage = null;
+                    _error_dbg = null;
                   });
                 },
                 deleteIconColor: Colors.red,
@@ -449,14 +484,14 @@ class _OverviewScreenState extends State<OverviewScreen> {
     );
   }
 
-  Widget _buildFieldsFilter(ThemeData theme, bool isDark) {
+  Widget _buildFieldsFilterSection(ThemeData theme, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[850] : Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          color: isDark ? Colors.grey[700]! : Colors.grey[200]!,
         ),
       ),
       child: Column(
@@ -468,7 +503,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 child: Text(
                   'Fields',
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: isDark ? Colors.white : Colors.grey[900],
                   ),
@@ -518,14 +553,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
               ),
             )
           else
-            SizedBox(
-              height: 40,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: (_availableFields.toList()..sort()).map((field) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: FilterChip(
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: (_availableFields.toList()..sort())
+                  .map(
+                    (field) => FilterChip(
                       label: Text(field, style: const TextStyle(fontSize: 12)),
                       selected: _selectedFields.contains(field),
                       onSelected: (selected) {
@@ -537,56 +570,21 @@ class _OverviewScreenState extends State<OverviewScreen> {
                           }
                         });
                       },
-                      selectedColor: theme.colorScheme.primary.withOpacity(0.2),
+                      selectedColor: theme.colorScheme.primary.withOpacity(0.3),
                       backgroundColor: isDark
                           ? Colors.grey[800]
                           : Colors.grey[100],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                        ),
+                      ),
                     ),
-                  );
-                }).toList(),
-              ),
+                  )
+                  .toList(),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildActionBar(ThemeData theme, bool isDark) {
-    final canRun = _selectedSubstation != null && _selectedBayIds.isNotEmpty;
-    return SizedBox(
-      width: double.infinity,
-      height: 44,
-      child: ElevatedButton(
-        onPressed: canRun ? _fetchAndBuildSeries : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: theme.colorScheme.primary,
-          foregroundColor: theme.colorScheme.onPrimary,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          elevation: 0,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (_isLoading)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            else
-              const Icon(Icons.show_chart, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              _isLoading ? 'Loading...' : 'Fetch & Plot',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -595,8 +593,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_errorMessage != null) {
-      return _buildErrorMessage(_errorMessage!, isDark);
+    if (_error_dbg != null) {
+      return _buildErrorMessage(_error_dbg!, isDark);
     }
     if (_series.isEmpty) {
       return _buildNoDataMessage(isDark);
@@ -609,19 +607,18 @@ class _OverviewScreenState extends State<OverviewScreen> {
         ),
       );
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: bayIds
           .map(
             (bayId) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _buildBayChart(theme, isDark, bayId),
+              padding: const EdgeInsets.only(bottom: 16),
+              child: _buildBaySection(theme, isDark, bayId),
             ),
           )
           .toList(),
     );
   }
 
-  Widget _buildBayChart(ThemeData theme, bool isDark, String bayId) {
+  Widget _buildBaySection(ThemeData theme, bool isDark, String bayId) {
     final bay = _viewerBaysMap[bayId];
     final fieldsMap = _series[bayId] ?? {};
     final fields =
@@ -634,12 +631,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
     if (fields.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isDark ? Colors.grey[850] : Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+            color: isDark ? Colors.grey[700]! : Colors.grey[200]!,
           ),
         ),
         child: Column(
@@ -648,7 +645,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
             Text(
               bay?.name ?? 'Unknown',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: isDark ? Colors.white : Colors.grey[900],
               ),
@@ -656,11 +653,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
             Text(
               '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 color: isDark ? Colors.white70 : Colors.grey[600],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -730,12 +727,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
     if (seriesList.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isDark ? Colors.grey[850] : Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+            color: isDark ? Colors.grey[700]! : Colors.grey[200]!,
           ),
         ),
         child: Column(
@@ -744,7 +741,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
             Text(
               bay?.name ?? 'Unknown',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: isDark ? Colors.white : Colors.grey[900],
               ),
@@ -752,11 +749,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
             Text(
               '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 color: isDark ? Colors.white70 : Colors.grey[600],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -767,7 +764,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                 children: [
                   Icon(
                     Icons.show_chart_outlined,
-                    color: isDark ? Colors.white70 : Colors.grey[600],
+                    color: isDark ? Colors.white70 : Colors.amber,
                     size: 18,
                   ),
                   const SizedBox(width: 8),
@@ -797,12 +794,13 @@ class _OverviewScreenState extends State<OverviewScreen> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[850] : Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          color: isDark ? Colors.grey[700]! : Colors.grey[200]!,
         ),
       ),
       child: Column(
@@ -810,27 +808,32 @@ class _OverviewScreenState extends State<OverviewScreen> {
         children: [
           Row(
             children: [
-              Text(
-                bay?.name ?? 'Unknown',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.grey[900],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      bay?.name ?? 'Unknown',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.grey[900],
+                      ),
+                    ),
+                    Text(
+                      '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white70 : Colors.grey[600],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '(${bay?.bayType ?? 'Unknown'} • ${bay?.voltageLevel ?? 'Unknown'})',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.white70 : Colors.grey[600],
-                ),
-              ),
-              const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  color: theme.colorScheme.primary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -844,7 +847,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 260),
             child: SfCartesianChart(
@@ -869,8 +872,9 @@ class _OverviewScreenState extends State<OverviewScreen> {
               series: seriesList,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _buildSummaryTable(theme, isDark, bayId, fields),
+          const Divider(height: 32),
         ],
       ),
     );
@@ -1335,7 +1339,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
         _entries.clear();
         _series.clear();
         _summaries.clear();
-        _errorMessage = null;
+        _error_dbg = null;
       });
     }
   }
@@ -1393,7 +1397,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
+      _error_dbg = null;
       _entries.clear();
       _series.clear();
       _summaries.clear();
@@ -1454,7 +1458,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
       if (all.isEmpty) {
         setState(() {
-          _errorMessage =
+          _error_dbg =
               'No logsheet entries found for the selected bays and time range.';
         });
         return;
@@ -1527,7 +1531,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to fetch data: $e';
+        _error_dbg = 'Failed to fetch data: $e';
       });
     } finally {
       if (mounted) {
