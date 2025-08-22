@@ -6,9 +6,9 @@ import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../utils/snackbar_utils.dart';
 import '../../widgets/modern_app_drawer.dart';
-
 import 'admin_hierarchy_screen.dart';
 import 'master_equipment_management_screen.dart';
+import 'upload_master_data.dart';
 import 'user_management_screen.dart';
 import 'reading_template_management_screen.dart';
 
@@ -579,6 +579,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         'icon': Icons.rule,
         'screen': const ReadingTemplateManagementScreen(),
         'color': Colors.purple,
+      },
+      {
+        'title': 'Upload Master Data',
+        'subtitle': 'Upload Vendor, Material, or Service data',
+        'icon': Icons.upload_file,
+        'screen': const UploadMasterDataScreen(),
+        'color': Colors.teal,
       },
     ];
   }

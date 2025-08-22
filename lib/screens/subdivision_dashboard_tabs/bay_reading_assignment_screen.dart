@@ -42,6 +42,8 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
   final Map<String, DateTime?> _dateFieldValues = {};
   final Map<String, String?> _dropdownFieldValues = {};
   final Map<String, TextEditingController> _booleanDescriptionControllers = {};
+  final Map<String, List<String>> _groupOptions =
+      {}; // For group type dropdown options
 
   final List<String> _dataTypes = ReadingFieldDataType.values
       .map((e) => e.toString().split('.').last)
@@ -77,6 +79,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
     setState(() => _isLoading = true);
 
     try {
+      // Fetch bay information
       final bayDoc = await FirebaseFirestore.instance
           .collection('bays')
           .doc(widget.bayId)
@@ -96,15 +99,18 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
         return;
       }
 
+      // Fetch available templates
       final templatesSnapshot = await FirebaseFirestore.instance
           .collection('readingTemplates')
           .where('bayType', isEqualTo: _bayType)
+          .where('isActive', isEqualTo: true) // Only fetch active templates
           .orderBy('createdAt', descending: true)
           .get();
       _availableReadingTemplates = templatesSnapshot.docs
           .map((doc) => ReadingTemplate.fromFirestore(doc))
           .toList();
 
+      // Check for existing assignment
       final existingAssignmentSnapshot = await FirebaseFirestore.instance
           .collection('bayReadingAssignments')
           .where('bayId', isEqualTo: widget.bayId)
@@ -116,6 +122,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
         _existingAssignmentId = existingDoc.id;
         final assignedData = existingDoc.data();
 
+        // Set reading start date
         if (assignedData.containsKey('readingStartDate') &&
             assignedData['readingStartDate'] != null) {
           _readingStartDate = (assignedData['readingStartDate'] as Timestamp)
@@ -124,14 +131,23 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
           _readingStartDate = DateTime.now();
         }
 
+        // Set selected template
         final existingTemplateId = assignedData['templateId'] as String?;
         if (existingTemplateId != null) {
           _selectedTemplate = _availableReadingTemplates.firstWhere(
             (template) => template.id == existingTemplateId,
-            orElse: () => _availableReadingTemplates.first,
+            orElse: () => _availableReadingTemplates.isNotEmpty
+                ? _availableReadingTemplates.first
+                : ReadingTemplate(
+                    bayType: _bayType!,
+                    readingFields: [],
+                    createdBy: widget.currentUser.uid,
+                    createdAt: Timestamp.now(),
+                  ),
           );
         }
 
+        // Load assigned fields
         final List<dynamic> assignedFieldsRaw =
             assignedData['assignedFields'] as List? ?? [];
         _instanceReadingFields.addAll(
@@ -139,13 +155,11 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
         );
         _initializeFieldControllers();
       } else {
+        // New assignment
         _readingStartDate = DateTime.now();
         if (_availableReadingTemplates.isNotEmpty) {
           _selectedTemplate = _availableReadingTemplates.first;
-          _instanceReadingFields.addAll(
-            _selectedTemplate!.readingFields.map((e) => e.toMap()).toList(),
-          );
-          _initializeFieldControllers();
+          _loadTemplateFields(_selectedTemplate!);
         }
       }
 
@@ -164,31 +178,69 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
     }
   }
 
+  void _loadTemplateFields(ReadingTemplate template) {
+    _instanceReadingFields.clear();
+    for (var field in template.readingFields) {
+      _addFieldToInstance(field, null);
+    }
+    _initializeFieldControllers();
+  }
+
+  void _addFieldToInstance(ReadingField field, String? parentGroupName) {
+    Map<String, dynamic> fieldMap = field.toMap();
+    if (parentGroupName != null) {
+      fieldMap['groupName'] = parentGroupName;
+    }
+    _instanceReadingFields.add(fieldMap);
+
+    // If this is a group field, add its nested fields
+    if (field.dataType == ReadingFieldDataType.group && field.hasNestedFields) {
+      for (var nestedField in field.nestedFields!) {
+        _addFieldToInstance(nestedField, field.name);
+      }
+    }
+  }
+
   void _initializeFieldControllers() {
     _textFieldControllers.clear();
     _booleanFieldValues.clear();
     _dateFieldValues.clear();
     _dropdownFieldValues.clear();
     _booleanDescriptionControllers.clear();
+    _groupOptions.clear();
 
     for (var fieldMap in _instanceReadingFields) {
       final String fieldName = fieldMap['name'] as String;
       final String dataType = fieldMap['dataType'] as String;
 
-      if (dataType == 'text' || dataType == 'number') {
-        _textFieldControllers[fieldName] = TextEditingController(
-          text: fieldMap['value']?.toString() ?? '',
-        );
-      } else if (dataType == 'boolean') {
-        _booleanFieldValues[fieldName] = fieldMap['value'] as bool? ?? false;
-        _booleanDescriptionControllers[fieldName] = TextEditingController(
-          text: fieldMap['description_remarks']?.toString() ?? '',
-        );
-      } else if (dataType == 'date') {
-        _dateFieldValues[fieldName] = (fieldMap['value'] as Timestamp?)
-            ?.toDate();
-      } else if (dataType == 'dropdown') {
-        _dropdownFieldValues[fieldName] = fieldMap['value']?.toString();
+      switch (dataType) {
+        case 'text':
+        case 'number':
+          _textFieldControllers[fieldName] = TextEditingController(
+            text: fieldMap['value']?.toString() ?? '',
+          );
+          break;
+        case 'boolean':
+          _booleanFieldValues[fieldName] = fieldMap['value'] as bool? ?? false;
+          _booleanDescriptionControllers[fieldName] = TextEditingController(
+            text: fieldMap['description_remarks']?.toString() ?? '',
+          );
+          break;
+        case 'date':
+          _dateFieldValues[fieldName] = fieldMap['value'] != null
+              ? (fieldMap['value'] as Timestamp).toDate()
+              : null;
+          break;
+        case 'dropdown':
+          _dropdownFieldValues[fieldName] = fieldMap['value']?.toString();
+          break;
+        case 'group':
+          final List<String> options = List<String>.from(
+            fieldMap['options'] ?? [],
+          );
+          _groupOptions[fieldName] = options;
+          _dropdownFieldValues[fieldName] = fieldMap['value']?.toString();
+          break;
       }
     }
   }
@@ -197,45 +249,55 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
     if (template == null) return;
     setState(() {
       _selectedTemplate = template;
-      _instanceReadingFields.clear();
-      _textFieldControllers.clear();
-      _booleanFieldValues.clear();
-      _dateFieldValues.clear();
-      _dropdownFieldValues.clear();
-      _booleanDescriptionControllers.clear();
-
-      for (var field in template.readingFields) {
-        _instanceReadingFields.add(field.toMap());
-      }
-
-      _initializeFieldControllers();
+      _clearAllControllers();
+      _loadTemplateFields(template);
     });
+  }
+
+  void _clearAllControllers() {
+    _textFieldControllers.forEach((key, controller) => controller.dispose());
+    _booleanDescriptionControllers.forEach(
+      (key, controller) => controller.dispose(),
+    );
+    _textFieldControllers.clear();
+    _booleanFieldValues.clear();
+    _dateFieldValues.clear();
+    _dropdownFieldValues.clear();
+    _booleanDescriptionControllers.clear();
+    _groupOptions.clear();
   }
 
   void _addInstanceReadingField() {
     setState(() {
-      _instanceReadingFields.add({
+      final newField = {
         'name': '',
         'dataType': ReadingFieldDataType.text.toString().split('.').last,
         'unit': '',
-        'options': [],
+        'options': <String>[],
         'isMandatory': false,
         'frequency': ReadingFrequency.daily.toString().split('.').last,
         'description_remarks': '',
-      });
+        'nestedFields': null,
+        'groupName': null,
+      };
+      _instanceReadingFields.add(newField);
     });
   }
 
   void _removeInstanceReadingField(int index) {
+    if (index < 0 || index >= _instanceReadingFields.length) return;
+
     setState(() {
-      final fieldName = _instanceReadingFields[index]['name'];
+      final fieldName = _instanceReadingFields[index]['name'] as String;
       _instanceReadingFields.removeAt(index);
 
+      // Clean up controllers
       _textFieldControllers.remove(fieldName)?.dispose();
       _booleanFieldValues.remove(fieldName);
       _dateFieldValues.remove(fieldName);
       _dropdownFieldValues.remove(fieldName);
       _booleanDescriptionControllers.remove(fieldName)?.dispose();
+      _groupOptions.remove(fieldName);
     });
   }
 
@@ -264,25 +326,36 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
 
     try {
       final List<Map<String, dynamic>> finalAssignedFields = [];
+
       for (var fieldMap in _instanceReadingFields) {
         final String fieldName = fieldMap['name'] as String;
         final String dataType = fieldMap['dataType'] as String;
 
+        if (fieldName.trim().isEmpty) continue; // Skip empty field names
+
         Map<String, dynamic> currentFieldData = Map.from(fieldMap);
 
-        if (dataType == 'text' || dataType == 'number') {
-          currentFieldData['value'] = _textFieldControllers[fieldName]?.text
-              .trim();
-        } else if (dataType == 'boolean') {
-          currentFieldData['value'] = _booleanFieldValues[fieldName];
-          currentFieldData['description_remarks'] =
-              _booleanDescriptionControllers[fieldName]?.text.trim();
-        } else if (dataType == 'date') {
-          currentFieldData['value'] = _dateFieldValues[fieldName] != null
-              ? Timestamp.fromDate(_dateFieldValues[fieldName]!)
-              : null;
-        } else if (dataType == 'dropdown') {
-          currentFieldData['value'] = _dropdownFieldValues[fieldName];
+        // Set field values based on data type
+        switch (dataType) {
+          case 'text':
+          case 'number':
+            final value = _textFieldControllers[fieldName]?.text.trim();
+            currentFieldData['value'] = value;
+            break;
+          case 'boolean':
+            currentFieldData['value'] = _booleanFieldValues[fieldName] ?? false;
+            currentFieldData['description_remarks'] =
+                _booleanDescriptionControllers[fieldName]?.text.trim();
+            break;
+          case 'date':
+            currentFieldData['value'] = _dateFieldValues[fieldName] != null
+                ? Timestamp.fromDate(_dateFieldValues[fieldName]!)
+                : null;
+            break;
+          case 'dropdown':
+          case 'group':
+            currentFieldData['value'] = _dropdownFieldValues[fieldName];
+            break;
         }
 
         finalAssignedFields.add(currentFieldData);
@@ -296,9 +369,12 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
         'readingStartDate': Timestamp.fromDate(_readingStartDate!),
         'recordedBy': widget.currentUser.uid,
         'recordedAt': FieldValue.serverTimestamp(),
+        'isActive': true,
+        'totalFields': finalAssignedFields.length,
       };
 
       if (_existingAssignmentId == null) {
+        // Create new assignment
         await FirebaseFirestore.instance
             .collection('bayReadingAssignments')
             .add(assignmentData);
@@ -309,6 +385,8 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
           );
         }
       } else {
+        // Update existing assignment
+        assignmentData['updatedAt'] = FieldValue.serverTimestamp();
         await FirebaseFirestore.instance
             .collection('bayReadingAssignments')
             .doc(_existingAssignmentId)
@@ -366,6 +444,18 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
     }
   }
 
+  Future<void> _selectDateForField(String fieldName) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _dateFieldValues[fieldName] ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => _dateFieldValues[fieldName] = picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -400,7 +490,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
     }
 
     return Scaffold(
-      backgroundColor: isDarkMode ? Colors.grey[900] : Colors.grey[50],
+      backgroundColor: isDarkMode ? Colors.grey[900] : Colors.grey,
       appBar: _buildAppBar(theme, isDarkMode),
       body: CustomScrollView(
         slivers: [
@@ -419,6 +509,9 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                     const SizedBox(height: 16),
                     _buildFieldsSection(theme, isDarkMode),
                   ],
+                  const SizedBox(
+                    height: 80,
+                  ), // Space for floating action button
                 ],
               ),
             ),
@@ -479,7 +572,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
           color: isDarkMode ? Colors.grey[850] : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
           ),
         ),
         child: Row(
@@ -521,6 +614,22 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                 ],
               ),
             ),
+            if (_existingAssignmentId != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Updating',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.secondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -538,7 +647,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
             color: isDarkMode ? Colors.grey[850] : Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+              color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
             ),
           ),
           child: Row(
@@ -603,7 +712,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
           color: isDarkMode ? Colors.grey[850] : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+            color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
           ),
         ),
         child: Column(
@@ -624,14 +733,35 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Reading Template',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: isDarkMode ? Colors.white : Colors.grey[900],
+                Expanded(
+                  child: Text(
+                    'Reading Template',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.grey[900],
+                    ),
                   ),
                 ),
+                if (_availableReadingTemplates.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${_availableReadingTemplates.length} available',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -680,17 +810,17 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(
-                      color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                      color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(
-                      color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                      color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                     ),
                   ),
                   filled: true,
-                  fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                  fillColor: isDarkMode ? Colors.grey : Colors.grey,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 12,
@@ -706,7 +836,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          template.bayType,
+                          '${template.bayType} - ${template.totalFieldCount} fields',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
@@ -714,6 +844,18 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (template.description != null &&
+                            template.description!.isNotEmpty)
+                          Text(
+                            template.description!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDarkMode
+                                  ? Colors.white70
+                                  : Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                       ],
                     ),
                   );
@@ -735,7 +877,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
         color: isDarkMode ? Colors.grey[850] : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+          color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
         ),
       ),
       child: Form(
@@ -790,24 +932,59 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               ],
             ),
             const SizedBox(height: 16),
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _instanceReadingFields.length,
-              separatorBuilder: (context, index) => const Divider(height: 24),
-              itemBuilder: (context, index) {
-                return AnimatedSize(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  child: _buildReadingFieldDefinitionInput(
-                    _instanceReadingFields[index],
-                    index,
-                    theme,
-                    isDarkMode,
-                  ),
-                );
-              },
-            ),
+            if (_instanceReadingFields.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDarkMode ? Colors.grey[800] : Colors.grey,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.inbox,
+                      size: 48,
+                      color: isDarkMode ? Colors.grey[600] : Colors.grey[400],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No fields configured',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: isDarkMode ? Colors.grey[400] : Colors.grey,
+                      ),
+                    ),
+                    Text(
+                      'Select a template or add custom fields',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDarkMode ? Colors.grey[500] : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _instanceReadingFields.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 16),
+                itemBuilder: (context, index) {
+                  return AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: _buildReadingFieldDefinitionInput(
+                      _instanceReadingFields[index],
+                      index,
+                      theme,
+                      isDarkMode,
+                    ),
+                  );
+                },
+              ),
             if (widget.currentUser.role == UserRole.admin ||
                 widget.currentUser.role == UserRole.subdivisionManager) ...[
               const SizedBox(height: 16),
@@ -861,17 +1038,16 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
     final String? groupName = fieldDef['groupName'] as String?;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
-        ),
+        color: isDarkMode ? Colors.grey[800] : Colors.grey,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isDarkMode ? Colors.grey! : Colors.grey!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header Row
           Row(
             children: [
               Container(
@@ -905,7 +1081,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (groupName != null)
+                    if (groupName != null && groupName.isNotEmpty)
                       Container(
                         margin: const EdgeInsets.only(top: 4),
                         padding: const EdgeInsets.symmetric(
@@ -913,11 +1089,11 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.secondary.withOpacity(0.2),
+                          color: theme.colorScheme.secondary.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          groupName,
+                          'Group: $groupName',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
@@ -963,11 +1139,13 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+
+          // Field Name Input
           TextFormField(
             initialValue: currentFieldName,
             decoration: InputDecoration(
-              labelText: 'Field Name',
+              labelText: 'Field Name *',
               labelStyle: TextStyle(
                 color: isDarkMode ? Colors.white70 : Colors.grey[700],
                 fontSize: 14,
@@ -978,24 +1156,23 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                 size: 18,
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(
-                  color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                 ),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(
-                  color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                  color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                 ),
               ),
               filled: true,
-              fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+              fillColor: isDarkMode ? Colors.grey : Colors.white,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
-                vertical: 12,
+                vertical: 16,
               ),
-              isDense: true,
             ),
             style: TextStyle(
               fontSize: 14,
@@ -1003,25 +1180,34 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
             ),
             onChanged: (value) {
               setState(() {
+                final oldName = fieldDef['name'];
                 fieldDef['name'] = value;
-                if (_textFieldControllers.containsKey(currentFieldName)) {
-                  _textFieldControllers[value] = _textFieldControllers.remove(
-                    currentFieldName,
-                  )!;
+
+                // Update controller keys if needed
+                if (_textFieldControllers.containsKey(oldName)) {
+                  final controller = _textFieldControllers.remove(oldName);
+                  if (controller != null) {
+                    _textFieldControllers[value] = controller;
+                  }
                 }
-                if (_booleanDescriptionControllers.containsKey(
-                  currentFieldName,
-                )) {
-                  _booleanDescriptionControllers[value] =
-                      _booleanDescriptionControllers.remove(currentFieldName)!;
+                if (_booleanDescriptionControllers.containsKey(oldName)) {
+                  final controller = _booleanDescriptionControllers.remove(
+                    oldName,
+                  );
+                  if (controller != null) {
+                    _booleanDescriptionControllers[value] = controller;
+                  }
                 }
               });
             },
             validator: (value) => value == null || value.trim().isEmpty
-                ? 'Field name required'
+                ? 'Field name is required'
                 : null,
           ),
+
           const SizedBox(height: 12),
+
+          // Data Type and Frequency Row
           Row(
             children: [
               Expanded(
@@ -1034,28 +1220,23 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                       fontSize: 14,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: isDarkMode
-                            ? Colors.grey[700]!
-                            : Colors.grey[300]!,
+                        color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: isDarkMode
-                            ? Colors.grey[700]!
-                            : Colors.grey[300]!,
+                        color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                       ),
                     ),
                     filled: true,
-                    fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                    fillColor: isDarkMode ? Colors.grey[850] : Colors.white,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,
-                      vertical: 12,
+                      vertical: 16,
                     ),
-                    isDense: true,
                   ),
                   dropdownColor: isDarkMode ? Colors.grey[850] : Colors.white,
                   isExpanded: true,
@@ -1090,9 +1271,23 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   onChanged: (value) {
                     setState(() {
                       fieldDef['dataType'] = value!;
-                      fieldDef['options'] = [];
+                      fieldDef['options'] = <String>[];
                       fieldDef['unit'] = '';
                       fieldDef['description_remarks'] = '';
+
+                      // Clear old controllers
+                      final fieldName = fieldDef['name'] as String;
+                      _textFieldControllers.remove(fieldName)?.dispose();
+                      _booleanDescriptionControllers
+                          .remove(fieldName)
+                          ?.dispose();
+                      _booleanFieldValues.remove(fieldName);
+                      _dateFieldValues.remove(fieldName);
+                      _dropdownFieldValues.remove(fieldName);
+                      _groupOptions.remove(fieldName);
+
+                      // Initialize new controllers based on type
+                      _initializeFieldController(fieldName, value);
                     });
                   },
                 ),
@@ -1113,28 +1308,23 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                       size: 18,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: isDarkMode
-                            ? Colors.grey[700]!
-                            : Colors.grey[300]!,
+                        color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: isDarkMode
-                            ? Colors.grey[700]!
-                            : Colors.grey[300]!,
+                        color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                       ),
                     ),
                     filled: true,
-                    fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                    fillColor: isDarkMode ? Colors.grey[850] : Colors.white,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,
-                      vertical: 12,
+                      vertical: 16,
                     ),
-                    isDense: true,
                   ),
                   dropdownColor: isDarkMode ? Colors.grey[850] : Colors.white,
                   isExpanded: true,
@@ -1157,12 +1347,14 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               ),
             ],
           ),
-          if (currentDataType == 'dropdown') ...[
+
+          // Type-specific inputs
+          if (currentDataType == 'dropdown' || currentDataType == 'group') ...[
             const SizedBox(height: 12),
             TextFormField(
               initialValue: currentOptions.join(', '),
               decoration: InputDecoration(
-                labelText: 'Options (comma-separated)',
+                labelText: 'Options (comma-separated) *',
                 labelStyle: TextStyle(
                   color: isDarkMode ? Colors.white70 : Colors.grey[700],
                   fontSize: 14,
@@ -1177,42 +1369,63 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   size: 18,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(
-                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(
-                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                   ),
                 ),
                 filled: true,
-                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                fillColor: isDarkMode ? Colors.grey : Colors.white,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 12,
+                  vertical: 16,
                 ),
-                isDense: true,
               ),
               style: TextStyle(
                 fontSize: 14,
                 color: isDarkMode ? Colors.white : Colors.grey[900],
               ),
-              onChanged: (value) => fieldDef['options'] = value
-                  .split(',')
-                  .map((e) => e.trim())
-                  .where((e) => e.isNotEmpty)
-                  .toList(),
+              onChanged: (value) {
+                final options = value
+                    .split(',')
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList();
+                setState(() {
+                  fieldDef['options'] = options;
+                  if (currentDataType == 'group') {
+                    _groupOptions[currentFieldName] = options;
+                  }
+                });
+              },
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Options are required for ${currentDataType} fields';
+                }
+                final options = value
+                    .split(',')
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList();
+                return options.isEmpty
+                    ? 'At least one option is required'
+                    : null;
+              },
             ),
           ],
+
           if (currentDataType == 'number') ...[
             const SizedBox(height: 12),
             TextFormField(
               initialValue: currentUnit,
               decoration: InputDecoration(
-                labelText: 'Unit (e.g., V, A, kW)',
+                labelText: 'Unit (e.g., V, A, kW, °C)',
                 labelStyle: TextStyle(
                   color: isDarkMode ? Colors.white70 : Colors.grey[700],
                   fontSize: 14,
@@ -1223,24 +1436,23 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   size: 18,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(
-                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(
-                    color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
                   ),
                 ),
                 filled: true,
-                fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                fillColor: isDarkMode ? Colors.grey : Colors.white,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 12,
+                  vertical: 16,
                 ),
-                isDense: true,
               ),
               style: TextStyle(
                 fontSize: 14,
@@ -1249,7 +1461,54 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               onChanged: (value) => fieldDef['unit'] = value,
             ),
           ],
-          const SizedBox(height: 8),
+
+          if (currentDataType == 'boolean') ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: fieldDef['description_remarks']?.toString() ?? '',
+              decoration: InputDecoration(
+                labelText: 'Description/Remarks',
+                labelStyle: TextStyle(
+                  color: isDarkMode ? Colors.white70 : Colors.grey[700],
+                  fontSize: 14,
+                ),
+                hintText: 'Additional context for this boolean field',
+                prefixIcon: Icon(
+                  Icons.notes,
+                  color: theme.colorScheme.primary,
+                  size: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: isDarkMode ? Colors.grey[700]! : Colors.grey!,
+                  ),
+                ),
+                filled: true,
+                fillColor: isDarkMode ? Colors.grey : Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
+              ),
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode ? Colors.white : Colors.grey[900],
+              ),
+              maxLines: 2,
+              onChanged: (value) => fieldDef['description_remarks'] = value,
+            ),
+          ],
+
+          const SizedBox(height: 12),
+
+          // Mandatory checkbox
           Theme(
             data: theme.copyWith(
               checkboxTheme: CheckboxThemeData(
@@ -1261,7 +1520,7 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                   if (states.contains(WidgetState.selected)) {
                     return theme.colorScheme.primary;
                   }
-                  return isDarkMode ? Colors.grey[700] : Colors.grey[300];
+                  return isDarkMode ? Colors.grey[700] : Colors.grey;
                 }),
               ),
             ),
@@ -1270,7 +1529,15 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
                 'Mandatory Field',
                 style: TextStyle(
                   fontSize: 14,
+                  fontWeight: FontWeight.w500,
                   color: isDarkMode ? Colors.white : Colors.grey[900],
+                ),
+              ),
+              subtitle: Text(
+                'Users must provide a value for this field',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDarkMode ? Colors.white60 : Colors.grey[600],
                 ),
               ),
               value: currentIsMandatory,
@@ -1279,24 +1546,265 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
               dense: true,
-              visualDensity: VisualDensity.compact,
             ),
+          ),
+
+          // Current field value display/input based on type
+          _buildFieldValueInput(fieldDef, theme, isDarkMode),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFieldValueInput(
+    Map<String, dynamic> fieldDef,
+    ThemeData theme,
+    bool isDarkMode,
+  ) {
+    final String fieldName = fieldDef['name'] as String;
+    final String dataType = fieldDef['dataType'] as String;
+
+    if (fieldName.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.edit_note, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Current Value',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildFieldValueWidget(
+            fieldName,
+            dataType,
+            fieldDef,
+            theme,
+            isDarkMode,
           ),
         ],
       ),
     );
   }
 
+  Widget _buildFieldValueWidget(
+    String fieldName,
+    String dataType,
+    Map<String, dynamic> fieldDef,
+    ThemeData theme,
+    bool isDarkMode,
+  ) {
+    switch (dataType) {
+      case 'text':
+        return TextFormField(
+          controller: _textFieldControllers[fieldName],
+          decoration: InputDecoration(
+            hintText: 'Enter text value',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            isDense: true,
+          ),
+          style: const TextStyle(fontSize: 14),
+        );
+
+      case 'number':
+        final unit = fieldDef['unit'] as String? ?? '';
+        return TextFormField(
+          controller: _textFieldControllers[fieldName],
+          decoration: InputDecoration(
+            hintText: 'Enter numeric value',
+            suffixText: unit.isNotEmpty ? unit : null,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            isDense: true,
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(fontSize: 14),
+          validator: (value) {
+            if (fieldDef['isMandatory'] == true &&
+                (value == null || value.trim().isEmpty)) {
+              return 'This field is required';
+            }
+            if (value != null &&
+                value.isNotEmpty &&
+                double.tryParse(value) == null) {
+              return 'Please enter a valid number';
+            }
+            return null;
+          },
+        );
+
+      case 'boolean':
+        return Column(
+          children: [
+            SwitchListTile(
+              title: Text(
+                _booleanFieldValues[fieldName] == true ? 'Yes' : 'No',
+                style: const TextStyle(fontSize: 14),
+              ),
+              value: _booleanFieldValues[fieldName] ?? false,
+              onChanged: (value) =>
+                  setState(() => _booleanFieldValues[fieldName] = value),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+            if (_booleanDescriptionControllers[fieldName] != null)
+              TextFormField(
+                controller: _booleanDescriptionControllers[fieldName],
+                decoration: InputDecoration(
+                  hintText: 'Add description/remarks',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  isDense: true,
+                ),
+                style: const TextStyle(fontSize: 14),
+                maxLines: 2,
+              ),
+          ],
+        );
+
+      case 'date':
+        final currentDate = _dateFieldValues[fieldName];
+        return GestureDetector(
+          onTap: () => _selectDateForField(fieldName),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  currentDate != null
+                      ? DateFormat('MMM dd, yyyy').format(currentDate)
+                      : 'Select date',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: currentDate != null
+                        ? (isDarkMode ? Colors.white : Colors.black)
+                        : Colors.grey[600],
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
+              ],
+            ),
+          ),
+        );
+
+      case 'dropdown':
+      case 'group':
+        final options = List<String>.from(fieldDef['options'] ?? []);
+        if (options.isEmpty) {
+          return Text(
+            'No options configured',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          );
+        }
+        return DropdownButtonFormField<String>(
+          value: _dropdownFieldValues[fieldName],
+          decoration: InputDecoration(
+            hintText: 'Select option',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            isDense: true,
+          ),
+          isExpanded: true,
+          items: options.map((option) {
+            return DropdownMenuItem(
+              value: option,
+              child: Text(option, style: const TextStyle(fontSize: 14)),
+            );
+          }).toList(),
+          onChanged: (value) =>
+              setState(() => _dropdownFieldValues[fieldName] = value),
+          validator: (value) {
+            if (fieldDef['isMandatory'] == true && value == null) {
+              return 'Please select an option';
+            }
+            return null;
+          },
+        );
+
+      default:
+        return const Text(
+          'Unsupported field type',
+          style: TextStyle(fontSize: 14),
+        );
+    }
+  }
+
+  void _initializeFieldController(String fieldName, String dataType) {
+    switch (dataType) {
+      case 'text':
+      case 'number':
+        _textFieldControllers[fieldName] = TextEditingController();
+        break;
+      case 'boolean':
+        _booleanFieldValues[fieldName] = false;
+        _booleanDescriptionControllers[fieldName] = TextEditingController();
+        break;
+      case 'date':
+        _dateFieldValues[fieldName] = null;
+        break;
+      case 'dropdown':
+      case 'group':
+        _dropdownFieldValues[fieldName] = null;
+        break;
+    }
+  }
+
   Widget _buildActionButton(ThemeData theme, bool isDarkMode) {
+    final bool canSave = _selectedTemplate != null && !_isSaving;
+
     return FloatingActionButton.extended(
-      onPressed: _selectedTemplate != null && !_isSaving
-          ? _saveAssignment
-          : null,
-      backgroundColor: _isSaving || _selectedTemplate == null
-          ? Colors.grey[400]
-          : theme.colorScheme.primary,
-      elevation: 2,
+      onPressed: canSave ? _saveAssignment : null,
+      backgroundColor: canSave ? theme.colorScheme.primary : Colors.grey[400],
+      elevation: canSave ? 2 : 0,
       label: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           if (_isSaving)
             const SizedBox(
@@ -1343,6 +1851,8 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
         return theme.colorScheme.tertiary;
       case 'dropdown':
         return Colors.teal;
+      case 'group':
+        return Colors.purple;
       default:
         return Colors.grey;
     }
@@ -1360,6 +1870,8 @@ class _BayReadingAssignmentScreenState extends State<BayReadingAssignmentScreen>
         return Icons.calendar_today;
       case 'dropdown':
         return Icons.arrow_drop_down_circle;
+      case 'group':
+        return Icons.group_work;
       default:
         return Icons.help;
     }

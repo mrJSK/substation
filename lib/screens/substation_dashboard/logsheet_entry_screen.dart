@@ -48,6 +48,12 @@ class _EquipmentIcon extends StatelessWidget {
       case 'reactor':
         child = Icon(Icons.device_hub, size: size, color: color);
         break;
+      case 'battery':
+        child = Icon(Icons.battery_std, size: size, color: color);
+        break;
+      case 'bus coupler':
+        child = Icon(Icons.power_settings_new, size: size, color: color);
+        break;
       default:
         child = Icon(Icons.electrical_services, size: size, color: color);
     }
@@ -96,7 +102,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
   bool _isSaving = false;
   late AnimationController _animationController;
 
-  // 🔧 FIX: Add reading state tracking
   bool _hasExistingReading = false;
   bool _isReadOnlyDueToExistingReading = false;
 
@@ -137,7 +142,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     super.dispose();
   }
 
-  // 🔧 FIX: Check permission to modify existing readings
   bool _canModifyExistingReading() {
     return [
       UserRole.admin,
@@ -152,12 +156,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     setState(() => _isLoading = true);
 
     try {
-      // ✅ USE CACHE - No Firebase queries!
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Get bay data from cache
       final bayData = _cache.getBayById(widget.bayId);
       if (bayData == null) {
         throw Exception('Bay not found in cache');
@@ -165,33 +167,23 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
       _currentBay = bayData.bay;
 
-      // Get reading fields for this frequency
       _filteredReadingFields = bayData.getReadingFields(
         widget.frequency,
         mandatoryOnly: false,
       );
 
-      // Get existing reading from cache
       _existingLogsheetEntry = bayData.getReading(
         widget.readingDate,
         widget.frequency,
         hour: widget.readingHour,
       );
 
-      // 🔧 FIX: Set reading state
       _hasExistingReading = _existingLogsheetEntry != null;
-
-      // 🔧 FIX: Determine if should be read-only
       _isReadOnlyDueToExistingReading =
           _hasExistingReading &&
           !_canModifyExistingReading() &&
           !widget.forceReadOnly;
 
-      print(
-        '📊 Reading exists: $_hasExistingReading, Read-only: $_isReadOnlyDueToExistingReading',
-      );
-
-      // Get previous reading for auto-populate from cache
       final previousDate = _calculatePreviousDate();
       _previousLogsheetEntry = bayData.getReading(
         previousDate,
@@ -199,15 +191,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         hour: widget.readingHour,
       );
 
-      // Check if this is first data entry
       _isFirstDataEntryForThisBayFrequency =
           _existingLogsheetEntry == null && _previousLogsheetEntry == null;
-
       _initializeReadingFieldControllers();
-
-      print('✅ Loaded logsheet data from cache for bay: ${_currentBay!.name}');
     } catch (e) {
-      print("Error initializing screen data: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -254,7 +241,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
   }
 
   void _initializeReadingFieldControllers() {
-    // Dispose existing controllers
     _readingTextFieldControllers.forEach(
       (key, controller) => controller.dispose(),
     );
@@ -262,7 +248,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       (key, controller) => controller.dispose(),
     );
 
-    // Clear all maps
     _readingTextFieldControllers.clear();
     _readingBooleanFieldValues.clear();
     _readingDateFieldValues.clear();
@@ -278,10 +263,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     for (var field in _filteredReadingFields) {
       final fieldName = field.name;
       final dataType = field.dataType.toString().split('.').last;
-
       dynamic value = existingValues[fieldName];
 
-      // Auto-populate logic for new entries
       if (_existingLogsheetEntry == null) {
         if (fieldName.startsWith('Previous Day Reading')) {
           if (autoPopulateMap.containsKey(fieldName)) {
@@ -308,7 +291,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         }
       }
 
-      // Initialize controllers based on data type
       if (dataType == 'text' || dataType == 'number') {
         _readingTextFieldControllers[fieldName] = TextEditingController(
           text: value?.toString() ?? '',
@@ -334,7 +316,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     }
   }
 
-  // 🔧 FIX: Enhanced save method with better error handling and cache sync
   Future<void> _saveLogsheetEntry() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -352,7 +333,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       return;
     }
 
-    // 🔧 FIX: Prevent saving if reading already exists and user doesn't have permission
     if (_hasExistingReading && !_canModifyExistingReading()) {
       SnackBarUtils.showSnackBar(
         context,
@@ -422,7 +402,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
       final logsheetData = LogsheetEntry(
         bayId: widget.bayId,
-        templateId: 'CACHE_TEMPLATE', // Using cache-based template ID
+        templateId: 'CACHE_TEMPLATE',
         readingTimestamp: Timestamp.fromDate(entryTimestamp),
         recordedBy: widget.currentUser.uid,
         recordedAt: Timestamp.now(),
@@ -434,57 +414,36 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       );
 
       if (_existingLogsheetEntry == null) {
-        // Create new entry
-        print('🔄 Saving new entry for bay: ${widget.bayId}');
-
         final docRef = await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .add(logsheetData.toFirestore());
 
-        // ✅ UPDATE CACHE
         final savedEntry = logsheetData.copyWith(id: docRef.id);
         _cache.updateBayReading(widget.bayId, savedEntry);
-
-        // 🔧 FIX: Force cache refresh to ensure consistency
         await _cache.refreshBayData(widget.bayId);
-
-        print('✅ Entry saved and cache updated');
 
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Reading saved successfully!');
-          Navigator.of(
-            context,
-          ).pop(true); // Return true to indicate data was saved
+          Navigator.of(context).pop(true);
         }
       } else {
-        // Update existing entry
-        print('🔄 Updating existing entry for bay: ${widget.bayId}');
-
         await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .doc(_existingLogsheetEntry!.id)
             .update(logsheetData.toFirestore());
 
-        // ✅ UPDATE CACHE
         final updatedEntry = logsheetData.copyWith(
           id: _existingLogsheetEntry!.id,
         );
         _cache.updateBayReading(widget.bayId, updatedEntry);
-
-        // 🔧 FIX: Force cache refresh to ensure consistency
         await _cache.refreshBayData(widget.bayId);
-
-        print('✅ Entry updated and cache refreshed');
 
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Reading updated successfully!');
-          Navigator.of(
-            context,
-          ).pop(true); // Return true to indicate data was saved
+          Navigator.of(context).pop(true);
         }
       }
     } catch (e) {
-      print("❌ Error saving logsheet entry: $e");
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -499,8 +458,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
   Future<String?> _showModificationReasonDialog() async {
     if (widget.currentUser.role != UserRole.subdivisionManager ||
-        _existingLogsheetEntry == null)
+        _existingLogsheetEntry == null) {
       return "Initial Entry";
+    }
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -598,7 +558,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       isMandatory = false;
     }
 
-    // 🔧 FIX: Updated read-only logic
     final bool isReadOnly =
         widget.forceReadOnly ||
         _isReadOnlyDueToExistingReading ||
@@ -625,7 +584,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             offset: const Offset(0, 2),
           ),
         ],
-        // 🔧 FIX: Add border for read-only fields
         border: isReadOnly
             ? Border.all(color: Colors.grey.withOpacity(0.3), width: 1)
             : null,
@@ -702,7 +660,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           ),
                         ),
                       ),
-                      // 🔧 FIX: Add read-only indicator
                       if (isReadOnly)
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -783,10 +740,39 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                     .withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: _EquipmentIcon(
-                type: _currentBay?.bayType ?? dataType,
-                color: isReadOnly ? Colors.grey : theme.colorScheme.primary,
-                size: 20,
+              child: Stack(
+                children: [
+                  Center(
+                    child: _EquipmentIcon(
+                      type: _currentBay?.bayType ?? dataType,
+                      color: isReadOnly
+                          ? Colors.grey
+                          : theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                  ),
+                  // 🔥 Add integer badge for integer-only fields
+                  if (field.isInteger)
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          'INT',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(width: 16),
@@ -797,13 +783,42 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          fieldName + (isMandatory ? ' *' : ''),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: isDarkMode ? Colors.white : Colors.black87,
-                          ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                fieldName + (isMandatory ? ' *' : ''),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
+                              ),
+                            ),
+                            // 🔥 Add integer indicator badge
+                            if (field.isInteger)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Integers Only',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       if (isReadOnly)
@@ -840,9 +855,13 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                     decoration: InputDecoration(
                       hintText: isReadOnly
                           ? 'Value saved'
-                          : unit != null && unit.isNotEmpty
-                          ? 'Enter value in $unit'
-                          : 'Enter numerical value',
+                          : field.isInteger
+                          ? (unit != null && unit.isNotEmpty
+                                ? 'Enter whole number in $unit (e.g., 1, 2, 3)'
+                                : 'Enter whole number (e.g., 1, 2, 3)')
+                          : (unit != null && unit.isNotEmpty
+                                ? 'Enter value in $unit'
+                                : 'Enter numerical value'),
                       hintStyle: TextStyle(
                         color: isDarkMode
                             ? Colors.white.withOpacity(0.5)
@@ -866,19 +885,48 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                               color: Colors.grey.shade600,
                               size: 16,
                             )
-                          : null,
+                          : (field.isInteger
+                                ? Icon(
+                                    Icons.tag,
+                                    color: Colors.orange.shade700,
+                                    size: 16,
+                                  )
+                                : null),
                     ),
-                    keyboardType: TextInputType.number,
+                    // 🔥 Use appropriate keyboard type based on isInteger flag
+                    keyboardType: field.isInteger
+                        ? TextInputType.number
+                        : const TextInputType.numberWithOptions(decimal: true),
                     validator: (value) {
                       if (validator != null && validator(value) != null) {
                         return validator(value);
                       }
-                      if (value!.isNotEmpty && double.tryParse(value) == null) {
-                        return 'Enter a valid number for $fieldName';
+                      if (value != null && value.isNotEmpty) {
+                        // 🔥 Enhanced validation using ReadingField's validation method
+                        final validationError = field.getValidationError(value);
+                        if (validationError != null) {
+                          return validationError;
+                        }
                       }
                       return null;
                     },
                   ),
+                  // 🔥 Add range information for number fields
+                  if (field.minRange != null || field.maxRange != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      field.isInteger
+                          ? 'Range: ${field.minRange?.toInt() ?? '∞'} to ${field.maxRange?.toInt() ?? '∞'} (integers only)'
+                          : 'Range: ${field.minRange ?? '∞'} to ${field.maxRange ?? '∞'}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey.shade600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1157,6 +1205,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         break;
 
       case 'dropdown':
+      case 'group':
         fieldWidget = Row(
           children: [
             Container(
@@ -1211,6 +1260,27 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                         ),
                     ],
                   ),
+                  if (field.groupName != null) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Group: ${field.groupName}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.secondary,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     value: _readingDropdownFieldValues[fieldName],
@@ -1240,7 +1310,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                             )
                           : null,
                     ),
-                    items: options!
+                    items: (options ?? [])
                         .map(
                           (option) => DropdownMenuItem<String>(
                             value: option,
@@ -1280,7 +1350,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    super.build(context);
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -1292,7 +1362,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       slotTitle += ' - Daily Reading';
     }
 
-    // 🔧 FIX: Updated read-only logic
     final bool isReadOnlyView =
         widget.forceReadOnly ||
         _isReadOnlyDueToExistingReading ||
@@ -1307,7 +1376,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         title: Text(
-          // 🔧 FIX: Dynamic title based on reading state
           _hasExistingReading
               ? 'View Reading Details'
               : _currentBay?.name ?? 'Reading Entry',
@@ -1325,7 +1393,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
           onPressed: () => Navigator.pop(context, false),
         ),
         actions: [
-          // 🔧 FIX: Enhanced status indicators
           if (_hasExistingReading)
             Container(
               margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
@@ -1395,7 +1462,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             )
           : Column(
               children: [
-                // 🔧 FIX: Add warning banner for existing readings
                 if (_hasExistingReading)
                   Container(
                     width: double.infinity,
@@ -1438,8 +1504,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       ],
                     ),
                   ),
-
-                // Header
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -1554,8 +1618,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                     ],
                   ),
                 ),
-
-                // Content
                 Expanded(
                   child: _filteredReadingFields.isEmpty
                       ? Center(
@@ -1657,7 +1719,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                   _filteredReadingFields.length + 1) {
                                 return const SizedBox(height: 100);
                               }
-
                               return _buildReadingFieldInput(
                                 _filteredReadingFields[index],
                               );
@@ -1667,7 +1728,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                 ),
               ],
             ),
-      // 🔧 FIX: Don't show save button for existing readings unless user has permission
       floatingActionButton:
           !isReadOnlyView &&
               !_isReadOnlyDueToExistingReading &&
