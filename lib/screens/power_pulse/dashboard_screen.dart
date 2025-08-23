@@ -13,6 +13,8 @@ import '../../services/power_pulse_service/powerpulse_services.dart';
 import '../../widgets/post_card/post_card.dart';
 import 'post_create_screen.dart';
 import 'post_detail_screen.dart';
+// Add import for search master data screen
+import 'search_master_data.dart';
 
 class PowerPulseDashboardScreen extends StatefulWidget {
   const PowerPulseDashboardScreen({Key? key}) : super(key: key);
@@ -49,7 +51,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
 
   Future<void> _loadZones() async {
     if (!mounted) return;
-
     setState(() {
       _isLoadingZones = true;
       _error = null;
@@ -58,7 +59,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
     try {
       final zones = await HierarchyService.getZones();
       final prefs = await SharedPreferences.getInstance();
-
       final zonesJson = zones
           .map(
             (z) => {
@@ -76,7 +76,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
             },
           )
           .toList();
-
       await prefs.setString('cached_zones', jsonEncode(zonesJson));
 
       if (mounted) {
@@ -118,6 +117,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
           _zones = [];
         }
       }
+
       if (mounted) {
         setState(() {
           _error = cachedZones != null && _zones.isNotEmpty
@@ -126,13 +126,13 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
           _isLoadingZones = false;
         });
       }
+
       debugPrint('Error loading zones: $e');
     }
   }
 
   Future<void> _cleanupBadCache() async {
     final prefs = await SharedPreferences.getInstance();
-
     for (final key in prefs.getKeys()) {
       if (key.startsWith('post_')) {
         final raw = prefs.getString(key);
@@ -141,7 +141,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
             final map = jsonDecode(raw) as Map<String, dynamic>;
             final bodyPlain = map['bodyPlain'];
             final bodyDelta = map['bodyDelta'];
-
             bool needsUpdate = false;
 
             if (bodyPlain is! String) {
@@ -187,6 +186,8 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         ],
       ),
       floatingActionButton: _buildFloatingActionButton(),
+      // Add bottom navigation drawer for quick access
+      drawer: _buildNavigationDrawer(),
     );
   }
 
@@ -207,6 +208,17 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         ),
       ),
       actions: [
+        // Master Data Search Button
+        IconButton(
+          icon: Icon(
+            Icons.inventory_2_outlined,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.7)
+                : Colors.grey[600],
+          ),
+          onPressed: () => _navigateToMasterDataSearch(),
+          tooltip: 'Search Master Data',
+        ),
         IconButton(
           icon: Icon(
             Icons.search,
@@ -227,30 +239,274 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
           onSelected: _handleMenuAction,
           itemBuilder: (context) => [
             PopupMenuItem(
+              value: 'master_data',
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.inventory_2,
+                    size: 20,
+                    color: isDarkMode ? Colors.white70 : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Master Data',
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
+                  ),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem(
               value: 'profile',
-              child: Text(
-                'Profile',
-                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.person,
+                    size: 20,
+                    color: isDarkMode ? Colors.white70 : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Profile',
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
+                  ),
+                ],
               ),
             ),
             PopupMenuItem(
               value: 'settings',
-              child: Text(
-                'Settings',
-                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.settings,
+                    size: 20,
+                    color: isDarkMode ? Colors.white70 : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Settings',
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
+                  ),
+                ],
               ),
             ),
             PopupMenuItem(
               value: 'about',
-              child: Text(
-                'About',
-                style: TextStyle(color: isDarkMode ? Colors.white : null),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info,
+                    size: 20,
+                    color: isDarkMode ? Colors.white70 : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'About',
+                    style: TextStyle(color: isDarkMode ? Colors.white : null),
+                  ),
+                ],
               ),
             ),
           ],
           color: isDarkMode ? const Color(0xFF2C2C2E) : null,
         ),
       ],
+    );
+  }
+
+  // Add navigation drawer for better access
+  Widget _buildNavigationDrawer() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    return Drawer(
+      backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: isDarkMode
+                    ? const Color(0xFF2C2C2E)
+                    : Colors.grey.shade50,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(20),
+                  bottomRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.bolt,
+                    size: 48,
+                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'PowerPulse',
+                    style: GoogleFonts.lora(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    'Navigate & Manage',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: isDarkMode ? Colors.white60 : Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Navigation Items
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  _buildDrawerItem(
+                    icon: Icons.inventory_2,
+                    title: 'Master Data Search',
+                    subtitle: 'Search vendors, materials & services',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _navigateToMasterDataSearch();
+                    },
+                    isDarkMode: isDarkMode,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDrawerItem(
+                    icon: Icons.search,
+                    title: 'Search Posts',
+                    subtitle: 'Find posts and discussions',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showSearchDelegate(context);
+                    },
+                    isDarkMode: isDarkMode,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDrawerItem(
+                    icon: Icons.edit,
+                    title: 'Create Post',
+                    subtitle: 'Share your ideas',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _navigateToCreatePost();
+                    },
+                    isDarkMode: isDarkMode,
+                  ),
+                  const SizedBox(height: 20),
+                  Divider(
+                    color: isDarkMode ? Colors.white24 : Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 20),
+                  _buildDrawerItem(
+                    icon: Icons.person,
+                    title: 'Profile',
+                    subtitle: 'Manage your account',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _handleMenuAction('profile');
+                    },
+                    isDarkMode: isDarkMode,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDrawerItem(
+                    icon: Icons.settings,
+                    title: 'Settings',
+                    subtitle: 'App preferences',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _handleMenuAction('settings');
+                    },
+                    isDarkMode: isDarkMode,
+                  ),
+                ],
+              ),
+            ),
+
+            // Footer
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Igniting Ideas in Power & Transmission',
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  color: isDarkMode ? Colors.white54 : Colors.grey[500],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    required bool isDarkMode,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: Colors.transparent,
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: (isDarkMode ? Colors.blue[600] : Colors.blueGrey)
+                ?.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            color: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
+            size: 22,
+          ),
+        ),
+        title: Text(
+          title,
+          style: GoogleFonts.montserrat(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: GoogleFonts.montserrat(
+            fontSize: 12,
+            color: isDarkMode ? Colors.white60 : Colors.grey[600],
+          ),
+        ),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        hoverColor: (isDarkMode ? Colors.white : Colors.black).withOpacity(
+          0.05,
+        ),
+      ),
+    );
+  }
+
+  // Add navigation method for master data search
+  void _navigateToMasterDataSearch() {
+    HapticFeedback.lightImpact();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SearchMasterDataScreen()),
     );
   }
 
@@ -262,7 +518,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       return Padding(
         padding: const EdgeInsets.all(16.0),
         child: CircularProgressIndicator(
-          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey,
         ),
       );
     }
@@ -270,7 +526,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
     return Container(
       color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: DropdownButtonFormField<String>(
+      child: DropdownButtonFormField<String?>(
         value: selectedZoneId,
         decoration: InputDecoration(
           contentPadding: const EdgeInsets.symmetric(
@@ -286,7 +542,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
             ),
           ),
           filled: true,
-          fillColor: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey[50],
+          fillColor: isDarkMode ? const Color(0xFF3C3C3E) : Colors.grey,
         ),
         hint: Text(
           'Select a Zone',
@@ -349,11 +605,11 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TabBar(
         controller: _tabController,
-        labelColor: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+        labelColor: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
         unselectedLabelColor: isDarkMode
             ? Colors.white.withOpacity(0.5)
-            : Colors.grey[500],
-        indicatorColor: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+            : Colors.grey,
+        indicatorColor: isDarkMode ? Colors.blue : Colors.blueGrey,
         indicatorWeight: 2,
         labelStyle: GoogleFonts.montserrat(
           fontSize: 14,
@@ -393,7 +649,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         }
 
         final posts = snapshot.data ?? [];
-
         if (posts.isEmpty) {
           return _buildEmptyState(
             icon: Icons.inbox_outlined,
@@ -405,7 +660,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         }
 
         return RefreshIndicator(
-          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey,
           backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
           onRefresh: () async {
             setState(() {});
@@ -447,7 +702,6 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         }
 
         final posts = snapshot.data ?? [];
-
         if (posts.isEmpty) {
           return _buildEmptyState(
             icon: Icons.trending_up_outlined,
@@ -459,7 +713,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         }
 
         return RefreshIndicator(
-          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+          color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey,
           backgroundColor: isDarkMode ? const Color(0xFF2C2C2E) : null,
           onRefresh: () async {
             setState(() {});
@@ -492,7 +746,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircularProgressIndicator(
-            color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey[400],
+            color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey,
           ),
           const SizedBox(height: 12),
           Text(
@@ -562,7 +816,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
                   ),
                 ),
               ),
@@ -620,7 +874,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
                   ),
                 ),
               ),
@@ -637,7 +891,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
 
     return FloatingActionButton(
       onPressed: _navigateToCreatePost,
-      backgroundColor: isDarkMode ? Colors.blue[600] : Colors.blueGrey[700],
+      backgroundColor: isDarkMode ? Colors.blue[600] : Colors.blueGrey,
       child: const Icon(Icons.edit, color: Colors.white),
       tooltip: 'Create a new post',
     );
@@ -661,6 +915,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       _showLoginPrompt();
       return;
     }
+
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const PostCreateScreen()),
@@ -683,6 +938,9 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
 
   void _handleMenuAction(String action) {
     switch (action) {
+      case 'master_data':
+        _navigateToMasterDataSearch();
+        break;
       case 'profile':
         _showComingSoonDialog('Profile');
         break;
@@ -745,7 +1003,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
       applicationVersion: '1.0.0',
       applicationIcon: Icon(
         Icons.bolt,
-        color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+        color: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
         size: 32,
       ),
       children: [
@@ -814,7 +1072,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
               style: GoogleFonts.montserrat(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+                color: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
               ),
             ),
           ),
@@ -824,6 +1082,7 @@ class _PowerPulseDashboardScreenState extends State<PowerPulseDashboardScreen>
   }
 }
 
+// [Keep the existing PostSearchDelegate class unchanged]
 class PostSearchDelegate extends SearchDelegate<Post?> {
   final List<String> recentSearches = [];
   final List<String> popularSearches = ['Innovation', 'Transmission', 'Energy'];
@@ -926,9 +1185,7 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 CircularProgressIndicator(
-                  color: isDarkMode
-                      ? Colors.blueGrey[200]
-                      : Colors.blueGrey[400],
+                  color: isDarkMode ? Colors.blueGrey[200] : Colors.blueGrey,
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -955,7 +1212,6 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
         }
 
         final posts = snapshot.data ?? [];
-
         if (posts.isEmpty) {
           return _buildEmptySearchState(
             'No posts found for "$query"',
@@ -993,7 +1249,6 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
   Widget buildSuggestions(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
-
     final suggestions = query.isEmpty
         ? recentSearches.isNotEmpty
               ? recentSearches
@@ -1128,7 +1383,7 @@ class PostSearchDelegate extends SearchDelegate<Post?> {
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey[700],
+                    color: isDarkMode ? Colors.blue[100] : Colors.blueGrey,
                   ),
                 ),
               ),
