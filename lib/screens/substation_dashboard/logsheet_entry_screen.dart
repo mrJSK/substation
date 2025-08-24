@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../equipment_icons/capacitor_bank_icon.dart';
@@ -17,7 +18,6 @@ class _EquipmentIcon extends StatelessWidget {
   final String type;
   final double size;
   final Color color;
-
   const _EquipmentIcon({
     required this.type,
     this.size = 24.0,
@@ -27,8 +27,6 @@ class _EquipmentIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget child;
-    final Size iconSize = Size(size, size);
-
     switch (type.toLowerCase()) {
       case 'transformer':
         child = Icon(Icons.electrical_services, size: size, color: color);
@@ -57,7 +55,6 @@ class _EquipmentIcon extends StatelessWidget {
       default:
         child = Icon(Icons.electrical_services, size: size, color: color);
     }
-
     return SizedBox(width: size, height: size, child: child);
   }
 }
@@ -71,7 +68,7 @@ class LogsheetEntryScreen extends StatefulWidget {
   final int? readingHour;
   final AppUser currentUser;
   final bool forceReadOnly;
-  final Map<String, dynamic>? autoPopulateData;
+  final Map? autoPopulateData;
 
   const LogsheetEntryScreen({
     super.key,
@@ -87,7 +84,7 @@ class LogsheetEntryScreen extends StatefulWidget {
   });
 
   @override
-  State<LogsheetEntryScreen> createState() => _LogsheetEntryScreenState();
+  State createState() => _LogsheetEntryScreenState();
 }
 
 class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
@@ -97,26 +94,23 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
 
   final ComprehensiveCacheService _cache = ComprehensiveCacheService();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-
   bool _isLoading = true;
   bool _isSaving = false;
   late AnimationController _animationController;
-
   bool _hasExistingReading = false;
   bool _isReadOnlyDueToExistingReading = false;
-
   Bay? _currentBay;
   LogsheetEntry? _existingLogsheetEntry;
   LogsheetEntry? _previousLogsheetEntry;
   List<ReadingField> _filteredReadingFields = [];
-
   final Map<String, TextEditingController> _readingTextFieldControllers = {};
   final Map<String, bool> _readingBooleanFieldValues = {};
   final Map<String, DateTime?> _readingDateFieldValues = {};
   final Map<String, String?> _readingDropdownFieldValues = {};
   final Map<String, TextEditingController>
   _readingBooleanDescriptionControllers = {};
-
+  final Map<String, String?> _fieldValidationErrors = {};
+  final Map<String, bool> _hasUserInteracted = {};
   bool _isFirstDataEntryForThisBayFrequency = false;
 
   @override
@@ -152,45 +146,37 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     ].contains(widget.currentUser.role);
   }
 
-  Future<void> _initializeScreenData() async {
+  Future _initializeScreenData() async {
     setState(() => _isLoading = true);
-
     try {
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
       }
-
       final bayData = _cache.getBayById(widget.bayId);
       if (bayData == null) {
         throw Exception('Bay not found in cache');
       }
-
       _currentBay = bayData.bay;
-
       _filteredReadingFields = bayData.getReadingFields(
         widget.frequency,
         mandatoryOnly: false,
       );
-
       _existingLogsheetEntry = bayData.getReading(
         widget.readingDate,
         widget.frequency,
         hour: widget.readingHour,
       );
-
       _hasExistingReading = _existingLogsheetEntry != null;
       _isReadOnlyDueToExistingReading =
           _hasExistingReading &&
           !_canModifyExistingReading() &&
           !widget.forceReadOnly;
-
       final previousDate = _calculatePreviousDate();
       _previousLogsheetEntry = bayData.getReading(
         previousDate,
         widget.frequency,
         hour: widget.readingHour,
       );
-
       _isFirstDataEntryForThisBayFrequency =
           _existingLogsheetEntry == null && _previousLogsheetEntry == null;
       _initializeReadingFieldControllers();
@@ -247,24 +233,22 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     _readingBooleanDescriptionControllers.forEach(
       (key, controller) => controller.dispose(),
     );
-
     _readingTextFieldControllers.clear();
     _readingBooleanFieldValues.clear();
     _readingDateFieldValues.clear();
     _readingDropdownFieldValues.clear();
     _readingBooleanDescriptionControllers.clear();
+    _fieldValidationErrors.clear();
+    _hasUserInteracted.clear();
 
-    final Map<String, dynamic> existingValues =
-        _existingLogsheetEntry?.values ?? {};
-    final Map<String, dynamic> previousValues =
-        _previousLogsheetEntry?.values ?? {};
-    final Map<String, dynamic> autoPopulateMap = widget.autoPopulateData ?? {};
+    final Map existingValues = _existingLogsheetEntry?.values ?? {};
+    final Map previousValues = _previousLogsheetEntry?.values ?? {};
+    final Map autoPopulateMap = (widget.autoPopulateData ?? {}).cast();
 
     for (var field in _filteredReadingFields) {
       final fieldName = field.name;
       final dataType = field.dataType.toString().split('.').last;
       dynamic value = existingValues[fieldName];
-
       if (_existingLogsheetEntry == null) {
         if (fieldName.startsWith('Previous Day Reading')) {
           if (autoPopulateMap.containsKey(fieldName)) {
@@ -290,6 +274,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
           }
         }
       }
+      _hasUserInteracted[fieldName] = false;
+      _fieldValidationErrors[fieldName] = null;
 
       if (dataType == 'text' || dataType == 'number') {
         _readingTextFieldControllers[fieldName] = TextEditingController(
@@ -316,14 +302,34 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     }
   }
 
-  Future<void> _saveLogsheetEntry() async {
-    if (!_formKey.currentState!.validate()) return;
+  void _validateFieldRealTime(ReadingField field, String? value) {
+    if (!_hasUserInteracted[field.name]!) return;
+    final String fieldName = field.name;
+    final String dataType = field.dataType.toString().split('.').last;
+    bool isMandatory = field.isMandatory;
+    final bool isPreviousReadingField =
+        fieldName.startsWith('Previous Day Reading') ||
+        fieldName.startsWith('Previous Month Reading');
+    if (isPreviousReadingField && _isFirstDataEntryForThisBayFrequency) {
+      isMandatory = false;
+    }
+    String? errorMessage;
+    if (isMandatory && (value == null || value.trim().isEmpty)) {
+      errorMessage = '$fieldName is mandatory';
+    } else if (dataType == 'number' && value != null && value.isNotEmpty) {
+      errorMessage = field.getValidationError(value);
+    }
+    setState(() {
+      _fieldValidationErrors[fieldName] = errorMessage;
+    });
+  }
 
+  Future _saveLogsheetEntry() async {
+    if (!_formKey.currentState!.validate()) return;
     if (_currentBay == null) {
       SnackBarUtils.showSnackBar(context, 'Missing bay data.', isError: true);
       return;
     }
-
     if (_filteredReadingFields.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
@@ -332,7 +338,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       );
       return;
     }
-
     if (_hasExistingReading && !_canModifyExistingReading()) {
       SnackBarUtils.showSnackBar(
         context,
@@ -343,9 +348,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     }
 
     setState(() => _isSaving = true);
-
     final String modificationReason =
         await _showModificationReasonDialog() ?? "";
+
     if (widget.currentUser.role == UserRole.subdivisionManager &&
         _existingLogsheetEntry != null &&
         modificationReason.isEmpty) {
@@ -364,7 +369,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       for (var field in _filteredReadingFields) {
         final String fieldName = field.name;
         final String dataType = field.dataType.toString().split('.').last;
-
         if (dataType == 'text' || dataType == 'number') {
           recordedValues[fieldName] = _readingTextFieldControllers[fieldName]
               ?.text
@@ -417,11 +421,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         final docRef = await FirebaseFirestore.instance
             .collection('logsheetEntries')
             .add(logsheetData.toFirestore());
-
         final savedEntry = logsheetData.copyWith(id: docRef.id);
         _cache.updateBayReading(widget.bayId, savedEntry);
         await _cache.refreshBayData(widget.bayId);
-
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Reading saved successfully!');
           Navigator.of(context).pop(true);
@@ -431,13 +433,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             .collection('logsheetEntries')
             .doc(_existingLogsheetEntry!.id)
             .update(logsheetData.toFirestore());
-
         final updatedEntry = logsheetData.copyWith(
           id: _existingLogsheetEntry!.id,
         );
         _cache.updateBayReading(widget.bayId, updatedEntry);
         await _cache.refreshBayData(widget.bayId);
-
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Reading updated successfully!');
           Navigator.of(context).pop(true);
@@ -461,12 +461,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         _existingLogsheetEntry == null) {
       return "Initial Entry";
     }
-
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
     TextEditingController reasonController = TextEditingController();
-
-    return await showDialog<String>(
+    return await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -548,12 +546,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     final isDarkMode = theme.brightness == Brightness.dark;
     final String fieldName = field.name;
     final String dataType = field.dataType.toString().split('.').last;
-
     bool isMandatory = field.isMandatory;
     final bool isPreviousReadingField =
         fieldName.startsWith('Previous Day Reading') ||
         fieldName.startsWith('Previous Month Reading');
-
     if (isPreviousReadingField && _isFirstDataEntryForThisBayFrequency) {
       isMandatory = false;
     }
@@ -566,12 +562,14 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         (isPreviousReadingField &&
             _existingLogsheetEntry == null &&
             _previousLogsheetEntry != null);
-
     final String? unit = field.unit;
-    final List<String>? options = field.options?.cast<String>();
+    final List? options = field.options?.cast<String>();
+    final String? currentError = _fieldValidationErrors[fieldName];
+    final bool hasError =
+        currentError != null && _hasUserInteracted[fieldName]!;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -584,9 +582,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
             offset: const Offset(0, 2),
           ),
         ],
-        border: isReadOnly
-            ? Border.all(color: Colors.grey.withOpacity(0.3), width: 1)
-            : null,
+        border: hasError
+            ? Border.all(color: theme.colorScheme.error, width: 1)
+            : (isReadOnly
+                  ? Border.all(color: Colors.grey.withOpacity(0.3), width: 1)
+                  : null),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -613,7 +613,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
     bool isMandatory,
     bool isReadOnly,
     String? unit,
-    List<String>? options,
+    List? options,
     bool isDarkMode,
   ) {
     String? Function(String?)? validator;
@@ -653,10 +653,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       Expanded(
                         child: Text(
                           fieldName + (isMandatory ? ' *' : ''),
-                          style: TextStyle(
-                            fontSize: 16,
+                          style: const TextStyle(
+                            fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                       ),
@@ -673,7 +672,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           child: Text(
                             'Read Only',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 11,
                               color: Colors.grey.shade600,
                               fontWeight: FontWeight.w500,
                             ),
@@ -688,18 +687,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       () => TextEditingController(),
                     ),
                     readOnly: isReadOnly,
-                    style: TextStyle(
-                      color: isDarkMode ? Colors.white : Colors.black87,
-                    ),
                     decoration: InputDecoration(
                       hintText: isReadOnly
                           ? 'Value saved'
                           : 'Enter ${fieldName.toLowerCase()}',
-                      hintStyle: TextStyle(
-                        color: isDarkMode
-                            ? Colors.white.withOpacity(0.5)
-                            : Colors.grey,
-                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -719,8 +710,19 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                               size: 16,
                             )
                           : null,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      isDense: true,
                     ),
                     validator: validator,
+                    onChanged: (value) {
+                      if (!_hasUserInteracted[fieldName]!) {
+                        setState(() => _hasUserInteracted[fieldName] = true);
+                      }
+                      _validateFieldRealTime(field, value);
+                    },
                   ),
                 ],
               ),
@@ -751,7 +753,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       size: 20,
                     ),
                   ),
-                  // 🔥 Add integer badge for integer-only fields
                   if (field.isInteger)
                     Positioned(
                       top: 2,
@@ -762,7 +763,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           color: Colors.orange.withOpacity(0.9),
                           borderRadius: BorderRadius.circular(3),
                         ),
-                        child: Text(
+                        child: const Text(
                           'INT',
                           style: TextStyle(
                             fontSize: 8,
@@ -788,16 +789,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                             Expanded(
                               child: Text(
                                 fieldName + (isMandatory ? ' *' : ''),
-                                style: TextStyle(
-                                  fontSize: 16,
+                                style: const TextStyle(
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: isDarkMode
-                                      ? Colors.white
-                                      : Colors.black87,
                                 ),
                               ),
                             ),
-                            // 🔥 Add integer indicator badge
                             if (field.isInteger)
                               Container(
                                 margin: const EdgeInsets.only(left: 8),
@@ -834,7 +831,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           child: Text(
                             'Read Only',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 11,
                               color: Colors.grey.shade600,
                               fontWeight: FontWeight.w500,
                             ),
@@ -849,9 +846,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       () => TextEditingController(),
                     ),
                     readOnly: isReadOnly,
-                    style: TextStyle(
-                      color: isDarkMode ? Colors.white : Colors.black87,
-                    ),
                     decoration: InputDecoration(
                       hintText: isReadOnly
                           ? 'Value saved'
@@ -862,12 +856,18 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           : (unit != null && unit.isNotEmpty
                                 ? 'Enter value in $unit'
                                 : 'Enter numerical value'),
-                      hintStyle: TextStyle(
-                        color: isDarkMode
-                            ? Colors.white.withOpacity(0.5)
-                            : Colors.grey,
-                      ),
                       border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: theme.colorScheme.error),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.error,
+                          width: 2,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       filled: true,
@@ -892,17 +892,34 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                     size: 16,
                                   )
                                 : null),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      isDense: true,
                     ),
-                    // 🔥 Use appropriate keyboard type based on isInteger flag
                     keyboardType: field.isInteger
                         ? TextInputType.number
                         : const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: field.isInteger && !isReadOnly
+                        ? [
+                            FilteringTextInputFormatter.digitsOnly,
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'^-?\d*'),
+                            ),
+                          ]
+                        : (!isReadOnly
+                              ? [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'^-?\d*\.?\d*'),
+                                  ),
+                                ]
+                              : null),
                     validator: (value) {
                       if (validator != null && validator(value) != null) {
                         return validator(value);
                       }
                       if (value != null && value.isNotEmpty) {
-                        // 🔥 Enhanced validation using ReadingField's validation method
                         final validationError = field.getValidationError(value);
                         if (validationError != null) {
                           return validationError;
@@ -910,8 +927,13 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       }
                       return null;
                     },
+                    onChanged: (value) {
+                      if (!_hasUserInteracted[fieldName]!) {
+                        setState(() => _hasUserInteracted[fieldName] = true);
+                      }
+                      _validateFieldRealTime(field, value);
+                    },
                   ),
-                  // 🔥 Add range information for number fields
                   if (field.minRange != null || field.maxRange != null) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -969,12 +991,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           Expanded(
                             child: Text(
                               fieldName + (isMandatory ? ' *' : ''),
-                              style: TextStyle(
-                                fontSize: 16,
+                              style: const TextStyle(
+                                fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: isDarkMode
-                                    ? Colors.white
-                                    : Colors.black87,
                               ),
                             ),
                           ),
@@ -991,7 +1010,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                               child: Text(
                                 'Read Only',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 11,
                                   color: Colors.grey.shade600,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -1051,16 +1070,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                   () => TextEditingController(),
                 ),
                 readOnly: isReadOnly,
-                style: TextStyle(
-                  color: isDarkMode ? Colors.white : Colors.black87,
-                ),
                 decoration: InputDecoration(
                   labelText: 'Description / Remarks (Optional)',
-                  labelStyle: TextStyle(
-                    color: isDarkMode
-                        ? Colors.white.withOpacity(0.7)
-                        : Colors.grey.shade700,
-                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1072,6 +1083,10 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                     isReadOnly ? Icons.lock : Icons.description,
                     color: isReadOnly ? Colors.grey : Colors.purple[700],
                     size: 16,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
                 ),
                 maxLines: 2,
@@ -1088,7 +1103,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               ? widget.readingDate
               : null,
         );
-
         fieldWidget = Row(
           children: [
             Container(
@@ -1115,10 +1129,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       Expanded(
                         child: Text(
                           fieldName + (isMandatory ? ' *' : ''),
-                          style: TextStyle(
-                            fontSize: 16,
+                          style: const TextStyle(
+                            fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                       ),
@@ -1135,7 +1148,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           child: Text(
                             'Read Only',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 11,
                               color: Colors.grey.shade600,
                               fontWeight: FontWeight.w500,
                             ),
@@ -1232,10 +1245,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       Expanded(
                         child: Text(
                           fieldName + (isMandatory ? ' *' : ''),
-                          style: TextStyle(
-                            fontSize: 16,
+                          style: const TextStyle(
+                            fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: isDarkMode ? Colors.white : Colors.black87,
                           ),
                         ),
                       ),
@@ -1252,7 +1264,7 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                           child: Text(
                             'Read Only',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 11,
                               color: Colors.grey.shade600,
                               fontWeight: FontWeight.w500,
                             ),
@@ -1287,9 +1299,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                     dropdownColor: isDarkMode
                         ? const Color(0xFF2C2C2E)
                         : Colors.white,
-                    style: TextStyle(
-                      color: isDarkMode ? Colors.white : Colors.black,
-                    ),
                     decoration: InputDecoration(
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -1309,6 +1318,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                               size: 16,
                             )
                           : null,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      isDense: true,
                     ),
                     items: (options ?? [])
                         .map(
@@ -1351,7 +1365,6 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
@@ -1360,6 +1373,8 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
       slotTitle += ' - ${widget.readingHour!.toString().padLeft(2, '0')}:00 Hr';
     } else if (widget.frequency == 'daily') {
       slotTitle += ' - Daily Reading';
+    } else if (widget.frequency == 'monthly') {
+      slotTitle += ' - Monthly Reading';
     }
 
     final bool isReadOnlyView =
@@ -1449,12 +1464,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                       strokeWidth: 3,
                     ),
                     const SizedBox(height: 16),
-                    Text(
+                    const Text(
                       'Loading from cache...',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: isDarkMode ? Colors.white : Colors.black87,
-                      ),
+                      style: TextStyle(fontSize: 14),
                     ),
                   ],
                 ),
@@ -1634,14 +1646,11 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
                                       : Colors.grey.shade400,
                                 ),
                                 const SizedBox(height: 16),
-                                Text(
+                                const Text(
                                   'No Reading Fields Available',
                                   style: TextStyle(
-                                    fontSize: 18,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.w600,
-                                    color: isDarkMode
-                                        ? Colors.white.withOpacity(0.6)
-                                        : Colors.grey.shade600,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -1738,12 +1747,12 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
               foregroundColor: theme.colorScheme.onPrimary,
               elevation: 4,
               icon: _isSaving
-                  ? SizedBox(
+                  ? const SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: theme.colorScheme.onPrimary,
+                        color: Colors.white,
                       ),
                     )
                   : const Icon(Icons.save),

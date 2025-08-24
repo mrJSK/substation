@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 
 enum ReadingFieldDataType { text, number, boolean, date, dropdown, group }
 
-enum ReadingFrequency { hourly, daily }
+enum ReadingFrequency { hourly, daily, monthly }
 
 class ReadingField {
   final String name;

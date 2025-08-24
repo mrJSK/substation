@@ -33,16 +33,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   final ComprehensiveCacheService _cache = ComprehensiveCacheService();
 
   bool _isLoading = true;
-  List<TrippingShutdownEntry> _todayEvents = [];
   List<TrippingShutdownEntry> _openEvents = [];
+  List<TrippingShutdownEntry> _closedEvents = [];
   List<TrippingShutdownEntry> _allRecentEvents = [];
   bool _hasAnyBays = false;
   late AnimationController _animationController;
 
-  // 🔧 FIX: Add cache health tracking and error handling
+  // Cache health tracking
   bool _cacheHealthy = false;
   String? _cacheError;
-  Map<String, int> _eventStats = {};
+
+  // Current selected tab index
+  int _selectedTabIndex = 0;
 
   @override
   void initState() {
@@ -73,13 +75,13 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  // 🔧 FIX: Enhanced data loading with better error handling and validation
+  // Enhanced data loading - open events from any time, closed events from today only
   Future<void> _loadTrippingData() async {
     if (widget.substationId.isEmpty) {
       setState(() {
         _isLoading = false;
-        _todayEvents = [];
         _openEvents = [];
+        _closedEvents = [];
         _allRecentEvents = [];
         _hasAnyBays = false;
         _cacheHealthy = false;
@@ -98,7 +100,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
         throw Exception('Cache not initialized - please restart the app');
       }
 
-      // 🔧 FIX: Validate cache health before proceeding
+      // Validate cache health before proceeding
       if (!_cache.validateCache()) {
         throw Exception('Cache validation failed - data may be stale');
       }
@@ -108,26 +110,49 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       _cacheHealthy = true;
 
       if (_hasAnyBays) {
-        // Get today's events from cache
-        _todayEvents = _cache.getTrippingEventsForDate(widget.selectedDate);
+        // Get all recent events from cache
+        final allRecentEvents = substationData.recentTrippingEvents;
 
-        // Get open events from cache
-        _openEvents = _cache.getOpenTrippingEvents();
+        // Define current day boundaries for closed events only
+        final now = DateTime.now();
+        final startOfToday = DateTime(now.year, now.month, now.day);
+        final endOfToday = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          23,
+          59,
+          59,
+          999,
+        );
 
-        // Get all recent events for statistics
-        _allRecentEvents = substationData.recentTrippingEvents;
+        // Get ALL open events (regardless of when they started)
+        _openEvents = allRecentEvents
+            .where((event) => event.status == 'OPEN')
+            .toList();
 
-        // 🔧 FIX: Apply role-based filtering
-        _applyRoleBasedFiltering();
+        // Get closed events that ended today only
+        _closedEvents = allRecentEvents
+            .where(
+              (event) =>
+                  event.status == 'CLOSED' &&
+                  event.endTime != null &&
+                  _isEventFromToday(
+                    event.endTime!.toDate(),
+                    startOfToday,
+                    endOfToday,
+                  ),
+            )
+            .toList();
 
-        // Calculate statistics
-        _calculateEventStats();
+        // Total events = all open events + today's closed events
+        _allRecentEvents = [..._openEvents, ..._closedEvents];
       }
 
       _animationController.forward();
 
       print(
-        '✅ Tripping tab loaded ${_todayEvents.length} today events and ${_openEvents.length} open events from cache',
+        '✅ Tripping tab loaded ${_openEvents.length} open events (any time), ${_closedEvents.length} closed events for today, ${_allRecentEvents.length} total events from cache',
       );
     } catch (e) {
       print('❌ Error loading tripping data from cache: $e');
@@ -150,57 +175,19 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  // 🔧 FIX: Apply role-based filtering for events
-  void _applyRoleBasedFiltering() {
-    final bool isDivisionOrHigher = [
-      UserRole.admin,
-      UserRole.zoneManager,
-      UserRole.circleManager,
-      UserRole.divisionManager,
-    ].contains(widget.currentUser.role);
-
-    final bool isSubdivisionManager =
-        widget.currentUser.role == UserRole.subdivisionManager;
-    final bool isSubstationUser =
-        widget.currentUser.role == UserRole.substationUser;
-
-    // Filter based on user role
-    if (isDivisionOrHigher) {
-      // Division level and above can only see closed events
-      _todayEvents = _todayEvents
-          .where((event) => event.status == 'CLOSED')
-          .toList();
-      _openEvents = []; // No open events for division level
-    } else if (isSubdivisionManager || isSubstationUser) {
-      // Subdivision manager and substation user can see all events
-      // No filtering needed
-    }
+  // Helper method to check if an event is from today (used only for closed events)
+  bool _isEventFromToday(
+    DateTime eventTime,
+    DateTime startOfToday,
+    DateTime endOfToday,
+  ) {
+    return eventTime.isAfter(
+          startOfToday.subtract(Duration(milliseconds: 1)),
+        ) &&
+        eventTime.isBefore(endOfToday.add(Duration(milliseconds: 1)));
   }
 
-  // 🔧 FIX: Calculate event statistics for better insights
-  void _calculateEventStats() {
-    _eventStats.clear();
-
-    // Count events by type
-    final trippingCount = _allRecentEvents
-        .where((e) => e.eventType == 'Tripping')
-        .length;
-    final shutdownCount = _allRecentEvents
-        .where((e) => e.eventType == 'Shutdown')
-        .length;
-    final openCount = _openEvents.length;
-    final todayCount = _todayEvents.length;
-
-    _eventStats = {
-      'tripping': trippingCount,
-      'shutdown': shutdownCount,
-      'open': openCount,
-      'today': todayCount,
-      'total': _allRecentEvents.length,
-    };
-  }
-
-  // 🔧 FIX: Enhanced refresh with cache synchronization
+  // Enhanced refresh with cache synchronization
   Future<void> _refreshTrippingData() async {
     try {
       // Force refresh the cache to ensure we have latest data
@@ -215,29 +202,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       // Fallback to just reloading from existing cache
       await _loadTrippingData();
     }
-  }
-
-  // 🔧 FIX: Check user permissions for event operations
-  bool _canCreateEvents() {
-    return [
-      UserRole.admin,
-      UserRole.substationUser,
-      UserRole.subdivisionManager,
-    ].contains(widget.currentUser.role);
-  }
-
-  bool _canEditEvent(TrippingShutdownEntry event) {
-    if (event.status == 'CLOSED') {
-      return [
-        UserRole.admin,
-        UserRole.subdivisionManager,
-      ].contains(widget.currentUser.role);
-    }
-    return [
-      UserRole.admin,
-      UserRole.substationUser,
-      UserRole.subdivisionManager,
-    ].contains(widget.currentUser.role);
   }
 
   Color _getEventTypeColor(String eventType) {
@@ -262,21 +226,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
   }
 
-  // 🔧 FIX: Enhanced navigation with permission checks
+  // Navigation methods - simplified for substation user only
   void _navigateToAddEvent() {
     if (!_hasAnyBays) {
       SnackBarUtils.showSnackBar(
         context,
         'Cannot create events. No bays configured in this substation.',
-        isError: true,
-      );
-      return;
-    }
-
-    if (!_canCreateEvents()) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'You do not have permission to create events.',
         isError: true,
       );
       return;
@@ -305,9 +260,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     TrippingShutdownEntry event, {
     bool isViewOnly = false,
   }) {
-    // Override viewOnly based on permissions and event status
-    final bool forceViewOnly = !_canEditEvent(event) || isViewOnly;
-
     Navigator.of(context)
         .push(
           MaterialPageRoute(
@@ -316,7 +268,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
               substationName: widget.substationName,
               currentUser: widget.currentUser,
               entryToEdit: event,
-              isViewOnly: forceViewOnly,
+              isViewOnly: isViewOnly,
             ),
           ),
         )
@@ -328,15 +280,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   }
 
   void _navigateToCloseEvent(TrippingShutdownEntry event) {
-    if (!_canEditEvent(event)) {
-      SnackBarUtils.showSnackBar(
-        context,
-        'You do not have permission to edit this event.',
-        isError: true,
-      );
-      return;
-    }
-
     Navigator.of(context)
         .push(
           MaterialPageRoute(
@@ -356,14 +299,13 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
         });
   }
 
-  // 🔧 FIX: Enhanced event card with better visual indicators and permissions
+  // Enhanced event card - shows event duration for long-running open events
   Widget _buildEventCard(TrippingShutdownEntry event) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
     final eventColor = _getEventTypeColor(event.eventType);
     final eventIcon = _getEventTypeIcon(event.eventType);
     final isOpen = event.status == 'OPEN';
-    final canEdit = _canEditEvent(event);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -469,7 +411,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Started: ${DateFormat('HH:mm').format(event.startTime.toDate())}',
+                      'Started: ${DateFormat('dd MMM HH:mm').format(event.startTime.toDate())}',
                       style: TextStyle(
                         fontSize: 14,
                         color: isDarkMode
@@ -478,10 +420,31 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       ),
                     ),
                     const Spacer(),
-                    // 🔧 FIX: Add event age indicator
                     _buildEventAgeIndicator(event),
                   ],
                 ),
+                // Show running duration for open events
+                if (isOpen) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 14,
+                        color: Colors.orange.shade600,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Running: ${_calculateRunningDuration(event.startTime.toDate())}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.orange.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (event.status == 'CLOSED' && event.endTime != null) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -493,7 +456,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        'Ended: ${DateFormat('HH:mm').format(event.endTime!.toDate())}',
+                        'Ended: ${DateFormat('dd MMM HH:mm').format(event.endTime!.toDate())}',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.green.shade600,
@@ -501,8 +464,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       ),
                     ],
                   ),
-                ],
-                if (event.status == 'CLOSED' && event.endTime != null) ...[
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -567,48 +528,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ),
                   ),
                 ],
-                // 🔧 FIX: Add permission indicator for non-editable events
-                if (!canEdit && isOpen) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.lock,
-                          size: 12,
-                          color: Colors.amber.shade700,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'View only - Contact supervisor to edit',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.amber.shade700,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
-            onTap: () {
-              _navigateToViewEvent(event, isViewOnly: !canEdit);
-            },
+            onTap: () => _navigateToViewEvent(event),
           ),
-
-          // 🔧 FIX: Enhanced action buttons with permission-based visibility
-          if (isOpen && canEdit) ...[
+          // Action buttons for open events
+          if (isOpen) ...[
             Divider(
               height: 1,
               color: isDarkMode
@@ -649,42 +574,13 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                 ],
               ),
             ),
-          ] else if (isOpen && !canEdit) ...[
-            Divider(
-              height: 1,
-              color: isDarkMode
-                  ? Colors.white.withOpacity(0.2)
-                  : Colors.grey.shade300,
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () =>
-                          _navigateToViewEvent(event, isViewOnly: true),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey,
-                        side: BorderSide(color: Colors.grey),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      icon: const Icon(Icons.visibility, size: 18),
-                      label: const Text('View Only'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ],
       ),
     );
   }
 
-  // 🔧 FIX: Add event age indicator
+  // Add event age indicator with enhanced colors for long-running events
   Widget _buildEventAgeIndicator(TrippingShutdownEntry event) {
     final now = DateTime.now();
     final eventTime = event.startTime.toDate();
@@ -694,13 +590,16 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     String ageText = '';
 
     if (duration.inMinutes < 60) {
-      indicatorColor = Colors.red;
+      indicatorColor = Colors.green;
       ageText = '${duration.inMinutes}m ago';
     } else if (duration.inHours < 24) {
       indicatorColor = Colors.orange;
       ageText = '${duration.inHours}h ago';
+    } else if (duration.inDays < 7) {
+      indicatorColor = Colors.red;
+      ageText = '${duration.inDays}d ago';
     } else {
-      indicatorColor = Colors.grey;
+      indicatorColor = Colors.purple;
       ageText = '${duration.inDays}d ago';
     }
 
@@ -720,6 +619,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
         ),
       ),
     );
+  }
+
+  // Calculate running duration for open events
+  String _calculateRunningDuration(DateTime start) {
+    final now = DateTime.now();
+    return _calculateDuration(start, now);
   }
 
   String _calculateDuration(DateTime start, DateTime end) {
@@ -782,7 +687,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     );
   }
 
-  // 🔧 FIX: Add cache status indicator
+  // Add cache status indicator
   Widget _buildCacheStatusIndicator() {
     if (!_cache.isInitialized) return const SizedBox.shrink();
 
@@ -828,12 +733,64 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     );
   }
 
+  // Get current events list based on selected tab
+  List<TrippingShutdownEntry> _getCurrentEventsList() {
+    switch (_selectedTabIndex) {
+      case 0:
+        return _openEvents;
+      case 1:
+        return _closedEvents;
+      case 2:
+        return _allRecentEvents;
+      default:
+        return _openEvents;
+    }
+  }
+
+  // Get empty state for current tab
+  Widget _getCurrentEmptyState() {
+    final currentDate = DateFormat('dd MMM yyyy').format(DateTime.now());
+
+    switch (_selectedTabIndex) {
+      case 0:
+        return _buildEmptyState(
+          icon: Icons.check_circle_outline,
+          title: 'No Open Events',
+          message:
+              'All events have been resolved. Great work maintaining system stability!',
+          color: Colors.green,
+        );
+      case 1:
+        return _buildEmptyState(
+          icon: Icons.info_outline,
+          title: 'No Closed Events Today',
+          message: 'No events were closed today ($currentDate).',
+          color: Colors.grey,
+        );
+      case 2:
+        return _buildEmptyState(
+          icon: Icons.event_available,
+          title: 'No Events',
+          message: 'No active events or events closed today.',
+          color: Colors.grey,
+        );
+      default:
+        return _buildEmptyState(
+          icon: Icons.info,
+          title: 'No Events',
+          message: 'No events found.',
+          color: Colors.grey,
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
+    final currentDate = DateFormat('dd MMM yyyy').format(DateTime.now());
 
     if (widget.substationId.isEmpty) {
       return _buildEmptyState(
@@ -846,10 +803,9 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          // 🔧 FIX: Enhanced header with cache status and statistics
+          // Enhanced header
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -910,6 +866,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                               color: Colors.red.shade700,
                             ),
                           ),
+                          const SizedBox(height: 4),
                           Text(
                             widget.substationName,
                             style: TextStyle(
@@ -929,71 +886,285 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                   ],
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.calendar_today,
-                      size: 16,
-                      color: isDarkMode
-                          ? Colors.white.withOpacity(0.6)
-                          : theme.colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      DateFormat(
-                        'EEEE, dd MMMM yyyy',
-                      ).format(widget.selectedDate),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDarkMode
-                            ? Colors.white.withOpacity(0.7)
-                            : theme.colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                    ),
-                  ],
-                ),
-
-                // 🔧 FIX: Add statistics row
-                if (_hasAnyBays && _eventStats.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: isDarkMode
-                          ? const Color(0xFF3C3C3E)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildStatItem(
-                          'Today',
-                          '${_eventStats['today']}',
-                          Icons.today,
-                          Colors.red,
-                        ),
-                        _buildStatItem(
-                          'Open',
-                          '${_eventStats['open']}',
-                          Icons.pending_actions,
-                          Colors.orange,
-                        ),
-                        _buildStatItem(
-                          'Total',
-                          '${_eventStats['total']}',
-                          Icons.bar_chart,
-                          Colors.blue,
-                        ),
-                      ],
-                    ),
+                Text(
+                  'Open: All active events • Closed: Today only ($currentDate)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.7)
+                        : theme.colorScheme.onSurface.withOpacity(0.7),
+                    fontStyle: FontStyle.italic,
                   ),
-                ],
+                  textAlign: TextAlign.center,
+                ),
               ],
             ),
           ),
 
+          // Tab Selector
+          if (!_isLoading && _hasAnyBays) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: isDarkMode ? Colors.grey.shade800 : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  // Open Tab
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedTabIndex = 0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _selectedTabIndex == 0
+                              ? (isDarkMode
+                                    ? const Color(0xFF2C2C2E)
+                                    : Colors.white)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: _selectedTabIndex == 0
+                              ? [
+                                  BoxShadow(
+                                    color: isDarkMode
+                                        ? Colors.black.withOpacity(0.3)
+                                        : Colors.black.withOpacity(0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.pending_actions,
+                              size: 16,
+                              color: _selectedTabIndex == 0
+                                  ? theme.colorScheme.primary
+                                  : (isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey.shade600),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Open',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: _selectedTabIndex == 0
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: _selectedTabIndex == 0
+                                    ? theme.colorScheme.primary
+                                    : (isDarkMode
+                                          ? Colors.white.withOpacity(0.6)
+                                          : Colors.grey.shade600),
+                              ),
+                            ),
+                            if (_openEvents.isNotEmpty) ...[
+                              const SizedBox(width: 3),
+                              Container(
+                                constraints: const BoxConstraints(maxWidth: 24),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${_openEvents.length}',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Closed Tab
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedTabIndex = 1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _selectedTabIndex == 1
+                              ? (isDarkMode
+                                    ? const Color(0xFF2C2C2E)
+                                    : Colors.white)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: _selectedTabIndex == 1
+                              ? [
+                                  BoxShadow(
+                                    color: isDarkMode
+                                        ? Colors.black.withOpacity(0.3)
+                                        : Colors.black.withOpacity(0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_outline,
+                              size: 16,
+                              color: _selectedTabIndex == 1
+                                  ? theme.colorScheme.primary
+                                  : (isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey.shade600),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Closed',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: _selectedTabIndex == 1
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: _selectedTabIndex == 1
+                                    ? theme.colorScheme.primary
+                                    : (isDarkMode
+                                          ? Colors.white.withOpacity(0.6)
+                                          : Colors.grey.shade600),
+                              ),
+                            ),
+                            if (_closedEvents.isNotEmpty) ...[
+                              const SizedBox(width: 3),
+                              Container(
+                                constraints: const BoxConstraints(maxWidth: 24),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${_closedEvents.length}',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green.shade700,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Total Tab
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedTabIndex = 2),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _selectedTabIndex == 2
+                              ? (isDarkMode
+                                    ? const Color(0xFF2C2C2E)
+                                    : Colors.white)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: _selectedTabIndex == 2
+                              ? [
+                                  BoxShadow(
+                                    color: isDarkMode
+                                        ? Colors.black.withOpacity(0.3)
+                                        : Colors.black.withOpacity(0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.bar_chart,
+                              size: 16,
+                              color: _selectedTabIndex == 2
+                                  ? theme.colorScheme.primary
+                                  : (isDarkMode
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.grey.shade600),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Total',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: _selectedTabIndex == 2
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: _selectedTabIndex == 2
+                                    ? theme.colorScheme.primary
+                                    : (isDarkMode
+                                          ? Colors.white.withOpacity(0.6)
+                                          : Colors.grey.shade600),
+                              ),
+                            ),
+                            if (_allRecentEvents.isNotEmpty) ...[
+                              const SizedBox(width: 3),
+                              Container(
+                                constraints: const BoxConstraints(maxWidth: 24),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${_allRecentEvents.length}',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Main content area - Expanded to fill remaining space
           Expanded(
             child: _isLoading
                 ? Center(
@@ -1023,7 +1194,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'Loading from cache...',
+                            'Loading events...',
                             style: TextStyle(
                               fontSize: 16,
                               color: isDarkMode
@@ -1040,6 +1211,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                                 color: Colors.red,
                                 fontStyle: FontStyle.italic,
                               ),
+                              textAlign: TextAlign.center,
                             ),
                           ],
                         ],
@@ -1054,224 +1226,31 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         'No bays have been configured in this substation. Tripping and shutdown events can only be recorded for configured bays.',
                     color: Colors.orange,
                   )
-                : DefaultTabController(
-                    length: 2,
-                    child: Column(
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: isDarkMode
-                                ? Colors.grey.shade800
-                                : Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: TabBar(
-                            labelColor: theme.colorScheme.primary,
-                            unselectedLabelColor: isDarkMode
-                                ? Colors.white.withOpacity(0.6)
-                                : Colors.grey.shade600,
-                            labelStyle: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            unselectedLabelStyle: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            indicator: BoxDecoration(
-                              color: isDarkMode
-                                  ? const Color(0xFF2C2C2E)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: isDarkMode
-                                      ? Colors.black.withOpacity(0.3)
-                                      : Colors.black.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            indicatorSize: TabBarIndicatorSize.tab,
-                            dividerColor: Colors.transparent,
-                            tabs: [
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.today, size: 18),
-                                    const SizedBox(width: 8),
-                                    const Text('Today'),
-                                    if (_todayEvents.isNotEmpty) ...[
-                                      const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.withOpacity(0.15),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '${_todayEvents.length}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.red.shade700,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.pending_actions, size: 18),
-                                    const SizedBox(width: 8),
-                                    const Text('Open'),
-                                    if (_openEvents.isNotEmpty) ...[
-                                      const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange.withOpacity(
-                                            0.15,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '${_openEvents.length}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.orange.shade700,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Expanded(
-                          child: TabBarView(
-                            children: [
-                              _todayEvents.isEmpty
-                                  ? _buildEmptyState(
-                                      icon: Icons.check_circle_outline,
-                                      title: 'No Events Today',
-                                      message:
-                                          'No tripping or shutdown events recorded for today. This is good news!',
-                                      color: Colors.green,
-                                    )
-                                  : ListView(
-                                      padding: const EdgeInsets.only(
-                                        left: 16,
-                                        right: 16,
-                                        bottom: 100,
-                                      ),
-                                      children: _todayEvents
-                                          .map(
-                                            (event) => _buildEventCard(event),
-                                          )
-                                          .toList(),
-                                    ),
-                              _openEvents.isEmpty
-                                  ? _buildEmptyState(
-                                      icon: Icons.check_circle_outline,
-                                      title: 'No Open Events',
-                                      message:
-                                          'All events have been resolved. Great work!',
-                                      color: Colors.green,
-                                    )
-                                  : ListView(
-                                      padding: const EdgeInsets.only(
-                                        left: 16,
-                                        right: 16,
-                                        bottom: 100,
-                                      ),
-                                      children: _openEvents
-                                          .map(
-                                            (event) => _buildEventCard(event),
-                                          )
-                                          .toList(),
-                                    ),
-                            ],
-                          ),
-                        ),
-                      ],
+                : _getCurrentEventsList().isEmpty
+                ? _getCurrentEmptyState()
+                : ListView.builder(
+                    padding: const EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      bottom: 100, // Space for FAB
                     ),
+                    itemCount: _getCurrentEventsList().length,
+                    itemBuilder: (context, index) {
+                      return _buildEventCard(_getCurrentEventsList()[index]);
+                    },
                   ),
           ),
         ],
       ),
-      floatingActionButton: (_hasAnyBays && _canCreateEvents())
+      floatingActionButton: _hasAnyBays
           ? FloatingActionButton.extended(
               onPressed: _navigateToAddEvent,
-              backgroundColor: Colors.red.shade600,
+              backgroundColor: theme.colorScheme.primary,
               foregroundColor: Colors.white,
-              icon: const Icon(Icons.notification_add),
-              label: const Text(
-                'Add Event',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              elevation: 6,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              icon: const Icon(Icons.add),
+              label: const Text('New Event'),
             )
           : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-    );
-  }
-
-  // Helper widget for statistics
-  Widget _buildStatItem(
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 16),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, color: color.withOpacity(0.8)),
-        ),
-      ],
     );
   }
 }

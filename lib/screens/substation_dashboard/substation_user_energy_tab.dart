@@ -871,7 +871,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                   ],
                 ),
               ),
-              // 🔧 FIX: Cache health indicator
               if (_cacheHealthy)
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -903,72 +902,38 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
           ),
           if (_isDailyReadingAvailable && totalBays > 0) ...[
             const SizedBox(height: 16),
+            // FIX: Combined single progress indicator instead of two
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: isDarkMode
-                      ? Colors.white.withOpacity(0.2)
-                      : theme.colorScheme.outline.withOpacity(0.2),
+                  color: energyCompleteBays == totalBays
+                      ? Colors.green.withOpacity(0.3)
+                      : theme.colorScheme.primary.withOpacity(0.3),
                 ),
               ),
               child: Row(
                 children: [
                   Icon(
-                    Icons.analytics,
-                    color: theme.colorScheme.primary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'General Progress: $completedBays of $totalBays bays',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: totalBays > 0 ? completedBays / totalBays : 0,
-                      backgroundColor: isDarkMode
-                          ? Colors.grey.shade700
-                          : Colors.grey.shade200,
-                      valueColor: AlwaysStoppedAnimation(
-                        completedBays == totalBays
-                            ? Colors.green
-                            : theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.electric_bolt,
-                    color: Colors.green,
+                    energyCompleteBays == totalBays
+                        ? Icons.check_circle
+                        : Icons.analytics,
+                    color: energyCompleteBays == totalBays
+                        ? Colors.green
+                        : theme.colorScheme.primary,
                     size: 16,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     'Energy Progress: $energyCompleteBays of $totalBays bays',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: Colors.green,
+                      color: energyCompleteBays == totalBays
+                          ? Colors.green
+                          : theme.colorScheme.primary,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -978,7 +943,11 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                       backgroundColor: isDarkMode
                           ? Colors.grey.shade700
                           : Colors.grey.shade200,
-                      valueColor: const AlwaysStoppedAnimation(Colors.green),
+                      valueColor: AlwaysStoppedAnimation(
+                        energyCompleteBays == totalBays
+                            ? Colors.green
+                            : theme.colorScheme.primary,
+                      ),
                     ),
                   ),
                 ],
@@ -1037,7 +1006,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
@@ -1064,18 +1032,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                   color: isDarkMode
                       ? Colors.white.withOpacity(0.6)
                       : Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Please select a substation to view energy data.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontStyle: FontStyle.italic,
-                  color: isDarkMode
-                      ? Colors.white.withOpacity(0.6)
-                      : Colors.grey,
                 ),
               ),
             ],
@@ -1109,17 +1065,6 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                     color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
-                if (_cacheError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _cacheError!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.red,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -1127,88 +1072,89 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
       );
     }
 
-    return Column(
-      children: [
-        _buildHeader(),
-        Expanded(
-          child: !_hasAnyBaysWithReadings
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 64,
+    // FIX: Use SingleChildScrollView to make entire content scrollable
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          _buildHeader(),
+          // FIX: Use shrinkWrap and remove Expanded to prevent nested scroll conflicts
+          !_hasAnyBaysWithReadings
+              ? Padding(
+                  padding: const EdgeInsets.all(32.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 64,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.4)
+                            : Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No Daily Reading Assignments',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
                           color: isDarkMode
-                              ? Colors.white.withOpacity(0.4)
-                              : Colors.grey.shade400,
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey.shade600,
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No Daily Reading Assignments',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.6)
-                                : Colors.grey.shade600,
-                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No bays have been assigned daily reading templates in this substation.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey.shade600,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'No bays have been assigned daily reading templates in this substation. Please contact your administrator to set up bay reading assignments.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.6)
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 )
               : !_isDailyReadingAvailable
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.access_time_filled,
-                          size: 64,
-                          color: Colors.orange.shade400,
+              ? Padding(
+                  padding: const EdgeInsets.all(32.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.access_time_filled,
+                        size: 64,
+                        color: Colors.orange.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Daily Energy Readings Unavailable',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange.shade700,
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Daily Energy Readings Unavailable',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.orange.shade700,
-                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _cacheError ??
+                            'Daily readings will be available after 08:00 AM IST.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDarkMode
+                              ? Colors.white.withOpacity(0.6)
+                              : Colors.grey.shade600,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _cacheError ??
-                              'Daily readings for today will be available after 08:00 AM IST.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.6)
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 )
               : ListView.builder(
+                  shrinkWrap: true, // FIX: Allow ListView to size itself
+                  physics:
+                      const NeverScrollableScrollPhysics(), // FIX: Disable internal scrolling
                   padding: const EdgeInsets.only(bottom: 16),
                   itemCount: _baysWithDailyAssignments.length,
                   itemBuilder: (context, index) {
@@ -1218,8 +1164,8 @@ class _SubstationUserEnergyTabState extends State<SubstationUserEnergyTab>
                     );
                   },
                 ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

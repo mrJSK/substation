@@ -12,6 +12,7 @@ import '../../widgets/modern_app_drawer.dart';
 import 'substation_user_operations_tab.dart';
 import 'substation_user_energy_tab.dart';
 import 'substation_user_tripping_tab.dart';
+import 'substation_user_monthly_tab.dart'; // NEW import
 
 class SubstationUserDashboardScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -36,7 +37,6 @@ class _SubstationUserDashboardScreenState
   int _currentTabIndex = 0;
   DateTime _singleDate = DateTime.now();
 
-  // 🔧 FIX: Add cache health tracking
   bool _cacheHealthy = false;
   String? _cacheError;
 
@@ -48,7 +48,8 @@ class _SubstationUserDashboardScreenState
       duration: const Duration(milliseconds: 300),
     );
 
-    _tabController = TabController(length: 3, vsync: this);
+    // CHANGED: Updated length to 4 for new Monthly tab
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_handleTabSelection);
     _loadAccessibleSubstationsAndInitializeCache();
     _animationController.forward();
@@ -67,7 +68,7 @@ class _SubstationUserDashboardScreenState
     });
   }
 
-  // 🔧 FIX: Enhanced cache initialization with better error handling
+  // ... existing methods remain the same ...
   Future<void> _loadAccessibleSubstationsAndInitializeCache() async {
     setState(() {
       _isLoadingSubstations = true;
@@ -101,11 +102,9 @@ class _SubstationUserDashboardScreenState
         }
 
         try {
-          // 🔧 FIX: Initialize cache with timeout and retry logic
           print('🔄 Initializing comprehensive cache...');
           await _cache.initializeForUser(user);
 
-          // 🔧 FIX: Validate cache after initialization
           if (!_cache.validateCache()) {
             throw Exception('Cache validation failed after initialization');
           }
@@ -113,7 +112,6 @@ class _SubstationUserDashboardScreenState
           print('✅ Comprehensive cache initialized and validated successfully');
           _cacheHealthy = true;
 
-          // Get substation from cache
           final substationData = _cache.substationData;
           if (substationData != null) {
             substations.add(substationData.substation);
@@ -128,7 +126,6 @@ class _SubstationUserDashboardScreenState
           _cacheError = cacheError.toString();
           _cacheHealthy = false;
 
-          // 🔧 FIX: Fallback to Firebase with better error handling
           try {
             print('🔄 Falling back to Firebase direct query...');
             final substationDoc = await FirebaseFirestore.instance
@@ -153,7 +150,6 @@ class _SubstationUserDashboardScreenState
           }
         }
       } else {
-        // 🔧 FIX: Handle non-substation users gracefully
         setState(() {
           _cacheError = 'Access restricted to substation users only';
         });
@@ -191,7 +187,6 @@ class _SubstationUserDashboardScreenState
     }
   }
 
-  // 🔧 FIX: Enhanced date selection with validation
   Future<void> _selectSingleDate() async {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -200,9 +195,7 @@ class _SubstationUserDashboardScreenState
       context: context,
       initialDate: _singleDate,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(
-        const Duration(days: 1),
-      ), // Allow tomorrow for shift planning
+      lastDate: DateTime.now().add(const Duration(days: 1)),
       builder: (context, child) {
         return Theme(
           data: theme.copyWith(
@@ -221,7 +214,6 @@ class _SubstationUserDashboardScreenState
         _singleDate = picked;
       });
 
-      // 🔧 FIX: Optionally refresh data when date changes significantly
       final daysDiff = _singleDate.difference(picked).inDays.abs();
       if (daysDiff > 1 && _cacheHealthy) {
         _refreshData();
@@ -229,10 +221,8 @@ class _SubstationUserDashboardScreenState
     }
   }
 
-  // 🔧 FIX: Enhanced refresh with error recovery
   Future<void> _refreshData() async {
     if (!_cacheHealthy) {
-      // If cache is unhealthy, try to reinitialize
       return _loadAccessibleSubstationsAndInitializeCache();
     }
 
@@ -259,10 +249,8 @@ class _SubstationUserDashboardScreenState
         );
       }
 
-      // 🔧 FIX: Force cache refresh with validation
       await _cache.forceRefresh();
 
-      // Validate cache after refresh
       if (!_cache.validateCache()) {
         throw Exception('Cache became invalid after refresh');
       }
@@ -321,7 +309,6 @@ class _SubstationUserDashboardScreenState
     }
   }
 
-  // 🔧 FIX: Enhanced empty state with better messaging
   Widget _buildEmptyState(ThemeData theme, bool isDarkMode) {
     return Center(
       child: Card(
@@ -366,7 +353,6 @@ class _SubstationUserDashboardScreenState
               ),
               const SizedBox(height: 20),
 
-              // 🔧 FIX: Display specific error message
               if (_cacheError != null) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -441,51 +427,9 @@ class _SubstationUserDashboardScreenState
     );
   }
 
-  // 🔧 FIX: Enhanced cache status indicator
-  Widget _buildCacheStatusIndicator() {
-    if (!_cache.isInitialized) return const SizedBox.shrink();
-
-    final cacheStats = _cache.getCacheStats();
-    final cacheAge = cacheStats['cacheAge'] ?? 0;
-
-    Color statusColor = Colors.green;
-    IconData statusIcon = Icons.offline_bolt;
-    String statusText = 'CACHED';
-
-    if (!_cacheHealthy) {
-      statusColor = Colors.red;
-      statusIcon = Icons.error;
-      statusText = 'ERROR';
-    } else if (cacheAge > 60) {
-      // More than 1 hour old
-      statusColor = Colors.orange;
-      statusIcon = Icons.schedule;
-      statusText = 'STALE';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(statusIcon, size: 10, color: statusColor),
-          const SizedBox(width: 2),
-          Text(
-            statusText,
-            style: TextStyle(
-              fontSize: 8,
-              fontWeight: FontWeight.w600,
-              color: statusColor,
-            ),
-          ),
-        ],
-      ),
-    );
+  bool _isToday() {
+    final now = DateTime.now();
+    return DateUtils.isSameDay(_singleDate, now);
   }
 
   @override
@@ -511,8 +455,6 @@ class _SubstationUserDashboardScreenState
               ),
             ),
             const SizedBox(width: 12),
-            // 🔧 FIX: Add cache status indicator
-            // _buildCacheStatusIndicator(),
           ],
         ),
         leading: IconButton(
@@ -545,6 +487,7 @@ class _SubstationUserDashboardScreenState
             tooltip: _cacheHealthy ? 'Refresh Data' : 'Fix Connection',
           ),
         ],
+        // UPDATED: Add Monthly tab to TabBar
         bottom: _accessibleSubstations.isNotEmpty
             ? TabBar(
                 controller: _tabController,
@@ -581,6 +524,18 @@ class _SubstationUserDashboardScreenState
                                 : theme.colorScheme.onSurfaceVariant),
                     ),
                     text: 'Trip/SD',
+                  ),
+                  // NEW: Monthly tab for battery readings
+                  Tab(
+                    icon: Icon(
+                      Icons.battery_std,
+                      color: _currentTabIndex == 3
+                          ? theme.colorScheme.primary
+                          : (isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : theme.colorScheme.onSurfaceVariant),
+                    ),
+                    text: 'Monthly',
                   ),
                 ],
                 labelColor: theme.colorScheme.primary,
@@ -635,7 +590,6 @@ class _SubstationUserDashboardScreenState
                             ),
                           ),
                         ],
-                        // 🔧 FIX: Add progress indicator for cache operations
                         if (_cache.isInitialized) ...[
                           const SizedBox(height: 12),
                           LinearProgressIndicator(
@@ -655,7 +609,6 @@ class _SubstationUserDashboardScreenState
             ? _buildEmptyState(theme, isDarkMode)
             : Column(
                 children: [
-                  // 🔧 FIX: Enhanced date display with better formatting
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -678,7 +631,6 @@ class _SubstationUserDashboardScreenState
                             color: theme.colorScheme.primary,
                           ),
                         ),
-                        // 🔧 FIX: Add date status indicator
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -709,7 +661,7 @@ class _SubstationUserDashboardScreenState
                     ),
                   ),
 
-                  // Tab Content
+                  // UPDATED: TabBarView with Monthly tab
                   Expanded(
                     child: FadeTransition(
                       opacity: _animationController,
@@ -743,6 +695,16 @@ class _SubstationUserDashboardScreenState
                             currentUser: widget.currentUser,
                             selectedDate: _singleDate,
                           ),
+                          // NEW: Monthly tab for battery readings only
+                          SubstationUserMonthlyTab(
+                            substationId:
+                                _selectedSubstationForLogsheet?.id ?? '',
+                            substationName:
+                                _selectedSubstationForLogsheet?.name ??
+                                'Unknown',
+                            currentUser: widget.currentUser,
+                            selectedDate: _singleDate,
+                          ),
                         ],
                       ),
                     ),
@@ -751,11 +713,5 @@ class _SubstationUserDashboardScreenState
               ),
       ),
     );
-  }
-
-  // 🔧 FIX: Helper method for date checks
-  bool _isToday() {
-    final now = DateTime.now();
-    return DateUtils.isSameDay(_singleDate, now);
   }
 }

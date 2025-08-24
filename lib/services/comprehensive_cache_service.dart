@@ -171,9 +171,37 @@ class ComprehensiveCacheService {
         .orderBy('startTime', descending: true)
         .get();
 
+    // 🔧 FIX: Deduplicate events by ID to prevent counting duplicates
+    print('🔍 Event Deduplication Debug:');
+    print('   Raw events from Firestore: ${eventsSnapshot.docs.length}');
+
     final recentEvents = eventsSnapshot.docs
         .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+        .fold<Map<String, TrippingShutdownEntry>>({}, (map, event) {
+          // Use event ID as key to ensure uniqueness
+          if (event.id != null) {
+            map[event.id!] = event;
+          }
+          return map;
+        })
+        .values
         .toList();
+
+    // Sort by start time (most recent first)
+    recentEvents.sort((a, b) => b.startTime.compareTo(a.startTime));
+
+    print('   Unique events after deduplication: ${recentEvents.length}');
+
+    // Check for duplicates by ID (debug)
+    final eventIds = recentEvents.map((e) => e.id).toList();
+    final uniqueIds = eventIds.toSet();
+    if (eventIds.length != uniqueIds.length) {
+      print(
+        '⚠️ WARNING: Found ${eventIds.length - uniqueIds.length} duplicate events after deduplication!',
+      );
+    } else {
+      print('✅ No duplicate events found');
+    }
 
     // Calculate statistics
     final statistics = SubstationStatistics(
@@ -205,6 +233,21 @@ class ComprehensiveCacheService {
       hierarchyContext: hierarchyContext,
       lastFullRefresh: DateTime.now(),
     );
+  }
+
+  // 🔧 FIX: Enhanced deduplication helper method
+  List<TrippingShutdownEntry> _deduplicateEventsByID(
+    List<TrippingShutdownEntry> events,
+  ) {
+    final Map<String, TrippingShutdownEntry> uniqueEvents = {};
+
+    for (var event in events) {
+      if (event.id != null) {
+        uniqueEvents[event.id!] = event;
+      }
+    }
+
+    return uniqueEvents.values.toList();
   }
 
   // Quick access methods for screens
@@ -391,12 +434,46 @@ class ComprehensiveCacheService {
     }
   }
 
-  // 🔧 FIX: Add partial refresh method for better performance
+  // 🔧 FIX: Enhanced partial refresh method with deduplication
   Future<void> partialRefresh() async {
     if (_substationData == null || _currentSubstationId == null) return;
 
     try {
       print('🔄 Starting partial refresh...');
+
+      // Refresh tripping events from the last 7 days
+      final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+      final eventsSnapshot = await FirebaseFirestore.instance
+          .collection('trippingShutdownEntries')
+          .where('substationId', isEqualTo: _currentSubstationId)
+          .where(
+            'startTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(sevenDaysAgo),
+          )
+          .orderBy('startTime', descending: true)
+          .get();
+
+      // Merge with existing events and deduplicate
+      final newEvents = eventsSnapshot.docs
+          .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+          .toList();
+
+      final allEvents = [
+        ..._substationData!.recentTrippingEvents,
+        ...newEvents,
+      ];
+      final uniqueEvents = _deduplicateEventsByID(allEvents);
+
+      // Sort by start time and limit to 100 events
+      uniqueEvents.sort((a, b) => b.startTime.compareTo(a.startTime));
+      if (uniqueEvents.length > 100) {
+        uniqueEvents.removeRange(100, uniqueEvents.length);
+      }
+
+      // Update cache with deduplicated events
+      _substationData = _substationData!.copyWith(
+        recentTrippingEvents: uniqueEvents,
+      );
 
       // Only refresh readings from the last 2 days for better performance
       final twoDaysAgo = DateTime.now().subtract(const Duration(days: 2));
@@ -418,7 +495,9 @@ class ComprehensiveCacheService {
         }
       }
 
-      print('✅ Partial refresh completed');
+      print(
+        '✅ Partial refresh completed with ${uniqueEvents.length} unique events',
+      );
     } catch (e) {
       print('❌ Error during partial refresh: $e');
       // Don't rethrow, fallback to using existing cache
@@ -443,6 +522,26 @@ class ComprehensiveCacheService {
       return false;
     }
 
+    // 🔧 FIX: Validate that events are properly deduplicated
+    final eventIds = _substationData!.recentTrippingEvents
+        .map((e) => e.id)
+        .toList();
+    final uniqueIds = eventIds.toSet();
+    if (eventIds.length != uniqueIds.length) {
+      print(
+        '⚠️ Cache validation warning: Found ${eventIds.length - uniqueIds.length} duplicate events in cache',
+      );
+
+      // Auto-fix duplicates in cache
+      final deduplicatedEvents = _deduplicateEventsByID(
+        _substationData!.recentTrippingEvents,
+      );
+      _substationData = _substationData!.copyWith(
+        recentTrippingEvents: deduplicatedEvents,
+      );
+      print('✅ Auto-fixed duplicate events in cache');
+    }
+
     print('✅ Cache validation passed');
     return true;
   }
@@ -454,7 +553,7 @@ class ComprehensiveCacheService {
     print('🗑️ Cache cleared');
   }
 
-  // 🔧 FIX: Add method to get cache statistics
+  // 🔧 FIX: Enhanced method to get cache statistics with deduplication info
   Map<String, dynamic> getCacheStats() {
     if (_substationData == null) {
       return {
@@ -465,6 +564,13 @@ class ComprehensiveCacheService {
       };
     }
 
+    // Check for duplicates in current cache
+    final eventIds = _substationData!.recentTrippingEvents
+        .map((e) => e.id)
+        .toList();
+    final uniqueIds = eventIds.toSet();
+    final duplicateCount = eventIds.length - uniqueIds.length;
+
     return {
       'initialized': true,
       'substationId': _currentSubstationId,
@@ -472,6 +578,7 @@ class ComprehensiveCacheService {
       'lastRefresh': _substationData!.lastFullRefresh.toIso8601String(),
       'totalBays': _substationData!.bays.length,
       'totalEvents': _substationData!.recentTrippingEvents.length,
+      'duplicateEvents': duplicateCount,
       'cacheAge': DateTime.now()
           .difference(_substationData!.lastFullRefresh)
           .inMinutes,

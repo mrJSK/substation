@@ -1,5 +1,3 @@
-// lib/screens/bay_readings_status_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
@@ -8,7 +6,6 @@ import '../../services/comprehensive_cache_service.dart';
 import '../../utils/snackbar_utils.dart';
 import 'logsheet_entry_screen.dart';
 
-// Enhanced Equipment Icon Widget
 class _EquipmentIcon extends StatelessWidget {
   final String bayType;
   final Color color;
@@ -42,11 +39,16 @@ class _EquipmentIcon extends StatelessWidget {
       case 'reactor':
         iconData = Icons.device_hub;
         break;
+      case 'battery':
+        iconData = Icons.battery_std;
+        break;
+      case 'bus coupler':
+        iconData = Icons.power_settings_new;
+        break;
       default:
         iconData = Icons.electrical_services;
         break;
     }
-
     return Icon(iconData, size: size, color: color);
   }
 }
@@ -80,7 +82,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
   bool get wantKeepAlive => true;
 
   final ComprehensiveCacheService _cache = ComprehensiveCacheService();
-
   bool _isLoading = true;
   List<EnhancedBayData> _baysWithAssignments = [];
   Map<String, bool> _bayCompletionStatus = {};
@@ -91,11 +92,9 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
     _loadDataFromCache();
   }
 
-  // 🔧 FIX: Force refresh when returning from reading entry
   @override
   void didUpdateWidget(BayReadingsStatusScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Force refresh when returning from entry screen
     if (mounted) {
       _calculateCompletionStatuses();
     }
@@ -103,19 +102,12 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
 
   Future<void> _loadDataFromCache() async {
     setState(() => _isLoading = true);
-
     try {
-      // ✅ USE CACHE - No Firebase queries!
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
       }
-
-      // Get bays with assignments for the specified frequency
       _baysWithAssignments = _cache.getBaysWithReadings(widget.frequencyType);
-
-      // Calculate completion status from cache
       _calculateCompletionStatuses();
-
       print(
         '✅ Loaded ${_baysWithAssignments.length} bays from cache for ${widget.frequencyType} readings',
       );
@@ -137,36 +129,26 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
 
   void _calculateCompletionStatuses() {
     _bayCompletionStatus.clear();
-
     for (var bayData in _baysWithAssignments) {
-      // ✅ USE CACHE - Check completion from cached data
       final isComplete = bayData.isComplete(
         widget.selectedDate,
         widget.frequencyType,
         hour: widget.selectedHour,
       );
-
       _bayCompletionStatus[bayData.id] = isComplete;
     }
   }
 
-  // 🔧 FIX: Enhanced refresh to ensure cache consistency
   Future<void> _refreshBayStatus(String bayId) async {
     try {
-      // Force refresh the entire cache for this substation to ensure consistency
       await _cache.refreshSubstationData(widget.substationId);
-
-      // Recalculate completion statuses from updated cache
       _calculateCompletionStatuses();
-
       if (mounted) {
         setState(() {});
       }
-
       print('✅ Bay status refreshed for: $bayId');
     } catch (e) {
       print('❌ Error refreshing bay status: $e');
-      // Fallback to just recalculating from existing cache
       _calculateCompletionStatuses();
       if (mounted) {
         setState(() {});
@@ -174,7 +156,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
     }
   }
 
-  // 🔧 FIX: Check if user has permission to modify existing readings
   bool _canModifyExistingReading(AppUser user) {
     return [
       UserRole.admin,
@@ -185,11 +166,9 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
     ].contains(user.role);
   }
 
-  // 🔧 FIX: Show dialog for completed readings
   Future<void> _showReadingCompletedDialog(EnhancedBayData bayData) async {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -216,7 +195,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Reading for ${bayData.name} has already been recorded for this ${widget.frequencyType == 'hourly' ? 'hour' : 'date'}.',
+              'Reading for ${bayData.bay.name} has already been recorded for this ${_getFrequencyLabel()}.',
               style: TextStyle(
                 fontSize: 14,
                 color: isDarkMode
@@ -265,7 +244,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
           ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(context);
-              // Navigate to view/edit mode based on permissions
               _navigateToReadingEntry(
                 bayData,
                 forceReadOnly: !_canModifyExistingReading(widget.currentUser),
@@ -293,7 +271,19 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
     );
   }
 
-  // 🔧 FIX: Centralized navigation logic
+  String _getFrequencyLabel() {
+    switch (widget.frequencyType) {
+      case 'hourly':
+        return 'hour';
+      case 'daily':
+        return 'date';
+      case 'monthly':
+        return 'month';
+      default:
+        return 'period';
+    }
+  }
+
   void _navigateToReadingEntry(
     EnhancedBayData bayData, {
     bool forceReadOnly = false,
@@ -314,7 +304,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
           ),
         )
         .then((result) {
-          // 🔧 FIX: Force complete refresh after any navigation
           if (result == true) {
             print('🔄 Refreshing after reading entry for bay: ${bayData.id}');
             _refreshBayStatus(bayData.id);
@@ -324,8 +313,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
-
+    super.build(context);
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
@@ -335,9 +323,10 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
           ' - ${widget.selectedHour!.toString().padLeft(2, '0')}:00 Hr';
     } else if (widget.frequencyType == 'daily') {
       slotTitle += ' - Daily Reading';
+    } else if (widget.frequencyType == 'monthly') {
+      slotTitle += ' - Monthly Reading';
     }
 
-    // Calculate completion stats
     int completedBays = _bayCompletionStatus.values
         .where((status) => status)
         .length;
@@ -369,7 +358,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
           onPressed: () => Navigator.pop(context, true),
         ),
         actions: [
-          // Add refresh button
           IconButton(
             onPressed: () async {
               try {
@@ -379,10 +367,8 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                     duration: Duration(seconds: 1),
                   ),
                 );
-
                 await _cache.forceRefresh();
                 await _loadDataFromCache();
-
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -445,7 +431,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
             )
           : Column(
               children: [
-                // Header with slot info and completion stats
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -485,9 +470,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(
-                              widget.frequencyType == 'hourly'
-                                  ? Icons.access_time
-                                  : Icons.calendar_today,
+                              _getFrequencyIcon(),
                               color: theme.colorScheme.primary,
                               size: 24,
                             ),
@@ -522,7 +505,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                         ],
                       ),
                       const SizedBox(height: 16),
-                      // Completion Stats
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -603,8 +585,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                     ],
                   ),
                 ),
-
-                // Bay list
                 Expanded(
                   child: _baysWithAssignments.isEmpty
                       ? Center(
@@ -694,7 +674,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                     offset: const Offset(0, 2),
                                   ),
                                 ],
-                                // 🔧 FIX: Add border for completed readings
                                 border: isBayComplete
                                     ? Border.all(
                                         color: Colors.green.withOpacity(0.3),
@@ -723,7 +702,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                     ),
                                   ),
                                   child: Icon(
-                                    // 🔧 FIX: Different icons for completed vs incomplete
                                     isBayComplete
                                         ? Icons.visibility
                                         : Icons.edit,
@@ -736,14 +714,14 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                 title: Row(
                                   children: [
                                     _EquipmentIcon(
-                                      bayType: bayData.bayType,
+                                      bayType: bayData.bay.bayType,
                                       color: theme.colorScheme.primary,
                                       size: 16,
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        bayData.name,
+                                        bayData.bay.name,
                                         style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
@@ -760,7 +738,7 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                   children: [
                                     const SizedBox(height: 4),
                                     Text(
-                                      '${bayData.voltageLevel} ${bayData.bayType}',
+                                      '${bayData.bay.voltageLevel} ${bayData.bay.bayType}',
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: isDarkMode
@@ -815,7 +793,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    // 🔧 FIX: Show completed indicator
                                     if (isBayComplete)
                                       Container(
                                         padding: const EdgeInsets.symmetric(
@@ -853,7 +830,6 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
                                   ],
                                 ),
                                 onTap: () {
-                                  // 🔧 FIX: Handle completed readings differently
                                   if (isBayComplete) {
                                     _showReadingCompletedDialog(bayData);
                                   } else {
@@ -868,5 +844,18 @@ class _BayReadingsStatusScreenState extends State<BayReadingsStatusScreen>
               ],
             ),
     );
+  }
+
+  IconData _getFrequencyIcon() {
+    switch (widget.frequencyType) {
+      case 'hourly':
+        return Icons.access_time;
+      case 'daily':
+        return Icons.calendar_today;
+      case 'monthly':
+        return Icons.calendar_view_month;
+      default:
+        return Icons.schedule;
+    }
   }
 }

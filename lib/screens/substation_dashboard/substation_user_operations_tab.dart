@@ -606,149 +606,205 @@ class _SubstationUserOperationsTabState
       );
     }
 
-    return Column(
-      children: [
-        // 🔧 FIX: Enhanced header with cache status
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          margin: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isDarkMode
-                ? theme.colorScheme.primary.withOpacity(0.2)
-                : theme.colorScheme.primaryContainer.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: theme.colorScheme.primary.withOpacity(0.3),
+    // FIX: Use SingleChildScrollView to make entire content scrollable
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Enhanced header with cache status
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDarkMode
+                  ? theme.colorScheme.primary.withOpacity(0.2)
+                  : theme.colorScheme.primaryContainer.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: theme.colorScheme.primary.withOpacity(0.3),
+              ),
             ),
-          ),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.access_time,
-                    color: theme.colorScheme.primary,
-                    size: 32,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      color: theme.colorScheme.primary,
+                      size: 32,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Text(
+                            'Hourly Operations',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          Text(
+                            DateFormat(
+                              'EEEE, dd MMMM yyyy',
+                            ).format(widget.selectedDate),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.7)
+                                  : theme.colorScheme.onSurface.withOpacity(
+                                      0.7,
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildCacheStatusIndicator(),
+                  ],
+                ),
+                if (_hasAnyBaysWithReadings && _hourlySlots.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDarkMode
+                          ? const Color(0xFF3C3C3E)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        Text(
-                          'Hourly Operations',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.primary,
-                          ),
+                        _buildStatItem(
+                          'Total Slots',
+                          '${_hourlySlots.length}',
+                          Icons.schedule,
+                          Colors.blue,
                         ),
-                        Text(
-                          DateFormat(
-                            'EEEE, dd MMMM yyyy',
-                          ).format(widget.selectedDate),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.7)
-                                : theme.colorScheme.onSurface.withOpacity(0.7),
-                          ),
+                        _buildStatItem(
+                          'Completed',
+                          '${_slotCompletionStatus.values.where((c) => c).length}',
+                          Icons.check_circle,
+                          Colors.green,
+                        ),
+                        _buildStatItem(
+                          'Bays',
+                          '${_baysWithHourlyAssignments.length}',
+                          Icons.electrical_services,
+                          Colors.orange,
                         ),
                       ],
                     ),
                   ),
-                  _buildCacheStatusIndicator(),
                 ],
-              ),
-              if (_hasAnyBaysWithReadings && _hourlySlots.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildStatItem(
-                        'Total Slots',
-                        '${_hourlySlots.length}',
-                        Icons.schedule,
-                        Colors.blue,
-                      ),
-                      _buildStatItem(
-                        'Completed',
-                        '${_slotCompletionStatus.values.where((c) => c).length}',
-                        Icons.check_circle,
-                        Colors.green,
-                      ),
-                      _buildStatItem(
-                        'Bays',
-                        '${_baysWithHourlyAssignments.length}',
-                        Icons.electrical_services,
-                        Colors.orange,
-                      ),
-                    ],
-                  ),
-                ),
               ],
-            ],
+            ),
           ),
-        ),
 
-        Expanded(
-          child: _isLoading
-              ? Center(
-                  child: Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(
-                            color: theme.colorScheme.primary,
-                            strokeWidth: 3,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Loading from cache...',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: isDarkMode ? Colors.white : Colors.black87,
+          // FIX: Content area with proper handling of different states
+          _isLoading
+              ? Container(
+                  height: 400, // Fixed height for loading state
+                  child: Center(
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      color: isDarkMode
+                          ? const Color(0xFF2C2C2E)
+                          : Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(
+                              color: theme.colorScheme.primary,
+                              strokeWidth: 3,
                             ),
-                          ),
-                          if (_cacheError != null) ...[
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 16),
                             Text(
-                              _cacheError!,
+                              'Loading from cache...',
                               style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.red,
-                                fontStyle: FontStyle.italic,
+                                fontSize: 16,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
+                            if (_cacheError != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                _cacheError!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 )
               : !_hasAnyBaysWithReadings
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32.0),
+              ? Container(
+                  height: 400, // Fixed height for empty state
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 64,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.4)
+                                : Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No Hourly Reading Assignments',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.6)
+                                  : Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No bays have been assigned hourly reading templates in this substation.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.6)
+                                  : Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : _hourlySlots.isEmpty
+              ? Container(
+                  height: 400, // Fixed height for no slots state
+                  child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.info_outline,
+                          Icons.schedule,
                           size: 64,
                           color: isDarkMode
                               ? Colors.white.withOpacity(0.4)
@@ -756,7 +812,7 @@ class _SubstationUserOperationsTabState
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No Hourly Reading Assignments',
+                          'No Hourly Slots Available',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
@@ -767,7 +823,9 @@ class _SubstationUserOperationsTabState
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'No bays have been assigned hourly reading templates in this substation. Please contact your administrator to set up bay reading assignments.',
+                          widget.selectedDate.isAfter(DateTime.now())
+                              ? 'Future dates are not available for reading entry.'
+                              : 'No hourly slots available for this date.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -780,54 +838,22 @@ class _SubstationUserOperationsTabState
                     ),
                   ),
                 )
-              : _hourlySlots.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.schedule,
-                        size: 64,
-                        color: isDarkMode
-                            ? Colors.white.withOpacity(0.4)
-                            : Colors.grey.shade400,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No Hourly Slots Available',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.6)
-                              : Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.selectedDate.isAfter(DateTime.now())
-                            ? 'Future dates are not available for reading entry.'
-                            : 'No hourly slots available for this date.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.6)
-                              : Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
+              : // FIX: Use ListView with shrinkWrap and NeverScrollableScrollPhysics
+                ListView.builder(
+                  shrinkWrap: true, // Allow ListView to size itself
+                  physics:
+                      const NeverScrollableScrollPhysics(), // Disable internal scrolling
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: _hourlySlots.length,
                   itemBuilder: (context, index) {
                     return _buildSlotCard(_hourlySlots[index], index);
                   },
                 ),
-        ),
-      ],
+
+          // Add bottom padding to prevent content from being cut off
+          const SizedBox(height: 16),
+        ],
+      ),
     );
   }
 
