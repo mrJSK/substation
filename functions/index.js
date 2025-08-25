@@ -1,7 +1,3 @@
-/**
- * @fileoverview Firebase Cloud Functions for notification system
- */
-
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
@@ -11,17 +7,17 @@ const {
 } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
-// Initialize Firebase Admin
 initializeApp();
 const db = getFirestore();
 const messaging = getMessaging();
 
-// Set global options (optional)
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 
-/**
- * Format timestamp to IST (Indian Standard Time)
- */
+let preferencesCache = new Map();
+let tokenCache = new Map();
+let cacheTimestamp = 0;
+const CACHE_DURATION = 5 * 60 * 1000;
+
 function formatTime(timestamp) {
   if (!timestamp) return "N/A";
 
@@ -34,7 +30,6 @@ function formatTime(timestamp) {
     return "N/A";
   }
 
-  // Convert to IST and format
   const istString = date.toLocaleString("en-IN", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
@@ -45,16 +40,12 @@ function formatTime(timestamp) {
     hour12: false,
   });
 
-  // Parse and reformat to match desired format: "HH:MM, DD MMM YYYY"
   const [datePart, timePart] = istString.split(", ");
   const [day, month, year] = datePart.split(" ");
 
   return `${timePart}, ${day} ${month} ${year}`;
 }
 
-/**
- * MISSING FUNCTION 2: Calculate duration between start and end time
- */
 function calculateEventDuration(startTime, endTime) {
   if (!startTime || !endTime) return "";
 
@@ -73,9 +64,6 @@ function calculateEventDuration(startTime, endTime) {
   }
 }
 
-/**
- * Enhanced message formatting with icons only (no images)
- */
 function formatNotificationMessage(eventData, bayData, status) {
   const assetName = bayData.name;
   const substationName = eventData.substationName || "Unknown Substation";
@@ -89,18 +77,21 @@ function formatNotificationMessage(eventData, bayData, status) {
   let bodyLines = [];
 
   if (status === "closed") {
-    // CLOSED EVENT
-    title = `✅ ${eventData.eventType} Restored: ${assetName}`;
+    const restoredText =
+      eventData.eventType === "Breakdown" ? "Fixed" : "Restored";
+    title = `✅ ${eventData.eventType} ${restoredText}: ${assetName}`;
 
     bodyLines.push(`📍 Substation: ${substationName}`);
-    bodyLines.push(`🕐 Close Time: ${formatTime(eventData.endTime)}`);
+
+    const closeTimeLabel =
+      eventData.eventType === "Breakdown" ? "Fix Time" : "Close Time";
+    bodyLines.push(`🕐 ${closeTimeLabel}: ${formatTime(eventData.endTime)}`);
     bodyLines.push(`🚩 Flag: ${flag}`);
 
     if (cause) {
       bodyLines.push(`❗ Cause: ${cause}`);
     }
 
-    // Add shutdown person details for shutdown events
     if (eventData.eventType === "Shutdown") {
       if (eventData.shutdownPersonName) {
         bodyLines.push(`👤 Person: ${eventData.shutdownPersonName}`);
@@ -112,21 +103,32 @@ function formatNotificationMessage(eventData, bayData, status) {
       }
     }
 
-    // Add duration
     const duration = calculateEventDuration(
       eventData.startTime,
       eventData.endTime
     );
     if (duration) {
-      bodyLines.push(`⏱️ Duration: ${duration}`);
+      const durationLabel =
+        eventData.eventType === "Breakdown" ? "Repair Duration" : "Duration";
+      bodyLines.push(`⏱️ ${durationLabel}: ${duration}`);
     }
   } else {
-    // OPEN EVENT
-    const emoji = eventData.eventType === "Tripping" ? "⚡" : "🔌";
+    let emoji = "⚡";
+    if (eventData.eventType === "Shutdown") {
+      emoji = "🔌";
+    } else if (eventData.eventType === "Breakdown") {
+      emoji = "🔧";
+    }
+
     title = `${emoji} ${eventData.eventType}: ${assetName}`;
 
-    const timeLabel =
-      eventData.eventType === "Tripping" ? "Trip Time" : "Start Time";
+    let timeLabel = "Start Time";
+    if (eventData.eventType === "Tripping") {
+      timeLabel = "Trip Time";
+    } else if (eventData.eventType === "Breakdown") {
+      timeLabel = "Breakdown Time";
+    }
+
     bodyLines.push(`📍 Substation: ${substationName}`);
     bodyLines.push(`🕐 ${timeLabel}: ${formatTime(eventData.startTime)}`);
     bodyLines.push(`🚩 Flag: ${flag}`);
@@ -135,7 +137,6 @@ function formatNotificationMessage(eventData, bayData, status) {
       bodyLines.push(`❗ Cause: ${cause}`);
     }
 
-    // Add shutdown person details for shutdown events
     if (eventData.eventType === "Shutdown") {
       if (eventData.shutdownPersonName) {
         bodyLines.push(`👤 Person: ${eventData.shutdownPersonName}`);
@@ -147,21 +148,23 @@ function formatNotificationMessage(eventData, bayData, status) {
       }
     }
 
-    // Add phase faults for tripping
     if (
-      eventData.eventType === "Tripping" &&
+      (eventData.eventType === "Tripping" ||
+        eventData.eventType === "Breakdown") &&
       eventData.phaseFaults &&
       eventData.phaseFaults.length > 0
     ) {
       bodyLines.push(`⚡ Phases: ${eventData.phaseFaults.join(", ")}`);
     }
 
-    // Add distance for line tripping
-    if (eventData.eventType === "Tripping" && eventData.distance) {
+    if (
+      (eventData.eventType === "Tripping" ||
+        eventData.eventType === "Breakdown") &&
+      eventData.distance
+    ) {
       bodyLines.push(`📏 Distance: ${eventData.distance} km`);
     }
 
-    // Add auto-reclose info for high voltage lines
     if (
       eventData.eventType === "Tripping" &&
       eventData.hasAutoReclose === true
@@ -176,146 +179,488 @@ function formatNotificationMessage(eventData, bayData, status) {
   };
 }
 
-/**
- * Complete enhanced notification logic - Icons only
- */
 async function sendEventNotification(eventData, eventId, status) {
-  const bayDoc = await db.collection("bays").doc(eventData.bayId).get();
-  if (!bayDoc.exists) {
-    console.log("Bay not found:", eventData.bayId);
-    return;
-  }
-  const bayData = bayDoc.data();
-  const voltageLevel = parseVoltageLevel(bayData.voltageLevel);
-  const bayType = (bayData.bayType || "").toLowerCase();
+  try {
+    const bayDoc = await db.collection("bays").doc(eventData.bayId).get();
+    if (!bayDoc.exists) {
+      console.log("Bay not found:", eventData.bayId);
+      return;
+    }
 
-  console.log(
-    `Processing ${eventData.eventType} ${status} for bay: ${bayData.name} at ${eventData.substationName}, bayType: ${bayType}, voltage: ${voltageLevel}kV`
-  );
+    const bayData = bayDoc.data();
+    const voltageLevel = parseVoltageLevel(bayData.voltageLevel);
+    const bayType = (bayData.bayType || "").toLowerCase();
 
-  // User hierarchy query
-  const eligibleUsers = await getEligibleUsersForSubstation(
-    eventData.substationId
-  );
+    console.log(
+      `Processing ${eventData.eventType} ${status} for bay: ${bayData.name} at ${eventData.substationName}`
+    );
 
-  // User filtering based on preferences
-  const recipientTokens = await filterUsersForNotification(
-    eventData,
-    bayData,
-    voltageLevel,
-    eligibleUsers,
-    eventData.eventType.toLowerCase()
-  );
+    const recipientTokens = await getOptimizedRecipientsForNotification(
+      eventData.substationId,
+      eventData.eventType.toLowerCase(),
+      voltageLevel,
+      bayType,
+      eventId
+    );
 
-  if (recipientTokens.length === 0) {
-    console.log("No eligible recipients found after filtering");
-    return;
-  }
+    if (recipientTokens.length === 0) {
+      console.log("No eligible recipients found after filtering");
+      return;
+    }
 
-  console.log(`Sending notification to ${recipientTokens.length} devices`);
+    console.log(`Sending notification to ${recipientTokens.length} devices`);
 
-  // Enhanced professional messaging with icons only
-  const { title, body } = formatNotificationMessage(eventData, bayData, status);
+    const { title, body } = formatNotificationMessage(
+      eventData,
+      bayData,
+      status
+    );
 
-  const message = {
-    notification: {
-      title,
-      body,
-      // Removed icon and badge properties - using emojis only
-    },
-    data: {
-      eventId,
-      eventType: eventData.eventType.toLowerCase(),
-      substationId: eventData.substationId || "",
-      substationName: eventData.substationName || "",
-      bayId: eventData.bayId || "",
-      bayName: bayData.name || "",
-      bayType: bayData.bayType || "",
-      voltageLevel: bayData.voltageLevel || "",
-      startTime: eventData.startTime?.toDate?.()?.toISOString?.() || "",
-      endTime: eventData.endTime?.toDate?.()?.toISOString?.() || "",
-      status,
-      flagsCause: eventData.flagsCause || "",
-      reasonForNonFeeder: eventData.reasonForNonFeeder || "",
-      hasAutoReclose: eventData.hasAutoReclose?.toString() || "",
-      phaseFaults: eventData.phaseFaults
-        ? JSON.stringify(eventData.phaseFaults)
-        : "",
-      distance: eventData.distance || "",
-      shutdownType: eventData.shutdownType || "",
-      shutdownPersonName: eventData.shutdownPersonName || "",
-      shutdownPersonDesignation: eventData.shutdownPersonDesignation || "",
-      timestamp: new Date().toISOString(),
-      click_action: "FLUTTER_NOTIFICATION_CLICK",
-    },
-    android: {
-      priority: eventData.eventType === "Tripping" ? "high" : "normal",
+    const message = {
       notification: {
-        channelId: getNotificationChannel(eventData.eventType, status),
-        color: getNotificationColor(eventData.eventType, status),
-        sound: eventData.eventType === "Tripping" ? "alert.wav" : "default",
-        // Removed icon property - using emojis in title/body
+        title,
+        body,
       },
-    },
-    apns: {
-      payload: {
-        aps: {
-          category: getNotificationChannel(eventData.eventType, status),
-          sound: eventData.eventType === "Tripping" ? "alert.wav" : "default",
+      data: {
+        eventId,
+        eventType: eventData.eventType.toLowerCase(),
+        substationId: eventData.substationId || "",
+        substationName: eventData.substationName || "",
+        bayId: eventData.bayId || "",
+        bayName: bayData.name || "",
+        bayType: bayData.bayType || "",
+        voltageLevel: bayData.voltageLevel || "",
+        startTime: eventData.startTime?.toDate?.()?.toISOString?.() || "",
+        endTime: eventData.endTime?.toDate?.()?.toISOString?.() || "",
+        status,
+        flagsCause: eventData.flagsCause || "",
+        reasonForNonFeeder: eventData.reasonForNonFeeder || "",
+        hasAutoReclose: eventData.hasAutoReclose?.toString() || "",
+        phaseFaults: eventData.phaseFaults
+          ? JSON.stringify(eventData.phaseFaults)
+          : "",
+        distance: eventData.distance || "",
+        shutdownType: eventData.shutdownType || "",
+        shutdownPersonName: eventData.shutdownPersonName || "",
+        shutdownPersonDesignation: eventData.shutdownPersonDesignation || "",
+        timestamp: new Date().toISOString(),
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+        navigation_target: "event_details",
+      },
+      android: {
+        priority: getNotificationPriority(eventData.eventType),
+        notification: {
+          channelId: getNotificationChannel(eventData.eventType, status),
+          color: getNotificationColor(eventData.eventType, status),
+          sound: getNotificationSound(eventData.eventType),
+          clickAction: "FLUTTER_NOTIFICATION_CLICK",
         },
       },
-    },
-  };
+      apns: {
+        payload: {
+          aps: {
+            category: getNotificationChannel(eventData.eventType, status),
+            sound: getNotificationSound(eventData.eventType),
+          },
+        },
+      },
+    };
 
-  // Individual sends to avoid batch errors
-  let successCount = 0;
-  let failureCount = 0;
+    const batches = [];
+    for (let i = 0; i < recipientTokens.length; i += 500) {
+      batches.push(recipientTokens.slice(i, i + 500));
+    }
 
-  for (let i = 0; i < recipientTokens.length; i++) {
-    try {
-      const individualMessage = {
-        notification: message.notification,
-        data: message.data,
-        android: message.android,
-        apns: message.apns,
-        token: recipientTokens[i],
-      };
+    let totalSuccess = 0;
+    let totalFailure = 0;
 
-      const response = await messaging.send(individualMessage);
-      successCount++;
+    const batchPromises = batches.map(async (batch, index) => {
+      try {
+        const multicastMessage = {
+          ...message,
+          tokens: batch,
+        };
+
+        const response = await messaging.sendMulticast(multicastMessage);
+        totalSuccess += response.successCount;
+        totalFailure += response.failureCount;
+
+        console.log(
+          `✅ Batch ${index + 1}: ${response.successCount}/${
+            batch.length
+          } sent successfully`
+        );
+
+        if (response.failureCount > 0) {
+          await cleanupInvalidTokensBatch(response.responses, batch);
+        }
+
+        return {
+          success: response.successCount,
+          failure: response.failureCount,
+        };
+      } catch (error) {
+        console.error(`❌ Batch ${index + 1} failed:`, error);
+        totalFailure += batch.length;
+        return { success: 0, failure: batch.length };
+      }
+    });
+
+    await Promise.all(batchPromises);
+
+    console.log(
+      `🎯 TOTAL NOTIFICATION RESULT: ${totalSuccess} successful, ${totalFailure} failed`
+    );
+  } catch (error) {
+    console.error("❌ Error in sendEventNotification:", error);
+  }
+}
+
+async function getOptimizedRecipientsForNotification(
+  substationId,
+  eventType,
+  voltageLevel,
+  bayType,
+  eventId
+) {
+  try {
+    console.log(
+      `🚀 Starting optimized recipient filtering for event ${eventId}`
+    );
+
+    const now = Date.now();
+    const isCacheValid = now - cacheTimestamp < CACHE_DURATION;
+
+    if (!isCacheValid) {
       console.log(
-        `✅ Sent to token ${i + 1}/${recipientTokens.length}: ${recipientTokens[
-          i
-        ].substring(0, 20)}...`
+        `🔄 Refreshing cache (expired ${Math.round(
+          (now - cacheTimestamp) / 1000
+        )}s ago)`
       );
-    } catch (error) {
-      failureCount++;
+      await refreshCache();
+    } else {
       console.log(
-        `❌ Failed to send to token ${i + 1}/${recipientTokens.length}:`,
-        error.code || error.message
+        `✅ Using cached data (${Math.round(
+          (now - cacheTimestamp) / 1000
+        )}s old)`
       );
     }
+
+    const hierarchy = await getSubstationHierarchy(substationId);
+    if (!hierarchy) {
+      console.log(`❌ No hierarchy found for substation: ${substationId}`);
+      return [];
+    }
+
+    const eligibleUsers = await getEligibleUsersOptimized(hierarchy);
+    console.log(`👥 Found ${eligibleUsers.length} eligible users in hierarchy`);
+
+    const filteredTokens = [];
+    let processedUsers = 0;
+    let eligibleUsers_filtered = 0;
+
+    for (const user of eligibleUsers) {
+      processedUsers++;
+
+      const preferences =
+        preferencesCache.get(user.userId) || getDefaultPreferences();
+
+      if (!isNotificationEnabled(preferences, eventType)) {
+        continue;
+      }
+
+      if (!meetsVoltageThreshold(preferences, voltageLevel)) {
+        continue;
+      }
+
+      if (!matchesBayType(preferences, bayType)) {
+        continue;
+      }
+
+      if (!matchesSubstation(preferences, substationId)) {
+        continue;
+      }
+
+      const token = tokenCache.get(user.userId);
+      if (token) {
+        filteredTokens.push(token);
+        eligibleUsers_filtered++;
+      }
+    }
+
+    console.log(
+      `🎯 FILTERING SUMMARY: Processed ${processedUsers} users, ${eligibleUsers_filtered} eligible, ${filteredTokens.length} tokens found`
+    );
+
+    return filteredTokens;
+  } catch (error) {
+    console.error("❌ Error in getOptimizedRecipientsForNotification:", error);
+    return [];
+  }
+}
+
+async function refreshCache() {
+  try {
+    const startTime = Date.now();
+
+    const [preferencesSnapshot, tokensSnapshot] = await Promise.all([
+      db.collection("notificationPreferences").get(),
+      db.collection("fcmTokens").where("active", "==", true).get(),
+    ]);
+
+    preferencesCache.clear();
+    tokenCache.clear();
+
+    preferencesSnapshot.docs.forEach((doc) => {
+      preferencesCache.set(doc.id, doc.data());
+    });
+
+    tokensSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      if (data.token) {
+        tokenCache.set(doc.id, data.token);
+      }
+    });
+
+    cacheTimestamp = Date.now();
+
+    const duration = Date.now() - startTime;
+    console.log(
+      `✅ Cache refreshed in ${duration}ms: ${preferencesCache.size} preferences, ${tokenCache.size} tokens`
+    );
+  } catch (error) {
+    console.error("❌ Error refreshing cache:", error);
+  }
+}
+
+async function getSubstationHierarchy(substationId) {
+  try {
+    const substationDoc = await db
+      .collection("substations")
+      .doc(substationId)
+      .get();
+
+    if (!substationDoc.exists) {
+      return null;
+    }
+
+    const substationData = substationDoc.data();
+    const subdivisionId = substationData.subdivisionId;
+
+    if (!subdivisionId) {
+      return null;
+    }
+
+    const [subdivisionDoc, divisionDoc, circleDoc] = await Promise.all([
+      db.collection("subdivisions").doc(subdivisionId).get(),
+      subdivisionDoc?.exists && substationData.divisionId
+        ? db.collection("divisions").doc(substationData.divisionId).get()
+        : Promise.resolve(null),
+      subdivisionDoc?.exists && substationData.circleId
+        ? db.collection("circles").doc(substationData.circleId).get()
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      substationId,
+      subdivisionId,
+      divisionId: divisionDoc?.exists ? divisionDoc.id : null,
+      circleId: circleDoc?.exists ? circleDoc.id : null,
+      zoneId: circleDoc?.exists ? circleDoc.data()?.zoneId : null,
+    };
+  } catch (error) {
+    console.error("Error getting substation hierarchy:", error);
+    return null;
+  }
+}
+
+async function getEligibleUsersOptimized(hierarchy) {
+  const userQueries = [
+    db
+      .collection("users")
+      .where("role", "==", "subdivisionManager")
+      .where("assignedLevels.subdivisionId", "==", hierarchy.subdivisionId)
+      .get(),
+  ];
+
+  if (hierarchy.divisionId) {
+    userQueries.push(
+      db
+        .collection("users")
+        .where("role", "==", "divisionManager")
+        .where("assignedLevels.divisionId", "==", hierarchy.divisionId)
+        .get()
+    );
   }
 
-  console.log(
-    `✅ Notification sent to ${successCount} devices (${failureCount} failed)`
+  if (hierarchy.circleId) {
+    userQueries.push(
+      db
+        .collection("users")
+        .where("role", "==", "circleManager")
+        .where("assignedLevels.circleId", "==", hierarchy.circleId)
+        .get()
+    );
+  }
+
+  if (hierarchy.zoneId) {
+    userQueries.push(
+      db
+        .collection("users")
+        .where("role", "==", "zoneManager")
+        .where("assignedLevels.zoneId", "==", hierarchy.zoneId)
+        .get()
+    );
+  }
+
+  userQueries.push(db.collection("users").where("role", "==", "admin").get());
+
+  try {
+    const userResults = await Promise.all(userQueries);
+    const eligibleUsers = [];
+
+    userResults.forEach((querySnapshot) => {
+      querySnapshot.docs.forEach((doc) => {
+        eligibleUsers.push({
+          userId: doc.id,
+          ...doc.data(),
+        });
+      });
+    });
+
+    return eligibleUsers;
+  } catch (error) {
+    console.error("Error getting eligible users:", error);
+    return [];
+  }
+}
+
+function getDefaultPreferences() {
+  return {
+    subscribedVoltageThresholds: [132, 220, 400, 765],
+    enabledOptionalVoltages: [],
+    subscribedBayTypes: ["line", "transformer"],
+    subscribedSubstations: ["all"],
+    enableTrippingNotifications: true,
+    enableShutdownNotifications: true,
+    enableBreakdownNotifications: true,
+  };
+}
+
+function isNotificationEnabled(preferences, eventType) {
+  if (eventType === "shutdown") {
+    return preferences.enableShutdownNotifications !== false;
+  } else if (eventType === "breakdown") {
+    return preferences.enableBreakdownNotifications !== false;
+  } else {
+    return preferences.enableTrippingNotifications !== false;
+  }
+}
+
+function meetsVoltageThreshold(preferences, voltageLevel) {
+  const allVoltages = [
+    ...(preferences.subscribedVoltageThresholds || []),
+    ...(preferences.enabledOptionalVoltages || []),
+  ];
+  return allVoltages.some(
+    (threshold) => voltageLevel >= Number(threshold || 0)
   );
 }
 
-// Utility functions
+function matchesBayType(preferences, bayType) {
+  const bayTypes = (preferences.subscribedBayTypes || []).map((x) =>
+    x.toLowerCase()
+  );
+  return bayTypes.includes("all") || bayTypes.includes(bayType);
+}
+
+function matchesSubstation(preferences, substationId) {
+  const substations = preferences.subscribedSubstations || ["all"];
+  return substations.includes("all") || substations.includes(substationId);
+}
+
+async function cleanupInvalidTokensBatch(responses, tokens) {
+  const invalidTokens = [];
+
+  responses.forEach((response, index) => {
+    if (
+      response.error &&
+      (response.error.code === "messaging/registration-token-not-registered" ||
+        response.error.code === "messaging/invalid-registration-token")
+    ) {
+      invalidTokens.push(tokens[index]);
+    }
+  });
+
+  if (invalidTokens.length > 0) {
+    invalidTokens.forEach((token) => {
+      for (const [userId, cachedToken] of tokenCache.entries()) {
+        if (cachedToken === token) {
+          tokenCache.delete(userId);
+          break;
+        }
+      }
+    });
+
+    const batch = db.batch();
+    const tokenPromises = invalidTokens.map((token) =>
+      db.collection("fcmTokens").where("token", "==", token).limit(1).get()
+    );
+
+    try {
+      const tokenSnapshots = await Promise.all(tokenPromises);
+
+      tokenSnapshots.forEach((snapshot) => {
+        snapshot.docs.forEach((doc) => {
+          batch.update(doc.ref, { active: false, deactivatedAt: new Date() });
+        });
+      });
+
+      await batch.commit();
+      console.log(
+        `🧹 Deactivated ${invalidTokens.length} invalid tokens and updated cache`
+      );
+    } catch (error) {
+      console.error("Error cleaning up invalid tokens:", error);
+    }
+  }
+}
+
+function getNotificationPriority(eventType) {
+  if (eventType === "Tripping") return "high";
+  if (eventType === "Breakdown") return "high";
+  return "normal";
+}
+
+function getNotificationSound(eventType) {
+  if (eventType === "Tripping" || eventType === "Breakdown") {
+    return "alert.wav";
+  }
+  return "default";
+}
+
 function getNotificationColor(eventType, status) {
-  if (status === "closed") return "#00C851"; // Green
-  return eventType === "Tripping" ? "#FF3547" : "#FF8800"; // Red/Orange
+  if (status === "closed") return "#00C851";
+
+  if (eventType === "Tripping") return "#FF3547";
+  if (eventType === "Breakdown") return "#8B00FF";
+  return "#FF8800";
 }
 
 function getNotificationChannel(eventType, status) {
   if (status === "closed") return "status_update";
-  return eventType === "Tripping" ? "emergency" : "maintenance";
+
+  if (eventType === "Tripping") return "emergency";
+  if (eventType === "Breakdown") return "breakdown";
+  return "maintenance";
 }
 
-/**
- * Trigger for event OPEN (creation)
- */
+function parseVoltageLevel(voltageString) {
+  if (!voltageString) return 0;
+  const match = voltageString.match(/(\d+)kV/i);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
 exports.sendEventOpenedNotification = onDocumentCreated(
   "trippingShutdownEntries/{eventId}",
   async (event) => {
@@ -323,25 +668,28 @@ exports.sendEventOpenedNotification = onDocumentCreated(
       console.log("No data in document");
       return;
     }
+
     const eventData = event.data.data();
-    // Tripping or Shutdown only
+
     if (
       eventData.eventType !== "Tripping" &&
-      eventData.eventType !== "Shutdown"
-    )
+      eventData.eventType !== "Shutdown" &&
+      eventData.eventType !== "Breakdown"
+    ) {
+      console.log(`Ignoring event type: ${eventData.eventType}`);
       return;
+    }
+
+    console.log(
+      `📢 Processing ${eventData.eventType} OPEN notification for event: ${event.params.eventId}`
+    );
     await sendEventNotification(eventData, event.params.eventId, "open");
   }
 );
 
-/**
- * Trigger for event CLOSE (status update)
- * ----> UPDATED FOR CLOUD FUNCTIONS V2 <----
- */
 exports.sendEventClosedNotification = onDocumentUpdated(
   "trippingShutdownEntries/{eventId}",
   async (event) => {
-    // V2: 'event' parameter, not 'change'
     const before = event.data.before.data();
     const after = event.data.after.data();
 
@@ -350,318 +698,19 @@ exports.sendEventClosedNotification = onDocumentUpdated(
       return;
     }
 
-    // Only notify when status changes from OPEN to CLOSED
     if (before.status !== "OPEN" || after.status !== "CLOSED") return;
-    if (after.eventType !== "Tripping" && after.eventType !== "Shutdown")
+
+    if (
+      after.eventType !== "Tripping" &&
+      after.eventType !== "Shutdown" &&
+      after.eventType !== "Breakdown"
+    ) {
       return;
+    }
+
+    console.log(
+      `📢 Processing ${after.eventType} CLOSED notification for event: ${event.data.after.id}`
+    );
     await sendEventNotification(after, event.data.after.id, "closed");
   }
 );
-
-// ... [Rest of your existing functions: getEligibleUsersForSubstation, parseVoltageLevel, filterUsersForNotification, cleanupInvalidTokens remain exactly the same] ...
-
-/**
- * Hierarchical user fetch for targeting notifications
- */
-async function getEligibleUsersForSubstation(substationId) {
-  try {
-    const substationDoc = await db
-      .collection("substations")
-      .doc(substationId)
-      .get();
-    if (!substationDoc.exists) return [];
-    const substationData = substationDoc.data();
-    const subdivisionId = substationData.subdivisionId;
-    if (!subdivisionId) return [];
-    const subdivisionDoc = await db
-      .collection("subdivisions")
-      .doc(subdivisionId)
-      .get();
-    if (!subdivisionDoc.exists) return [];
-    const subdivisionData = subdivisionDoc.data();
-    const divisionId = subdivisionData.divisionId;
-    // Fetch hierarchy IDs
-    let circleId = null;
-    let zoneId = null;
-    if (divisionId) {
-      const divisionDoc = await db
-        .collection("divisions")
-        .doc(divisionId)
-        .get();
-      if (divisionDoc.exists) {
-        const divisionData = divisionDoc.data();
-        circleId = divisionData.circleId;
-        if (circleId) {
-          const circleDoc = await db.collection("circles").doc(circleId).get();
-          if (circleDoc.exists) {
-            const circleData = circleDoc.data();
-            zoneId = circleData.zoneId;
-          }
-        }
-      }
-    }
-    // Build eligible user list
-    const eligibleUsers = [];
-    // Subdivision managers
-    const subdivisionManagers = await db
-      .collection("users")
-      .where("role", "==", "subdivisionManager")
-      .where("assignedLevels.subdivisionId", "==", subdivisionId)
-      .get();
-    subdivisionManagers.docs.forEach((doc) => {
-      eligibleUsers.push({
-        userId: doc.id,
-        role: "subdivisionManager",
-        level: "subdivision",
-        ...doc.data(),
-      });
-    });
-    // Division managers
-    if (divisionId) {
-      const divisionManagers = await db
-        .collection("users")
-        .where("role", "==", "divisionManager")
-        .where("assignedLevels.divisionId", "==", divisionId)
-        .get();
-      divisionManagers.docs.forEach((doc) => {
-        eligibleUsers.push({
-          userId: doc.id,
-          role: "divisionManager",
-          level: "division",
-          ...doc.data(),
-        });
-      });
-    }
-    // Circle managers
-    if (circleId) {
-      const circleManagers = await db
-        .collection("users")
-        .where("role", "==", "circleManager")
-        .where("assignedLevels.circleId", "==", circleId)
-        .get();
-      circleManagers.docs.forEach((doc) => {
-        eligibleUsers.push({
-          userId: doc.id,
-          role: "circleManager",
-          level: "circle",
-          ...doc.data(),
-        });
-      });
-    }
-    // Zone managers
-    if (zoneId) {
-      const zoneManagers = await db
-        .collection("users")
-        .where("role", "==", "zoneManager")
-        .where("assignedLevels.zoneId", "==", zoneId)
-        .get();
-      zoneManagers.docs.forEach((doc) => {
-        eligibleUsers.push({
-          userId: doc.id,
-          role: "zoneManager",
-          level: "zone",
-          ...doc.data(),
-        });
-      });
-    }
-    // Admin users
-    const adminUsers = await db
-      .collection("users")
-      .where("role", "==", "admin")
-      .get();
-    adminUsers.docs.forEach((doc) => {
-      eligibleUsers.push({
-        userId: doc.id,
-        role: "admin",
-        level: "admin",
-        ...doc.data(),
-      });
-    });
-    return eligibleUsers;
-  } catch (error) {
-    console.error("Error getting eligible users:", error);
-    return [];
-  }
-}
-
-/**
- * Basic voltage parsing utility
- */
-function parseVoltageLevel(voltageString) {
-  if (!voltageString) return 0;
-  const match = voltageString.match(/(\d+)kV/i);
-  return match ? parseInt(match[1], 10) : 0;
-}
-
-/**
- * Preference-aware user filtering
- */
-async function filterUsersForNotification(
-  eventData,
-  bayData,
-  voltageLevel,
-  eligibleUsers,
-  notificationType
-) {
-  console.log(`🔍 FILTERING DEBUG START`);
-  console.log(
-    `🔍 Event: ${eventData.eventType}, Bay: ${bayData.bayType}, Voltage: ${voltageLevel}kV`
-  );
-  console.log(`🔍 Eligible users count: ${eligibleUsers.length}`);
-
-  const recipientTokens = [];
-  const bayType = (bayData.bayType || "").toLowerCase();
-
-  for (const user of eligibleUsers) {
-    console.log(`\n🔍 Processing user: ${user.userId}, Role: ${user.role}`);
-
-    try {
-      // Get user's notification preferences
-      const preferencesDoc = await db
-        .collection("notificationPreferences")
-        .doc(user.userId)
-        .get();
-
-      let preferences;
-      if (preferencesDoc.exists) {
-        preferences = preferencesDoc.data();
-        console.log(`🔍 Found existing preferences for ${user.userId}`);
-      } else {
-        // Defaults: Only "Line" and "Transformer"
-        preferences = {
-          subscribedVoltageThresholds: [132, 220, 400, 765],
-          optionalVoltageThresholds: [11, 33, 66, 110],
-          enabledOptionalVoltages: [],
-          subscribedBayTypes: ["Line", "Transformer"],
-          subscribedSubstations: ["all"],
-          enableTrippingNotifications: true,
-          enableShutdownNotifications: true,
-        };
-        await db
-          .collection("notificationPreferences")
-          .doc(user.userId)
-          .set(preferences);
-        console.log(`🔍 Created default preferences for ${user.userId}`);
-      }
-
-      // 1. Check notification enabled
-      const notificationEnabled =
-        notificationType === "shutdown"
-          ? preferences.enableShutdownNotifications
-          : preferences.enableTrippingNotifications;
-      console.log(
-        `🔍 Notification enabled (${notificationType}): ${notificationEnabled}`
-      );
-      if (!notificationEnabled) {
-        console.log(
-          `❌ User ${user.userId} has disabled ${notificationType} notifications`
-        );
-        continue;
-      }
-
-      // 2. Check voltage threshold
-      const allSubscribedVoltages = Array.isArray(
-        preferences.subscribedVoltageThresholds
-      )
-        ? [...preferences.subscribedVoltageThresholds]
-        : [];
-      if (Array.isArray(preferences.enabledOptionalVoltages))
-        preferences.enabledOptionalVoltages.forEach((v) => {
-          if (!allSubscribedVoltages.includes(v)) allSubscribedVoltages.push(v);
-        });
-      const meetsVoltageThreshold = allSubscribedVoltages.some(
-        (threshold) => voltageLevel >= Number(threshold || 0)
-      );
-      console.log(
-        `🔍 Voltage check: ${voltageLevel}kV >= ${allSubscribedVoltages}: ${meetsVoltageThreshold}`
-      );
-      if (!meetsVoltageThreshold) {
-        console.log(`❌ User ${user.userId} voltage threshold not met`);
-        continue;
-      }
-
-      // 3. Check bay type
-      let bayTypes = Array.isArray(preferences.subscribedBayTypes)
-        ? preferences.subscribedBayTypes.map((x) => x.toLowerCase())
-        : [];
-      console.log(`🔍 User bay types: ${bayTypes}, Event bay type: ${bayType}`);
-      if (bayTypes.includes("all") || bayTypes.includes(bayType)) {
-        console.log(`✅ Bay type match found`);
-      } else {
-        console.log(
-          `❌ User ${user.userId} not subscribed to bay type: ${bayType}`
-        );
-        continue;
-      }
-
-      // 4. Check substation
-      if (
-        Array.isArray(preferences.subscribedSubstations) &&
-        !preferences.subscribedSubstations.includes("all") &&
-        !preferences.subscribedSubstations.includes(eventData.substationId)
-      ) {
-        console.log(
-          `❌ User ${user.userId} not subscribed to substation: ${eventData.substationId}`
-        );
-        continue;
-      }
-
-      // 5. Get FCM tokens
-      console.log(`🔍 Checking FCM tokens for user: ${user.userId}`);
-      const tokenDoc = await db.collection("fcmTokens").doc(user.userId).get();
-      if (tokenDoc.exists) {
-        const data = tokenDoc.data();
-        console.log(
-          `🔍 Token exists - Active: ${data.active}, Has Token: ${!!data.token}`
-        );
-        if (data.active && data.token) {
-          recipientTokens.push(data.token);
-          console.log(
-            `✅ Added token for user ${user.userId}: ${data.token.substring(
-              0,
-              20
-            )}...`
-          );
-        } else {
-          console.log(`❌ Token inactive or missing for user ${user.userId}`);
-        }
-      } else {
-        console.log(`❌ No FCM token document found for user ${user.userId}`);
-      }
-    } catch (error) {
-      console.error(`❌ Error processing user ${user.userId}:`, error);
-    }
-  }
-
-  console.log(`🔍 FILTERING COMPLETE: Found ${recipientTokens.length} tokens`);
-  return recipientTokens;
-}
-
-/**
- * Mark failed tokens as inactive
- */
-async function cleanupInvalidTokens(failures, originalTokens) {
-  const invalidTokens = failures
-    .filter(
-      (failure) =>
-        failure.response.error?.code ===
-          "messaging/registration-token-not-registered" ||
-        failure.response.error?.code === "messaging/invalid-registration-token"
-    )
-    .map((failure) => originalTokens[failure.index]);
-  if (invalidTokens.length > 0) {
-    const batch = db.batch();
-    for (const token of invalidTokens) {
-      const tokenQuery = await db
-        .collection("fcmTokens")
-        .where("token", "==", token)
-        .limit(1)
-        .get();
-      tokenQuery.docs.forEach((doc) => {
-        batch.update(doc.ref, { active: false, deactivatedAt: new Date() });
-      });
-    }
-    await batch.commit();
-    console.log("Invalid tokens marked as inactive");
-  }
-}

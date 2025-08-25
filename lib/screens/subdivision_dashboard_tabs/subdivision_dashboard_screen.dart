@@ -1,20 +1,24 @@
 // lib/screens/subdivision_dashboard_tabs/subdivision_dashboard_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../models/user_model.dart';
 import '../../models/hierarchy_models.dart';
 import '../../models/app_state_data.dart';
+import '../../models/tripping_shutdown_model.dart';
 import '../../widgets/modern_app_drawer.dart';
 import 'overview.dart';
 import 'reports_tab.dart';
 import 'operations_tab.dart';
 import 'energy_tab.dart';
 import 'subdivision_asset_management_screen.dart';
+import 'tripping_details_screen.dart';
 import 'tripping_tab.dart';
 
 class SubdivisionDashboardScreen extends StatefulWidget {
@@ -31,9 +35,6 @@ class SubdivisionDashboardScreen extends StatefulWidget {
 class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  int _unreadNotificationCount = 0;
-  bool _isLoadingNotifications = false;
-
   late List<TabData> _tabs;
 
   @override
@@ -61,7 +62,9 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       vsync: this,
       initialIndex: 0,
     );
-    _loadNotificationCount();
+
+    // Set up FCM notification handling for direct navigation to details screen
+    _setupFCMNotificationHandler();
   }
 
   @override
@@ -70,37 +73,196 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     super.dispose();
   }
 
-  Future<void> _loadNotificationCount() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final unreadQuery = await FirebaseFirestore.instance
-          .collection('userNotifications')
-          .where('userId', isEqualTo: user.uid)
-          .where('read', isEqualTo: false)
-          .get();
-
-      if (mounted) {
-        setState(() {
-          _unreadNotificationCount = unreadQuery.docs.length;
-        });
+  /// Set up FCM notification handling with direct navigation to details screen
+  void _setupFCMNotificationHandler() {
+    // Handle notification taps when app is terminated and opened via notification
+    FirebaseMessaging.instance.getInitialMessage().then((
+      RemoteMessage? message,
+    ) {
+      if (message != null) {
+        print(
+          '🔍 App opened from terminated state via notification: ${message.messageId}',
+        );
+        _handleNotificationTap(message);
       }
-    } catch (e) {
-      print('Error loading notification count: $e');
+    });
+
+    // Handle notification taps when app is in background
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      print(
+        '🔍 App opened from background via notification: ${message.messageId}',
+      );
+      _handleNotificationTap(message);
+    });
+
+    // Handle foreground notifications (show simple banner)
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('🔍 Received foreground notification: ${message.messageId}');
+      if (mounted) {
+        _showForegroundNotificationBanner(message);
+      }
+    });
+
+    print('🔍 FCM notification handlers set up successfully');
+  }
+
+  /// Handle notification tap - navigate directly to details screen
+  void _handleNotificationTap(RemoteMessage message) {
+    final eventType = message.data['eventType']?.toLowerCase();
+    final eventId = message.data['eventId'];
+    final substationName = message.data['substationName'] ?? '';
+    final bayName = message.data['bayName'] ?? '';
+
+    print(
+      '🔍 Handling notification tap - EventType: $eventType, EventID: $eventId',
+    );
+
+    // Navigate directly to details screen for tripping and shutdown events
+    if ((eventType == 'tripping' || eventType == 'shutdown') &&
+        eventId != null) {
+      _navigateToEventDetails(eventId, substationName);
+    } else {
+      // Fallback: Navigate to tripping tab if eventId is missing
+      final trippingTabIndex = _tabs.indexWhere(
+        (tab) => tab.label == 'Tripping',
+      );
+      if (trippingTabIndex != -1) {
+        _tabController.animateTo(trippingTabIndex);
+      }
+      print('🔍 Missing eventId or unknown event type: $eventType');
     }
   }
 
-  void _showNotifications() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _NotificationBottomSheet(
-        currentUser: widget.currentUser,
-        onNotificationRead: () {
-          _loadNotificationCount();
-        },
+  /// Navigate directly to the event details screen
+  Future<void> _navigateToEventDetails(
+    String eventId,
+    String substationName,
+  ) async {
+    try {
+      print('🔍 Fetching event details for eventId: $eventId');
+
+      // Show loading indicator
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) =>
+              const Center(child: CircularProgressIndicator()),
+        );
+      }
+
+      // Fetch the event details from Firestore
+      final eventDoc = await FirebaseFirestore.instance
+          .collection('trippingShutdownEntries')
+          .doc(eventId)
+          .get();
+
+      // Hide loading indicator
+      if (mounted) {
+        Navigator.of(context).pop(); // Remove loading dialog
+      }
+
+      if (eventDoc.exists && mounted) {
+        final eventData = eventDoc.data()!;
+        final entry = TrippingShutdownEntry.fromFirestore(eventDoc);
+
+        print(
+          '🔍 Successfully fetched event: ${entry.eventType} at ${entry.bayName}',
+        );
+
+        // Navigate to details screen
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => TrippingDetailsScreen(
+              entry: entry,
+              substationName: substationName.isNotEmpty
+                  ? substationName
+                  : (eventData['substationName'] ?? 'Unknown Substation'),
+            ),
+          ),
+        );
+      } else {
+        if (mounted) {
+          // Event not found - show error and fallback to tripping tab
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Event details not found. Showing tripping events.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          final trippingTabIndex = _tabs.indexWhere(
+            (tab) => tab.label == 'Tripping',
+          );
+          if (trippingTabIndex != -1) {
+            _tabController.animateTo(trippingTabIndex);
+          }
+        }
+        print('🔍 Event not found for eventId: $eventId');
+      }
+    } catch (e) {
+      print('🔍 Error fetching event details: $e');
+
+      // Hide loading indicator if still showing
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+
+        // Show error and fallback to tripping tab
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error loading event details. Showing tripping events.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+
+        final trippingTabIndex = _tabs.indexWhere(
+          (tab) => tab.label == 'Tripping',
+        );
+        if (trippingTabIndex != -1) {
+          _tabController.animateTo(trippingTabIndex);
+        }
+      }
+    }
+  }
+
+  /// Show simple banner for foreground notifications
+  void _showForegroundNotificationBanner(RemoteMessage message) {
+    final eventType = message.data['eventType']?.toLowerCase();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              message.notification?.title ?? 'New Event',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              message.notification?.body ?? '',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        backgroundColor: eventType == 'tripping' ? Colors.red : Colors.orange,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'View Details',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            _handleNotificationTap(message);
+          },
+        ),
       ),
     );
   }
@@ -157,60 +319,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
         onPressed: () {
           ModernAppDrawer.show(context, widget.currentUser);
         },
-      ),
-      actions: [
-        _buildNotificationIcon(theme, isDarkMode),
-        const SizedBox(width: 8),
-      ],
-    );
-  }
-
-  Widget _buildNotificationIcon(ThemeData theme, bool isDarkMode) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      child: Stack(
-        children: [
-          IconButton(
-            onPressed: _showNotifications,
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                Icons.notifications_outlined,
-                color: isDarkMode ? Colors.white : theme.colorScheme.primary,
-                size: 24,
-              ),
-            ),
-            tooltip: 'Notifications',
-          ),
-          if (_unreadNotificationCount > 0)
-            Positioned(
-              right: 8,
-              top: 8,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
-                    width: 2,
-                  ),
-                ),
-                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                child: Text(
-                  _unreadNotificationCount > 99
-                      ? '99+'
-                      : _unreadNotificationCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -275,6 +383,14 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
       appBar: AppBar(
         backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
         elevation: 0,
+        title: Text(
+          'Subdivision Dashboard',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: isDarkMode ? Colors.white : theme.colorScheme.onSurface,
+          ),
+        ),
         leading: IconButton(
           icon: Icon(
             Icons.menu,
@@ -284,10 +400,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
             ModernAppDrawer.show(context, widget.currentUser);
           },
         ),
-        actions: [
-          _buildNotificationIcon(theme, isDarkMode),
-          const SizedBox(width: 8),
-        ],
       ),
       body: Center(
         child: Container(
@@ -376,531 +488,6 @@ class _SubdivisionDashboardScreenState extends State<SubdivisionDashboardScreen>
     }
 
     return views;
-  }
-}
-
-class _NotificationBottomSheet extends StatefulWidget {
-  final AppUser currentUser;
-  final VoidCallback onNotificationRead;
-
-  const _NotificationBottomSheet({
-    required this.currentUser,
-    required this.onNotificationRead,
-  });
-
-  @override
-  State<_NotificationBottomSheet> createState() =>
-      _NotificationBottomSheetState();
-}
-
-class _NotificationBottomSheetState extends State<_NotificationBottomSheet> {
-  bool _isLoading = true;
-  List<NotificationData> _notifications = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNotifications();
-  }
-
-  Future<void> _loadNotifications() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      // Fetch from userNotifications collection with proper error handling
-      final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-
-      final notificationsQuery = await FirebaseFirestore.instance
-          .collection('userNotifications')
-          .where('userId', isEqualTo: user.uid)
-          .where('createdAt', isGreaterThan: Timestamp.fromDate(thirtyDaysAgo))
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
-
-      final notifications = notificationsQuery.docs.map((doc) {
-        final data = doc.data();
-        return NotificationData(
-          id: doc.id,
-          title: data['title'] ?? 'Notification',
-          body: data['body'] ?? '',
-          eventType: data['eventType'] ?? 'general',
-          substationName: data['substationName'] ?? '',
-          bayName: data['bayName'] ?? '',
-          isRead: data['read'] ?? false,
-          createdAt:
-              (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-          eventId: data['eventId'],
-        );
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          _notifications = notifications;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading notifications: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _markAsRead(String notificationId) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('userNotifications')
-          .doc(notificationId)
-          .update({'read': true});
-
-      setState(() {
-        final index = _notifications.indexWhere((n) => n.id == notificationId);
-        if (index != -1) {
-          _notifications[index] = _notifications[index].copyWith(isRead: true);
-        }
-      });
-
-      widget.onNotificationRead();
-    } catch (e) {
-      print('Error marking notification as read: $e');
-    }
-  }
-
-  Future<void> _markAllAsRead() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final batch = FirebaseFirestore.instance.batch();
-      final unreadNotifications = _notifications.where((n) => !n.isRead);
-
-      for (final notification in unreadNotifications) {
-        final docRef = FirebaseFirestore.instance
-            .collection('userNotifications')
-            .doc(notification.id);
-        batch.update(docRef, {'read': true});
-      }
-
-      await batch.commit();
-
-      setState(() {
-        _notifications = _notifications
-            .map((n) => n.copyWith(isRead: true))
-            .toList();
-      });
-
-      widget.onNotificationRead();
-    } catch (e) {
-      print('Error marking all notifications as read: $e');
-    }
-  }
-
-  Future<void> _clearAllNotifications() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final notificationsQuery = await FirebaseFirestore.instance
-          .collection('userNotifications')
-          .where('userId', isEqualTo: user.uid)
-          .get();
-
-      final batch = FirebaseFirestore.instance.batch();
-      for (final doc in notificationsQuery.docs) {
-        batch.delete(doc.reference);
-      }
-
-      await batch.commit();
-
-      setState(() {
-        _notifications.clear();
-      });
-
-      widget.onNotificationRead();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All notifications cleared.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error clearing all notifications: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error clearing notifications.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
-
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDarkMode
-                  ? const Color(0xFF2C2C2E)
-                  : theme.colorScheme.primary.withOpacity(0.1),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.notifications,
-                  color: theme.colorScheme.primary,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Notifications',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: isDarkMode
-                          ? Colors.white
-                          : theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-                if (_notifications.any((n) => !n.isRead))
-                  TextButton(
-                    onPressed: _markAllAsRead,
-                    child: Text(
-                      'Mark all read',
-                      style: TextStyle(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                if (_notifications.isNotEmpty)
-                  TextButton(
-                    onPressed: _clearAllNotifications,
-                    child: const Text(
-                      'Clear all',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: Icon(
-                    Icons.close,
-                    color: isDarkMode
-                        ? Colors.white
-                        : theme.colorScheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _notifications.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.notifications_none,
-                          size: 64,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.4)
-                              : Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No Notifications',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.6)
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'You\'re all caught up!',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.5)
-                                : Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _loadNotifications,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _notifications.length,
-                      separatorBuilder: (context, index) => Divider(
-                        height: 1,
-                        color: isDarkMode
-                            ? Colors.white.withOpacity(0.1)
-                            : null,
-                      ),
-                      itemBuilder: (context, index) {
-                        final notification = _notifications[index];
-                        return _buildNotificationItem(
-                          notification,
-                          theme,
-                          isDarkMode,
-                        );
-                      },
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationItem(
-    NotificationData notification,
-    ThemeData theme,
-    bool isDarkMode,
-  ) {
-    final isUnread = !notification.isRead;
-    final eventColor = notification.eventType == 'tripping'
-        ? Colors.red
-        : notification.eventType == 'shutdown'
-        ? Colors.orange
-        : Colors.blue;
-
-    return InkWell(
-      onTap: isUnread ? () => _markAsRead(notification.id) : null,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isUnread
-              ? (isDarkMode
-                    ? theme.colorScheme.primary.withOpacity(0.1)
-                    : theme.colorScheme.primary.withOpacity(0.05))
-              : null,
-          borderRadius: BorderRadius.circular(8),
-          border: isUnread
-              ? Border.all(color: theme.colorScheme.primary.withOpacity(0.2))
-              : null,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: eventColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                notification.eventType == 'tripping'
-                    ? Icons.flash_on
-                    : notification.eventType == 'shutdown'
-                    ? Icons.power_off
-                    : Icons.info_outline,
-                color: eventColor,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          notification.title,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: isUnread
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: isDarkMode
-                                ? Colors.white
-                                : theme.colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      if (isUnread)
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    notification.body,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDarkMode
-                          ? Colors.white.withOpacity(0.7)
-                          : theme.colorScheme.onSurface.withOpacity(0.7),
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 14,
-                        color: isDarkMode
-                            ? Colors.white.withOpacity(0.5)
-                            : theme.colorScheme.onSurface.withOpacity(0.5),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _formatNotificationTime(notification.createdAt),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.5)
-                              : theme.colorScheme.onSurface.withOpacity(0.5),
-                        ),
-                      ),
-                      if (notification.substationName.isNotEmpty) ...[
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.location_on,
-                          size: 14,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.5)
-                              : theme.colorScheme.onSurface.withOpacity(0.5),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            notification.substationName,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDarkMode
-                                  ? Colors.white.withOpacity(0.5)
-                                  : theme.colorScheme.onSurface.withOpacity(
-                                      0.5,
-                                    ),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatNotificationTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inMinutes < 1) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return DateFormat('MMM dd').format(dateTime);
-    }
-  }
-}
-
-class NotificationData {
-  final String id;
-  final String title;
-  final String body;
-  final String eventType;
-  final String substationName;
-  final String bayName;
-  final bool isRead;
-  final DateTime createdAt;
-  final String? eventId;
-
-  NotificationData({
-    required this.id,
-    required this.title,
-    required this.body,
-    required this.eventType,
-    required this.substationName,
-    required this.bayName,
-    required this.isRead,
-    required this.createdAt,
-    this.eventId,
-  });
-
-  NotificationData copyWith({
-    String? id,
-    String? title,
-    String? body,
-    String? eventType,
-    String? substationName,
-    String? bayName,
-    bool? isRead,
-    DateTime? createdAt,
-    String? eventId,
-  }) {
-    return NotificationData(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      body: body ?? this.body,
-      eventType: eventType ?? this.eventType,
-      substationName: substationName ?? this.substationName,
-      bayName: bayName ?? this.bayName,
-      isRead: isRead ?? this.isRead,
-      createdAt: createdAt ?? this.createdAt,
-      eventId: eventId ?? this.eventId,
-    );
   }
 }
 

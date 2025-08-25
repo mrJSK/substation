@@ -6,6 +6,7 @@ import 'package:substation_manager/equipment_icons/busbar_icon.dart';
 import 'package:substation_manager/equipment_icons/line_icon.dart';
 import 'package:substation_manager/equipment_icons/reactor_icon.dart';
 import 'package:substation_manager/equipment_icons/transformer_icon.dart';
+
 import '../../models/bay_connection_model.dart';
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
@@ -33,7 +34,6 @@ class _EquipmentIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     CustomPainter painter;
-
     switch (bayType.toLowerCase()) {
       case 'feeder':
         painter = FeederIconPainter(
@@ -143,33 +143,42 @@ class _BayFormScreenState extends State<BayFormScreen>
   final TextEditingController _lineLengthController = TextEditingController();
   final TextEditingController _otherConductorController =
       TextEditingController();
+
   String? _selectedCircuit;
   String? _selectedConductor;
+
   final TextEditingController _makeController = TextEditingController();
   final TextEditingController _capacityController = TextEditingController();
+
   String? _selectedHvVoltage;
   String? _selectedLvVoltage;
   String? _selectedHvBusId;
   String? _selectedLvBusId;
+
   final TextEditingController _commissioningDateController =
       TextEditingController();
   final TextEditingController _manufacturingDateController =
       TextEditingController();
   final TextEditingController _erectionDateController = TextEditingController();
+
   DateTime? _commissioningDate;
   DateTime? _erectionDate;
   DateTime? _manufacturingDate;
+
   String? _selectedVoltageLevel;
   String? _selectedBayType;
   bool _isGovernmentFeeder = false;
   String? _selectedFeederType;
   String? _selectedBusbarId;
+
   bool _isSavingBay = false;
   bool _isLoadingConnections = false;
+
   String? _selectedDistributionZoneId;
   String? _selectedDistributionCircleId;
   String? _selectedDistributionDivisionId;
   String? _selectedDistributionSubdivisionId;
+
   late AnimationController _animationController;
 
   Map<String, DistributionZone> _distributionZonesMap = {};
@@ -188,6 +197,10 @@ class _BayFormScreenState extends State<BayFormScreen>
     '25kV',
     '400V',
   ];
+
+  // Battery specific voltage levels
+  final List<String> _batteryVoltageLevels = ['48V', '110V', '220V'];
+
   final List<String> _bayTypes = [
     'Busbar',
     'Transformer',
@@ -198,6 +211,7 @@ class _BayFormScreenState extends State<BayFormScreen>
     'Bus Coupler',
     'Battery',
   ];
+
   final List<String> _nonGovernmentFeederTypes = [
     'Industry',
     'Open Access',
@@ -206,13 +220,16 @@ class _BayFormScreenState extends State<BayFormScreen>
     'Wind',
     'Department',
   ];
+
   final List<String> _governmentFeederTypes = [
     'Rural',
     'Town',
     'Tehsil',
     'City',
   ];
+
   final List<String> _circuitTypes = ['Single', 'Double'];
+
   final List<String> _conductorTypes = [
     'Panther',
     'Zebra',
@@ -281,12 +298,18 @@ class _BayFormScreenState extends State<BayFormScreen>
       _contactNumberController.text = bay.contactNumber ?? '';
       _contactPersonController.text = bay.contactPerson ?? '';
       _bayNumberController.text = bay.bayNumber ?? '';
-      _multiplyingFactorController.text =
-          bay.multiplyingFactor?.toString() ?? '';
+
+      // Only set multiplying factor for non-Battery bays
+      if (bay.bayType != 'Battery') {
+        _multiplyingFactorController.text =
+            bay.multiplyingFactor?.toString() ?? '';
+      }
+
       _selectedVoltageLevel = bay.voltageLevel;
       _selectedBayType = bay.bayType;
       _isGovernmentFeeder = bay.isGovernmentFeeder ?? false;
       _selectedFeederType = bay.feederType;
+
       if (bay.bayType == 'Line') {
         _lineLengthController.text = bay.lineLength?.toString() ?? '';
         _selectedCircuit = bay.circuitType;
@@ -300,6 +323,7 @@ class _BayFormScreenState extends State<BayFormScreen>
               .split(' ')[0];
         }
       }
+
       if (bay.bayType == 'Transformer') {
         _selectedHvVoltage = bay.hvVoltage;
         _selectedLvVoltage = bay.lvVoltage;
@@ -321,6 +345,7 @@ class _BayFormScreenState extends State<BayFormScreen>
               .split(' ')[0];
         }
       }
+
       if (bay.commissioningDate != null) {
         _commissioningDate = bay.commissioningDate!.toDate();
         _commissioningDateController.text = _commissioningDate!
@@ -328,12 +353,14 @@ class _BayFormScreenState extends State<BayFormScreen>
             .toString()
             .split(' ')[0];
       }
+
       if (bay.bayType == 'Feeder') {
         _selectedDistributionZoneId = bay.distributionZoneId;
         _selectedDistributionCircleId = bay.distributionCircleId;
         _selectedDistributionDivisionId = bay.distributionDivisionId;
         _selectedDistributionSubdivisionId = bay.distributionSubdivisionId;
       }
+
       if (bay.id.isNotEmpty &&
           bay.bayType != 'Busbar' &&
           bay.bayType != 'Transformer' &&
@@ -372,6 +399,7 @@ class _BayFormScreenState extends State<BayFormScreen>
         } else {
           connectedBusId = null;
         }
+
         if (connectedBusId != null && mounted) {
           setState(() => _selectedBusbarId = connectedBusId);
         }
@@ -397,7 +425,6 @@ class _BayFormScreenState extends State<BayFormScreen>
     _distributionCirclesMap.clear();
     _distributionDivisionsMap.clear();
     _distributionSubdivisionsMap.clear();
-
     try {
       final zonesSnapshot = await FirebaseFirestore.instance
           .collection('distributionZones')
@@ -446,7 +473,10 @@ class _BayFormScreenState extends State<BayFormScreen>
 
   Future<void> _saveBay() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedBayType != 'Busbar' && widget.availableBusbars.isEmpty) {
+
+    if (_selectedBayType != 'Busbar' &&
+        _selectedBayType != 'Battery' &&
+        widget.availableBusbars.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
         'Please create a Busbar first.',
@@ -454,6 +484,7 @@ class _BayFormScreenState extends State<BayFormScreen>
       );
       return;
     }
+
     if (_selectedBayType == 'Transformer' &&
         (_selectedHvBusId == null || _selectedLvBusId == null)) {
       SnackBarUtils.showSnackBar(
@@ -463,6 +494,7 @@ class _BayFormScreenState extends State<BayFormScreen>
       );
       return;
     }
+
     if (_selectedBayType != 'Busbar' &&
         _selectedBayType != 'Transformer' &&
         _selectedBayType != 'Battery' &&
@@ -474,6 +506,7 @@ class _BayFormScreenState extends State<BayFormScreen>
       );
       return;
     }
+
     if (_selectedBayType == 'Feeder' &&
         (_selectedDistributionZoneId == null ||
             _selectedDistributionCircleId == null ||
@@ -486,6 +519,7 @@ class _BayFormScreenState extends State<BayFormScreen>
       );
       return;
     }
+
     if (_selectedBayType == 'Line' &&
         _erectionDate != null &&
         _commissioningDate != null &&
@@ -518,84 +552,113 @@ class _BayFormScreenState extends State<BayFormScreen>
       final String? bayNumber = _bayNumberController.text.trim().isEmpty
           ? null
           : _bayNumberController.text.trim();
+
+      // UPDATED: Only process multiplying factor for non-Battery bays
       final double? multiplyingFactor =
-          _multiplyingFactorController.text.isNotEmpty
+          _selectedBayType != 'Battery' &&
+              _multiplyingFactorController.text.isNotEmpty
           ? double.tryParse(_multiplyingFactorController.text.trim())
           : null;
+
       final bool? isGovernmentFeeder = _selectedBayType == 'Feeder'
           ? _isGovernmentFeeder
           : null;
+
       final String? feederType = _selectedBayType == 'Feeder'
           ? _selectedFeederType
           : null;
+
       final double? lineLength = _selectedBayType == 'Line'
           ? double.tryParse(_lineLengthController.text.trim())
           : null;
+
       final String? circuitType = _selectedBayType == 'Line'
           ? _selectedCircuit
           : null;
+
       final String? conductorType = _selectedBayType == 'Line'
           ? _selectedConductor
           : null;
+
       final String? conductorDetail = _selectedConductor == 'Other'
           ? (_otherConductorController.text.trim().isEmpty
                 ? null
                 : _otherConductorController.text.trim())
           : null;
+
       final Timestamp? erectionDate =
           _selectedBayType == 'Line' && _erectionDate != null
           ? Timestamp.fromDate(_erectionDate!)
           : null;
+
       final String? hvVoltage = _selectedBayType == 'Transformer'
           ? _selectedHvVoltage
           : null;
+
       final String? lvVoltage = _selectedBayType == 'Transformer'
           ? _selectedLvVoltage
           : null;
+
       final String? make =
           _selectedBayType == 'Transformer' && _makeController.text.isNotEmpty
           ? _makeController.text.trim()
           : null;
+
       final double? capacity =
           _selectedBayType == 'Transformer' &&
               _capacityController.text.isNotEmpty
           ? double.tryParse(_capacityController.text.trim())
           : null;
+
       final Timestamp? manufacturingDate =
           _selectedBayType == 'Transformer' && _manufacturingDate != null
           ? Timestamp.fromDate(_manufacturingDate!)
           : null;
+
       final String? hvBusId = _selectedBayType == 'Transformer'
           ? _selectedHvBusId
           : null;
+
       final String? lvBusId = _selectedBayType == 'Transformer'
           ? _selectedLvBusId
           : null;
+
       final Timestamp? commissioningDateVal =
           (_selectedBayType == 'Line' || _selectedBayType == 'Transformer') &&
               _commissioningDate != null
           ? Timestamp.fromDate(_commissioningDate!)
           : null;
+
       final String? distributionZoneId = _selectedBayType == 'Feeder'
           ? _selectedDistributionZoneId
           : null;
+
       final String? distributionCircleId = _selectedBayType == 'Feeder'
           ? _selectedDistributionCircleId
           : null;
+
       final String? distributionDivisionId = _selectedBayType == 'Feeder'
           ? _selectedDistributionDivisionId
           : null;
+
       final String? distributionSubdivisionId = _selectedBayType == 'Feeder'
           ? _selectedDistributionSubdivisionId
           : null;
+
+      // Safe voltage level assignment
+      String? voltageLevel;
+      if (_selectedBayType == 'Transformer') {
+        voltageLevel = hvVoltage;
+      } else {
+        // For all other bay types including Battery, use _selectedVoltageLevel
+        voltageLevel = _selectedVoltageLevel;
+      }
 
       if (widget.bayToEdit != null) {
         final Bay existingBay = widget.bayToEdit!;
         final updatedBay = existingBay.copyWith(
           name: bayName,
-          voltageLevel: _selectedBayType == 'Transformer'
-              ? hvVoltage
-              : _selectedVoltageLevel,
+          voltageLevel: voltageLevel,
           bayType: _selectedBayType!,
           description: description,
           landmark: landmark,
@@ -640,9 +703,11 @@ class _BayFormScreenState extends State<BayFormScreen>
               ),
             )
             .get();
+
         for (var doc in existingConnectionsSnapshot.docs) {
           batch.delete(doc.reference);
         }
+
         await batch.commit();
 
         if (_selectedBayType == 'Transformer') {
@@ -659,6 +724,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                   ).toFirestore(),
                 );
           }
+
           if (_selectedLvBusId != null) {
             await FirebaseFirestore.instance
                 .collection('bay_connections')
@@ -690,11 +756,7 @@ class _BayFormScreenState extends State<BayFormScreen>
 
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Bay updated successfully!');
-
-          // 🔥 FIX: Call onSaveSuccess first, then navigate
           widget.onSaveSuccess();
-
-          // Pop back to the calling screen
           Navigator.of(context).pop();
         }
       } else {
@@ -703,9 +765,7 @@ class _BayFormScreenState extends State<BayFormScreen>
           id: newBayRef.id,
           name: bayName!,
           substationId: widget.substationId,
-          voltageLevel: _selectedBayType == 'Transformer'
-              ? hvVoltage!
-              : _selectedVoltageLevel!,
+          voltageLevel: voltageLevel!,
           bayType: _selectedBayType!,
           createdBy: firebaseUser.uid,
           createdAt: Timestamp.now(),
@@ -754,6 +814,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                   ).toFirestore(),
                 );
           }
+
           if (_selectedLvBusId != null) {
             await FirebaseFirestore.instance
                 .collection('bay_connections')
@@ -787,11 +848,7 @@ class _BayFormScreenState extends State<BayFormScreen>
 
         if (mounted) {
           SnackBarUtils.showSnackBar(context, 'Bay created successfully!');
-
-          // 🔥 FIX: Call onSaveSuccess first, then navigate
           widget.onSaveSuccess();
-
-          // Pop back to the calling screen
           Navigator.of(context).pop();
         }
       }
@@ -852,6 +909,7 @@ class _BayFormScreenState extends State<BayFormScreen>
         );
       },
     );
+
     if (picked != null) {
       setState(() {
         String formattedDate = picked.toLocal().toString().split(' ')[0];
@@ -877,7 +935,7 @@ class _BayFormScreenState extends State<BayFormScreen>
     /* Placeholder for default reading assignment creation */
   }
 
-  Widget _buildDistributionHierarchyDropdown<T extends HierarchyItem>({
+  Widget _buildDistributionHierarchyDropdown<T>({
     required String label,
     required String collectionName,
     required String? parentId,
@@ -891,36 +949,39 @@ class _BayFormScreenState extends State<BayFormScreen>
   }) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
-
     Query query = FirebaseFirestore.instance.collection(collectionName);
     if (parentId != null && parentIdFieldName.isNotEmpty) {
       query = query.where(parentIdFieldName, isEqualTo: parentId);
     }
+
     query = query.orderBy('name');
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: DropdownSearch<T>(
         selectedItem: currentValue != null ? lookupMap[currentValue] : null,
-        itemAsString: (T item) => item.name,
-        compareFn: (item1, item2) => item1.id == item2.id,
+        itemAsString: (T item) => (item as dynamic).name,
+        compareFn: (item1, item2) =>
+            (item1 as dynamic).id == (item2 as dynamic).id,
         asyncItems: (String filter) async {
           if (parentId != null &&
               parentIdFieldName.isNotEmpty &&
               parentId.isEmpty) {
             return [];
           }
+
           final snapshot = await query.get();
           return snapshot.docs
               .map((doc) => fromFirestore(doc))
               .where(
-                (item) =>
-                    item.name.toLowerCase().contains(filter.toLowerCase()),
+                (item) => (item as dynamic).name.toLowerCase().contains(
+                  filter.toLowerCase(),
+                ),
               )
               .toList();
         },
         onChanged: (newValue) {
-          onChanged(newValue?.id);
+          onChanged((newValue as dynamic)?.id);
           if (collectionName == 'distributionZones') {
             setState(() {
               _selectedDistributionCircleId = null;
@@ -1025,7 +1086,7 @@ class _BayFormScreenState extends State<BayFormScreen>
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
                       onPressed: () async {
-                        final newCreatedItem = await showDialog<HierarchyItem>(
+                        final newCreatedItem = await showDialog<dynamic>(
                           context: context,
                           builder: (context) => AddHierarchyDialog(
                             hierarchyType: addHierarchyType,
@@ -1081,7 +1142,6 @@ class _BayFormScreenState extends State<BayFormScreen>
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
-    // Set system status bar to match theme
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
         statusBarColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
@@ -1092,15 +1152,12 @@ class _BayFormScreenState extends State<BayFormScreen>
       ),
     );
 
-    // 🔥 FIX: Loading state WITHOUT AppBar
     if (_isLoadingConnections) {
       return Scaffold(
         backgroundColor: isDarkMode
-            ? const Color(0xFF1C1C1E) // Dark mode background
+            ? const Color(0xFF1C1C1E)
             : const Color(0xFFFAFAFA),
-        // ❌ REMOVED: No AppBar during loading
         body: SafeArea(
-          // ✅ Added SafeArea instead
           child: Column(
             children: [
               Expanded(
@@ -1130,7 +1187,7 @@ class _BayFormScreenState extends State<BayFormScreen>
 
     return Scaffold(
       backgroundColor: isDarkMode
-          ? const Color(0xFF1C1C1E) // Dark mode background
+          ? const Color(0xFF1C1C1E)
           : const Color(0xFFFAFAFA),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -1163,8 +1220,25 @@ class _BayFormScreenState extends State<BayFormScreen>
                       items: _bayTypes,
                       onChanged: (v) {
                         setState(() {
+                          final previousBayType = _selectedBayType;
                           _selectedBayType = v;
-                          _selectedVoltageLevel = null;
+
+                          // Clear multiplying factor when switching to/from Battery
+                          if (v == 'Battery') {
+                            _multiplyingFactorController.clear();
+                          }
+
+                          // Only clear voltage level if switching between different voltage requirement types
+                          if (previousBayType == 'Battery' && v != 'Battery') {
+                            _selectedVoltageLevel = null;
+                          } else if (previousBayType != 'Battery' &&
+                              v == 'Battery') {
+                            _selectedVoltageLevel =
+                                null; // Clear to force user to select from battery options
+                          } else if (v != 'Transformer' && v != 'Battery') {
+                            _selectedVoltageLevel = null;
+                          }
+
                           _selectedBusbarId = null;
                           _selectedHvVoltage = null;
                           _selectedLvVoltage = null;
@@ -1195,38 +1269,74 @@ class _BayFormScreenState extends State<BayFormScreen>
                       isDarkMode: isDarkMode,
                     ),
                     const SizedBox(height: 16),
-                    // ADD MULTIPLYING FACTOR HERE - MANDATORY FOR ALL BAYS
-                    _buildTextField(
-                      controller: _multiplyingFactorController,
-                      label: 'Multiplying Factor*',
-                      icon: const Icon(Icons.calculate, color: Colors.blue),
-                      keyboardType: TextInputType.number,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Multiplying factor is required';
-                        }
-                        final parsed = double.tryParse(value);
-                        if (parsed == null || parsed <= 0) {
-                          return 'Enter a valid positive number';
-                        }
-                        return null;
-                      },
-                      isDarkMode: isDarkMode,
-                    ),
-                    // Add helper text to explain the purpose
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16, top: 4),
-                      child: Text(
-                        'Used for energy calculations (typically 1.0 for direct readings)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.6)
-                              : Colors.grey.shade600,
-                          fontStyle: FontStyle.italic,
+                    // UPDATED: Multiplying Factor - Hidden for Battery, Required for others
+                    if (_selectedBayType != 'Battery') ...[
+                      _buildTextField(
+                        controller: _multiplyingFactorController,
+                        label: 'Multiplying Factor*',
+                        icon: const Icon(Icons.calculate, color: Colors.blue),
+                        keyboardType: TextInputType.number,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Multiplying factor is required';
+                          }
+                          final parsed = double.tryParse(value);
+                          if (parsed == null || parsed <= 0) {
+                            return 'Enter a valid positive number';
+                          }
+                          return null;
+                        },
+                        isDarkMode: isDarkMode,
+                      ),
+                      // Add helper text to explain the purpose
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, top: 4),
+                        child: Text(
+                          'Used for energy calculations (typically 1.0 for direct readings)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDarkMode
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.grey.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
                         ),
                       ),
-                    ),
+                    ] else ...[
+                      // Show informational text for Battery
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.blue.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.blue,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Battery systems do not require multiplying factors as they provide DC power for control and protection systems.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : Colors.blue.shade800,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -1235,8 +1345,8 @@ class _BayFormScreenState extends State<BayFormScreen>
                   secondChild: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (_selectedBayType != 'Transformer' &&
-                          _selectedBayType != 'Battery') ...[
+                      // UPDATED: Include Battery in voltage selection with specific voltages
+                      if (_selectedBayType != 'Transformer') ...[
                         _buildSection(
                           title: 'Voltage Details',
                           icon: Icons.flash_on,
@@ -1249,7 +1359,9 @@ class _BayFormScreenState extends State<BayFormScreen>
                                 Icons.flash_on,
                                 color: Colors.blue,
                               ),
-                              items: _voltageLevels,
+                              items: _selectedBayType == 'Battery'
+                                  ? _batteryVoltageLevels // Specific battery voltages
+                                  : _voltageLevels, // All other voltage levels
                               onChanged: (v) =>
                                   setState(() => _selectedVoltageLevel = v),
                               validator: (v) => v == null ? 'Required' : null,
@@ -1639,9 +1751,7 @@ class _BayFormScreenState extends State<BayFormScreen>
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDarkMode
-            ? const Color(0xFF2C2C2E) // Dark elevated surface
-            : Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -1855,9 +1965,7 @@ class _BayFormScreenState extends State<BayFormScreen>
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: isDarkMode
-                  ? const Color(0xFF2C2C2E) // Dark elevated surface
-                  : Colors.white,
+              color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
@@ -2001,7 +2109,7 @@ class _BayFormScreenState extends State<BayFormScreen>
             .asMap()
             .entries
             .map(
-              (entry) => DropdownMenuItem(
+              (entry) => DropdownMenuItem<String>(
                 value: itemValues != null ? itemValues[entry.key] : entry.value,
                 child: Text(
                   entry.value,

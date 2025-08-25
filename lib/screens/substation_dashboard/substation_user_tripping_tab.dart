@@ -46,6 +46,53 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   // Current selected tab index
   int _selectedTabIndex = 0;
 
+  // ✨ NEW: Valid event types including breakdown
+  static const List<String> _validEventTypes = [
+    'Tripping',
+    'Shutdown',
+    'Breakdown',
+  ];
+
+  // ✨ NEW: Helper methods for dynamic event labels
+  String _getEventStartLabel(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Time';
+      case 'Tripping':
+        return 'Trip Time';
+      case 'Shutdown':
+        return 'S/D Time';
+      default:
+        return 'Event Time';
+    }
+  }
+
+  String _getEventEndLabel(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Ended';
+      case 'Tripping':
+        return 'Tripping Ended';
+      case 'Shutdown':
+        return 'Shutdown Ended';
+      default:
+        return 'Event Ended';
+    }
+  }
+
+  String _getEventRunningLabel(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Duration';
+      case 'Tripping':
+        return 'Trip Duration';
+      case 'Shutdown':
+        return 'Shutdown Duration';
+      default:
+        return 'Event Duration';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,7 +147,6 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
         throw Exception('Cache not initialized - please restart the app');
       }
 
-      // Validate cache health before proceeding
       if (!_cache.validateCache()) {
         throw Exception('Cache validation failed - data may be stale');
       }
@@ -110,8 +156,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       _cacheHealthy = true;
 
       if (_hasAnyBays) {
-        // Get all recent events from cache
         final allRecentEvents = substationData.recentTrippingEvents;
+
+        // ✨ UPDATED: Filter events to include all valid event types
+        final validEvents = allRecentEvents
+            .where((event) => _validEventTypes.contains(event.eventType))
+            .toList();
 
         // Define current day boundaries for closed events only
         final now = DateTime.now();
@@ -127,12 +177,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
         );
 
         // Get ALL open events (regardless of when they started)
-        _openEvents = allRecentEvents
+        _openEvents = validEvents
             .where((event) => event.status == 'OPEN')
             .toList();
 
         // Get closed events that ended today only
-        _closedEvents = allRecentEvents
+        _closedEvents = validEvents
             .where(
               (event) =>
                   event.status == 'CLOSED' &&
@@ -152,10 +202,10 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       _animationController.forward();
 
       print(
-        '✅ Tripping tab loaded ${_openEvents.length} open events (any time), ${_closedEvents.length} closed events for today, ${_allRecentEvents.length} total events from cache',
+        '✅ Event tab loaded ${_openEvents.length} open events (any time), ${_closedEvents.length} closed events for today, ${_allRecentEvents.length} total events from cache',
       );
     } catch (e) {
-      print('❌ Error loading tripping data from cache: $e');
+      print('❌ Error loading event data from cache: $e');
       setState(() {
         _cacheHealthy = false;
         _cacheError = e.toString();
@@ -164,7 +214,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
-          'Error loading tripping data: $e',
+          'Error loading event data: $e',
           isError: true,
         );
       }
@@ -190,37 +240,38 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
   // Enhanced refresh with cache synchronization
   Future<void> _refreshTrippingData() async {
     try {
-      // Force refresh the cache to ensure we have latest data
       await _cache.forceRefresh();
-
-      // Reload from refreshed cache
       await _loadTrippingData();
-
-      print('✅ Tripping data refreshed successfully');
+      print('✅ Event data refreshed successfully');
     } catch (e) {
-      print('❌ Error refreshing tripping data: $e');
-      // Fallback to just reloading from existing cache
+      print('❌ Error refreshing event data: $e');
       await _loadTrippingData();
     }
   }
 
+  // ✨ UPDATED: Get event type colors including breakdown
   Color _getEventTypeColor(String eventType) {
     switch (eventType) {
       case 'Tripping':
         return Colors.red;
       case 'Shutdown':
         return Colors.orange;
+      case 'Breakdown':
+        return Colors.purple;
       default:
         return Colors.grey;
     }
   }
 
+  // ✨ UPDATED: Get event type icons including breakdown
   IconData _getEventTypeIcon(String eventType) {
     switch (eventType) {
       case 'Tripping':
         return Icons.flash_on;
       case 'Shutdown':
         return Icons.power_off;
+      case 'Breakdown':
+        return Icons.build_circle_outlined;
       default:
         return Icons.warning;
     }
@@ -299,7 +350,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
         });
   }
 
-  // Enhanced event card - shows event duration for long-running open events
+  // ✨ UPDATED: Enhanced event card with dynamic labels based on event type
   Widget _buildEventCard(TrippingShutdownEntry event) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -322,7 +373,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
           ),
         ],
         border: isOpen
-            ? Border.all(color: Colors.orange.withOpacity(0.3), width: 2)
+            ? Border.all(color: eventColor.withOpacity(0.4), width: 2)
             : Border.all(color: eventColor.withOpacity(0.2), width: 1),
       ),
       child: Column(
@@ -361,12 +412,12 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                   ),
                   decoration: BoxDecoration(
                     color: isOpen
-                        ? Colors.orange.withOpacity(0.1)
+                        ? eventColor.withOpacity(0.1)
                         : Colors.green.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isOpen
-                          ? Colors.orange.withOpacity(0.5)
+                          ? eventColor.withOpacity(0.5)
                           : Colors.green.withOpacity(0.5),
                     ),
                   ),
@@ -377,7 +428,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         isOpen ? Icons.hourglass_empty : Icons.check_circle,
                         size: 14,
                         color: isOpen
-                            ? Colors.orange.shade700
+                            ? eventColor.withOpacity(0.9)
                             : Colors.green.shade700,
                       ),
                       const SizedBox(width: 4),
@@ -385,7 +436,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         event.status,
                         style: TextStyle(
                           color: isOpen
-                              ? Colors.orange.shade700
+                              ? eventColor.withOpacity(0.9)
                               : Colors.green.shade700,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -411,7 +462,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Started: ${DateFormat('dd MMM HH:mm').format(event.startTime.toDate())}',
+                      '${_getEventStartLabel(event.eventType)}: ${DateFormat('dd MMM HH:mm').format(event.startTime.toDate())}',
                       style: TextStyle(
                         fontSize: 14,
                         color: isDarkMode
@@ -431,14 +482,14 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       Icon(
                         Icons.timer_outlined,
                         size: 14,
-                        color: Colors.orange.shade600,
+                        color: eventColor.withOpacity(0.8),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        'Running: ${_calculateRunningDuration(event.startTime.toDate())}',
+                        '${_getEventRunningLabel(event.eventType)}: ${_calculateRunningDuration(event.startTime.toDate())}',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.orange.shade600,
+                          color: eventColor.withOpacity(0.8),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -456,7 +507,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        'Ended: ${DateFormat('dd MMM HH:mm').format(event.endTime!.toDate())}',
+                        '${_getEventEndLabel(event.eventType)}: ${DateFormat('dd MMM HH:mm').format(event.endTime!.toDate())}',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.green.shade600,
@@ -476,7 +527,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        'Duration: ${_calculateDuration(event.startTime.toDate(), event.endTime!.toDate())}',
+                        'Total Duration: ${_calculateDuration(event.startTime.toDate(), event.endTime!.toDate())}',
                         style: TextStyle(
                           fontSize: 14,
                           color: isDarkMode
@@ -796,8 +847,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
       return _buildEmptyState(
         icon: Icons.location_off,
         title: 'No Substation Selected',
-        message:
-            'Please select a substation to view tripping & shutdown events.',
+        message: 'Please select a substation to view events.',
         color: Colors.grey,
       );
     }
@@ -805,7 +855,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
     return Scaffold(
       body: Column(
         children: [
-          // Enhanced header
+          // ✨ UPDATED: Enhanced header to include breakdown events
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -859,7 +909,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Tripping & Shutdown Events',
+                            'System Events',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
@@ -943,18 +993,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           children: [
                             Icon(
                               Icons.pending_actions,
-                              size: 16,
+                              size: 14,
                               color: _selectedTabIndex == 0
                                   ? theme.colorScheme.primary
                                   : (isDarkMode
                                         ? Colors.white.withOpacity(0.6)
                                         : Colors.grey.shade600),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 3),
                             Text(
                               'Open',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: _selectedTabIndex == 0
                                     ? FontWeight.w600
                                     : FontWeight.w500,
@@ -966,21 +1016,21 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                               ),
                             ),
                             if (_openEvents.isNotEmpty) ...[
-                              const SizedBox(width: 3),
+                              const SizedBox(width: 2),
                               Container(
-                                constraints: const BoxConstraints(maxWidth: 24),
+                                constraints: const BoxConstraints(maxWidth: 20),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 2,
+                                  horizontal: 3,
+                                  vertical: 1,
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.orange.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   '${_openEvents.length}',
                                   style: TextStyle(
-                                    fontSize: 9,
+                                    fontSize: 8,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.orange.shade700,
                                   ),
@@ -1025,18 +1075,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           children: [
                             Icon(
                               Icons.check_circle_outline,
-                              size: 16,
+                              size: 14,
                               color: _selectedTabIndex == 1
                                   ? theme.colorScheme.primary
                                   : (isDarkMode
                                         ? Colors.white.withOpacity(0.6)
                                         : Colors.grey.shade600),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 3),
                             Text(
                               'Closed',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: _selectedTabIndex == 1
                                     ? FontWeight.w600
                                     : FontWeight.w500,
@@ -1048,21 +1098,21 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                               ),
                             ),
                             if (_closedEvents.isNotEmpty) ...[
-                              const SizedBox(width: 3),
+                              const SizedBox(width: 2),
                               Container(
-                                constraints: const BoxConstraints(maxWidth: 24),
+                                constraints: const BoxConstraints(maxWidth: 20),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 2,
+                                  horizontal: 3,
+                                  vertical: 1,
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.green.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   '${_closedEvents.length}',
                                   style: TextStyle(
-                                    fontSize: 9,
+                                    fontSize: 8,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.green.shade700,
                                   ),
@@ -1107,18 +1157,18 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                           children: [
                             Icon(
                               Icons.bar_chart,
-                              size: 16,
+                              size: 14,
                               color: _selectedTabIndex == 2
                                   ? theme.colorScheme.primary
                                   : (isDarkMode
                                         ? Colors.white.withOpacity(0.6)
                                         : Colors.grey.shade600),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 3),
                             Text(
                               'Total',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: _selectedTabIndex == 2
                                     ? FontWeight.w600
                                     : FontWeight.w500,
@@ -1130,21 +1180,21 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                               ),
                             ),
                             if (_allRecentEvents.isNotEmpty) ...[
-                              const SizedBox(width: 3),
+                              const SizedBox(width: 2),
                               Container(
-                                constraints: const BoxConstraints(maxWidth: 24),
+                                constraints: const BoxConstraints(maxWidth: 20),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 2,
+                                  horizontal: 3,
+                                  vertical: 1,
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.blue.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   '${_allRecentEvents.length}',
                                   style: TextStyle(
-                                    fontSize: 9,
+                                    fontSize: 8,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.blue.shade700,
                                   ),
@@ -1223,7 +1273,7 @@ class _SubstationUserTrippingTabState extends State<SubstationUserTrippingTab>
                     icon: Icons.electrical_services_outlined,
                     title: 'No Bays Configured',
                     message:
-                        'No bays have been configured in this substation. Tripping and shutdown events can only be recorded for configured bays.',
+                        'No bays have been configured in this substation. Events can only be recorded for configured bays.',
                     color: Colors.orange,
                   )
                 : _getCurrentEventsList().isEmpty

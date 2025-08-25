@@ -38,6 +38,13 @@ class _TrippingTabState extends State<TrippingTab>
   DateTime? _startDate;
   DateTime? _endDate;
 
+  // ✨ NEW: Valid event types including breakdown
+  static const List<String> _validEventTypes = [
+    'Tripping',
+    'Shutdown',
+    'Breakdown',
+  ];
+
   // Cache for data persistence
   Map<String, List<Bay>> _bayCache = {};
   Map<String, List<String>> _selectedBayCache = {};
@@ -83,6 +90,46 @@ class _TrippingTabState extends State<TrippingTab>
   List<Bay> get _bays {
     if (_selectedSubstation == null) return [];
     return _bayCache[_selectedSubstation!.id] ?? [];
+  }
+
+  // ✨ NEW: Helper methods for dynamic event labels and styling
+  String _getEventTypeDisplayName(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown';
+      case 'Tripping':
+        return 'Tripping';
+      case 'Shutdown':
+        return 'Shutdown';
+      default:
+        return eventType;
+    }
+  }
+
+  Color _getEventTypeColor(String eventType) {
+    switch (eventType) {
+      case 'Tripping':
+        return Colors.red;
+      case 'Shutdown':
+        return Colors.orange;
+      case 'Breakdown':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getEventTypeIcon(String eventType) {
+    switch (eventType) {
+      case 'Tripping':
+        return Icons.flash_on;
+      case 'Shutdown':
+        return Icons.power_off;
+      case 'Breakdown':
+        return Icons.build_circle_outlined;
+      default:
+        return Icons.warning;
+    }
   }
 
   @override
@@ -133,7 +180,6 @@ class _TrippingTabState extends State<TrippingTab>
   Future<void> _fetchBaysForSelectedSubstation() async {
     if (_selectedSubstation == null) return;
 
-    // Check cache first
     if (_bayCache.containsKey(_selectedSubstation!.id)) {
       setState(() {
         _baysMap = {
@@ -215,7 +261,7 @@ class _TrippingTabState extends State<TrippingTab>
 
     return Scaffold(
       backgroundColor: isDarkMode
-          ? const Color(0xFF1C1C1E) // Dark mode background
+          ? const Color(0xFF1C1C1E)
           : const Color(0xFFF8F9FA),
       body: SingleChildScrollView(
         child: Column(
@@ -238,9 +284,7 @@ class _TrippingTabState extends State<TrippingTab>
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDarkMode
-            ? const Color(0xFF2C2C2E) // Dark elevated surface
-            : Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -273,7 +317,7 @@ class _TrippingTabState extends State<TrippingTab>
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Find Trippings & Shutdowns',
+                  'Find System Events', // ✨ UPDATED: Changed from "Find Trippings & Shutdowns"
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -627,9 +671,7 @@ class _TrippingTabState extends State<TrippingTab>
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDarkMode
-            ? const Color(0xFF2C2C2E) // Dark elevated surface
-            : Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -720,9 +762,7 @@ class _TrippingTabState extends State<TrippingTab>
       margin: const EdgeInsets.all(32),
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: isDarkMode
-            ? const Color(0xFF2C2C2E) // Dark elevated surface
-            : Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -774,9 +814,7 @@ class _TrippingTabState extends State<TrippingTab>
       margin: const EdgeInsets.all(32),
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: isDarkMode
-            ? const Color(0xFF2C2C2E) // Dark elevated surface
-            : Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -810,8 +848,8 @@ class _TrippingTabState extends State<TrippingTab>
           const SizedBox(height: 8),
           Text(
             _hasActiveFilters()
-                ? 'No tripping or shutdown events found with the applied filters.'
-                : 'No tripping or shutdown events recorded for the selected period.',
+                ? 'No system events found with the applied filters.'
+                : 'No system events recorded for the selected period.',
             style: TextStyle(
               fontSize: 14,
               color: isDarkMode
@@ -850,9 +888,7 @@ class _TrippingTabState extends State<TrippingTab>
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       decoration: BoxDecoration(
-        color: isDarkMode
-            ? const Color(0xFF2C2C2E) // Dark elevated surface
-            : Colors.white,
+        color: isDarkMode ? const Color(0xFF2C2C2E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -924,13 +960,16 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
+  // ✨ UPDATED: Enhanced event card with breakdown event support and overflow fix
   Widget _buildEventCard(
     ThemeData theme,
     TrippingShutdownEntry entry,
     bool isDarkMode,
   ) {
     final isOpen = entry.status == 'OPEN';
-    final statusColor = isOpen ? Colors.orange : Colors.green;
+    final statusColor = isOpen
+        ? _getEventTypeColor(entry.eventType).withOpacity(0.8)
+        : Colors.green;
     final statusIcon = isOpen ? Icons.hourglass_empty : Icons.check_circle;
 
     return Container(
@@ -951,18 +990,31 @@ class _TrippingTabState extends State<TrippingTab>
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.1),
+                color: _getEventTypeColor(entry.eventType).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(statusIcon, color: statusColor, size: 20),
-            ),
-            title: Text(
-              '${entry.eventType} - ${entry.bayName}',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-                color: isDarkMode ? Colors.white : null,
+              child: Icon(
+                _getEventTypeIcon(entry.eventType),
+                color: _getEventTypeColor(entry.eventType),
+                size: 20,
               ),
+            ),
+            title: Row(
+              children: [
+                Expanded(
+                  // ✅ FIX: Wrap with Expanded to prevent overflow
+                  child: Text(
+                    '${_getEventTypeDisplayName(entry.eventType)} - ${entry.bayName}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isDarkMode ? Colors.white : null,
+                    ),
+                    overflow:
+                        TextOverflow.ellipsis, // ✅ FIX: Add overflow handling
+                  ),
+                ),
+              ],
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1171,7 +1223,6 @@ class _TrippingTabState extends State<TrippingTab>
   void _clearFilters() {
     _selectedFilterVoltageLevels.clear();
     _selectedFilterBayTypes.clear();
-    // Don't clear bay IDs here as they are managed separately
   }
 
   void _clearAllFilters() {
@@ -1290,7 +1341,7 @@ class _TrippingTabState extends State<TrippingTab>
     );
   }
 
-  // Data fetching
+  // ✨ UPDATED: Data fetching with breakdown event support
   Future<void> _fetchTrippingShutdownEvents() async {
     if (_selectedSubstation == null || _startDate == null || _endDate == null) {
       setState(() {
@@ -1326,6 +1377,11 @@ class _TrippingTabState extends State<TrippingTab>
       final eventsSnapshot = await query.get();
       List<TrippingShutdownEntry> allEvents = eventsSnapshot.docs
           .map((doc) => TrippingShutdownEntry.fromFirestore(doc))
+          .toList();
+
+      // ✅ UPDATED: Filter to include only valid event types (including breakdown)
+      allEvents = allEvents
+          .where((event) => _validEventTypes.contains(event.eventType))
           .toList();
 
       // Apply additional filters
@@ -1445,7 +1501,7 @@ class _TrippingTabState extends State<TrippingTab>
     }
   }
 
-  // Excel Export - Updated _exportToExcel method in TrippingTab
+  // ✨ UPDATED: Excel Export with breakdown event support
   Future<void> _exportToExcel() async {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -1562,7 +1618,9 @@ class _TrippingTabState extends State<TrippingTab>
           }
 
           List<dynamic> rowData = [
-            event.eventType,
+            _getEventTypeDisplayName(
+              event.eventType,
+            ), // ✨ UPDATED: Use display name
             event.bayName,
             bay?.bayType ?? 'Unknown',
             bay?.voltageLevel ?? 'Unknown',
@@ -1625,7 +1683,7 @@ class _TrippingTabState extends State<TrippingTab>
               }
             }
 
-            // Color-code event type column
+            // ✨ UPDATED: Color-code event type column with breakdown support
             if (i == 0) {
               // Event Type column
               if (event.eventType == 'Tripping') {
@@ -1635,6 +1693,10 @@ class _TrippingTabState extends State<TrippingTab>
               } else if (event.eventType == 'Shutdown') {
                 cell.cellStyle = CellStyle(
                   backgroundColorHex: ExcelColor.fromHexString('#D1ECF1'),
+                );
+              } else if (event.eventType == 'Breakdown') {
+                cell.cellStyle = CellStyle(
+                  backgroundColorHex: ExcelColor.fromHexString('#E1D7F0'),
                 );
               }
             }
@@ -1704,7 +1766,7 @@ class _TrippingTabState extends State<TrippingTab>
 
       final directory = await getApplicationDocumentsDirectory();
       final fileName =
-          'tripping_events_complete_${_selectedSubstation?.name.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
+          'system_events_complete_${_selectedSubstation?.name.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
       final file = File('${directory.path}/$fileName');
 
       await file.writeAsBytes(excel.encode()!);
@@ -1773,7 +1835,7 @@ class _TrippingTabState extends State<TrippingTab>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '• All model fields included varied header length columns)\n• Separate sheets by bay type\n• Status and event type color-coding\n• Summary statistics per sheet\n• Proper duration calculations',
+                      '• All model fields included (21 header columns)\n• Separate sheets by bay type\n• Status and event type color-coding\n• Summary statistics per sheet\n• Proper duration calculations\n• Breakdown events supported',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.blue.shade700,
@@ -1823,7 +1885,7 @@ class _TrippingTabState extends State<TrippingTab>
   }
 }
 
-// Filter Dialog
+// Filter Dialog (unchanged - already supports all event types via filtering)
 class _FilterDialog extends StatefulWidget {
   final List<String> selectedVoltageLevels;
   final List<String> selectedBayTypes;

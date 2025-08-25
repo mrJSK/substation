@@ -10,7 +10,6 @@ import '../../../models/bay_model.dart';
 import '../../../models/tripping_shutdown_model.dart';
 import '../../../services/comprehensive_cache_service.dart';
 import '../../../utils/snackbar_utils.dart';
-import 'package:collection/collection.dart';
 
 class TrippingShutdownEntryScreen extends StatefulWidget {
   final String substationId;
@@ -44,20 +43,19 @@ class _TrippingShutdownEntryScreenState
   bool _isClosingEvent = false;
   late AnimationController _animationController;
 
-  bool _cacheHealthy = false;
   String? _cacheError;
 
   List<Bay> _allBays = [];
   Bay? _selectedBay;
   List<Bay> _selectedMultiBays = [];
   Map<String, TextEditingController> _bayFlagsControllers = {};
-  // 🔧 FIX: Add reason controllers for ALL bay types
   Map<String, TextEditingController> _bayReasonControllers = {};
 
   String? _selectedEventType;
-  final List<String> _eventTypes = ['Tripping', 'Shutdown'];
+  // ✨ UPDATED: Added Breakdown to event types
+  final List<String> _eventTypes = ['Tripping', 'Shutdown', 'Breakdown'];
 
-  // 🔧 FIX: Line reasons for Line bay tripping events only
+  // Line reasons for Line bay tripping events only
   final List<String> _lineReasons = [
     'Bird Nest',
     'Kite Thread',
@@ -78,14 +76,15 @@ class _TrippingShutdownEntryScreenState
   final TextEditingController _reasonController = TextEditingController();
   final TextEditingController _distanceController = TextEditingController();
 
-  // 🔧 FIX: Updated conditional fields
+  // ✨ UPDATED: Modified conditional fields for breakdown support
   bool _showHasAutoReclose = false;
   bool _showPhaseFaults = false;
   bool _showDistance = false;
   bool _showLineReason =
       false; // Show pre-filled reason selection for Line bays only
-  bool _showFlags = false; // Show flags field for tripping events
-  bool _showReason = false; // 🔧 FIX: Show reason field for ALL tripping events
+  bool _showFlags = false; // Show flags field for tripping and breakdown events
+  bool _showReason =
+      false; // Show reason field for tripping and breakdown events
 
   bool _hasAutoReclose = false;
   List<String> _selectedPhaseFaults = [];
@@ -97,6 +96,61 @@ class _TrippingShutdownEntryScreenState
       TextEditingController();
   final TextEditingController _shutdownPersonDesignationController =
       TextEditingController();
+
+  // ✨ NEW: Helper methods for dynamic event labels
+  String _getEventStartLabel(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Start Time';
+      case 'Tripping':
+        return 'Trip Start Time';
+      case 'Shutdown':
+        return 'Shutdown Time';
+      default:
+        return 'Event Start Time';
+    }
+  }
+
+  String _getEventEndLabel(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown End Time';
+      case 'Tripping':
+        return 'Trip End Time';
+      case 'Shutdown':
+        return 'Charging Time';
+      default:
+        return 'Event End Time';
+    }
+  }
+
+  // ✨ NEW: Get event type icon
+  IconData _getEventTypeIcon(String eventType) {
+    switch (eventType) {
+      case 'Tripping':
+        return Icons.flash_on;
+      case 'Shutdown':
+        return Icons.power_off;
+      case 'Breakdown':
+        return Icons.build_circle_outlined;
+      default:
+        return Icons.warning;
+    }
+  }
+
+  // ✨ NEW: Get event type color
+  Color _getEventTypeColor(String eventType) {
+    switch (eventType) {
+      case 'Tripping':
+        return Colors.red;
+      case 'Shutdown':
+        return Colors.orange;
+      case 'Breakdown':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
 
   int _parseVoltageLevel(String? voltageLevel) {
     if (voltageLevel == null || voltageLevel.isEmpty) return 0;
@@ -135,7 +189,6 @@ class _TrippingShutdownEntryScreenState
   Future<void> _ensureFCMTokenStored() async {
     try {
       final messaging = FirebaseMessaging.instance;
-
       NotificationSettings settings = await messaging.requestPermission(
         alert: true,
         badge: true,
@@ -196,7 +249,6 @@ class _TrippingShutdownEntryScreenState
 
       final substationData = _cache.substationData!;
       _allBays = substationData.bays.map((bayData) => bayData.bay).toList();
-      _cacheHealthy = true;
 
       if (_allBays.isEmpty) {
         if (mounted) {
@@ -228,8 +280,8 @@ class _TrippingShutdownEntryScreenState
         _shutdownPersonDesignationController.text =
             entry.shutdownPersonDesignation ?? '';
 
-        // 🔧 FIX: Parse stored reason - for Line bays from flags, for others from reasonForNonFeeder
-        if (entry.eventType == 'Tripping') {
+        // Parse stored reason - for Line bays from flags, for others from reasonForNonFeeder
+        if (entry.eventType == 'Tripping' || entry.eventType == 'Breakdown') {
           if (_selectedBay?.bayType == 'Line' && entry.flagsCause.isNotEmpty) {
             _parseStoredLineReason(entry.flagsCause);
           } else if (entry.reasonForNonFeeder != null &&
@@ -254,13 +306,12 @@ class _TrippingShutdownEntryScreenState
       }
 
       print(
-        '✅ Tripping entry form initialized from cache with ${_allBays.length} bays',
+        '✅ Event entry form initialized from cache with ${_allBays.length} bays',
       );
       _animationController.forward();
     } catch (e) {
       print("❌ Error initializing form from cache: $e");
       setState(() {
-        _cacheHealthy = false;
         _cacheError = e.toString();
       });
 
@@ -282,7 +333,7 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // 🔧 FIX: Parse line reason from stored flags for Line bays
+  // Parse line reason from stored flags for Line bays
   void _parseStoredLineReason(String flagsCause) {
     for (String reason in _lineReasons) {
       if (flagsCause.contains('Reason for Tripping: $reason')) {
@@ -299,7 +350,7 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // 🔧 FIX: Updated conditional field logic
+  // ✨ UPDATED: Updated conditional field logic to support breakdown
   void _updateConditionalFields() {
     setState(() {
       if (_selectedBay == null && _selectedMultiBays.isEmpty) {
@@ -310,9 +361,13 @@ class _TrippingShutdownEntryScreenState
         _showFlags = false;
         _showReason = false;
       } else {
-        // 🔧 FIX: FLAGS and REASON are mandatory for ALL tripping events
-        _showFlags = _selectedEventType == 'Tripping';
-        _showReason = _selectedEventType == 'Tripping';
+        // ✨ UPDATED: FLAGS and REASON are mandatory for tripping AND breakdown events
+        _showFlags =
+            _selectedEventType == 'Tripping' ||
+            _selectedEventType == 'Breakdown';
+        _showReason =
+            _selectedEventType == 'Tripping' ||
+            _selectedEventType == 'Breakdown';
 
         _showHasAutoReclose =
             _selectedBay != null &&
@@ -320,14 +375,17 @@ class _TrippingShutdownEntryScreenState
             _parseVoltageLevel(_selectedBay!.voltageLevel) >= 220 &&
             _selectedEventType == 'Tripping';
 
-        _showPhaseFaults = _selectedEventType == 'Tripping';
+        _showPhaseFaults =
+            _selectedEventType == 'Tripping' ||
+            _selectedEventType == 'Breakdown';
 
         _showDistance =
-            _selectedEventType == 'Tripping' &&
+            (_selectedEventType == 'Tripping' ||
+                _selectedEventType == 'Breakdown') &&
             _selectedBay != null &&
             _selectedBay!.bayType == 'Line';
 
-        // 🔧 FIX: Show pre-filled reason selection ONLY for Line bay tripping events
+        // Show pre-filled reason selection ONLY for Line bay tripping events (not for breakdown)
         _showLineReason =
             _selectedEventType == 'Tripping' &&
             _selectedBay != null &&
@@ -342,7 +400,7 @@ class _TrippingShutdownEntryScreenState
       }
       if (!_showReason) _reasonController.clear();
 
-      // Clear shutdown fields for tripping events
+      // Clear shutdown fields for tripping and breakdown events
       bool isShutdown = _selectedEventType == 'Shutdown';
       if (!isShutdown) {
         _selectedShutdownType = null;
@@ -387,7 +445,7 @@ class _TrippingShutdownEntryScreenState
     ].contains(widget.currentUser.role);
   }
 
-  // 🔧 FIX: Line reason dialog for Line bays only
+  // Line reason dialog for Line bays only
   Future<void> _showLineReasonDialog() async {
     String? selectedReason = await showDialog<String>(
       context: context,
@@ -414,7 +472,7 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // 🔧 FIX: Tower number dialog with numeric keypad
+  // Tower number dialog with numeric keypad
   Future<String?> _showTowerNumberDialog(String reason) async {
     return showDialog<String>(
       context: context,
@@ -422,7 +480,7 @@ class _TrippingShutdownEntryScreenState
     );
   }
 
-  // 🔧 FIX: Text input dialog for "Other" reason
+  // Text input dialog for "Other" reason
   Future<String?> _showTextInputDialog(String title) async {
     return showDialog<String>(
       context: context,
@@ -513,7 +571,7 @@ class _TrippingShutdownEntryScreenState
     }
   }
 
-  // 🔧 FIX: Updated save logic with proper flags and reason handling
+  // ✨ UPDATED: Updated save logic with proper flags and reason handling for breakdown
   Future<void> _saveEvent() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -563,7 +621,7 @@ class _TrippingShutdownEntryScreenState
       return;
     }
 
-    // 🔧 FIX: Validation for Line bay pre-filled reason
+    // Validation for Line bay pre-filled reason (only for Tripping events)
     if (_showLineReason &&
         (_selectedLineReason == null || _lineReasonDetails == null)) {
       SnackBarUtils.showSnackBar(
@@ -574,7 +632,7 @@ class _TrippingShutdownEntryScreenState
       return;
     }
 
-    // 🔧 FIX: Shutdown validations
+    // Shutdown validations
     if (_selectedEventType == 'Shutdown') {
       if (_selectedShutdownType == null) {
         SnackBarUtils.showSnackBar(
@@ -604,8 +662,8 @@ class _TrippingShutdownEntryScreenState
       }
     }
 
-    // 🔧 FIX: FLAGS validation for ALL tripping events
-    if (_selectedEventType == 'Tripping') {
+    // ✨ UPDATED: FLAGS validation for tripping AND breakdown events
+    if (_selectedEventType == 'Tripping' || _selectedEventType == 'Breakdown') {
       if (widget.entryToEdit == null) {
         // For new events, check bay-specific flags
         for (var bay in _selectedMultiBays) {
@@ -613,15 +671,15 @@ class _TrippingShutdownEntryScreenState
           if (flagsController == null || flagsController.text.trim().isEmpty) {
             SnackBarUtils.showSnackBar(
               context,
-              'FLAGS are mandatory for ${bay.name} tripping event.',
+              'FLAGS are mandatory for ${bay.name} ${_selectedEventType?.toLowerCase()} event.',
               isError: true,
             );
             return;
           }
 
-          // 🔧 FIX: Check reason for ALL bay types
-          if (bay.bayType == 'Line') {
-            // Line bays use pre-filled reason selection
+          // Check reason for ALL bay types (except Line bays for Tripping which use pre-filled)
+          if (bay.bayType == 'Line' && _selectedEventType == 'Tripping') {
+            // Line bays use pre-filled reason selection for tripping only
             if (_selectedLineReason == null || _lineReasonDetails == null) {
               SnackBarUtils.showSnackBar(
                 context,
@@ -631,13 +689,13 @@ class _TrippingShutdownEntryScreenState
               return;
             }
           } else {
-            // Non-Line bays use free-text reason
+            // Non-Line bays or breakdown events use free-text reason
             final reasonController = _bayReasonControllers[bay.id];
             if (reasonController == null ||
                 reasonController.text.trim().isEmpty) {
               SnackBarUtils.showSnackBar(
                 context,
-                'Reason is mandatory for ${bay.name} tripping event.',
+                'Reason is mandatory for ${bay.name} ${_selectedEventType?.toLowerCase()} event.',
                 isError: true,
               );
               return;
@@ -649,14 +707,15 @@ class _TrippingShutdownEntryScreenState
         if (_flagsCauseController.text.trim().isEmpty && !_isClosingEvent) {
           SnackBarUtils.showSnackBar(
             context,
-            'FLAGS are mandatory for tripping events.',
+            'FLAGS are mandatory for ${_selectedEventType?.toLowerCase()} events.',
             isError: true,
           );
           return;
         }
 
-        // 🔧 FIX: Check reason for existing events
-        if (_selectedBay?.bayType == 'Line') {
+        // Check reason for existing events
+        if (_selectedBay?.bayType == 'Line' &&
+            _selectedEventType == 'Tripping') {
           if (_selectedLineReason == null || _lineReasonDetails == null) {
             SnackBarUtils.showSnackBar(
               context,
@@ -669,7 +728,7 @@ class _TrippingShutdownEntryScreenState
           if (_reasonController.text.trim().isEmpty && !_isClosingEvent) {
             SnackBarUtils.showSnackBar(
               context,
-              'Reason is mandatory for tripping events.',
+              'Reason is mandatory for ${_selectedEventType?.toLowerCase()} events.',
               isError: true,
             );
             return;
@@ -681,7 +740,7 @@ class _TrippingShutdownEntryScreenState
     if (_showPhaseFaults && _selectedPhaseFaults.isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
-        'Please select at least one phase fault for Tripping events.',
+        'Please select at least one phase fault for ${_selectedEventType} events.',
         isError: true,
       );
       return;
@@ -690,7 +749,7 @@ class _TrippingShutdownEntryScreenState
     if (_showDistance && _distanceController.text.trim().isEmpty) {
       SnackBarUtils.showSnackBar(
         context,
-        'Fault Distance is required for Line bay Tripping events.',
+        'Fault Distance is required for Line bay ${_selectedEventType} events.',
         isError: true,
       );
       return;
@@ -706,9 +765,11 @@ class _TrippingShutdownEntryScreenState
       }
     }
 
+    // ✨ UPDATED: Show notification preview for all event types
     if (widget.entryToEdit == null &&
         (_selectedEventType == 'Tripping' ||
-            _selectedEventType == 'Shutdown')) {
+            _selectedEventType == 'Shutdown' ||
+            _selectedEventType == 'Breakdown')) {
       await _showNotificationPreview();
     }
 
@@ -748,17 +809,18 @@ class _TrippingShutdownEntryScreenState
         }
 
         for (Bay bay in _selectedMultiBays) {
-          // 🔧 FIX: Build flags/cause and reason based on event type and bay type
+          // ✨ UPDATED: Build flags/cause and reason based on event type and bay type
           String baySpecificFlagsCause = '';
           String? reasonForNonFeeder;
 
-          if (_selectedEventType == 'Tripping') {
+          if (_selectedEventType == 'Tripping' ||
+              _selectedEventType == 'Breakdown') {
             // Get basic flags
             baySpecificFlagsCause =
                 _bayFlagsControllers[bay.id]?.text.trim() ?? '';
 
-            if (bay.bayType == 'Line') {
-              // For Line bays, append the selected reason to flags
+            if (bay.bayType == 'Line' && _selectedEventType == 'Tripping') {
+              // For Line bays tripping, append the selected reason to flags
               if (_selectedLineReason != null && _lineReasonDetails != null) {
                 if (baySpecificFlagsCause.isNotEmpty) {
                   baySpecificFlagsCause += '\n';
@@ -767,7 +829,7 @@ class _TrippingShutdownEntryScreenState
                     'Reason for Tripping: $_selectedLineReason: $_lineReasonDetails';
               }
             } else {
-              // For non-Line bays, store reason in reasonForNonFeeder field
+              // For non-Line bays or breakdown events, store reason in reasonForNonFeeder field
               reasonForNonFeeder = _bayReasonControllers[bay.id]?.text.trim();
             }
           }
@@ -790,17 +852,18 @@ class _TrippingShutdownEntryScreenState
             endTime: eventEndTime,
             status: status,
             flagsCause: baySpecificFlagsCause,
-            reasonForNonFeeder:
-                reasonForNonFeeder, // 🔧 FIX: Store reason for non-Line bays
+            reasonForNonFeeder: reasonForNonFeeder,
             hasAutoReclose: _showHasAutoReclose ? _hasAutoReclose : null,
             phaseFaults:
-                _selectedEventType == 'Tripping' &&
+                (_selectedEventType == 'Tripping' ||
+                        _selectedEventType == 'Breakdown') &&
                     _showPhaseFaults &&
                     _selectedPhaseFaults.isNotEmpty
                 ? _selectedPhaseFaults
                 : null,
             distance:
-                _selectedEventType == 'Tripping' &&
+                (_selectedEventType == 'Tripping' ||
+                        _selectedEventType == 'Breakdown') &&
                     _showDistance &&
                     _distanceController.text.trim().isNotEmpty
                 ? _distanceController.text.trim()
@@ -832,9 +895,15 @@ class _TrippingShutdownEntryScreenState
         }
 
         if (mounted) {
+          // ✨ UPDATED: Dynamic success message with appropriate emoji
+          String emoji = _selectedEventType == 'Tripping'
+              ? '⚡'
+              : _selectedEventType == 'Breakdown'
+              ? '🔧'
+              : '🔌';
           SnackBarUtils.showSnackBar(
             context,
-            'Event(s) created successfully! ${_selectedEventType == 'Tripping' ? '⚡' : '🔌'} Notifications sent to managers.',
+            'Event(s) created successfully! $emoji Notifications sent to managers.',
           );
         }
       } else {
@@ -861,15 +930,17 @@ class _TrippingShutdownEntryScreenState
           return;
         }
 
-        // 🔧 FIX: Build updated flags/cause and reason for editing
+        // ✨ UPDATED: Build updated flags/cause and reason for editing
         String updatedFlagsCause = '';
         String? updatedReasonForNonFeeder;
 
-        if (_selectedEventType == 'Tripping') {
+        if (_selectedEventType == 'Tripping' ||
+            _selectedEventType == 'Breakdown') {
           updatedFlagsCause = _flagsCauseController.text.trim();
 
-          if (_selectedBay?.bayType == 'Line') {
-            // For Line bays, append the selected reason to flags
+          if (_selectedBay?.bayType == 'Line' &&
+              _selectedEventType == 'Tripping') {
+            // For Line bays tripping, append the selected reason to flags
             if (_selectedLineReason != null && _lineReasonDetails != null) {
               if (updatedFlagsCause.isNotEmpty) {
                 updatedFlagsCause += '\n';
@@ -878,7 +949,7 @@ class _TrippingShutdownEntryScreenState
                   'Reason for Tripping: $_selectedLineReason: $_lineReasonDetails';
             }
           } else {
-            // For non-Line bays, store reason in reasonForNonFeeder field
+            // For non-Line bays or breakdown events, store reason in reasonForNonFeeder field
             updatedReasonForNonFeeder = _reasonController.text.trim();
           }
         }
@@ -900,17 +971,18 @@ class _TrippingShutdownEntryScreenState
           endTime: eventEndTime,
           status: status,
           flagsCause: updatedFlagsCause,
-          reasonForNonFeeder:
-              updatedReasonForNonFeeder, // 🔧 FIX: Update reason for non-Line bays
+          reasonForNonFeeder: updatedReasonForNonFeeder,
           hasAutoReclose: _showHasAutoReclose ? _hasAutoReclose : null,
           phaseFaults:
-              _selectedEventType == 'Tripping' &&
+              (_selectedEventType == 'Tripping' ||
+                      _selectedEventType == 'Breakdown') &&
                   _showPhaseFaults &&
                   _selectedPhaseFaults.isNotEmpty
               ? _selectedPhaseFaults
               : null,
           distance:
-              _selectedEventType == 'Tripping' &&
+              (_selectedEventType == 'Tripping' ||
+                      _selectedEventType == 'Breakdown') &&
                   _showDistance &&
                   _distanceController.text.trim().isNotEmpty
               ? _distanceController.text.trim()
@@ -1091,6 +1163,7 @@ class _TrippingShutdownEntryScreenState
         false;
   }
 
+  // ✨ UPDATED: Updated notification preview for all event types including breakdown
   Future<void> _showNotificationPreview() async {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -1104,12 +1177,8 @@ class _TrippingShutdownEntryScreenState
         title: Row(
           children: [
             Icon(
-              _selectedEventType == 'Tripping'
-                  ? Icons.flash_on
-                  : Icons.power_off,
-              color: _selectedEventType == 'Tripping'
-                  ? Colors.red
-                  : Colors.orange,
+              _getEventTypeIcon(_selectedEventType!),
+              color: _getEventTypeColor(_selectedEventType!),
             ),
             const SizedBox(width: 8),
             Text(
@@ -1124,16 +1193,10 @@ class _TrippingShutdownEntryScreenState
         content: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color:
-                (_selectedEventType == 'Tripping' ? Colors.red : Colors.orange)
-                    .withOpacity(0.1),
+            color: _getEventTypeColor(_selectedEventType!).withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color:
-                  (_selectedEventType == 'Tripping'
-                          ? Colors.red
-                          : Colors.orange)
-                      .withOpacity(0.3),
+              color: _getEventTypeColor(_selectedEventType!).withOpacity(0.3),
             ),
           ),
           child: Column(
@@ -1143,6 +1206,8 @@ class _TrippingShutdownEntryScreenState
               Text(
                 _selectedEventType == 'Tripping'
                     ? '⚡ Tripping Event Alert'
+                    : _selectedEventType == 'Breakdown'
+                    ? '🔧 Breakdown Event Alert'
                     : '🔌 Shutdown Event Alert',
                 style: TextStyle(
                   fontSize: 14,
@@ -1732,11 +1797,12 @@ class _TrippingShutdownEntryScreenState
                                 });
                                 _bayFlagsControllers = newBayFlagsControllers;
 
-                                // 🔧 FIX: Initialize controllers for REASON (non-Line bays only)
+                                // Initialize controllers for REASON (non-Line bays only)
                                 final Map<String, TextEditingController>
                                 newBayReasonControllers = {};
                                 for (var bay in newValue) {
-                                  if (bay.bayType != 'Line') {
+                                  if (bay.bayType != 'Line' ||
+                                      _selectedEventType != 'Tripping') {
                                     newBayReasonControllers[bay.id] =
                                         _bayReasonControllers[bay.id] ??
                                         TextEditingController();
@@ -1813,12 +1879,15 @@ class _TrippingShutdownEntryScreenState
                     ),
                   ),
 
+                  // ✨ UPDATED: Event Type dropdown with breakdown support
                   _buildFormCard(
                     title: 'Event Type',
-                    icon: Icons.flash_on,
-                    iconColor: _selectedEventType == 'Tripping'
-                        ? Colors.red
-                        : Colors.orange,
+                    icon: _selectedEventType != null
+                        ? _getEventTypeIcon(_selectedEventType!)
+                        : Icons.flash_on,
+                    iconColor: _selectedEventType != null
+                        ? _getEventTypeColor(_selectedEventType!)
+                        : Colors.red,
                     child: DropdownButtonFormField<String>(
                       decoration: InputDecoration(
                         labelText: 'Event Type',
@@ -1838,12 +1907,8 @@ class _TrippingShutdownEntryScreenState
                           child: Row(
                             children: [
                               Icon(
-                                type == 'Tripping'
-                                    ? Icons.flash_on
-                                    : Icons.power_off,
-                                color: type == 'Tripping'
-                                    ? Colors.red
-                                    : Colors.orange,
+                                _getEventTypeIcon(type),
+                                color: _getEventTypeColor(type),
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
@@ -1879,18 +1944,21 @@ class _TrippingShutdownEntryScreenState
                     ),
                   ),
 
-                  // Updated timing section with proper titles
+                  // ✨ UPDATED: Dynamic timing section titles
                   _buildFormCard(
-                    title: _selectedEventType == 'Tripping'
-                        ? 'Trip Timing'
-                        : 'Shutdown Timing',
+                    title: _selectedEventType != null
+                        ? _getEventStartLabel(
+                                _selectedEventType!,
+                              ).replaceAll(' Time', '') +
+                              ' Timing'
+                        : 'Event Timing',
                     icon: Icons.schedule,
                     child: Column(
                       children: [
                         _buildDateTimeSelector(
-                          label: _selectedEventType == 'Tripping'
-                              ? 'Trip Start Time'
-                              : 'Shutdown Time',
+                          label: _selectedEventType != null
+                              ? _getEventStartLabel(_selectedEventType!)
+                              : 'Event Start Time',
                           date: _startDate,
                           time: _startTime,
                           isStart: true,
@@ -1900,7 +1968,9 @@ class _TrippingShutdownEntryScreenState
                         if (isEditingExisting && !isClosedEvent) ...[
                           const SizedBox(height: 16),
                           _buildDateTimeSelector(
-                            label: 'Charging Time',
+                            label: _selectedEventType != null
+                                ? _getEventEndLabel(_selectedEventType!)
+                                : 'Event End Time',
                             date: _endDate,
                             time: _endTime,
                             isStart: false,
@@ -1912,7 +1982,7 @@ class _TrippingShutdownEntryScreenState
                     ),
                   ),
 
-                  // 🔧 FIX: FLAGS section - MANDATORY for ALL tripping events
+                  // ✨ UPDATED: FLAGS section - MANDATORY for tripping AND breakdown events
                   if (_showFlags)
                     _buildFormCard(
                       title: 'FLAGS (Mandatory)',
@@ -1981,7 +2051,8 @@ class _TrippingShutdownEntryScreenState
                                     : Colors.black87,
                               ),
                               decoration: InputDecoration(
-                                labelText: 'FLAGS for Tripping Event',
+                                labelText:
+                                    'FLAGS for ${_selectedEventType ?? "Event"}',
                                 labelStyle: TextStyle(
                                   color: isDarkMode
                                       ? Colors.white.withOpacity(0.7)
@@ -1998,7 +2069,7 @@ class _TrippingShutdownEntryScreenState
                               enabled: isFormEnabled,
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  return 'FLAGS are mandatory for tripping events.';
+                                  return 'FLAGS are mandatory for ${_selectedEventType?.toLowerCase() ?? "event"} events.';
                                 }
                                 return null;
                               },
@@ -2007,16 +2078,16 @@ class _TrippingShutdownEntryScreenState
                       ),
                     ),
 
-                  // 🔧 FIX: REASON section - MANDATORY for ALL tripping events
+                  // ✨ UPDATED: REASON section - MANDATORY for tripping AND breakdown events
                   if (_showReason)
                     _buildFormCard(
-                      title: 'Reason for Tripping (Mandatory)',
+                      title: 'Reason (Mandatory)',
                       icon: Icons.report_problem,
                       iconColor: Colors.amber,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 🔧 FIX: For Line bays, show pre-filled reason selection
+                          // For Line bays tripping only, show pre-filled reason selection
                           if (_showLineReason)
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2050,7 +2121,7 @@ class _TrippingShutdownEntryScreenState
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                'Select Pre-filled Reason for Line',
+                                                'Select Pre-filled Reason for Line Tripping',
                                                 style: TextStyle(
                                                   fontSize: 14,
                                                   color: isDarkMode
@@ -2133,14 +2204,18 @@ class _TrippingShutdownEntryScreenState
                                 ],
                               ],
                             )
-                          // 🔧 FIX: For multi-bay selection (new events), show reason fields per bay
+                          // For multi-bay selection (new events), show reason fields per bay
                           else if (isMultiBaySelectionMode &&
                               _selectedMultiBays.isNotEmpty)
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 ..._selectedMultiBays
-                                    .where((bay) => bay.bayType != 'Line')
+                                    .where(
+                                      (bay) =>
+                                          bay.bayType != 'Line' ||
+                                          _selectedEventType != 'Tripping',
+                                    )
                                     .map((bay) {
                                       if (!_bayReasonControllers.containsKey(
                                         bay.id,
@@ -2192,7 +2267,7 @@ class _TrippingShutdownEntryScreenState
                                     .toList(),
                               ],
                             )
-                          // 🔧 FIX: For single bay editing (non-Line bays), show single reason field
+                          // For single bay editing (non-Line bays or breakdown events), show single reason field
                           else
                             TextFormField(
                               controller: _reasonController,
@@ -2202,7 +2277,8 @@ class _TrippingShutdownEntryScreenState
                                     : Colors.black87,
                               ),
                               decoration: InputDecoration(
-                                labelText: 'Reason for Tripping',
+                                labelText:
+                                    'Reason for ${_selectedEventType ?? "Event"}',
                                 labelStyle: TextStyle(
                                   color: isDarkMode
                                       ? Colors.white.withOpacity(0.7)
@@ -2219,7 +2295,7 @@ class _TrippingShutdownEntryScreenState
                               enabled: isFormEnabled,
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  return 'Reason is mandatory for tripping events.';
+                                  return 'Reason is mandatory for ${_selectedEventType?.toLowerCase() ?? "event"} events.';
                                 }
                                 return null;
                               },

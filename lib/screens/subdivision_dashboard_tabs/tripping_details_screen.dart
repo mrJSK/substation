@@ -1,4 +1,5 @@
 // lib/screens/tripping_details_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/tripping_shutdown_model.dart';
@@ -12,6 +13,100 @@ class TrippingDetailsScreen extends StatelessWidget {
     required this.entry,
     required this.substationName,
   }) : super(key: key);
+
+  // ✨ NEW: Helper methods for dynamic event labels
+  String _getEventTitle(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Event';
+      case 'Tripping':
+        return 'Tripping Event';
+      case 'Shutdown':
+        return 'Shutdown Event';
+      default:
+        return 'System Event';
+    }
+  }
+
+  String _getEventStartLabel(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Start Time';
+      case 'Tripping':
+        return 'Trip Start Time';
+      case 'Shutdown':
+        return 'Shutdown Time';
+      default:
+        return 'Event Start Time';
+    }
+  }
+
+  String _getEventEndLabel(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown End Time';
+      case 'Tripping':
+        return 'Trip End Time';
+      case 'Shutdown':
+        return 'Charging Time';
+      default:
+        return 'Event End Time';
+    }
+  }
+
+  String _getDetailsTitle(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Details';
+      case 'Tripping':
+        return 'Tripping Details';
+      case 'Shutdown':
+        return 'Shutdown Details';
+      default:
+        return 'Event Details';
+    }
+  }
+
+  String _getTimingTitle(String eventType) {
+    switch (eventType) {
+      case 'Breakdown':
+        return 'Breakdown Timing';
+      case 'Tripping':
+        return 'Trip Timing';
+      case 'Shutdown':
+        return 'Shutdown Timing';
+      default:
+        return 'Event Timing';
+    }
+  }
+
+  // ✨ NEW: Get event type icon
+  IconData _getEventTypeIcon(String eventType) {
+    switch (eventType) {
+      case 'Tripping':
+        return Icons.flash_on;
+      case 'Shutdown':
+        return Icons.power_off;
+      case 'Breakdown':
+        return Icons.build_circle_outlined;
+      default:
+        return Icons.warning;
+    }
+  }
+
+  // ✨ NEW: Get event type color
+  Color _getEventTypeColor(String eventType) {
+    switch (eventType) {
+      case 'Tripping':
+        return Colors.red;
+      case 'Shutdown':
+        return Colors.orange;
+      case 'Breakdown':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +133,9 @@ class TrippingDetailsScreen extends StatelessWidget {
             _buildDetailsSection(isDarkMode),
             const SizedBox(height: 40),
             _buildTimingSection(isDarkMode),
-            // 🔧 FIX: Show reason section for tripping events only
-            if (entry.eventType == 'Tripping') ...[
+            // ✨ UPDATED: Show reason section for tripping AND breakdown events
+            if (entry.eventType == 'Tripping' ||
+                entry.eventType == 'Breakdown') ...[
               const SizedBox(height: 40),
               _buildReasonSection(isDarkMode),
             ],
@@ -55,15 +151,16 @@ class TrippingDetailsScreen extends StatelessWidget {
       children: [
         Row(
           children: [
+            // ✨ UPDATED: Dynamic icon and color based on event type
             Icon(
-              entry.eventType == 'Tripping' ? Icons.flash_on : Icons.power_off,
-              color: entry.eventType == 'Tripping' ? Colors.red : Colors.orange,
+              _getEventTypeIcon(entry.eventType),
+              color: _getEventTypeColor(entry.eventType),
               size: 32,
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '${entry.eventType} Event',
+                _getEventTitle(entry.eventType),
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
@@ -74,7 +171,9 @@ class TrippingDetailsScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: entry.status == 'OPEN' ? Colors.orange : Colors.green,
+                color: entry.status == 'OPEN'
+                    ? _getEventTypeColor(entry.eventType).withOpacity(0.8)
+                    : Colors.green,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
@@ -112,9 +211,9 @@ class TrippingDetailsScreen extends StatelessWidget {
   }
 
   Widget _buildDetailsSection(bool isDarkMode) {
-    // 🔧 FIX: Separate FLAGS from the combined flags/cause for display
+    // Separate FLAGS from the combined flags/cause for display
     String displayFlags = entry.flagsCause;
-    if (entry.eventType == 'Tripping' &&
+    if ((entry.eventType == 'Tripping' || entry.eventType == 'Breakdown') &&
         entry.flagsCause.contains('Reason for Tripping:')) {
       // Extract only the FLAGS part (before the reason)
       final parts = entry.flagsCause.split('\nReason for Tripping:');
@@ -125,8 +224,9 @@ class TrippingDetailsScreen extends StatelessWidget {
 
     final details = <Map<String, String>>[];
 
-    // 🔧 FIX: Add FLAGS only for tripping events, and only if not empty
-    if (entry.eventType == 'Tripping' && displayFlags.isNotEmpty) {
+    // ✨ UPDATED: Add FLAGS for tripping AND breakdown events, only if not empty
+    if ((entry.eventType == 'Tripping' || entry.eventType == 'Breakdown') &&
+        displayFlags.isNotEmpty) {
       details.add({'label': 'FLAGS', 'value': displayFlags});
     }
 
@@ -178,10 +278,7 @@ class TrippingDetailsScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          // 🔧 FIX: Updated section title based on event type
-          entry.eventType == 'Tripping'
-              ? 'Tripping Details'
-              : 'Shutdown Details',
+          _getDetailsTitle(entry.eventType),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -202,23 +299,27 @@ class TrippingDetailsScreen extends StatelessWidget {
     );
   }
 
-  // 🔧 FIX: New reason section for tripping events
+  // ✨ UPDATED: Reason section for tripping AND breakdown events
   Widget _buildReasonSection(bool isDarkMode) {
     String? reasonText;
     String? reasonLabel;
 
     // Parse reason based on bay type and storage location
     if (entry.flagsCause.contains('Reason for Tripping:')) {
-      // Line bay - reason is stored in flagsCause
+      // Line bay tripping - reason is stored in flagsCause
       final parts = entry.flagsCause.split('Reason for Tripping:');
       if (parts.length > 1) {
         reasonText = parts.last.trim();
-        reasonLabel = 'Line Fault Reason';
+        reasonLabel = entry.eventType == 'Tripping'
+            ? 'Line Fault Reason'
+            : 'Breakdown Fault Reason';
       }
     } else if (entry.reasonForNonFeeder?.isNotEmpty ?? false) {
-      // Non-Line bay - reason is stored in reasonForNonFeeder
+      // Non-Line bay or breakdown events - reason is stored in reasonForNonFeeder
       reasonText = entry.reasonForNonFeeder!;
-      reasonLabel = 'Reason for Tripping';
+      reasonLabel = entry.eventType == 'Tripping'
+          ? 'Reason for Tripping'
+          : 'Reason for Breakdown';
     }
 
     // If no reason found, don't show this section
@@ -250,18 +351,16 @@ class TrippingDetailsScreen extends StatelessWidget {
 
   Widget _buildTimingSection(bool isDarkMode) {
     final timingDetails = <Map<String, String>>[
+      // ✨ UPDATED: Dynamic timing labels based on event type
       {
-        // 🔧 FIX: Updated timing labels based on event type
-        'label': entry.eventType == 'Tripping'
-            ? 'Trip Start Time'
-            : 'Shutdown Time',
+        'label': _getEventStartLabel(entry.eventType),
         'value': DateFormat(
           'dd MMM yyyy, HH:mm:ss',
         ).format(entry.startTime.toDate()),
       },
       if (entry.endTime != null)
         {
-          'label': 'Charging Time',
+          'label': _getEventEndLabel(entry.eventType),
           'value': DateFormat(
             'dd MMM yyyy, HH:mm:ss',
           ).format(entry.endTime!.toDate()),
@@ -296,8 +395,7 @@ class TrippingDetailsScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          // 🔧 FIX: Updated section title based on event type
-          entry.eventType == 'Tripping' ? 'Trip Timing' : 'Shutdown Timing',
+          _getTimingTitle(entry.eventType),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,

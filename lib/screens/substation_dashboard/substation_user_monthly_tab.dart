@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../../models/user_model.dart';
 import '../../models/enhanced_bay_data.dart';
 import '../../services/comprehensive_cache_service.dart';
@@ -32,7 +33,17 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
 
   final ComprehensiveCacheService _cache = ComprehensiveCacheService();
   bool _isLoading = true;
+
+  // Complete data source
   List<EnhancedBayData> _batteryBaysWithMonthly = [];
+
+  // Lazy loading variables
+  List<EnhancedBayData> _displayedBatteryBays = [];
+  final int _itemsPerPage = 10;
+  ScrollController? _scrollController;
+  bool _isLoadingMore = false;
+  bool _hasMoreItems = true;
+
   Map<String, bool> _batteryCompletionStatus = {};
   Map<String, int> _batteryCompletedCellsCount = {};
   bool _cacheHealthy = false;
@@ -41,6 +52,7 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
   @override
   void initState() {
     super.initState();
+    _initializeScrollController();
     _loadBatteryMonthlyData();
   }
 
@@ -50,13 +62,97 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
     final bool shouldReload =
         oldWidget.substationId != widget.substationId ||
         !DateUtils.isSameDay(oldWidget.selectedDate, widget.selectedDate);
+
     if (shouldReload) {
+      _resetPagination();
       _loadBatteryMonthlyData();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController?.dispose();
+    super.dispose();
+  }
+
+  void _initializeScrollController() {
+    _scrollController = ScrollController();
+    _scrollController!.addListener(_onScroll);
+  }
+
+  void _resetPagination() {
+    _displayedBatteryBays.clear();
+    _isLoadingMore = false;
+    _hasMoreItems = true;
+  }
+
+  void _onScroll() {
+    if (!_hasMoreItems || _isLoadingMore) return;
+
+    // Trigger load more when within 200 pixels of bottom
+    if (_scrollController!.position.pixels >=
+        _scrollController!.position.maxScrollExtent - 200) {
+      _loadMoreItems();
+    }
+  }
+
+  Future<void> _loadMoreItems() async {
+    if (_isLoadingMore || !_hasMoreItems) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      // Simulate network delay for smooth UX (remove in production if not needed)
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      final currentLength = _displayedBatteryBays.length;
+      final remainingItems = _batteryBaysWithMonthly.length - currentLength;
+
+      if (remainingItems <= 0) {
+        setState(() {
+          _hasMoreItems = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      final itemsToLoad = remainingItems < _itemsPerPage
+          ? remainingItems
+          : _itemsPerPage;
+
+      final newItems = _batteryBaysWithMonthly
+          .skip(currentLength)
+          .take(itemsToLoad)
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _displayedBatteryBays.addAll(newItems);
+          _hasMoreItems =
+              _displayedBatteryBays.length < _batteryBaysWithMonthly.length;
+          _isLoadingMore = false;
+        });
+
+        print(
+          '✅ Loaded ${newItems.length} more battery bays. Total displayed: ${_displayedBatteryBays.length}',
+        );
+      }
+    } catch (e) {
+      print('❌ Error loading more items: $e');
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+        SnackBarUtils.showSnackBar(
+          context,
+          'Error loading more batteries: $e',
+          isError: true,
+        );
+      }
     }
   }
 
   Future<void> _loadBatteryMonthlyData() async {
     setState(() => _isLoading = true);
+
     try {
       if (!_cache.isInitialized) {
         throw Exception('Cache not initialized - please restart the app');
@@ -67,11 +163,21 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
           .where((bay) => bay.bay.bayType.toLowerCase() == 'battery')
           .toList();
 
+      // Initialize with first page of items
+      final initialItemCount = _batteryBaysWithMonthly.length < _itemsPerPage
+          ? _batteryBaysWithMonthly.length
+          : _itemsPerPage;
+
+      _displayedBatteryBays = _batteryBaysWithMonthly
+          .take(initialItemCount)
+          .toList();
+
+      _hasMoreItems = _batteryBaysWithMonthly.length > _itemsPerPage;
       _cacheHealthy = true;
       _checkBatteryMonthlyCompletion();
 
       print(
-        '✅ Monthly tab loaded ${_batteryBaysWithMonthly.length} battery bays',
+        '✅ Monthly tab loaded ${_batteryBaysWithMonthly.length} battery bays, displaying ${_displayedBatteryBays.length} initially',
       );
     } catch (e) {
       print('❌ Error loading battery monthly data: $e');
@@ -79,6 +185,7 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
         _cacheHealthy = false;
         _cacheError = e.toString();
       });
+
       if (mounted) {
         SnackBarUtils.showSnackBar(
           context,
@@ -100,6 +207,7 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
         widget.selectedDate,
         'monthly',
       );
+
       int completeCells = 0;
       bool isComplete = false;
 
@@ -146,9 +254,19 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
     );
     final DateTime currentMonth = DateTime(now.year, now.month, 1);
 
-    // Monthly readings available on 1st of next month or for past months
-    return selectedMonth.isBefore(currentMonth) ||
-        (selectedMonth.isAtSameMomentAs(currentMonth) && now.day >= 1);
+    // Monthly readings available ONLY on the 1st of every month
+    // For current month: only available if today is the 1st
+    // For past months: always available (in case they missed entering on the 1st)
+    if (selectedMonth.isAtSameMomentAs(currentMonth)) {
+      // Current month - only available on 1st day
+      return now.day == 1;
+    } else if (selectedMonth.isBefore(currentMonth)) {
+      // Past months - always available (for missed entries)
+      return true;
+    } else {
+      // Future months - never available
+      return false;
+    }
   }
 
   void _showBatteryCompletedDialog(EnhancedBayData batteryBay) {
@@ -303,6 +421,35 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
             _refreshBatteryStatus(batteryBay.id);
           }
         });
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(Colors.purple),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Loading more batteries...',
+            style: TextStyle(
+              color: Colors.purple,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildBatteryCard(EnhancedBayData batteryBay, int index) {
@@ -482,6 +629,175 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
     );
   }
 
+  Widget _buildHeader() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final completedBatteries = _batteryCompletionStatus.values
+        .where((c) => c)
+        .length;
+    final totalBatteries = _batteryBaysWithMonthly.length;
+    final canEnterReadings = _canEnterMonthlyReadings();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDarkMode
+            ? Colors.purple.withOpacity(0.2)
+            : Colors.purple.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.battery_std, color: Colors.purple, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Battery Monthly Cell Readings',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.purple,
+                      ),
+                    ),
+                    Text(
+                      DateFormat('MMMM yyyy').format(widget.selectedDate),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDarkMode
+                            ? Colors.white.withOpacity(0.7)
+                            : Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (totalBatteries > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Column(
+                    children: [
+                      Text(
+                        '$totalBatteries',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple,
+                        ),
+                      ),
+                      Text(
+                        'Total Batteries',
+                        style: TextStyle(fontSize: 10, color: Colors.purple),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      Text(
+                        '${_displayedBatteryBays.length}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                      ),
+                      Text(
+                        'Loaded',
+                        style: TextStyle(fontSize: 10, color: Colors.blue),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      Text(
+                        '$completedBatteries',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      Text(
+                        'Complete',
+                        style: TextStyle(fontSize: 10, color: Colors.green),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      Text(
+                        '55',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      Text(
+                        'Cells Each',
+                        style: TextStyle(fontSize: 10, color: Colors.orange),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (!canEnterReadings) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule, color: Colors.orange, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Monthly readings will be available from the 1st of next month',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -519,166 +835,9 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
       );
     }
 
-    final completedBatteries = _batteryCompletionStatus.values
-        .where((c) => c)
-        .length;
-    final totalBatteries = _batteryBaysWithMonthly.length;
-    final canEnterReadings = _canEnterMonthlyReadings();
-
     return Column(
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          margin: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isDarkMode
-                ? Colors.purple.withOpacity(0.2)
-                : Colors.purple.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.purple.withOpacity(0.3)),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.battery_std,
-                      color: Colors.purple,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Battery Monthly Cell Readings',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.purple,
-                          ),
-                        ),
-                        Text(
-                          DateFormat('MMMM yyyy').format(widget.selectedDate),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDarkMode
-                                ? Colors.white.withOpacity(0.7)
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              if (totalBatteries > 0) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDarkMode ? const Color(0xFF3C3C3E) : Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Column(
-                        children: [
-                          Text(
-                            '$totalBatteries',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.purple,
-                            ),
-                          ),
-                          Text(
-                            'Batteries',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.purple,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Column(
-                        children: [
-                          Text(
-                            '$completedBatteries',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
-                          Text(
-                            'Complete',
-                            style: TextStyle(fontSize: 10, color: Colors.green),
-                          ),
-                        ],
-                      ),
-                      Column(
-                        children: [
-                          Text(
-                            '55',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange,
-                            ),
-                          ),
-                          Text(
-                            'Cells Each',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              if (!canEnterReadings) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.schedule, color: Colors.orange, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Monthly readings will be available from the 1st of next month',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange.shade700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+        _buildHeader(),
         Expanded(
           child: _isLoading
               ? Center(
@@ -726,11 +885,18 @@ class _SubstationUserMonthlyTabState extends State<SubstationUserMonthlyTab>
                   ),
                 )
               : ListView.builder(
-                  padding: EdgeInsets.only(bottom: 16),
-                  itemCount: _batteryBaysWithMonthly.length,
+                  controller: _scrollController,
+                  padding: const EdgeInsets.only(bottom: 16),
+                  itemCount:
+                      _displayedBatteryBays.length + (_isLoadingMore ? 1 : 0),
                   itemBuilder: (context, index) {
+                    // Show loading indicator at bottom
+                    if (index == _displayedBatteryBays.length) {
+                      return _buildLoadingIndicator();
+                    }
+
                     return _buildBatteryCard(
-                      _batteryBaysWithMonthly[index],
+                      _displayedBatteryBays[index],
                       index,
                     );
                   },
