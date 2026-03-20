@@ -41,6 +41,7 @@ class EnergyDataService {
   Map<String, DistributionCircle> _distributionCirclesMap = {};
   Map<String, DistributionDivision> _distributionDivisionsMap = {};
   Map<String, DistributionSubdivision> _distributionSubdivisionsMap = {};
+  bool _hierarchyLoaded = false;
 
   EnergyDataService({
     required this.substationId,
@@ -143,6 +144,7 @@ class EnergyDataService {
   }
 
   Future<void> _fetchHierarchyData() async {
+    if (_hierarchyLoaded) return;
     try {
       final futures = [
         _firestore.collection('zones').get(),
@@ -189,6 +191,7 @@ class EnergyDataService {
         for (var doc in results[8].docs)
           doc.id: DistributionSubdivision.fromFirestore(doc),
       };
+      _hierarchyLoaded = true;
     } catch (e) {
       print('Error fetching hierarchy data: $e');
       rethrow;

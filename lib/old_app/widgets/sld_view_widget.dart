@@ -5,8 +5,6 @@ import 'dart:ui' as ui;
 import '../painters/single_line_diagram_painter.dart';
 import '../controllers/sld_controller.dart';
 import '../models/bay_model.dart';
-import '../utils/snackbar_utils.dart';
-import '../enums/movement_mode.dart';
 
 class SldViewWidget extends StatelessWidget {
   final bool isEnergySld;
@@ -21,7 +19,6 @@ class SldViewWidget extends StatelessWidget {
   });
 
   static const double _contentPadding = 120.0;
-  static const double _topPadding = 100.0;
 
   @override
   Widget build(BuildContext context) {
@@ -303,9 +300,7 @@ class SldViewWidget extends StatelessWidget {
       busbarRects: sldController.busbarRects,
       busbarConnectionPoints: sldController.busbarConnectionPoints,
       debugDrawHitboxes: !isPdfMode,
-      selectedBayForMovementId: isPdfMode
-          ? null
-          : sldController.selectedBayForMovementId,
+      selectedBayForMovementId: null,
       bayEnergyData: sldController.bayEnergyData,
       busEnergySummary: sldController.busEnergySummary,
       contentBounds: isPdfMode && contentBounds != null

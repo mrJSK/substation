@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r import.*lib/screens lib --include=*.dart)",
+      "Bash(grep -r import.*lib/services lib --include=*.dart)",
+      "Bash(wc -l lib/old_app/**/*.dart)",
+      "Bash(flutter pub:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(grep -oP 'lib\\\\\\\\old_app\\\\\\\\\\\\K[^:]+')",
+      "Bash(python3 -c \":*)",
+      "Bash(py -3 -c \":*)",
+      "Bash(dart analyze:*)"
+    ]
+  }
+}

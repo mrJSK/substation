@@ -1,11 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import '../../models/signature_models.dart';
@@ -15,7 +12,6 @@ import '../../models/user_model.dart';
 import '../../models/assessment_model.dart';
 import '../../services/energy_data_service.dart';
 import '../../utils/pdf_generator.dart';
-import '../../widgets/energy_movement_controls_widget.dart';
 import '../../widgets/energy_speed_dial_widget.dart';
 import '../../widgets/energy_tables_widget.dart';
 import '../../widgets/sld_view_widget.dart';
@@ -67,7 +63,6 @@ class EnergySldScreen extends StatefulWidget {
 
 class _EnergySldScreenState extends State<EnergySldScreen> {
   bool _isLoading = true;
-  bool _isCapturingPdf = false;
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 1));
   DateTime _endDate = DateTime.now();
   bool _showTables = false;
@@ -83,7 +78,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
   // Signature-related fields
   List<SignatureData> _signatures = [];
-  List<DistributionFeederData> _distributionFeederData = [];
 
   @override
   void initState() {
@@ -314,87 +308,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     }
   }
 
-  Future<void> _handleBackPress() async {
-    final sldController = Provider.of<SldController>(context, listen: false);
-
-    if (sldController.hasUnsavedChanges()) {
-      final theme = Theme.of(context);
-      final isDarkMode = theme.brightness == Brightness.dark;
-
-      final result = await showDialog<String>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          backgroundColor: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Icon(
-                Icons.save_outlined,
-                color: Theme.of(context).colorScheme.primary,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Save Changes?',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: isDarkMode ? Colors.white : null,
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            'You have unsaved layout changes. What would you like to do?',
-            style: TextStyle(
-              fontSize: 16,
-              color: isDarkMode ? Colors.white : null,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop('discard'),
-              child: Text(
-                'Discard Changes',
-                style: TextStyle(
-                  color: Colors.red.shade600,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop('save'),
-              child: const Text('Save & Exit'),
-            ),
-          ],
-        ),
-      );
-
-      if (result == 'save') {
-        final success = await sldController.saveAllPendingChanges();
-        if (mounted) {
-          if (success) {
-            _showFixedSnackBar('Layout changes saved successfully!');
-            Navigator.of(context).pop();
-          } else {
-            _showFixedSnackBar(
-              'Failed to save changes. Please try again.',
-              isError: true,
-            );
-          }
-        }
-      } else if (result == 'discard') {
-        sldController.cancelLayoutChanges();
-        _showFixedSnackBar('Changes discarded');
-        if (mounted) Navigator.of(context).pop();
-      }
-    } else {
-      Navigator.of(context).pop();
-    }
+  void _handleBackPress() {
+    Navigator.of(context).pop();
   }
 
   String get _dateRangeText {
@@ -523,129 +438,41 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  // Prepare distribution feeder data
-  void _prepareDistributionFeederData() {
-    final sldController = Provider.of<SldController>(context, listen: false);
-    _distributionFeederData.clear();
-
-    final distributionFeeders = sldController.allBays
-        .where(
-          (bay) =>
-              bay.bayType.toLowerCase() == 'feeder' &&
-              (bay.name.contains('DIST') || bay.name.contains('Distribution')),
-        )
-        .toList();
-
-    for (var feeder in distributionFeeders) {
-      final energyData = sldController.bayEnergyData[feeder.id];
-      if (energyData != null) {
-        _distributionFeederData.add(
-          DistributionFeederData(
-            feederName: feeder.name,
-            distributionZone: 'Zone 1',
-            distributionCircle: 'Circle 1',
-            distributionDivision: 'Division 1',
-            distributionSubdivision: 'Subdivision 1',
-            importEnergy: energyData.adjustedImportConsumed,
-            exportEnergy: energyData.adjustedExportConsumed,
-            feederType: feeder.feederType ?? 'Distribution',
-          ),
-        );
-      }
-    }
-  }
-
   void _generateAndSharePdf() async {
     try {
       _showFixedSnackBar('Generating PDF...');
 
-      // Prepare distribution feeder data
-      _prepareDistributionFeederData();
+      final sldController = Provider.of<SldController>(context, listen: false);
 
-      final matrix = _transformationController?.value ?? Matrix4.identity();
-      final double sldScale = matrix.storage[0];
-      final double sldDx = matrix.storage[1];
-      final double sldDy = matrix.storage[2];
-      final Offset sldOffsetFromController = Offset(sldDx, sldDy);
+      // Derive voltage from the highest-voltage busbar
+      final voltages = _getUniqueBusVoltages(sldController);
+      final substationVoltage = voltages.isNotEmpty ? voltages.first : '';
 
-      final capturedData = await _captureSldForPdf();
+      // Format month/year header
+      final now = DateTime.now();
+      final monthYear =
+          'M/O-${DateFormat('MM/yyyy').format(_endDate.isAfter(now) ? now : _endDate)}';
 
-      if (capturedData != null) {
-        final sldController = Provider.of<SldController>(
-          context,
-          listen: false,
-        );
+      final pdfBytes = await PdfGenerator.generateMonthlyEnergyAccountPdf(
+        substationName: widget.substationName,
+        substationVoltage: substationVoltage,
+        monthYear: monthYear,
+        bayEnergyData: sldController.bayEnergyData,
+        baysMap: sldController.baysMap,
+        busEnergySummary: sldController.busEnergySummary,
+        assessments: _energyDataService.allAssessmentsForDisplay
+            .map((a) => a.toFirestore())
+            .toList(),
+        signatures: _signatures,
+      );
 
-        // Check what field actually exists in your SldController
-        final pdfData = PdfGeneratorData(
-          substationName: widget.substationName,
-          dateRange: _dateRangeText,
-          sldImageBytes: capturedData.pngBytes,
-          abstractEnergyData: sldController.abstractEnergyData.isNotEmpty
-              ? sldController.abstractEnergyData
-              : {
-                  'totalImp': 0.0,
-                  'totalExp': 0.0,
-                  'difference': 0.0,
-                  'lossPercentage': 0.0,
-                },
-          busEnergySummaryData: sldController.busEnergySummary,
-          // Use the correct field name from your SldController
-          aggregatedFeederData: sldController
-              .aggregatedFeederEnergyData, // ✅ Use this if the field exists
-          assessmentsForPdf: _energyDataService.allAssessmentsForDisplay
-              .map((a) => a.toFirestore())
-              .toList(),
-          uniqueBusVoltages: _getUniqueBusVoltages(sldController),
-          allBaysInSubstation: sldController.allBays,
-          baysMap: sldController.baysMap,
-          uniqueDistributionSubdivisionNames: [],
-          sldBaseLogicalWidth: capturedData.baseLogicalWidth,
-          sldBaseLogicalHeight: capturedData.baseLogicalHeight,
-          sldZoom: sldScale,
-          sldOffset: sldOffsetFromController,
-          signatures: _signatures,
-          distributionFeederData: _distributionFeederData,
-        );
+      final filename =
+          'Energy_Account_${widget.substationName.replaceAll(' ', '_')}_${DateFormat('MMM_yyyy').format(_endDate)}.pdf';
+      await PdfGenerator.sharePdf(pdfBytes, filename, 'Energy Account');
 
-        final pdfBytes = await PdfGenerator.generateEnergyReportPdf(pdfData);
-        final filename =
-            'Energy_SLD_${widget.substationName.replaceAll(' ', '_')}_${DateFormat('yyyy-MM-dd').format(DateTime.now())}.pdf';
-        await PdfGenerator.sharePdf(pdfBytes, filename, 'Energy SLD Report');
-
-        _showFixedSnackBar('PDF generated and shared successfully!');
-      } else {
-        _showFixedSnackBar('Failed to capture SLD image', isError: true);
-      }
+      _showFixedSnackBar('PDF generated successfully!');
     } catch (e) {
       _showFixedSnackBar('Failed to generate PDF: $e', isError: true);
-    }
-  }
-
-  Future<CapturedSldData?> _captureSldForPdf() async {
-    try {
-      setState(() => _isCapturingPdf = true);
-
-      final boundary =
-          _sldRepaintBoundaryKey.currentContext?.findRenderObject()
-              as RenderRepaintBoundary?;
-      if (boundary == null) return null;
-
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return null;
-
-      return CapturedSldData(
-        pngBytes: byteData.buffer.asUint8List(),
-        baseLogicalWidth: boundary.size.width,
-        baseLogicalHeight: boundary.size.height,
-        pixelRatio: 3.0,
-      );
-    } catch (e) {
-      print('Error capturing SLD: $e');
-      return null;
-    } finally {
-      if (mounted) setState(() => _isCapturingPdf = false);
     }
   }
 
@@ -695,21 +522,13 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
 
     final sldController = Provider.of<SldController>(context);
 
-    return PopScope(
-      canPop: !sldController.hasUnsavedChanges(),
-      onPopInvoked: (didPop) async {
-        if (!didPop) {
-          await _handleBackPress();
-        }
-      },
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: isDarkMode
             ? const Color(0xFF1C1C1E) // Dark mode background
             : const Color(0xFFFAFAFA),
         appBar: _buildAppBar(sldController, isDarkMode),
         body: _buildMainContent(sldController, isDarkMode),
         bottomNavigationBar: _buildBottomNavigationBar(sldController),
-      ),
     );
   }
 
@@ -837,8 +656,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     SldController sldController,
     bool isDarkMode,
   ) {
-    final hasUnsavedChanges = sldController.hasUnsavedChanges();
-
     return AppBar(
       backgroundColor: isDarkMode
           ? const Color(0xFF2C2C2E) // Dark elevated surface
@@ -848,23 +665,17 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         icon: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: hasUnsavedChanges
-                ? Colors.orange.withOpacity(0.1)
-                : Theme.of(context).colorScheme.primary.withOpacity(0.1),
+            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             Icons.arrow_back_ios,
-            color: hasUnsavedChanges
-                ? Colors.orange.shade700
-                : Theme.of(context).colorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
             size: 18,
           ),
         ),
         onPressed: _handleBackPress,
-        tooltip: hasUnsavedChanges
-            ? 'Back (Unsaved Changes)'
-            : 'Back to Dashboard',
+        tooltip: 'Back to Dashboard',
       ),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -881,27 +692,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       : Theme.of(context).colorScheme.onSurface,
                 ),
               ),
-              if (hasUnsavedChanges) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'MODIFIED',
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange.shade700,
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
           Text(
@@ -1036,20 +826,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                           child: Center(
                             child: SldViewWidget(
                               isEnergySld: true,
-                              isCapturingPdf: _isCapturingPdf,
-                              onBayTapped: _isCapturingPdf
-                                  ? null
-                                  : (bay, tapPosition) {
-                                      if (sldController
-                                              .selectedBayForMovementId ==
-                                          null) {
-                                        _showBayActions(
-                                          context,
-                                          bay,
-                                          tapPosition,
-                                        );
-                                      }
-                                    },
+                              isCapturingPdf: false,
+                              onBayTapped: (bay, tapPosition) {
+                                _showBayActions(context, bay, tapPosition);
+                              },
                             ),
                           ),
                         ),
@@ -1076,7 +856,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           ),
 
         // Fixed: Positioned widgets as direct children of Stack
-        if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
+        if (!false && !_isLoading && _controllersInitialized)
           Positioned(
             top: 16,
             right: 16,
@@ -1121,7 +901,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           ),
 
         // Fixed: Speed dial as direct child of Stack
-        if (!_isCapturingPdf && !_isLoading && _controllersInitialized)
+        if (!false && !_isLoading && _controllersInitialized)
           EnergySpeedDialWidget(
             isViewingSavedSld: _isViewingSavedSld,
             showTables: _showTables,
@@ -1137,14 +917,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   Widget? _buildBottomNavigationBar(SldController sldController) {
-    if (sldController.selectedBayForMovementId == null || _isCapturingPdf) {
-      return null;
-    }
-
-    return EnergyMovementControlsWidget(
-      onSave: _loadEnergyData,
-      isViewingSavedSld: _isViewingSavedSld,
-    );
+    return null;
   }
 
   @override

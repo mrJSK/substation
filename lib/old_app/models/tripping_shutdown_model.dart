@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class TrippingShutdownEntry {
   final String? id; // Null for new entries
   final String substationId;
+  // Denormalized for manager-level collection group queries
+  final String subdivisionId;
+  final String divisionId;
   final String bayId;
   final String bayName; // Store bay name for easier display
   final String eventType; // 'Tripping' or 'Shutdown'
@@ -30,6 +33,8 @@ class TrippingShutdownEntry {
   TrippingShutdownEntry({
     this.id,
     required this.substationId,
+    required this.subdivisionId,
+    required this.divisionId,
     required this.bayId,
     required this.bayName,
     required this.eventType,
@@ -37,7 +42,7 @@ class TrippingShutdownEntry {
     this.endTime,
     required this.status,
     required this.flagsCause,
-    this.reasonForNonFeeder, // NEW: Add to copyWith
+    this.reasonForNonFeeder,
     this.hasAutoReclose,
     this.phaseFaults,
     this.distance,
@@ -45,7 +50,6 @@ class TrippingShutdownEntry {
     required this.createdAt,
     this.closedBy,
     this.closedAt,
-    // NEW: Initialize new fields
     this.shutdownType,
     this.shutdownPersonName,
     this.shutdownPersonDesignation,
@@ -56,6 +60,8 @@ class TrippingShutdownEntry {
     return TrippingShutdownEntry(
       id: doc.id,
       substationId: data['substationId'] ?? '',
+      subdivisionId: data['subdivisionId'] as String? ?? '',
+      divisionId: data['divisionId'] as String? ?? '',
       bayId: data['bayId'] ?? '',
       bayName: data['bayName'] ?? '',
       eventType: data['eventType'] ?? '',
@@ -83,6 +89,8 @@ class TrippingShutdownEntry {
   Map<String, dynamic> toFirestore() {
     return {
       'substationId': substationId,
+      'subdivisionId': subdivisionId,
+      'divisionId': divisionId,
       'bayId': bayId,
       'bayName': bayName,
       'eventType': eventType,
@@ -108,6 +116,8 @@ class TrippingShutdownEntry {
   TrippingShutdownEntry copyWith({
     String? id,
     String? substationId,
+    String? subdivisionId,
+    String? divisionId,
     String? bayId,
     String? bayName,
     String? eventType,
@@ -131,6 +141,8 @@ class TrippingShutdownEntry {
     return TrippingShutdownEntry(
       id: id ?? this.id,
       substationId: substationId ?? this.substationId,
+      subdivisionId: subdivisionId ?? this.subdivisionId,
+      divisionId: divisionId ?? this.divisionId,
       bayId: bayId ?? this.bayId,
       bayName: bayName ?? this.bayName,
       eventType: eventType ?? this.eventType,

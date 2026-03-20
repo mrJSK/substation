@@ -1,30 +1,26 @@
-// lib/models/bay_model.dart
+// lib/old_app/models/bay_model.dart
+//
+// Bay is now embedded inside a Substation document (no separate collection).
+// fromMap() is used when deserializing the embedded array.
+// toMap() is used when writing the bay back into the substation document.
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'hierarchy_models.dart'; // Import the file containing HierarchyItem
 
-class Bay implements HierarchyItem {
-  @override
+class Bay {
   final String id;
-  @override
   final String name;
-  final String substationId;
   final String voltageLevel;
   final String bayType;
-  final String createdBy;
-  final Timestamp createdAt;
-  @override
+
+  // Metadata
   final String? description;
-  @override
-  final String? landmark;
-  @override
-  final String? contactNumber;
-  @override
+  final String? address;
   final String? contactPerson;
-  @override
+  final String? contactNumber;
   final String? contactDesignation;
-  @override // Added missing override for address
-  final String? address; // Added missing address property
+
+  // Feeder/Line specifics
   final bool? isGovernmentFeeder;
   final String? feederType;
   final double? multiplyingFactor;
@@ -33,43 +29,51 @@ class Bay implements HierarchyItem {
   final String? circuitType;
   final String? conductorType;
   final String? conductorDetail;
-  final Timestamp? erectionDate;
+
+  // Transformer specifics
   final String? hvVoltage;
   final String? lvVoltage;
   final String? make;
   final double? capacity;
-  final Timestamp? manufacturingDate;
   final String? hvBusId;
   final String? lvBusId;
+
+  // Dates
   final Timestamp? commissioningDate;
+  final Timestamp? erectionDate;
+  final Timestamp? manufacturingDate;
+  final String? createdBy;
+  final Timestamp? createdAt;
+
+  // SLD layout
   final double? xPosition;
   final double? yPosition;
-  final double? busbarLength;
   final Offset? textOffset;
+  final Offset? energyReadingOffset;
+  final double? energyReadingFontSize;
+  final bool? energyReadingIsBold;
+
+  // Distribution linkage
   final String? distributionZoneId;
   final String? distributionCircleId;
   final String? distributionDivisionId;
   final String? distributionSubdivisionId;
 
-  // Properties for Energy Reading Text Styling
-  final Offset? energyReadingOffset;
-  final double? energyReadingFontSize;
-  final bool? energyReadingIsBold;
+  // Backward-compat fields (kept so old screens don't break)
+  final String? substationId;
+  final String? landmark;
+  final double? busbarLength;
 
-  Bay({
+  const Bay({
     required this.id,
     required this.name,
-    required this.substationId,
     required this.voltageLevel,
     required this.bayType,
-    required this.createdBy,
-    required this.createdAt,
     this.description,
-    this.landmark,
-    this.contactNumber,
+    this.address,
     this.contactPerson,
+    this.contactNumber,
     this.contactDesignation,
-    this.address, // Added to constructor
     this.isGovernmentFeeder,
     this.feederType,
     this.multiplyingFactor,
@@ -78,151 +82,156 @@ class Bay implements HierarchyItem {
     this.circuitType,
     this.conductorType,
     this.conductorDetail,
-    this.erectionDate,
     this.hvVoltage,
     this.lvVoltage,
     this.make,
     this.capacity,
-    this.manufacturingDate,
     this.hvBusId,
     this.lvBusId,
     this.commissioningDate,
+    this.erectionDate,
+    this.manufacturingDate,
+    this.createdBy,
+    this.createdAt,
     this.xPosition,
     this.yPosition,
-    this.busbarLength,
     this.textOffset,
+    this.energyReadingOffset,
+    this.energyReadingFontSize,
+    this.energyReadingIsBold,
     this.distributionZoneId,
     this.distributionCircleId,
     this.distributionDivisionId,
     this.distributionSubdivisionId,
-    this.energyReadingOffset,
-    this.energyReadingFontSize,
-    this.energyReadingIsBold,
+    this.substationId,
+    this.landmark,
+    this.busbarLength,
   });
 
-  factory Bay.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-
-    // Helper function to parse Offset from Firestore map
-    Offset? parseOffset(Map<String, dynamic>? offsetData) {
-      if (offsetData == null) return null;
-      return Offset(
-        (offsetData['dx'] as num?)?.toDouble() ?? 0.0,
-        (offsetData['dy'] as num?)?.toDouble() ?? 0.0,
-      );
-    }
-
-    return Bay(
-      id: doc.id,
-      name: data['name'] ?? '',
-      substationId: data['substationId'] ?? '',
-      voltageLevel: data['voltageLevel'] ?? '',
-      bayType: data['bayType'] ?? '',
-      createdBy: data['createdBy'] ?? '',
-      createdAt: data['createdAt'] ?? Timestamp.now(),
-      description: data['description'],
-      landmark: data['landmark'],
-      contactNumber: data['contactNumber'],
-      contactPerson: data['contactPerson'],
-      contactDesignation: data['contactDesignation'],
-      address: data['address'], // Added to fromFirestore
-      isGovernmentFeeder: data['isGovernmentFeeder'],
-      feederType: data['feederType'],
-      multiplyingFactor: (data['multiplyingFactor'] as num?)?.toDouble(),
-      bayNumber: data['bayNumber'],
-      lineLength: (data['lineLength'] as num?)?.toDouble(),
-      circuitType: data['circuitType'],
-      conductorType: data['conductorType'],
-      conductorDetail: data['conductorDetail'],
-      erectionDate: data['erectionDate'],
-      hvVoltage: data['hvVoltage'],
-      lvVoltage: data['lvVoltage'],
-      make: data['make'],
-      capacity: (data['capacity'] as num?)?.toDouble(),
-      manufacturingDate: data['manufacturingDate'],
-      hvBusId: data['hvBusId'] as String?,
-      lvBusId: data['lvBusId'] as String?,
-      commissioningDate: data['commissioningDate'],
-      xPosition: (data['xPosition'] as num?)?.toDouble(),
-      yPosition: (data['yPosition'] as num?)?.toDouble(),
-      busbarLength: (data['busbarLength'] as num?)?.toDouble(),
-      textOffset: parseOffset(data['textOffset']),
-      distributionZoneId: data['distributionZoneId'] as String?,
-      distributionCircleId: data['distributionCircleId'] as String?,
-      distributionDivisionId: data['distributionDivisionId'] as String?,
-      distributionSubdivisionId: data['distributionSubdivisionId'] as String?,
-      energyReadingOffset: parseOffset(data['energyReadingOffset']),
-      energyReadingFontSize: (data['energyReadingFontSize'] as num?)
-          ?.toDouble(),
-      energyReadingIsBold: data['energyReadingIsBold'],
+  static Offset? _parseOffset(dynamic data) {
+    if (data == null) return null;
+    final map = data as Map<String, dynamic>;
+    return Offset(
+      (map['dx'] as num?)?.toDouble() ?? 0,
+      (map['dy'] as num?)?.toDouble() ?? 0,
     );
   }
 
-  @override
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'substationId': substationId,
-      'voltageLevel': voltageLevel,
-      'bayType': bayType,
-      'createdBy': createdBy,
-      'createdAt': createdAt,
-      'description': description,
-      'landmark': landmark,
-      'contactNumber': contactNumber,
-      'contactPerson': contactPerson,
-      'contactDesignation': contactDesignation,
-      'address': address, // Added to toFirestore
-      'isGovernmentFeeder': isGovernmentFeeder,
-      'feederType': feederType,
-      'multiplyingFactor': multiplyingFactor,
-      'bayNumber': bayNumber,
-      'lineLength': lineLength,
-      'circuitType': circuitType,
-      'conductorType': conductorType,
-      'conductorDetail': conductorDetail,
-      'erectionDate': erectionDate,
-      'hvVoltage': hvVoltage,
-      'lvVoltage': lvVoltage,
-      'make': make,
-      'capacity': capacity,
-      'manufacturingDate': manufacturingDate,
-      'hvBusId': hvBusId,
-      'lvBusId': lvBusId,
-      'commissioningDate': commissioningDate,
-      'xPosition': xPosition,
-      'yPosition': yPosition,
-      'busbarLength': busbarLength,
-      if (textOffset != null)
-        'textOffset': {'dx': textOffset!.dx, 'dy': textOffset!.dy},
-      'distributionZoneId': distributionZoneId,
-      'distributionCircleId': distributionCircleId,
-      'distributionDivisionId': distributionDivisionId,
-      'distributionSubdivisionId': distributionSubdivisionId,
-      if (energyReadingOffset != null)
-        'energyReadingOffset': {
-          'dx': energyReadingOffset!.dx,
-          'dy': energyReadingOffset!.dy,
-        },
+  /// Used when Bay is embedded inside a Substation document (array element).
+  factory Bay.fromMap(Map<String, dynamic> data) => Bay(
+    id: data['id'] ?? '',
+    name: data['name'] ?? '',
+    voltageLevel: data['voltageLevel'] ?? '',
+    bayType: data['bayType'] ?? '',
+    description: data['description'],
+    address: data['address'],
+    contactPerson: data['contactPerson'],
+    contactNumber: data['contactNumber'],
+    contactDesignation: data['contactDesignation'],
+    isGovernmentFeeder: data['isGovernmentFeeder'],
+    feederType: data['feederType'],
+    multiplyingFactor: (data['multiplyingFactor'] as num?)?.toDouble(),
+    bayNumber: data['bayNumber'],
+    lineLength: (data['lineLength'] as num?)?.toDouble(),
+    circuitType: data['circuitType'],
+    conductorType: data['conductorType'],
+    conductorDetail: data['conductorDetail'],
+    hvVoltage: data['hvVoltage'],
+    lvVoltage: data['lvVoltage'],
+    make: data['make'],
+    capacity: (data['capacity'] as num?)?.toDouble(),
+    hvBusId: data['hvBusId'],
+    lvBusId: data['lvBusId'],
+    commissioningDate: data['commissioningDate'] as Timestamp?,
+    erectionDate: data['erectionDate'] as Timestamp?,
+    manufacturingDate: data['manufacturingDate'] as Timestamp?,
+    createdBy: data['createdBy'],
+    createdAt: data['createdAt'] as Timestamp?,
+    xPosition: (data['xPosition'] as num?)?.toDouble(),
+    yPosition: (data['yPosition'] as num?)?.toDouble(),
+    textOffset: _parseOffset(data['textOffset']),
+    energyReadingOffset: _parseOffset(data['energyReadingOffset']),
+    energyReadingFontSize: (data['energyReadingFontSize'] as num?)?.toDouble(),
+    energyReadingIsBold: data['energyReadingIsBold'],
+    distributionZoneId: data['distributionZoneId'],
+    distributionCircleId: data['distributionCircleId'],
+    distributionDivisionId: data['distributionDivisionId'],
+    distributionSubdivisionId: data['distributionSubdivisionId'],
+    substationId: data['substationId'],
+    landmark: data['landmark'],
+    busbarLength: (data['busbarLength'] as num?)?.toDouble(),
+  );
+
+  /// Backward-compat: deserialize a standalone Bay Firestore document.
+  factory Bay.fromFirestore(DocumentSnapshot doc) =>
+      Bay.fromMap({...doc.data() as Map<String, dynamic>, 'id': doc.id});
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'voltageLevel': voltageLevel,
+    'bayType': bayType,
+    if (description != null) 'description': description,
+    if (address != null) 'address': address,
+    if (contactPerson != null) 'contactPerson': contactPerson,
+    if (contactNumber != null) 'contactNumber': contactNumber,
+    if (contactDesignation != null) 'contactDesignation': contactDesignation,
+    if (isGovernmentFeeder != null) 'isGovernmentFeeder': isGovernmentFeeder,
+    if (feederType != null) 'feederType': feederType,
+    if (multiplyingFactor != null) 'multiplyingFactor': multiplyingFactor,
+    if (bayNumber != null) 'bayNumber': bayNumber,
+    if (lineLength != null) 'lineLength': lineLength,
+    if (circuitType != null) 'circuitType': circuitType,
+    if (conductorType != null) 'conductorType': conductorType,
+    if (conductorDetail != null) 'conductorDetail': conductorDetail,
+    if (hvVoltage != null) 'hvVoltage': hvVoltage,
+    if (lvVoltage != null) 'lvVoltage': lvVoltage,
+    if (make != null) 'make': make,
+    if (capacity != null) 'capacity': capacity,
+    if (hvBusId != null) 'hvBusId': hvBusId,
+    if (lvBusId != null) 'lvBusId': lvBusId,
+    if (commissioningDate != null) 'commissioningDate': commissioningDate,
+    if (erectionDate != null) 'erectionDate': erectionDate,
+    if (manufacturingDate != null) 'manufacturingDate': manufacturingDate,
+    if (createdBy != null) 'createdBy': createdBy,
+    if (createdAt != null) 'createdAt': createdAt,
+    if (xPosition != null) 'xPosition': xPosition,
+    if (yPosition != null) 'yPosition': yPosition,
+    if (textOffset != null)
+      'textOffset': {'dx': textOffset!.dx, 'dy': textOffset!.dy},
+    if (energyReadingOffset != null)
+      'energyReadingOffset': {
+        'dx': energyReadingOffset!.dx,
+        'dy': energyReadingOffset!.dy,
+      },
+    if (energyReadingFontSize != null)
       'energyReadingFontSize': energyReadingFontSize,
-      'energyReadingIsBold': energyReadingIsBold,
-    };
-  }
+    if (energyReadingIsBold != null) 'energyReadingIsBold': energyReadingIsBold,
+    if (distributionZoneId != null) 'distributionZoneId': distributionZoneId,
+    if (distributionCircleId != null)
+      'distributionCircleId': distributionCircleId,
+    if (distributionDivisionId != null)
+      'distributionDivisionId': distributionDivisionId,
+    if (distributionSubdivisionId != null)
+      'distributionSubdivisionId': distributionSubdivisionId,
+    if (substationId != null) 'substationId': substationId,
+    if (landmark != null) 'landmark': landmark,
+    if (busbarLength != null) 'busbarLength': busbarLength,
+  };
+
+  /// Backward-compat alias for toMap().
+  Map<String, dynamic> toFirestore() => toMap();
 
   Bay copyWith({
     String? id,
     String? name,
-    String? substationId,
     String? voltageLevel,
     String? bayType,
-    String? createdBy,
-    Timestamp? createdAt,
     String? description,
-    String? landmark,
-    String? contactNumber,
+    String? address,
     String? contactPerson,
+    String? contactNumber,
     String? contactDesignation,
-    String? address, // Added to copyWith
     bool? isGovernmentFeeder,
     String? feederType,
     double? multiplyingFactor,
@@ -231,72 +240,83 @@ class Bay implements HierarchyItem {
     String? circuitType,
     String? conductorType,
     String? conductorDetail,
-    Timestamp? erectionDate,
     String? hvVoltage,
     String? lvVoltage,
     String? make,
     double? capacity,
-    Timestamp? manufacturingDate,
     String? hvBusId,
     String? lvBusId,
     Timestamp? commissioningDate,
+    Timestamp? erectionDate,
+    Timestamp? manufacturingDate,
+    String? createdBy,
+    Timestamp? createdAt,
     double? xPosition,
     double? yPosition,
-    double? busbarLength,
     Offset? textOffset,
+    Offset? energyReadingOffset,
+    double? energyReadingFontSize,
+    bool? energyReadingIsBold,
     String? distributionZoneId,
     String? distributionCircleId,
     String? distributionDivisionId,
     String? distributionSubdivisionId,
-    Offset? energyReadingOffset,
-    double? energyReadingFontSize,
-    bool? energyReadingIsBold,
-  }) {
-    return Bay(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      substationId: substationId ?? this.substationId,
-      voltageLevel: voltageLevel ?? this.voltageLevel,
-      bayType: bayType ?? this.bayType,
-      createdBy: createdBy ?? this.createdBy,
-      createdAt: createdAt ?? this.createdAt,
-      description: description ?? this.description,
-      landmark: landmark ?? this.landmark,
-      contactNumber: contactNumber ?? this.contactNumber,
-      contactPerson: contactPerson ?? this.contactPerson,
-      contactDesignation: contactDesignation ?? this.contactDesignation,
-      address: address ?? this.address, // Added to copyWith
-      isGovernmentFeeder: isGovernmentFeeder ?? this.isGovernmentFeeder,
-      feederType: feederType ?? this.feederType,
-      multiplyingFactor: multiplyingFactor ?? this.multiplyingFactor,
-      bayNumber: bayNumber ?? this.bayNumber,
-      lineLength: lineLength ?? this.lineLength,
-      circuitType: circuitType ?? this.circuitType,
-      conductorType: conductorType ?? this.conductorType,
-      conductorDetail: conductorDetail ?? this.conductorDetail,
-      erectionDate: erectionDate ?? this.erectionDate,
-      hvVoltage: hvVoltage ?? this.hvVoltage,
-      lvVoltage: lvVoltage ?? this.lvVoltage,
-      make: make ?? this.make,
-      capacity: capacity ?? this.capacity,
-      manufacturingDate: manufacturingDate ?? this.manufacturingDate,
-      hvBusId: hvBusId ?? this.hvBusId,
-      lvBusId: lvBusId ?? this.lvBusId,
-      commissioningDate: commissioningDate ?? this.commissioningDate,
-      xPosition: xPosition ?? this.xPosition,
-      yPosition: yPosition ?? this.yPosition,
-      busbarLength: busbarLength ?? this.busbarLength,
-      textOffset: textOffset ?? this.textOffset,
-      distributionZoneId: distributionZoneId ?? this.distributionZoneId,
-      distributionCircleId: distributionCircleId ?? this.distributionCircleId,
-      distributionDivisionId:
-          distributionDivisionId ?? this.distributionDivisionId,
-      distributionSubdivisionId:
-          distributionSubdivisionId ?? this.distributionSubdivisionId,
-      energyReadingOffset: energyReadingOffset ?? this.energyReadingOffset,
-      energyReadingFontSize:
-          energyReadingFontSize ?? this.energyReadingFontSize,
-      energyReadingIsBold: energyReadingIsBold ?? this.energyReadingIsBold,
-    );
-  }
+    String? substationId,
+    String? landmark,
+    double? busbarLength,
+  }) => Bay(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    voltageLevel: voltageLevel ?? this.voltageLevel,
+    bayType: bayType ?? this.bayType,
+    description: description ?? this.description,
+    address: address ?? this.address,
+    contactPerson: contactPerson ?? this.contactPerson,
+    contactNumber: contactNumber ?? this.contactNumber,
+    contactDesignation: contactDesignation ?? this.contactDesignation,
+    isGovernmentFeeder: isGovernmentFeeder ?? this.isGovernmentFeeder,
+    feederType: feederType ?? this.feederType,
+    multiplyingFactor: multiplyingFactor ?? this.multiplyingFactor,
+    bayNumber: bayNumber ?? this.bayNumber,
+    lineLength: lineLength ?? this.lineLength,
+    circuitType: circuitType ?? this.circuitType,
+    conductorType: conductorType ?? this.conductorType,
+    conductorDetail: conductorDetail ?? this.conductorDetail,
+    hvVoltage: hvVoltage ?? this.hvVoltage,
+    lvVoltage: lvVoltage ?? this.lvVoltage,
+    make: make ?? this.make,
+    capacity: capacity ?? this.capacity,
+    hvBusId: hvBusId ?? this.hvBusId,
+    lvBusId: lvBusId ?? this.lvBusId,
+    commissioningDate: commissioningDate ?? this.commissioningDate,
+    erectionDate: erectionDate ?? this.erectionDate,
+    manufacturingDate: manufacturingDate ?? this.manufacturingDate,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt ?? this.createdAt,
+    xPosition: xPosition ?? this.xPosition,
+    yPosition: yPosition ?? this.yPosition,
+    textOffset: textOffset ?? this.textOffset,
+    energyReadingOffset: energyReadingOffset ?? this.energyReadingOffset,
+    energyReadingFontSize: energyReadingFontSize ?? this.energyReadingFontSize,
+    energyReadingIsBold: energyReadingIsBold ?? this.energyReadingIsBold,
+    distributionZoneId: distributionZoneId ?? this.distributionZoneId,
+    distributionCircleId: distributionCircleId ?? this.distributionCircleId,
+    distributionDivisionId:
+        distributionDivisionId ?? this.distributionDivisionId,
+    distributionSubdivisionId:
+        distributionSubdivisionId ?? this.distributionSubdivisionId,
+    substationId: substationId ?? this.substationId,
+    landmark: landmark ?? this.landmark,
+    busbarLength: busbarLength ?? this.busbarLength,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || (other is Bay && other.id == id);
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => 'Bay($id, $name, $bayType)';
 }

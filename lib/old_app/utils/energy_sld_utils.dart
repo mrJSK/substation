@@ -1,18 +1,8 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 
-import '../enums/movement_mode.dart';
-import '../models/user_model.dart';
 import '../models/bay_model.dart';
-import '../models/saved_sld_model.dart';
-import '../models/assessment_model.dart';
 import '../controllers/sld_controller.dart';
-import '../screens/subdivision_dashboard_tabs/energy_sld_screen.dart';
 import '../services/energy_data_service.dart';
 import '../widgets/energy_assessment_dialog.dart';
 import '../utils/snackbar_utils.dart';
@@ -229,109 +219,8 @@ class EnergySldUtils {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (!isViewingSavedSld) ...[
-            // Movement Actions Section
-            _buildSectionHeader('Position & Layout'),
-            _buildActionItem(
-              context: context,
-              icon: Icons.open_with,
-              title: 'Move Bay',
-              subtitle: 'Adjust position on diagram',
-              color: Colors.blue,
-              onTap: () {
-                Navigator.of(context).pop();
-                sldController.setSelectedBayForMovement(
-                  bay.id,
-                  mode: MovementMode.bay,
-                );
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'Use arrow keys or drag to move ${bay.name}',
-                  // type: SnackBarType.info,
-                );
-              },
-            ),
-
-            _buildActionItem(
-              context: context,
-              icon: Icons.text_fields,
-              title: 'Move Label',
-              subtitle: 'Adjust text position',
-              color: Colors.green,
-              onTap: () {
-                Navigator.of(context).pop();
-                sldController.setSelectedBayForMovement(
-                  bay.id,
-                  mode: MovementMode.text,
-                );
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'Moving text for ${bay.name}',
-                  // type: SnackBarType.info,
-                );
-              },
-            ),
-
-            // Busbar specific actions
-            if (bay.bayType.toLowerCase() == 'busbar') ...[
-              _buildActionItem(
-                context: context,
-                icon: Icons.linear_scale,
-                title: 'Adjust Length',
-                subtitle: 'Modify busbar length',
-                color: Colors.indigo,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  sldController.setSelectedBayForMovement(
-                    bay.id,
-                    mode: MovementMode.busbarLength,
-                  );
-                  SnackBarUtils.showSnackBar(
-                    context,
-                    'Use +/- keys to adjust busbar length',
-                    // type: SnackBarType.info,
-                  );
-                },
-              ),
-
-              _buildActionItem(
-                context: context,
-                icon: Icons.settings_input_antenna,
-                title: 'Configure Busbar',
-                subtitle: 'Manage connected bays',
-                color: Colors.purple,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  energyDataService.showBusbarSelectionDialog(
-                    context,
-                    sldController,
-                  );
-                },
-              ),
-            ],
-
-            const Divider(height: 24),
-
             // Energy & Data Section
             _buildSectionHeader('Energy & Data'),
-            _buildActionItem(
-              context: context,
-              icon: Icons.format_list_numbered,
-              title: 'Move Energy Text',
-              subtitle: 'Adjust energy readings position',
-              color: Colors.orange,
-              onTap: () {
-                Navigator.of(context).pop();
-                sldController.setSelectedBayForMovement(
-                  bay.id,
-                  mode: MovementMode.energyText,
-                );
-                SnackBarUtils.showSnackBar(
-                  context,
-                  'Moving energy readings for ${bay.name}',
-                  // type: SnackBarType.info,
-                );
-              },
-            ),
 
             // Assessment action for non-busbar bays
             if (bay.bayType.toLowerCase() != 'busbar') ...[
@@ -645,13 +534,15 @@ class EnergySldUtils {
                 _buildDetailRow('HV Bus ID', bay.hvBusId!),
               if (bay.lvBusId != null)
                 _buildDetailRow('LV Bus ID', bay.lvBusId!),
-              _buildDetailRow('Created By', bay.createdBy),
-              _buildDetailRow(
-                'Created At',
-                DateFormat(
-                  'MMM dd, yyyy HH:mm',
-                ).format(bay.createdAt.toDate().toLocal()),
-              ),
+              if (bay.createdBy != null)
+                _buildDetailRow('Created By', bay.createdBy!),
+              if (bay.createdAt != null)
+                _buildDetailRow(
+                  'Created At',
+                  DateFormat(
+                    'MMM dd, yyyy HH:mm',
+                  ).format(bay.createdAt!.toDate().toLocal()),
+                ),
 
               // Energy Data Section
               if (hasEnergyData) ...[
@@ -821,42 +712,4 @@ class EnergySldUtils {
     }
   }
 
-  // NEW: Utility method to check if bay has unsaved changes
-  static bool hasPendingChanges(Bay bay, SldController sldController) {
-    return sldController.selectedBayForMovementId == bay.id;
-  }
-
-  // NEW: Quick action to save changes
-  static Future<void> saveChanges(
-    BuildContext context,
-    SldController sldController,
-  ) async {
-    try {
-      final success = await sldController.saveAllPendingChanges();
-
-      if (context.mounted) {
-        if (success) {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Changes saved successfully',
-            // type: SnackBarType.success,
-          );
-        } else {
-          SnackBarUtils.showSnackBar(
-            context,
-            'Failed to save changes',
-            // type: SnackBarType.error,
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        SnackBarUtils.showSnackBar(
-          context,
-          'Error saving changes: ${e.toString()}',
-          // type: SnackBarType.error,
-        );
-      }
-    }
-  }
 }

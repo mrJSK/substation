@@ -95,7 +95,7 @@ class _EnergyAssessmentDialogState extends State<EnergyAssessmentDialog> {
 
       final newAssessment = Assessment(
         id: FirebaseFirestore.instance.collection('assessments').doc().id,
-        substationId: widget.bay.substationId,
+        substationId: widget.bay.substationId ?? '',
         bayId: widget.bay.id,
         assessmentTimestamp: Timestamp.now(),
         importAdjustment: importAdj,

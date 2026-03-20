@@ -69,6 +69,8 @@ class LogsheetEntryScreen extends StatefulWidget {
   final AppUser currentUser;
   final bool forceReadOnly;
   final Map? autoPopulateData;
+  final String subdivisionId;
+  final String divisionId;
 
   const LogsheetEntryScreen({
     super.key,
@@ -81,6 +83,8 @@ class LogsheetEntryScreen extends StatefulWidget {
     required this.currentUser,
     this.forceReadOnly = false,
     this.autoPopulateData,
+    this.subdivisionId = '',
+    this.divisionId = '',
   });
 
   @override
@@ -404,6 +408,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         );
       }
 
+      final d = widget.readingDate;
+      final dateStr =
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
       final logsheetData = LogsheetEntry(
         bayId: widget.bayId,
         templateId: 'CACHE_TEMPLATE',
@@ -414,6 +421,9 @@ class _LogsheetEntryScreenState extends State<LogsheetEntryScreen>
         frequency: widget.frequency,
         readingHour: widget.readingHour,
         substationId: widget.substationId,
+        subdivisionId: widget.subdivisionId,
+        divisionId: widget.divisionId,
+        date: dateStr,
         modificationReason: modificationReason,
       );
 

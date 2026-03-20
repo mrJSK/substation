@@ -18,6 +18,8 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
   final AppUser currentUser;
   final TrippingShutdownEntry? entryToEdit;
   final bool isViewOnly;
+  final String subdivisionId;
+  final String divisionId;
 
   const TrippingShutdownEntryScreen({
     super.key,
@@ -26,6 +28,8 @@ class TrippingShutdownEntryScreen extends StatefulWidget {
     required this.currentUser,
     this.entryToEdit,
     this.isViewOnly = false,
+    this.subdivisionId = '',
+    this.divisionId = '',
   });
 
   @override
@@ -838,6 +842,8 @@ class _TrippingShutdownEntryScreenState
 
           final newEntry = TrippingShutdownEntry(
             substationId: widget.substationId,
+            subdivisionId: widget.subdivisionId,
+            divisionId: widget.divisionId,
             bayId: bay.id,
             bayName: bay.name,
             eventType: _selectedEventType!,

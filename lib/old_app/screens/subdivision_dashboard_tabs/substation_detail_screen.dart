@@ -3,19 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import 'package:collection/collection.dart';
-
 import '../../models/bay_model.dart';
 import '../../models/user_model.dart';
 import '../../models/equipment_model.dart';
-import '../../painters/single_line_diagram_painter.dart';
 import '../../utils/snackbar_utils.dart';
 import 'bay_form_screen.dart';
 import 'bay_equipment_management_screen.dart';
 import 'bay_reading_assignment_screen.dart';
 import 'energy_sld_screen.dart';
 import '../../controllers/sld_controller.dart';
-import '../../enums/movement_mode.dart';
 
 // Enhanced Equipment Icon Widget
 class _EquipmentIcon extends StatelessWidget {
@@ -359,8 +355,6 @@ class SubstationDetailScreen extends StatefulWidget {
 class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
   BayDetailViewMode _viewMode = BayDetailViewMode.list;
   Bay? _bayToEdit;
-  static const double _movementStep = 5.0;
-  static const double _busbarLengthStep = 5.0;
   List<Bay> _availableBusbars = [];
   bool _isLoadingBusbars = true;
 
@@ -405,10 +399,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     setState(() {
       _viewMode = mode;
       _bayToEdit = bay;
-      final sldController = Provider.of<SldController>(context, listen: false);
-      if (mode == BayDetailViewMode.list) {
-        sldController.setSelectedBayForMovement(null);
-      }
     });
     if (mode != BayDetailViewMode.list) {
       _fetchBusbarsInSubstation();
@@ -432,20 +422,10 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
     }
 
     return PopScope(
-      canPop:
-          _viewMode == BayDetailViewMode.list &&
-          sldController.selectedBayForMovementId == null,
+      canPop: _viewMode == BayDetailViewMode.list,
       onPopInvoked: (didPop) {
-        if (!didPop) {
-          if (sldController.selectedBayForMovementId != null) {
-            sldController.cancelLayoutChanges();
-            SnackBarUtils.showSnackBar(
-              context,
-              'Movement cancelled. Position not saved.',
-            );
-          } else if (_viewMode != BayDetailViewMode.list) {
-            _setViewMode(BayDetailViewMode.list);
-          }
+        if (!didPop && _viewMode != BayDetailViewMode.list) {
+          _setViewMode(BayDetailViewMode.list);
         }
       },
       child: Scaffold(
@@ -503,8 +483,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 },
               ),
             ),
-            if (_viewMode != BayDetailViewMode.list ||
-                sldController.selectedBayForMovementId != null)
+            if (_viewMode != BayDetailViewMode.list)
               Container(
                 margin: const EdgeInsets.only(right: 16),
                 decoration: BoxDecoration(
@@ -513,17 +492,7 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.close, color: Colors.orange),
-                  onPressed: () {
-                    if (sldController.selectedBayForMovementId != null) {
-                      sldController.cancelLayoutChanges();
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'Movement cancelled. Position not saved.',
-                      );
-                    } else {
-                      _setViewMode(BayDetailViewMode.list);
-                    }
-                  },
+                  onPressed: () => _setViewMode(BayDetailViewMode.list),
                 ),
               ),
           ],
@@ -538,13 +507,8 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
                 onCancel: () => _setViewMode(BayDetailViewMode.list),
                 availableBusbars: _isLoadingBusbars ? [] : _availableBusbars,
               ),
-        floatingActionButton:
-            _viewMode == BayDetailViewMode.list &&
-                sldController.selectedBayForMovementId == null
+        floatingActionButton: _viewMode == BayDetailViewMode.list
             ? _buildFloatingActionButtons(theme)
-            : null,
-        bottomNavigationBar: sldController.selectedBayForMovementId != null
-            ? _buildMovementControls(sldController, isDarkMode)
             : null,
       ),
     );
@@ -1167,294 +1131,6 @@ class _SubstationDetailScreenState extends State<SubstationDetailScreen> {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Icon(iconData, color: iconColor, size: 20),
-    );
-  }
-
-  Widget _buildMovementControls(SldController sldController, bool isDarkMode) {
-    final selectedBay =
-        sldController.baysMap[sldController.selectedBayForMovementId!];
-    if (selectedBay == null) return const SizedBox.shrink();
-
-    final BayRenderData? selectedBayRenderData = sldController.bayRenderDataList
-        .firstWhereOrNull(
-          (data) => data.bay.id == sldController.selectedBayForMovementId,
-        );
-
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: isDarkMode
-            ? const Color(0xFF2C2C2E) // Dark elevated surface
-            : Colors.blueGrey.shade800,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.edit, color: Colors.white, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  'Editing: ${selectedBay.name}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          SegmentedButton<MovementMode>(
-            segments: const [
-              ButtonSegment(
-                value: MovementMode.bay,
-                label: Text('Move Bay'),
-                icon: Icon(Icons.move_up, size: 16),
-              ),
-              ButtonSegment(
-                value: MovementMode.text,
-                label: Text('Move Name'),
-                icon: Icon(Icons.text_fields, size: 16),
-              ),
-            ],
-            selected: {sldController.movementMode},
-            onSelectionChanged: (newSelection) {
-              sldController.setMovementMode(newSelection.first);
-            },
-            style: ButtonStyle(
-              foregroundColor: MaterialStateProperty.resolveWith<Color>((
-                states,
-              ) {
-                return states.contains(MaterialState.selected)
-                    ? Colors.blue.shade900
-                    : Colors.blue.shade100;
-              }),
-              backgroundColor: MaterialStateProperty.resolveWith<Color>((
-                states,
-              ) {
-                return states.contains(MaterialState.selected)
-                    ? Colors.white
-                    : Colors.white.withOpacity(0.2);
-              }),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                const Text(
-                  'Movement Controls',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildControlButton(
-                      Icons.arrow_back,
-                      () => sldController.moveSelectedItem(-_movementStep, 0),
-                    ),
-                    Column(
-                      children: [
-                        _buildControlButton(
-                          Icons.arrow_upward,
-                          () =>
-                              sldController.moveSelectedItem(0, -_movementStep),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildControlButton(
-                          Icons.arrow_downward,
-                          () =>
-                              sldController.moveSelectedItem(0, _movementStep),
-                        ),
-                      ],
-                    ),
-                    _buildControlButton(
-                      Icons.arrow_forward,
-                      () => sldController.moveSelectedItem(_movementStep, 0),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (selectedBay.bayType == 'Busbar') ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'Busbar Length',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildControlButton(
-                        Icons.remove,
-                        () => sldController.adjustBusbarLength(
-                          -_busbarLengthStep,
-                        ),
-                      ),
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          selectedBayRenderData?.busbarLength.toStringAsFixed(
-                                0,
-                              ) ??
-                              'Auto',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      _buildControlButton(
-                        Icons.add,
-                        () =>
-                            sldController.adjustBusbarLength(_busbarLengthStep),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () async {
-                final bool confirm =
-                    await showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        backgroundColor: isDarkMode
-                            ? const Color(0xFF1C1C1E)
-                            : Colors.white,
-                        title: Text(
-                          'Save All Changes?',
-                          style: TextStyle(
-                            color: isDarkMode ? Colors.white : null,
-                          ),
-                        ),
-                        content: Text(
-                          'This will save all layout changes made in this session. '
-                          'Do you want to continue?',
-                          style: TextStyle(
-                            color: isDarkMode ? Colors.white : null,
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
-                            child: const Text('Cancel'),
-                          ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            child: const Text('Save All'),
-                          ),
-                        ],
-                      ),
-                    ) ??
-                    false;
-
-                if (confirm) {
-                  final bool success = await sldController
-                      .saveAllPendingChanges();
-                  if (mounted) {
-                    if (success) {
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'All changes saved successfully!',
-                      );
-                    } else {
-                      SnackBarUtils.showSnackBar(
-                        context,
-                        'Failed to save changes.',
-                        isError: true,
-                      );
-                    }
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              icon: const Icon(Icons.save),
-              label: const Text(
-                'Save All Changes',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControlButton(IconData icon, VoidCallback onPressed) {
-    return Container(
-      margin: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: IconButton(
-        icon: Icon(icon),
-        color: Colors.white,
-        onPressed: onPressed,
-        iconSize: 24,
-      ),
     );
   }
 

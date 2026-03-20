@@ -13,6 +13,11 @@ class LogsheetEntry {
   final String frequency;
   final int? readingHour;
   final String substationId;
+  // Denormalized for manager-level collection group queries
+  final String subdivisionId;
+  final String divisionId;
+  // "YYYY-MM-DD" for easy date filtering without compound indexes
+  final String date;
   final String? modificationReason;
 
   LogsheetEntry({
@@ -26,10 +31,12 @@ class LogsheetEntry {
     required this.frequency,
     this.readingHour,
     required this.substationId,
+    required this.subdivisionId,
+    required this.divisionId,
+    required this.date,
     this.modificationReason,
   });
 
-  // ✅ ADD THIS COPYWITH METHOD
   LogsheetEntry copyWith({
     String? id,
     String? bayId,
@@ -41,6 +48,9 @@ class LogsheetEntry {
     String? frequency,
     int? readingHour,
     String? substationId,
+    String? subdivisionId,
+    String? divisionId,
+    String? date,
     String? modificationReason,
   }) {
     return LogsheetEntry(
@@ -54,30 +64,36 @@ class LogsheetEntry {
       frequency: frequency ?? this.frequency,
       readingHour: readingHour ?? this.readingHour,
       substationId: substationId ?? this.substationId,
+      subdivisionId: subdivisionId ?? this.subdivisionId,
+      divisionId: divisionId ?? this.divisionId,
+      date: date ?? this.date,
       modificationReason: modificationReason ?? this.modificationReason,
     );
   }
 
-  // Factory constructor for Firestore deserialization
   factory LogsheetEntry.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-
+    final ts = data['readingTimestamp'] as Timestamp;
+    final dt = ts.toDate();
     return LogsheetEntry(
       id: doc.id,
       bayId: data['bayId'] as String,
       templateId: data['templateId'] as String,
-      readingTimestamp: data['readingTimestamp'] as Timestamp,
+      readingTimestamp: ts,
       recordedBy: data['recordedBy'] as String,
       recordedAt: data['recordedAt'] as Timestamp,
       values: Map<String, dynamic>.from(data['values'] as Map<String, dynamic>),
       frequency: data['frequency'] as String,
       readingHour: data['readingHour'] as int?,
       substationId: data['substationId'] as String,
+      subdivisionId: data['subdivisionId'] as String? ?? '',
+      divisionId: data['divisionId'] as String? ?? '',
+      date: data['date'] as String? ??
+          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}',
       modificationReason: data['modificationReason'] as String?,
     );
   }
 
-  // Method for Firestore serialization
   Map<String, dynamic> toFirestore() {
     return {
       'bayId': bayId,
@@ -89,6 +105,9 @@ class LogsheetEntry {
       'frequency': frequency,
       'readingHour': readingHour,
       'substationId': substationId,
+      'subdivisionId': subdivisionId,
+      'divisionId': divisionId,
+      'date': date,
       'modificationReason': modificationReason,
     };
   }

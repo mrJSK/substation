@@ -169,23 +169,12 @@ class SingleLineDiagramPainter extends CustomPainter {
     required this.connectionLineColor,
   });
 
-  // 🔥 CRITICAL FIX: Add hitTest method for gesture detection
   @override
   bool? hitTest(Offset position) {
-    print('DEBUG: Hit test at position: $position');
-
-    // Check if position hits any bay
     for (var renderData in bayRenderDataList) {
-      if (renderData.rect.contains(position)) {
-        print(
-          'DEBUG: Hit detected for ${renderData.bay.name} (${renderData.bay.bayType})',
-        );
-        return true;
-      }
+      if (renderData.rect.contains(position)) return true;
     }
-
-    print('DEBUG: No hit detected');
-    return false; // Return false instead of null for precise control
+    return false;
   }
 
   // Optimized voltage level color mapping with caching
@@ -298,10 +287,6 @@ class SingleLineDiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    print('DEBUG: Painter paint method called');
-    print('DEBUG: showEnergyReadings = $showEnergyReadings');
-    print('DEBUG: bayEnergyData.length = ${bayEnergyData.length}');
-    print('DEBUG: bayRenderDataList.length = ${bayRenderDataList.length}');
 
     // Save the canvas state before any transformations
     canvas.save();
@@ -1009,17 +994,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     return (start: startPoint, end: endPoint);
   }
 
-  Color _getBayTypeColor(String bayType) {
-    switch (bayType) {
-      case 'Transformer':
-        return transformerColor;
-      case 'Line':
-      case 'Feeder':
-        return defaultLineFeederColor;
-      default:
-        return defaultBayColor;
-    }
-  }
 
   void _drawFallbackSymbol(Canvas canvas, Size size, Color color) {
     final paint = Paint()
@@ -1101,30 +1075,6 @@ class SingleLineDiagramPainter extends CustomPainter {
     textPainter.paint(canvas, Offset(x, position.dy + offsetY));
   }
 
-  void _drawArrowhead(Canvas canvas, Offset p1, Offset p2, Paint paint) {
-    const double arrowSize = 10.0;
-    final double angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
-
-    final Path path = Path();
-    path.moveTo(p2.dx, p2.dy);
-    path.lineTo(
-      p2.dx - arrowSize * cos(angle - pi / 6),
-      p2.dy - arrowSize * sin(angle - pi / 6),
-    );
-    path.lineTo(
-      p2.dx - arrowSize * cos(angle + pi / 6),
-      p2.dy - arrowSize * sin(angle + pi / 6),
-    );
-    path.close();
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = paint.color
-        ..style = PaintingStyle.fill,
-    );
-  }
-
   // UPDATED: Connection color method to be more explicit
   Color _getConnectionColor(
     String sourceBayType,
@@ -1161,7 +1111,10 @@ class SingleLineDiagramPainter extends CustomPainter {
     return connectionLineColor;
   }
 
-  // FIXED CONNECTION LINE DRAWING METHOD
+  /// Draws an orthogonal (right-angle) connection between two points.
+  /// If start and end share the same X, a single vertical line is drawn.
+  /// Otherwise a Z-route is used: vertical → horizontal → vertical, with
+  /// the bend placed at the midpoint Y between the two endpoints.
   void _drawConnectionLine(
     Canvas canvas,
     Offset startPoint,
@@ -1171,49 +1124,69 @@ class SingleLineDiagramPainter extends CustomPainter {
     String sourceBayId,
     String targetBayId,
   ) {
-    // Get the appropriate color for the connection
-    Color connectionColor = _getConnectionColor(
+    final Color connectionColor = _getConnectionColor(
       sourceBayType,
       targetBayType,
       sourceBayId,
       targetBayId,
     );
 
-    // Create a paint with the dynamic color
-    final connectionPaint = Paint()
+    final linePaint = Paint()
       ..color = connectionColor
-      ..strokeWidth = 2.5
+      ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
+      ..strokeCap = StrokeCap.square
+      ..strokeJoin = StrokeJoin.miter
       ..isAntiAlias = true;
 
-    canvas.drawLine(startPoint, endPoint, connectionPaint);
+    canvas.drawPath(
+      _buildOrthogonalPath(startPoint, endPoint),
+      linePaint,
+    );
 
-    // Draw connection dots with matching color
-    final connectionDotPaint = Paint()
+    // Tap dot at the busbar junction
+    final dotPaint = Paint()
       ..color = connectionColor
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 
+    final Offset? tapPoint;
     if (sourceBayType == 'Busbar' && targetBayType != 'Busbar') {
-      final busConnectionPoint =
-          busbarConnectionPoints[sourceBayId]?[targetBayId];
-      if (busConnectionPoint != null) {
-        canvas.drawCircle(busConnectionPoint, 4.0, connectionDotPaint);
-      }
+      tapPoint = busbarConnectionPoints[sourceBayId]?[targetBayId];
     } else if (targetBayType == 'Busbar' && sourceBayType != 'Busbar') {
-      final busConnectionPoint =
-          busbarConnectionPoints[targetBayId]?[sourceBayId];
-      if (busConnectionPoint != null) {
-        canvas.drawCircle(busConnectionPoint, 4.0, connectionDotPaint);
-      }
+      tapPoint = busbarConnectionPoints[targetBayId]?[sourceBayId];
+    } else {
+      tapPoint = null;
     }
 
-    // Draw arrowheads with matching color for transformers
-    if ((sourceBayType == 'Busbar' && targetBayType == 'Transformer') ||
-        (sourceBayType == 'Transformer' && targetBayType == 'Busbar')) {
-      _drawArrowhead(canvas, startPoint, endPoint, connectionPaint);
+    if (tapPoint != null) {
+      canvas.drawCircle(tapPoint, 3.5, dotPaint);
     }
+  }
+
+  /// Returns a [Path] that routes orthogonally from [start] to [end].
+  ///
+  /// - Same column (|Δx| < 1 px): straight vertical line.
+  /// - Different columns: Z-shape — down to mid-Y, across, then down to end.
+  Path _buildOrthogonalPath(Offset start, Offset end) {
+    final path = Path()..moveTo(start.dx, start.dy);
+
+    final double dx = end.dx - start.dx;
+    if (dx.abs() < 1.0) {
+      // Already vertically aligned — single straight segment.
+      path.lineTo(end.dx, end.dy);
+      return path;
+    }
+
+    // Z-route: place the horizontal jog at the midpoint Y so the route
+    // stays balanced between the two connected elements.
+    final double midY = start.dy + (end.dy - start.dy) / 2;
+    path
+      ..lineTo(start.dx, midY)
+      ..lineTo(end.dx, midY)
+      ..lineTo(end.dx, end.dy);
+
+    return path;
   }
 
   @override

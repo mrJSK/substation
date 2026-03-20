@@ -1430,6 +1430,488 @@ class PdfGenerator {
     );
   }
 
+  /// Generates the monthly Energy Account PDF directly from data.
+  /// No canvas screenshot required — pure vector output.
+  /// Matches the format in the Excel/sample image.
+  static Future<Uint8List> generateMonthlyEnergyAccountPdf({
+    required String substationName,
+    required String substationVoltage, // e.g. "132 KV"
+    required String monthYear, // e.g. "M/O-02/2026"
+    required Map<String, BayEnergyData> bayEnergyData,
+    required Map<String, Bay> baysMap,
+    required Map<String, Map<String, double>> busEnergySummary,
+    required List<Map<String, dynamic>> assessments,
+    required List<SignatureData> signatures,
+    String? remarks,
+  }) async {
+    final pdf = pw.Document();
+
+    // Group non-busbar bays by voltage level, sorted high→low
+    final Map<String, List<Bay>> baysByVoltage = {};
+    for (final bay in baysMap.values) {
+      if (bay.bayType.toLowerCase() == 'busbar') continue;
+      final vl = bay.voltageLevel;
+      baysByVoltage.putIfAbsent(vl, () => []).add(bay);
+    }
+    final sortedVoltages = baysByVoltage.keys.toList()
+      ..sort((a, b) => _extractVoltageValue(b).compareTo(_extractVoltageValue(a)));
+
+    // Compute abstract totals per busbar
+    final Map<String, double> busImp = {};
+    final Map<String, double> busExp = {};
+    for (final entry in busEnergySummary.entries) {
+      busImp[entry.key] = entry.value['totalImp'] ?? 0.0;
+      busExp[entry.key] = entry.value['totalExp'] ?? 0.0;
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        build: (pw.Context ctx) {
+          return [
+            _buildEaHeader(substationVoltage, substationName, monthYear),
+            pw.SizedBox(height: 6),
+            ...sortedVoltages.expand((vl) => [
+              _buildVoltageGroupHeader(vl),
+              pw.SizedBox(height: 3),
+              _buildFeedersTable(
+                vl,
+                baysByVoltage[vl]!,
+                bayEnergyData,
+              ),
+              pw.SizedBox(height: 8),
+            ]),
+            _buildAbstractTable(
+              baysMap,
+              busImp,
+              busExp,
+              busEnergySummary,
+            ),
+            if (assessments.isNotEmpty || (remarks != null && remarks.isNotEmpty)) ...[
+              pw.SizedBox(height: 8),
+              _buildRemarksSection(assessments, remarks),
+            ],
+            pw.SizedBox(height: 12),
+            _buildEaSignatureSection(signatures),
+          ];
+        },
+        footer: (pw.Context ctx) => pw.Container(
+          alignment: pw.Alignment.centerRight,
+          margin: const pw.EdgeInsets.only(top: 6),
+          child: pw.Text(
+            'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+            style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+          ),
+        ),
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  static pw.Widget _buildEaHeader(
+    String voltage,
+    String substationName,
+    String monthYear,
+  ) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.black, width: 0.8),
+      ),
+      child: pw.Row(
+        children: [
+          pw.Expanded(
+            child: pw.Container(
+              padding: const pw.EdgeInsets.all(8),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.Text(
+                    'ENERGY ACCOUNT OF $voltage SUB-STATION $substationName',
+                    style: pw.TextStyle(
+                      fontSize: 13,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                    textAlign: pw.TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          pw.Container(
+            width: 120,
+            padding: const pw.EdgeInsets.all(8),
+            decoration: pw.BoxDecoration(
+              border: pw.Border(
+                left: pw.BorderSide(color: PdfColors.black, width: 0.8),
+              ),
+            ),
+            child: pw.Text(
+              monthYear,
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildVoltageGroupHeader(String voltageLevel) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        color: PdfColors.grey200,
+        border: pw.Border.all(color: PdfColors.grey500, width: 0.5),
+      ),
+      padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 6),
+      child: pw.Text(
+        '$voltageLevel FEEDERS / LINES',
+        style: pw.TextStyle(
+          fontSize: 9,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColors.black,
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _buildFeedersTable(
+    String voltageLevel,
+    List<Bay> bays,
+    Map<String, BayEnergyData> bayEnergyData,
+  ) {
+    const border = pw.TableBorder(
+      bottom: pw.BorderSide(width: 0.5),
+      top: pw.BorderSide(width: 0.5),
+      left: pw.BorderSide(width: 0.5),
+      right: pw.BorderSide(width: 0.5),
+      horizontalInside: pw.BorderSide(width: 0.3, color: PdfColors.grey400),
+      verticalInside: pw.BorderSide(width: 0.3, color: PdfColors.grey400),
+    );
+
+    final headerCells = [
+      'Sr.',
+      'Bay / Feeder Name',
+      'Consumer / Destination',
+      'Bay Type',
+      'CT Ratio',
+      'MF',
+      'Prev. Reading\n(Imp / Exp)',
+      'Curr. Reading\n(Imp / Exp)',
+      'Units Consumed\n(Imp / Exp)',
+    ];
+
+    final headerRow = pw.TableRow(
+      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+      children: headerCells.map((h) => _eaHeaderCell(h)).toList(),
+    );
+
+    final dataRows = bays.asMap().entries.map((entry) {
+      final i = entry.key;
+      final bay = entry.value;
+      final ed = bayEnergyData[bay.id];
+
+      final mf = bay.multiplyingFactor?.toStringAsFixed(2) ?? '-';
+      final prevImp = ed != null
+          ? ed.previousImportReading.toStringAsFixed(2)
+          : '-';
+      final prevExp = ed != null
+          ? ed.previousExportReading.toStringAsFixed(2)
+          : '-';
+      final currImp =
+          ed != null ? ed.importReading.toStringAsFixed(2) : '-';
+      final currExp =
+          ed != null ? ed.exportReading.toStringAsFixed(2) : '-';
+      final unitsImp = ed != null
+          ? ed.adjustedImportConsumed.toStringAsFixed(2)
+          : '-';
+      final unitsExp = ed != null
+          ? ed.adjustedExportConsumed.toStringAsFixed(2)
+          : '-';
+
+      // CT ratio from make field or derive from MF / description
+      final ctRatio = bay.make ?? '-';
+      final consumer = bay.description?.isNotEmpty == true
+          ? bay.description!
+          : bay.contactPerson ?? '-';
+
+      return pw.TableRow(
+        decoration: i.isEven
+            ? const pw.BoxDecoration(color: PdfColors.white)
+            : const pw.BoxDecoration(color: PdfColors.grey50),
+        children: [
+          _eaCell('${i + 1}'),
+          _eaCell(bay.name, bold: true),
+          _eaCell(consumer),
+          _eaCell(bay.bayType),
+          _eaCell(ctRatio),
+          _eaCell(mf),
+          _eaCell('$prevImp\n$prevExp'),
+          _eaCell('$currImp\n$currExp'),
+          _eaCell('$unitsImp\n$unitsExp', bold: true),
+        ],
+      );
+    }).toList();
+
+    return pw.Table(
+      border: border,
+      columnWidths: const {
+        0: pw.FixedColumnWidth(20),
+        1: pw.FlexColumnWidth(2.2),
+        2: pw.FlexColumnWidth(2.0),
+        3: pw.FlexColumnWidth(1.2),
+        4: pw.FlexColumnWidth(1.0),
+        5: pw.FixedColumnWidth(36),
+        6: pw.FlexColumnWidth(1.4),
+        7: pw.FlexColumnWidth(1.4),
+        8: pw.FlexColumnWidth(1.4),
+      },
+      children: [headerRow, ...dataRows],
+    );
+  }
+
+  static pw.Widget _buildAbstractTable(
+    Map<String, Bay> baysMap,
+    Map<String, double> busImp,
+    Map<String, double> busExp,
+    Map<String, Map<String, double>> busEnergySummary,
+  ) {
+    final busbars = busEnergySummary.keys
+        .map((id) => baysMap[id])
+        .whereType<Bay>()
+        .toList()
+      ..sort((a, b) =>
+          _extractVoltageValue(b.voltageLevel)
+              .compareTo(_extractVoltageValue(a.voltageLevel)));
+
+    if (busbars.isEmpty) return pw.SizedBox();
+
+    double totalImp = busImp.values.fold(0.0, (a, b) => a + b);
+    double totalExp = busExp.values.fold(0.0, (a, b) => a + b);
+    double diff = totalImp - totalExp;
+    double lossPercent = totalImp > 0 ? (diff / totalImp * 100) : 0;
+
+    final header = pw.TableRow(
+      decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+      children: [
+        _eaHeaderCell(''),
+        ...busbars.map((b) => _eaHeaderCell('${b.voltageLevel} BUS')),
+        _eaHeaderCell('ABSTRACT\nOF S/S'),
+      ],
+    );
+
+    pw.TableRow buildRow(String label, List<String> values, String total,
+        {bool bold = false}) {
+      return pw.TableRow(children: [
+        _eaCell(label, bold: bold),
+        ...values.map((v) => _eaCell(v, bold: bold)),
+        _eaCell(total, bold: true),
+      ]);
+    }
+
+    final rows = [
+      buildRow(
+        'Imp.',
+        busbars
+            .map((b) => (busImp[b.id] ?? 0.0).toStringAsFixed(2))
+            .toList(),
+        totalImp.toStringAsFixed(2),
+        bold: true,
+      ),
+      buildRow(
+        'Exp.',
+        busbars
+            .map((b) => (busExp[b.id] ?? 0.0).toStringAsFixed(2))
+            .toList(),
+        totalExp.toStringAsFixed(2),
+        bold: true,
+      ),
+      buildRow(
+        'Diff.',
+        busbars.map((b) {
+          final d = (busImp[b.id] ?? 0.0) - (busExp[b.id] ?? 0.0);
+          return d.toStringAsFixed(2);
+        }).toList(),
+        diff.toStringAsFixed(2),
+      ),
+      buildRow(
+        '% Loss',
+        busbars.map((b) {
+          final imp = busImp[b.id] ?? 0.0;
+          final exp = busExp[b.id] ?? 0.0;
+          final pct = imp > 0 ? ((imp - exp) / imp * 100) : 0.0;
+          return '${pct.toStringAsFixed(3)}%';
+        }).toList(),
+        '${lossPercent.toStringAsFixed(3)}%',
+      ),
+    ];
+
+    final colWidths = <int, pw.TableColumnWidth>{
+      0: const pw.FixedColumnWidth(40),
+    };
+    for (int i = 1; i <= busbars.length; i++) {
+      colWidths[i] = const pw.FlexColumnWidth(1);
+    }
+    colWidths[busbars.length + 1] = const pw.FlexColumnWidth(1.2);
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'ABSTRACT / SUMMARY',
+          style: pw.TextStyle(
+              fontSize: 9, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 3),
+        pw.Table(
+          border: pw.TableBorder.all(
+              color: PdfColors.grey600, width: 0.5),
+          columnWidths: colWidths,
+          children: [header, ...rows],
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildRemarksSection(
+    List<Map<String, dynamic>> assessments,
+    String? remarks,
+  ) {
+    final lines = <pw.Widget>[];
+
+    if (remarks != null && remarks.isNotEmpty) {
+      lines.add(
+        pw.Text(
+          'Note: $remarks',
+          style: pw.TextStyle(
+              fontSize: 8,
+              fontStyle: pw.FontStyle.italic),
+        ),
+      );
+    }
+
+    for (final a in assessments) {
+      final bayName = a['bayName'] ?? a['bay_name'] ?? '';
+      final imp = (a['importAdjustment'] as num?)?.toStringAsFixed(2) ?? '0';
+      final exp = (a['exportAdjustment'] as num?)?.toStringAsFixed(2) ?? '0';
+      final reason = a['reason'] ?? '';
+      lines.add(
+        pw.Text(
+          'Assessment – $bayName: Imp adj $imp, Exp adj $exp. $reason',
+          style: const pw.TextStyle(fontSize: 8),
+        ),
+      );
+    }
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey500, width: 0.5),
+        color: PdfColors.yellow50,
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Remarks / Assessments :',
+            style: pw.TextStyle(
+                fontSize: 9, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 4),
+          ...lines,
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildEaSignatureSection(List<SignatureData> signatures) {
+    if (signatures.isEmpty) {
+      // Default roles as in the sample image
+      final now = DateTime.now();
+      signatures = [
+        SignatureData(name: '', designation: 'SDO', department: '', signedAt: now),
+        SignatureData(name: '', designation: 'AE (T&C)', department: '', signedAt: now),
+        SignatureData(name: '', designation: 'E.E. (Test)', department: '', signedAt: now),
+        SignatureData(name: '', designation: 'E.E. (Trans.)', department: '', signedAt: now),
+      ];
+    }
+
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+      children: signatures
+          .map(
+            (sig) => pw.Expanded(
+              child: pw.Container(
+                margin:
+                    const pw.EdgeInsets.symmetric(horizontal: 6),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Container(
+                      height: 35,
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(
+                          bottom: pw.BorderSide(
+                            color: PdfColors.black,
+                            width: 0.8,
+                          ),
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      sig.designation,
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                    if (sig.department.isNotEmpty)
+                      pw.Text(
+                        sig.department,
+                        style: const pw.TextStyle(fontSize: 8),
+                        textAlign: pw.TextAlign.center,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  static pw.Widget _eaHeaderCell(String text) => pw.Container(
+        padding: const pw.EdgeInsets.symmetric(
+            vertical: 4, horizontal: 3),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+              fontSize: 7.5, fontWeight: pw.FontWeight.bold),
+          textAlign: pw.TextAlign.center,
+        ),
+      );
+
+  static pw.Widget _eaCell(String text, {bool bold = false}) =>
+      pw.Container(
+        padding: const pw.EdgeInsets.symmetric(
+            vertical: 3, horizontal: 3),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: 7.5,
+            fontWeight:
+                bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+          textAlign: pw.TextAlign.center,
+        ),
+      );
+
   static pw.Widget _buildFooter() {
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 20),

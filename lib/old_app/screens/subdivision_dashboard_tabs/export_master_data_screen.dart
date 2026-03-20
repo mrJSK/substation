@@ -352,7 +352,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
           for (final eq in equipment) {
             final bay = bays.firstWhere((b) => b.id == eq.bayId);
             final substationInfo = await _getSubstationHierarchyInfo(
-              bay.substationId,
+              bay.substationId ?? '',
             );
 
             rows.add([
@@ -433,7 +433,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
             .get();
 
         final substationInfo = await _getSubstationHierarchyInfo(
-          bay.substationId,
+          bay.substationId ?? '',
         );
 
         rows.add([
@@ -448,7 +448,7 @@ class _ExportMasterDataScreenState extends State<ExportMasterDataScreen> {
           substationInfo['zoneName'],
           equipmentSnapshot.docs.length,
           bay.multiplyingFactor?.toString() ?? 'N/A',
-          bay.createdAt.toDate().toString(),
+          bay.createdAt?.toDate().toString() ?? '',
         ]);
       }
     }

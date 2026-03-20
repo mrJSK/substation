@@ -4,8 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'user_model.dart'; // Ensure this import is correct
-import 'hierarchy_models.dart'; // Ensure this import is correct for Substation class
+import 'user_model.dart';
+import 'substation_model.dart';
 
 // Your provided StateModel class
 class StateModel {
