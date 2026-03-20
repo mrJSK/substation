@@ -106,7 +106,6 @@ class EnergyDataService {
           .map((assessmentMap) => Assessment.fromMap(assessmentMap))
           .toList();
     } catch (e) {
-      print('Error loading from saved SLD: $e');
       rethrow;
     }
   }
@@ -138,7 +137,6 @@ class EnergyDataService {
         latestAssessmentsPerBay: sldController.latestAssessmentsPerBay,
       );
     } catch (e) {
-      print('Error loading live energy data: $e');
       rethrow;
     }
   }
@@ -193,7 +191,6 @@ class EnergyDataService {
       };
       _hierarchyLoaded = true;
     } catch (e) {
-      print('Error fetching hierarchy data: $e');
       rethrow;
     }
   }
@@ -201,15 +198,10 @@ class EnergyDataService {
   /// Single load method for busbar energy maps - builds consistent keys
   Future<void> _loadBusbarEnergyMaps() async {
     try {
-      print('🔍 DEBUG: Loading energy maps for substation: $substationId');
       final snapshot = await _firestore
           .collection('busbarEnergyMaps')
           .where('substationId', isEqualTo: substationId)
           .get();
-
-      print(
-        '🔍 DEBUG: Found ${snapshot.docs.length} energy map documents in Firestore',
-      );
 
       // Clear maps before loading
       _busbarEnergyMaps.clear();
@@ -221,24 +213,12 @@ class EnergyDataService {
         if (map.isSubstationMapping) {
           final key = 'SUBSTATION-${map.connectedBayId}';
           _substationEnergyMaps[key] = map;
-          print('🔍 DEBUG: Added substation mapping: $key');
         } else {
           final key = '${map.busbarId}-${map.connectedBayId}';
           _busbarEnergyMaps[key] = map;
-          print(
-            '🔍 DEBUG: Added busbar mapping: $key → Import: ${map.importContribution}, Export: ${map.exportContribution}',
-          );
         }
       }
-
-      print(
-        '🔍 DEBUG: Final loaded busbar maps count: ${_busbarEnergyMaps.length}',
-      );
-      print(
-        '🔍 DEBUG: Final loaded substation maps count: ${_substationEnergyMaps.length}',
-      );
     } catch (e) {
-      print('❌ ERROR: Failed to load energy maps: $e');
       rethrow;
     }
   }
@@ -290,7 +270,6 @@ class EnergyDataService {
     }
 
     await batch.commit();
-    print('🔥 DEBUG: Saved busbar selections for busbar ${busbar.name}');
 
     if (onConfigurationChanged != null) onConfigurationChanged!();
   }
@@ -328,7 +307,6 @@ class EnergyDataService {
     }
 
     await batch.commit();
-    print('🔥 DEBUG: Saved substation selections');
 
     if (onConfigurationChanged != null) onConfigurationChanged!();
   }
@@ -351,9 +329,8 @@ class EnergyDataService {
   /// Get substation energy mappings for UI initialization
   Map<String, BusbarEnergyMap> getSubstationEnergyMappings() {
     final Map<String, BusbarEnergyMap> result = {};
-    _substationEnergyMaps.forEach((key, value) {
-      final busbarId = key.substring('SUBSTATION-'.length);
-      result[busbarId] = value;
+    _substationEnergyMaps.forEach((_, value) {
+      result[value.busbarId] = value;
     });
     return result;
   }
@@ -403,11 +380,9 @@ class EnergyDataService {
       }
 
       await batch.commit();
-      print('DEBUG: Reset busbar configuration for ${busbar.name}');
 
       if (onConfigurationChanged != null) onConfigurationChanged!();
     } catch (e) {
-      print('ERROR: Failed to reset busbar configuration: $e');
       rethrow;
     }
   }
@@ -429,11 +404,9 @@ class EnergyDataService {
       }
 
       await batch.commit();
-      print('DEBUG: Reset substation configuration');
 
       if (onConfigurationChanged != null) onConfigurationChanged!();
     } catch (e) {
-      print('ERROR: Failed to reset substation configuration: $e');
       rethrow;
     }
   }
@@ -485,11 +458,6 @@ class EnergyDataService {
             totalExp += energyData.adjustedExportConsumed;
           }
 
-          print(
-            '✅ Applied $bayId to ${busbar.name} with '
-            'Import mapping=${busbarMap.importContribution} and '
-            'Export mapping=${busbarMap.exportContribution}',
-          );
         }
       }
 
@@ -504,10 +472,6 @@ class EnergyDataService {
         'configuredBayCount': configuredBayCount.toDouble(),
       };
 
-      print(
-        '🎯 FINAL: ${busbar.name} → Import=$totalImp, Export=$totalExp, '
-        'Loss%=${lossPercentage.toStringAsFixed(2)}%',
-      );
     }
 
     return busEnergySummary;
@@ -551,9 +515,6 @@ class EnergyDataService {
             totalExp += busbarExp;
           }
 
-          print(
-            '✅ Applied Busbar $busbarId to Substation: Import mapping=${substationMap.importContribution}, Export mapping=${substationMap.exportContribution}',
-          );
         }
       }
     }
@@ -561,10 +522,6 @@ class EnergyDataService {
 
     final difference = totalImp - totalExp;
     final lossPercentage = totalImp > 0 ? (difference / totalImp) * 100 : 0.0;
-
-    print(
-      '🎯 FINAL SUBSTATION: Import=$totalImp, Export=$totalExp, Loss%=${lossPercentage.toStringAsFixed(2)}%',
-    );
 
     return {
       'totalImp': totalImp,
@@ -646,8 +603,8 @@ class EnergyDataService {
                         height: 40,
                         decoration: BoxDecoration(
                           color: hasConfig
-                              ? Colors.blue.withOpacity(0.1)
-                              : Colors.grey.withOpacity(0.1),
+                              ? Colors.blue.withValues(alpha: 0.1)
+                              : Colors.grey.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
@@ -854,8 +811,7 @@ class EnergyDataService {
         endDayReadings: endDayReadings,
         previousDayReadings: previousDayReadings,
       );
-    } catch (e) {
-      print('Error fetching readings data: $e');
+    } catch (_) {
       return ReadingsData(
         startDayReadings: {},
         endDayReadings: {},
@@ -916,9 +872,7 @@ class EnergyDataService {
       allAssessmentsForDisplay.sort(
         (a, b) => b.createdAt.compareTo(a.createdAt),
       );
-    } catch (e) {
-      print('Error fetching assessments data: $e');
-    }
+    } catch (_) {}
   }
 
   Future<CalculatedEnergyData> _calculateEnergyData(
@@ -1232,17 +1186,7 @@ class EnergyDataService {
   }
 
   // Helper methods for parsing data with correct types
-  Map<String, Map<String, dynamic>> _parseNestedMap(dynamic data) {
-    if (data == null) return {};
-    final result = <String, Map<String, dynamic>>{};
-    final map = data as Map;
-    for (var entry in map.entries) {
-      result[entry.key] = Map<String, dynamic>.from(entry.value as Map);
-    }
-    return result;
-  }
-
-  /// NEW: Helper for parsing double maps specifically
+  /// Helper for parsing double maps specifically
   Map<String, Map<String, double>> _parseNestedDoubleMap(dynamic data) {
     if (data == null) return {};
     final result = <String, Map<String, double>>{};

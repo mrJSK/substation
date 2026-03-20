@@ -118,11 +118,9 @@ class SingleLineDiagramPainter extends CustomPainter {
   final List<BayRenderData> bayRenderDataList;
   final List<BayConnection> bayConnections;
   final Map<String, Bay> baysMap;
-  final BayRenderData Function() createDummyBayRenderData;
   final Map<String, Rect> busbarRects;
   final Map<String, Map<String, Offset>> busbarConnectionPoints;
   final bool debugDrawHitboxes;
-  final String? selectedBayForMovementId;
   final Map<String, BayEnergyData> bayEnergyData;
   final Map<String, Map<String, double>> busEnergySummary;
   final Size? contentBounds;
@@ -135,30 +133,21 @@ class SingleLineDiagramPainter extends CustomPainter {
   final Color transformerColor;
   final Color connectionLineColor;
 
-  // Updated spacing constants to match controller
+  // Spacing constants (must stay in sync with SldController layout constants)
   static const double symbolWidth = 40;
   static const double symbolHeight = 40;
   static const double horizontalSpacing = 120;
-  static const double verticalBusbarSpacing = 250;
   static const double lineFeederHeight = 100.0;
   static const double equipmentSpacing = 15.0;
-
-  // Performance optimization: Pre-computed paint objects
-  static final Paint _busbarPaint = Paint()
-    ..strokeWidth = 3.0
-    ..style = PaintingStyle.stroke
-    ..isAntiAlias = true;
 
   SingleLineDiagramPainter({
     required this.bayRenderDataList,
     required this.bayConnections,
     required this.baysMap,
     this.showEnergyReadings = true,
-    required this.createDummyBayRenderData,
     required this.busbarRects,
     required this.busbarConnectionPoints,
     this.debugDrawHitboxes = false,
-    this.selectedBayForMovementId,
     required this.bayEnergyData,
     required this.busEnergySummary,
     this.contentBounds,
@@ -280,7 +269,7 @@ class SingleLineDiagramPainter extends CustomPainter {
           return _GenericIconPainter(color: color, iconSize: size);
       }
     } catch (e) {
-      print('Warning: Failed to create icon for $symbolKey, using generic: $e');
+      // silently fall back to generic icon
       return _GenericIconPainter(color: color, iconSize: size);
     }
   }
@@ -346,7 +335,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     if (contentBounds == null) return;
 
     final boundsPaint = Paint()
-      ..color = Colors.blue.withOpacity(0.3)
+      ..color = Colors.blue.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
@@ -356,7 +345,7 @@ class SingleLineDiagramPainter extends CustomPainter {
     );
 
     final widgetBoundsPaint = Paint()
-      ..color = Colors.orange.withOpacity(0.3)
+      ..color = Colors.orange.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
@@ -371,7 +360,11 @@ class SingleLineDiagramPainter extends CustomPainter {
       if (renderData.bayType != 'Busbar') continue;
 
       final busbarRect = renderData.rect;
-      _busbarPaint.color = _getBusbarColor(renderData.voltageLevel);
+      final busbarPaint = Paint()
+        ..color = _getBusbarColor(renderData.voltageLevel)
+        ..strokeWidth = 3.0
+        ..style = PaintingStyle.stroke
+        ..isAntiAlias = true;
 
       // Draw busbar line with proper length
       final busbarLength = renderData.busbarLength > 0
@@ -387,7 +380,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         busbarRect.center.dy,
       );
 
-      canvas.drawLine(busbarStart, busbarEnd, _busbarPaint);
+      canvas.drawLine(busbarStart, busbarEnd, busbarPaint);
 
       // Draw busbar label with voltage-based positioning
       _drawText(
@@ -438,7 +431,7 @@ class SingleLineDiagramPainter extends CustomPainter {
 
       final equipmentPainter = _getSymbolPainter(
         equipment.symbolKey,
-        equipmentColor.withOpacity(0.7), // Use consistent color
+        equipmentColor.withValues(alpha: 0.7),
         equipmentSize,
       );
 
@@ -451,7 +444,7 @@ class SingleLineDiagramPainter extends CustomPainter {
         equipmentPosition.translate(0, equipmentSize.height + 2),
         fontSize: 7,
         textAlign: TextAlign.center,
-        textColor: equipmentColor.withOpacity(0.8), // Consistent text color
+        textColor: equipmentColor.withValues(alpha: 0.8),
       );
     }
   }
@@ -522,12 +515,8 @@ class SingleLineDiagramPainter extends CustomPainter {
   void _drawBaySymbolsAndLabels(Canvas canvas) {
     for (var renderData in bayRenderDataList) {
       if (renderData.bayType == 'Busbar') continue;
-
-      final bool isSelectedForMovement =
-          renderData.bayId == selectedBayForMovementId;
-
-      _drawBaySymbol(canvas, renderData, isSelectedForMovement);
-      _drawBayLabel(canvas, renderData, isSelectedForMovement);
+      _drawBaySymbol(canvas, renderData, false);
+      _drawBayLabel(canvas, renderData, false);
     }
   }
 
@@ -593,7 +582,7 @@ class SingleLineDiagramPainter extends CustomPainter {
       final painter = _getSymbolPainter(bayType, color, rect.size);
       painter.paint(canvas, rect.size);
     } catch (e) {
-      print('Error drawing symbol for ${renderData.bayName}: $e');
+      // silently fall back to generic symbol
       _drawFallbackSymbol(canvas, rect.size, color);
     }
 
@@ -659,7 +648,7 @@ class SingleLineDiagramPainter extends CustomPainter {
       Paint()
         ..color = isSelected
             ? Colors.lightGreen.shade100
-            : defaultBayColor.withOpacity(0.1),
+            : defaultBayColor.withValues(alpha: 0.1),
     );
 
     canvas.drawRect(
@@ -887,12 +876,12 @@ class SingleLineDiagramPainter extends CustomPainter {
     if (!debugDrawHitboxes) return;
 
     final debugPaint = Paint()
-      ..color = Colors.red.withOpacity(0.3)
+      ..color = Colors.red.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
     final fillPaint = Paint()
-      ..color = Colors.red.withOpacity(0.1)
+      ..color = Colors.red.withValues(alpha: 0.1)
       ..style = PaintingStyle.fill;
 
     for (var renderData in bayRenderDataList) {
@@ -1197,7 +1186,6 @@ class SingleLineDiagramPainter extends CustomPainter {
         oldDelegate.baysMap != baysMap ||
         oldDelegate.busbarRects != busbarRects ||
         oldDelegate.busbarConnectionPoints != busbarConnectionPoints ||
-        oldDelegate.selectedBayForMovementId != selectedBayForMovementId ||
         oldDelegate.bayEnergyData != bayEnergyData ||
         oldDelegate.busEnergySummary != busEnergySummary ||
         oldDelegate.showEnergyReadings != showEnergyReadings ||

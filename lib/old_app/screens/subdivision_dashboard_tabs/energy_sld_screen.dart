@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
@@ -17,29 +16,6 @@ import '../../widgets/energy_tables_widget.dart';
 import '../../widgets/sld_view_widget.dart';
 import '../../widgets/signature_dialog.dart';
 import '../../utils/energy_sld_utils.dart';
-
-class CapturedSldData {
-  CapturedSldData({
-    required this.pngBytes,
-    required this.baseLogicalWidth,
-    required this.baseLogicalHeight,
-    required this.pixelRatio,
-    DateTime? captureTimestamp,
-  }) : captureTimestamp = captureTimestamp ?? DateTime.now(),
-       assert(pngBytes.isNotEmpty, 'Image bytes cannot be empty'),
-       assert(baseLogicalWidth > 0, 'Base width must be positive'),
-       assert(baseLogicalHeight > 0, 'Base height must be positive'),
-       assert(pixelRatio > 0, 'Pixel ratio must be positive');
-
-  final Uint8List pngBytes;
-  final double baseLogicalWidth;
-  final double baseLogicalHeight;
-  final double pixelRatio;
-  final DateTime captureTimestamp;
-
-  bool get isValid =>
-      pngBytes.isNotEmpty && baseLogicalWidth > 0 && baseLogicalHeight > 0;
-}
 
 class EnergySldScreen extends StatefulWidget {
   final String substationId;
@@ -67,12 +43,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   DateTime _endDate = DateTime.now();
   bool _showTables = false;
   bool _isViewingSavedSld = false;
-  bool _showEnergyReadings = true;
 
   TransformationController? _transformationController;
   bool _controllersInitialized = false;
   Size _sldContentSize = const Size(1200, 800);
-  final GlobalKey _sldRepaintBoundaryKey = GlobalKey();
 
   late EnergyDataService _energyDataService;
 
@@ -112,31 +86,22 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     _loadEnergyData(fromSaved: true);
   }
 
-  Future<void> _waitForControllerAndLoadData() async {
+  void _waitForControllerAndLoadData() {
     if (!mounted) return;
-
     final sldController = Provider.of<SldController>(context, listen: false);
-    int attempts = 0;
-    const maxAttempts = 20;
-
-    while (attempts < maxAttempts && mounted) {
-      if (sldController.isInitialized && sldController.allBays.isNotEmpty) {
-        print(
-          'DEBUG: Controller ready with ${sldController.allBays.length} bays',
-        );
-        await _loadEnergyData();
-        break;
-      }
-
-      attempts++;
-      print('DEBUG: Waiting for controller... attempt $attempts/$maxAttempts');
-      await Future.delayed(const Duration(milliseconds: 500));
+    if (sldController.isInitialized && sldController.allBays.isNotEmpty) {
+      _loadEnergyData();
+    } else {
+      sldController.addListener(_onControllerReady);
     }
+  }
 
-    if (attempts >= maxAttempts && mounted) {
-      print('ERROR: Controller initialization timeout');
-      setState(() => _isLoading = false);
-      _showFixedSnackBar('Failed to initialize SLD data', isError: true);
+  void _onControllerReady() {
+    if (!mounted) return;
+    final sldController = Provider.of<SldController>(context, listen: false);
+    if (sldController.isInitialized && sldController.allBays.isNotEmpty) {
+      sldController.removeListener(_onControllerReady);
+      _loadEnergyData();
     }
   }
 
@@ -148,12 +113,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       final sldController = Provider.of<SldController>(context, listen: false);
 
       if (sldController.allBays.isEmpty) {
-        print('ERROR: No bays available for energy data loading');
         if (mounted) {
-          _showFixedSnackBar(
-            'No bay data found for this substation',
-            isError: true,
-          );
+          _showFixedSnackBar('No bay data found for this substation', isError: true);
         }
         return;
       }
@@ -171,18 +132,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         );
       }
 
-      sldController.setShowEnergyReadings(_showEnergyReadings);
       _calculateAndSetSldBounds(sldController);
-
-      print('DEBUG: Energy data loaded successfully');
-      print('DEBUG: Bay count: ${sldController.allBays.length}');
-      print(
-        'DEBUG: Bay energy data count: ${sldController.bayEnergyData.length}',
-      );
-
-      await Future.delayed(const Duration(milliseconds: 300));
     } catch (e) {
-      print('ERROR: Failed to load energy data: $e');
       if (mounted) {
         _showFixedSnackBar('Failed to load energy data: $e', isError: true);
       }
@@ -192,8 +143,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _calculateAndSetSldBounds(SldController sldController) {
-    if (sldController.bayRenderDataList.isEmpty || !_controllersInitialized)
+    if (sldController.bayRenderDataList.isEmpty || !_controllersInitialized) {
       return;
+    }
 
     try {
       final bounds = _calculateSldContentBounds(sldController);
@@ -211,9 +163,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           _autoFitSld();
         }
       });
-    } catch (e) {
-      print('DEBUG: Error calculating SLD bounds: $e');
-    }
+    } catch (_) {}
   }
 
   Rect _calculateSldContentBounds(SldController sldController) {
@@ -238,10 +188,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _autoFitSld() {
-    if (!_controllersInitialized || _transformationController == null) {
-      print('DEBUG: Controllers not initialized, skipping auto-fit');
-      return;
-    }
+    if (!_controllersInitialized || _transformationController == null) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_controllersInitialized) return;
@@ -261,8 +208,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
       final centerY = (availableHeight - (_sldContentSize.height * scale)) / 2;
 
       final matrix = Matrix4.identity()
-        ..translate(centerX, centerY)
-        ..scale(scale);
+        ..translateByDouble(centerX, centerY, 0, 0)
+        ..scaleByDouble(scale, scale, 1, 1);
 
       _animateToTransform(matrix);
     });
@@ -279,13 +226,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
   }
 
   void _toggleEnergyReadings() {
-    setState(() => _showEnergyReadings = !_showEnergyReadings);
     final sldController = Provider.of<SldController>(context, listen: false);
-    sldController.setShowEnergyReadings(_showEnergyReadings);
-    _showFixedSnackBar(
-      _showEnergyReadings ? 'Energy readings shown' : 'Energy readings hidden',
-    );
-    print('DEBUG: Energy readings toggled to: $_showEnergyReadings');
+    final next = !sldController.showEnergyReadings;
+    sldController.setShowEnergyReadings(next);
+    _showFixedSnackBar(next ? 'Energy readings shown' : 'Energy readings hidden');
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -384,7 +328,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 decoration: InputDecoration(
                   hintText: "Enter SLD name",
                   hintStyle: TextStyle(
-                    color: isDarkMode ? Colors.white.withOpacity(0.5) : null,
+                    color: isDarkMode ? Colors.white.withValues(alpha: 0.5) : null,
                   ),
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.label_outline),
@@ -528,7 +472,6 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             : const Color(0xFFFAFAFA),
         appBar: _buildAppBar(sldController, isDarkMode),
         body: _buildMainContent(sldController, isDarkMode),
-        bottomNavigationBar: _buildBottomNavigationBar(sldController),
     );
   }
 
@@ -545,8 +488,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           boxShadow: [
             BoxShadow(
               color: isDarkMode
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.05),
+                  ? Colors.black.withValues(alpha: 0.3)
+                  : Colors.black.withValues(alpha: 0.05),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -559,7 +502,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               Icons.electrical_services,
               size: 64,
               color: isDarkMode
-                  ? Colors.white.withOpacity(0.4)
+                  ? Colors.white.withValues(alpha: 0.4)
                   : Colors.grey.shade400,
             ),
             const SizedBox(height: 16),
@@ -575,7 +518,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               'Please select a substation to view energy SLD.',
               style: TextStyle(
                 color: isDarkMode
-                    ? Colors.white.withOpacity(0.6)
+                    ? Colors.white.withValues(alpha: 0.6)
                     : Colors.grey.shade600,
                 fontSize: 14,
               ),
@@ -603,7 +546,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             'Loading energy data...',
             style: TextStyle(
               color: isDarkMode
-                  ? Colors.white.withOpacity(0.6)
+                  ? Colors.white.withValues(alpha: 0.6)
                   : Colors.grey.shade600,
               fontSize: 16,
               fontWeight: FontWeight.w500,
@@ -614,7 +557,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             'Please wait while we fetch the latest information',
             style: TextStyle(
               color: isDarkMode
-                  ? Colors.white.withOpacity(0.5)
+                  ? Colors.white.withValues(alpha: 0.5)
                   : Colors.grey.shade500,
               fontSize: 12,
             ),
@@ -641,7 +584,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             'Initializing SLD...',
             style: TextStyle(
               color: isDarkMode
-                  ? Colors.white.withOpacity(0.6)
+                  ? Colors.white.withValues(alpha: 0.6)
                   : Colors.grey.shade600,
               fontSize: 16,
               fontWeight: FontWeight.w500,
@@ -665,7 +608,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
         icon: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
@@ -699,8 +642,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             style: TextStyle(
               fontSize: 12,
               color: isDarkMode
-                  ? Colors.white.withOpacity(0.6)
-                  : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                  ? Colors.white.withValues(alpha: 0.6)
+                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
         ],
@@ -712,9 +655,9 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.teal.withOpacity(0.1),
+              color: Colors.teal.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.teal.withOpacity(0.3)),
+              border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -741,8 +684,8 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: _isViewingSavedSld
-                  ? Colors.grey.withOpacity(0.1)
-                  : Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  ? Colors.grey.withValues(alpha: 0.1)
+                  : Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -784,22 +727,22 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                     boxShadow: [
                       BoxShadow(
                         color: isDarkMode
-                            ? Colors.black.withOpacity(0.3)
-                            : Colors.black.withOpacity(0.1),
+                            ? Colors.black.withValues(alpha: 0.3)
+                            : Colors.black.withValues(alpha: 0.1),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),
                       BoxShadow(
                         color: isDarkMode
-                            ? Colors.black.withOpacity(0.2)
-                            : Colors.grey.withOpacity(0.1),
+                            ? Colors.black.withValues(alpha: 0.2)
+                            : Colors.grey.withValues(alpha: 0.1),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
                     ],
                     border: Border.all(
                       color: isDarkMode
-                          ? Colors.white.withOpacity(0.1)
+                          ? Colors.white.withValues(alpha: 0.1)
                           : Colors.grey.shade300,
                       width: 1,
                     ),
@@ -815,22 +758,18 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                       minScale: 0.2,
                       maxScale: 5.0,
                       clipBehavior: Clip.none,
-                      child: RepaintBoundary(
-                        key: _sldRepaintBoundaryKey,
-                        child: Container(
-                          width: math.max(800, _sldContentSize.width),
-                          height: math.max(600, _sldContentSize.height),
-                          color: isDarkMode
-                              ? const Color(0xFF2C2C2E)
-                              : Colors.white,
-                          child: Center(
-                            child: SldViewWidget(
-                              isEnergySld: true,
-                              isCapturingPdf: false,
-                              onBayTapped: (bay, tapPosition) {
-                                _showBayActions(context, bay, tapPosition);
-                              },
-                            ),
+                      child: Container(
+                        width: math.max(800, _sldContentSize.width),
+                        height: math.max(600, _sldContentSize.height),
+                        color: isDarkMode
+                            ? const Color(0xFF2C2C2E)
+                            : Colors.white,
+                        child: Center(
+                          child: SldViewWidget(
+                            isEnergySld: true,
+                            onBayTapped: (bay, tapPosition) {
+                              _showBayActions(context, bay, tapPosition);
+                            },
                           ),
                         ),
                       ),
@@ -840,7 +779,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
               ),
 
               if (_showTables)
-                Container(
+                SizedBox(
                   height: 300,
                   child: EnergyTablesWidget(
                     isViewingSavedSld: _isViewingSavedSld,
@@ -856,7 +795,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           ),
 
         // Fixed: Positioned widgets as direct children of Stack
-        if (!false && !_isLoading && _controllersInitialized)
+        if (!_isLoading && _controllersInitialized)
           Positioned(
             top: 16,
             right: 16,
@@ -882,16 +821,16 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   onPressed: _toggleEnergyReadings,
-                  backgroundColor: _showEnergyReadings
+                  backgroundColor: sldController.showEnergyReadings
                       ? Colors.green
                       : Colors.grey.shade600,
                   foregroundColor: Colors.white,
                   heroTag: "toggle_readings",
-                  tooltip: _showEnergyReadings
+                  tooltip: sldController.showEnergyReadings
                       ? "Hide Energy Readings"
                       : "Show Energy Readings",
                   child: Icon(
-                    _showEnergyReadings
+                    sldController.showEnergyReadings
                         ? Icons.visibility
                         : Icons.visibility_off,
                   ),
@@ -901,7 +840,7 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
           ),
 
         // Fixed: Speed dial as direct child of Stack
-        if (!false && !_isLoading && _controllersInitialized)
+        if (!_isLoading && _controllersInitialized)
           EnergySpeedDialWidget(
             isViewingSavedSld: _isViewingSavedSld,
             showTables: _showTables,
@@ -916,12 +855,10 @@ class _EnergySldScreenState extends State<EnergySldScreen> {
     );
   }
 
-  Widget? _buildBottomNavigationBar(SldController sldController) {
-    return null;
-  }
-
   @override
   void dispose() {
+    final sldController = Provider.of<SldController>(context, listen: false);
+    sldController.removeListener(_onControllerReady);
     _transformationController?.dispose();
     super.dispose();
   }

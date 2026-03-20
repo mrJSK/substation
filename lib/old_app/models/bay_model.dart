@@ -110,7 +110,8 @@ class Bay {
 
   static Offset? _parseOffset(dynamic data) {
     if (data == null) return null;
-    final map = data as Map<String, dynamic>;
+    if (data is! Map) return null;
+    final map = Map<String, dynamic>.from(data);
     return Offset(
       (map['dx'] as num?)?.toDouble() ?? 0,
       (map['dy'] as num?)?.toDouble() ?? 0,

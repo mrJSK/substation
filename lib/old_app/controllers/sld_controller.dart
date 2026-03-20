@@ -22,9 +22,7 @@ class SldController extends ChangeNotifier {
 
   void setShowEnergyReadings(bool show) {
     _showEnergyReadings = show;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
   }
 
   // Core SLD Data
@@ -103,7 +101,7 @@ class SldController extends ChangeNotifier {
             _baysMap = {for (var bay in _allBays) bay.id: bay};
             _safeRebuildSldRenderData();
           },
-          onError: (error) => print('ERROR: Failed to load bays: $error'),
+          onError: (_) => _safeRebuildSldRenderData(),
         );
 
     FirebaseFirestore.instance
@@ -117,8 +115,7 @@ class SldController extends ChangeNotifier {
                 .toList();
             _safeRebuildSldRenderData();
           },
-          onError: (error) =>
-              print('ERROR: Failed to load connections: $error'),
+          onError: (_) => _safeRebuildSldRenderData(),
         );
 
     FirebaseFirestore.instance
@@ -134,7 +131,7 @@ class SldController extends ChangeNotifier {
             }
             _safeRebuildSldRenderData();
           },
-          onError: (error) => print('ERROR: Failed to load equipment: $error'),
+          onError: (_) => _safeRebuildSldRenderData(),
         );
   }
 
@@ -340,10 +337,7 @@ class SldController extends ChangeNotifier {
 
     _calculateAllConnectionPoints();
     _bayRenderDataList = newRenderDataList;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_isInitialized) notifyListeners();
-    });
+    notifyListeners();
   }
 
   /// Returns the HV (higher voltage) bus ID for a transformer.
@@ -397,7 +391,9 @@ class SldController extends ChangeNotifier {
 
       const allowedTypes = ['Busbar', 'Transformer', 'Line', 'Feeder'];
       if (!allowedTypes.contains(sourceBay.bayType) ||
-          !allowedTypes.contains(targetBay.bayType)) continue;
+          !allowedTypes.contains(targetBay.bayType)) {
+        continue;
+      }
 
       final Rect? sourceRect = _finalBayRects[sourceBay.id];
       final Rect? targetRect = _finalBayRects[targetBay.id];
@@ -440,32 +436,6 @@ class SldController extends ChangeNotifier {
     }
   }
 
-  BayRenderData createDummyBayRenderData() {
-    return BayRenderData(
-      bay: Bay(
-        id: 'dummy',
-        name: '',
-        substationId: '',
-        voltageLevel: '',
-        bayType: '',
-        createdBy: '',
-        createdAt: Timestamp.now(),
-      ),
-      rect: Rect.zero,
-      center: Offset.zero,
-      topCenter: Offset.zero,
-      bottomCenter: Offset.zero,
-      leftCenter: Offset.zero,
-      rightCenter: Offset.zero,
-      equipmentInstances: const [],
-      textOffset: Offset.zero,
-      busbarLength: 0.0,
-      energyReadingOffset: Offset.zero,
-      energyReadingFontSize: 9.0,
-      energyReadingIsBold: false,
-    );
-  }
-
   double _getVoltageLevelValue(String voltageLevel) {
     final cleaned = voltageLevel.replaceAll(RegExp(r'[^0-9.]'), '');
     return cleaned.isEmpty ? 0.0 : (double.tryParse(cleaned) ?? 0.0);
@@ -474,9 +444,7 @@ class SldController extends ChangeNotifier {
   // Energy data methods
   void setBayEnergyData(String bayId, BayEnergyData energyData) {
     _bayEnergyData[bayId] = energyData;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
   }
 
   void clearEnergyData() {
@@ -484,9 +452,7 @@ class SldController extends ChangeNotifier {
     _busEnergySummary.clear();
     _abstractEnergyData.clear();
     _aggregatedFeederEnergyData.clear();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
   }
 
   void updateEnergyData({
@@ -501,9 +467,7 @@ class SldController extends ChangeNotifier {
     _abstractEnergyData = Map.from(abstractEnergyData);
     _aggregatedFeederEnergyData = List.from(aggregatedFeederEnergyData);
     _latestAssessmentsPerBay = Map.from(latestAssessmentsPerBay);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
   }
 
   @override

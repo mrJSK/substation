@@ -8,13 +8,11 @@ import '../models/bay_model.dart';
 
 class SldViewWidget extends StatelessWidget {
   final bool isEnergySld;
-  final bool isCapturingPdf;
   final Function(Bay, Offset)? onBayTapped;
 
   const SldViewWidget({
     super.key,
     this.isEnergySld = false,
-    this.isCapturingPdf = false,
     this.onBayTapped,
   });
 
@@ -59,23 +57,6 @@ class SldViewWidget extends StatelessWidget {
     final double canvasWidth = max(contentBounds.width, 800);
     final double canvasHeight = max(contentBounds.height, 600);
 
-    if (isCapturingPdf) {
-      return Container(
-        width: canvasWidth,
-        height: canvasHeight,
-        decoration: const BoxDecoration(color: Colors.white),
-        child: CustomPaint(
-          size: Size(canvasWidth, canvasHeight),
-          painter: _createPainter(
-            sldController,
-            colorScheme,
-            isPdfMode: true,
-            contentBounds: contentBounds,
-          ),
-        ),
-      );
-    }
-
     return Container(
       width: canvasWidth,
       height: canvasHeight,
@@ -90,12 +71,7 @@ class SldViewWidget extends StatelessWidget {
             : null,
         child: CustomPaint(
           size: Size(canvasWidth, canvasHeight),
-          painter: _createPainter(
-            sldController,
-            colorScheme,
-            isPdfMode: false,
-            contentBounds: contentBounds,
-          ),
+          painter: _createPainter(sldController, colorScheme, contentBounds),
         ),
       ),
     );
@@ -287,31 +263,19 @@ class SldViewWidget extends StatelessWidget {
 
   SingleLineDiagramPainter _createPainter(
     SldController sldController,
-    ColorScheme colorScheme, {
-    required bool isPdfMode,
-    ContentBounds? contentBounds,
-  }) {
+    ColorScheme colorScheme,
+    ContentBounds contentBounds,
+  ) {
     return SingleLineDiagramPainter(
       showEnergyReadings: sldController.showEnergyReadings,
       bayRenderDataList: sldController.bayRenderDataList,
       bayConnections: sldController.allConnections,
       baysMap: sldController.baysMap,
-      createDummyBayRenderData: sldController.createDummyBayRenderData,
       busbarRects: sldController.busbarRects,
       busbarConnectionPoints: sldController.busbarConnectionPoints,
-      debugDrawHitboxes: !isPdfMode,
-      selectedBayForMovementId: null,
+      debugDrawHitboxes: false,
       bayEnergyData: sldController.bayEnergyData,
       busEnergySummary: sldController.busEnergySummary,
-      contentBounds: isPdfMode && contentBounds != null
-          ? Size(
-              contentBounds.maxX - contentBounds.minX,
-              contentBounds.maxY - contentBounds.minY,
-            )
-          : null,
-      originOffsetForPdf: isPdfMode && contentBounds != null
-          ? contentBounds.originOffset
-          : null,
       defaultBayColor: colorScheme.onSurface,
       defaultLineFeederColor: colorScheme.onSurface,
       transformerColor: colorScheme.primary,
@@ -336,9 +300,7 @@ class SldViewWidget extends StatelessWidget {
       if (tappedBay != null && tappedBay.id != 'dummy' && onBayTapped != null) {
         onBayTapped!(tappedBay, details.globalPosition);
       }
-    } catch (e) {
-      print('DEBUG: Error handling tap: $e');
-    }
+    } catch (_) {}
   }
 
   void _handleLongPress(
@@ -358,9 +320,7 @@ class SldViewWidget extends StatelessWidget {
       if (tappedBay != null && tappedBay.id != 'dummy' && onBayTapped != null) {
         onBayTapped!(tappedBay, details.globalPosition);
       }
-    } catch (e) {
-      print('DEBUG: Error handling long press: $e');
-    }
+    } catch (_) {}
   }
 
   Bay? _findBayAtPosition(Offset position, SldController sldController) {

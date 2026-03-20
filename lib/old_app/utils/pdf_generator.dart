@@ -55,6 +55,7 @@ class PdfGeneratorData {
 }
 
 class PdfGenerator {
+  static const double _kwhToMwh = 1000.0;
   static Future<void> generateSldPdf({
     required List<BayRenderData> bayRenderDataList,
     required List<BayConnection> bayConnections,
@@ -179,33 +180,9 @@ class PdfGenerator {
       bayRenderDataList: bayRenderDataList,
       bayConnections: bayConnections,
       baysMap: baysMap,
-      createDummyBayRenderData: () => BayRenderData(
-        bay: Bay(
-          id: 'dummy',
-          name: '',
-          substationId: '',
-          voltageLevel: '',
-          bayType: '',
-          createdBy: '',
-          createdAt: Timestamp.now(),
-        ),
-        rect: Rect.zero,
-        center: Offset.zero,
-        topCenter: Offset.zero,
-        bottomCenter: Offset.zero,
-        leftCenter: Offset.zero,
-        rightCenter: Offset.zero,
-        equipmentInstances: const [],
-        textOffset: Offset.zero,
-        busbarLength: 0.0,
-        energyReadingOffset: Offset.zero,
-        energyReadingFontSize: 9.0,
-        energyReadingIsBold: false,
-      ),
       busbarRects: busbarRects,
       busbarConnectionPoints: busbarConnectionPoints,
       debugDrawHitboxes: false,
-      selectedBayForMovementId: focusedBayId,
       bayEnergyData: bayEnergyData,
       busEnergySummary: busEnergySummary,
       showEnergyReadings: showEnergyReadings,
@@ -525,11 +502,11 @@ class PdfGenerator {
                 _buildTableDataCell('Import (MWh)', isBold: true),
                 ...busbars.map((entry) {
                   final energyData = entry.value;
-                  final importMWh = (energyData['totalImp'] ?? 0.0) / 1000;
+                  final importMWh = (energyData['totalImp'] ?? 0.0) / _kwhToMwh;
                   return _buildTableDataCell(importMWh.toStringAsFixed(2));
                 }).toList(),
                 _buildTableDataCell(
-                  '${((abstract['totalImp'] ?? 0.0) / 1000).toStringAsFixed(2)}',
+                  '${((abstract['totalImp'] ?? 0.0) / _kwhToMwh).toStringAsFixed(2)}',
                   isBold: true,
                 ),
               ],
@@ -539,11 +516,11 @@ class PdfGenerator {
                 _buildTableDataCell('Export (MWh)', isBold: true),
                 ...busbars.map((entry) {
                   final energyData = entry.value;
-                  final exportMWh = (energyData['totalExp'] ?? 0.0) / 1000;
+                  final exportMWh = (energyData['totalExp'] ?? 0.0) / _kwhToMwh;
                   return _buildTableDataCell(exportMWh.toStringAsFixed(2));
                 }).toList(),
                 _buildTableDataCell(
-                  '${((abstract['totalExp'] ?? 0.0) / 1000).toStringAsFixed(2)}',
+                  '${((abstract['totalExp'] ?? 0.0) / _kwhToMwh).toStringAsFixed(2)}',
                   isBold: true,
                 ),
               ],
@@ -553,13 +530,13 @@ class PdfGenerator {
                 _buildTableDataCell('Difference (MWh)', isBold: true),
                 ...busbars.map((entry) {
                   final energyData = entry.value;
-                  final importMWh = (energyData['totalImp'] ?? 0.0) / 1000;
-                  final exportMWh = (energyData['totalExp'] ?? 0.0) / 1000;
+                  final importMWh = (energyData['totalImp'] ?? 0.0) / _kwhToMwh;
+                  final exportMWh = (energyData['totalExp'] ?? 0.0) / _kwhToMwh;
                   final difference = importMWh - exportMWh;
                   return _buildTableDataCell(difference.toStringAsFixed(2));
                 }).toList(),
                 _buildTableDataCell(
-                  '${((abstract['difference'] ?? 0.0) / 1000).toStringAsFixed(2)}',
+                  '${((abstract['difference'] ?? 0.0) / _kwhToMwh).toStringAsFixed(2)}',
                   isBold: true,
                 ),
               ],
@@ -569,8 +546,8 @@ class PdfGenerator {
                 _buildTableDataCell('Loss (%)', isBold: true),
                 ...busbars.map((entry) {
                   final energyData = entry.value;
-                  final importMWh = (energyData['totalImp'] ?? 0.0) / 1000;
-                  final exportMWh = (energyData['totalExp'] ?? 0.0) / 1000;
+                  final importMWh = (energyData['totalImp'] ?? 0.0) / _kwhToMwh;
+                  final exportMWh = (energyData['totalExp'] ?? 0.0) / _kwhToMwh;
                   final difference = importMWh - exportMWh;
                   final lossPercentage = importMWh > 0
                       ? ((difference / importMWh) * 100)
@@ -644,8 +621,8 @@ class PdfGenerator {
               ),
               ...data.aggregatedFeederData.take(15).map((feeder) {
                 // feeder is AggregatedFeederEnergyData
-                final importMWh = (feeder.importedEnergy) / 1000;
-                final exportMWh = (feeder.exportedEnergy) / 1000;
+                final importMWh = (feeder.importedEnergy) / _kwhToMwh;
+                final exportMWh = (feeder.exportedEnergy) / _kwhToMwh;
                 return pw.TableRow(
                   children: [
                     _buildTableDataCell(feeder.zoneName),
