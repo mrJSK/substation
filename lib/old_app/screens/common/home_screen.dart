@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -9,6 +11,8 @@ import 'auth_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../substation_dashboard/substation_user_dashboard_screen.dart';
 import '../subdivision_dashboard_tabs/subdivision_dashboard_screen.dart';
+import '../windows/windows_admin_shell.dart';
+import '../windows/windows_subdivision_shell.dart';
 import '../../utils/snackbar_utils.dart';
 
 class HomeRouter extends StatelessWidget {
@@ -34,13 +38,18 @@ class HomeRouter extends StatelessWidget {
       return const AuthScreen();
     } else {
       if (currentUser.approved) {
+        final isWindows = Platform.isWindows;
         switch (currentUser.role) {
           case UserRole.admin:
-            return AdminHomeScreen(appUser: currentUser);
+            return isWindows
+                ? WindowsAdminShell(adminUser: currentUser)
+                : AdminHomeScreen(appUser: currentUser);
           case UserRole.substationUser:
             return SubstationUserHomeScreen(appUser: currentUser);
           case UserRole.subdivisionManager:
-            return SubdivisionManagerHomeScreen(appUser: currentUser);
+            return isWindows
+                ? WindowsSubdivisionShell(currentUser: currentUser)
+                : SubdivisionManagerHomeScreen(appUser: currentUser);
           default:
             WidgetsBinding.instance.addPostFrameCallback((_) {
               SnackBarUtils.showSnackBar(
@@ -65,7 +74,7 @@ class HomeRouter extends StatelessWidget {
                   Icon(
                     Icons.hourglass_empty,
                     size: 64,
-                    color: theme.colorScheme.primary.withOpacity(0.6),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.6),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -74,7 +83,7 @@ class HomeRouter extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -83,7 +92,7 @@ class HomeRouter extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
-                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                 ],
