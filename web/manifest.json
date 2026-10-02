@@ -1,11 +1,11 @@
 {
-    "name": "substation",
-    "short_name": "substation",
+    "name": "suberp",
+    "short_name": "suberp",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "SubERP — Power Utility Operations & Maintenance ERP",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

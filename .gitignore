@@ -43,3 +43,20 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Supabase secrets — never commit real credentials
+lib/core/supabase/supabase_secrets.dart
+
+# Hive boxes (local cache — device-specific)
+*.hive
+*.lock
+
+# Drift generated DB files
+*.db
+
+# Research note PDFs (large binary)
+*.pdf
+
+# Reference assets that aren't needed in repo
+ea.xlsx
+sample_ea.jpeg
