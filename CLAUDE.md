@@ -110,17 +110,30 @@ See `docs/NAVIGATION.md` for full spec. Summary:
 
 ## Database
 
-Schema: `supabase/schema.sql` — run this in Supabase SQL Editor to set up.
+Schema: run migrations in order from `supabase/migrations/` in Supabase SQL Editor.
+
+Migrations:
+- `001_initial_schema.sql` — all tables + enums + indexes
+- `002_triggers.sql` — sequences, updated_at, SoD, audit, WO completion
+- `003_functions.sql` — 9 RPC functions (KPIs, helpers, shift upsert)
+- `004_rls_policies.sql` — full org-scoped RLS (run after 001)
+- `005_seed.sql` — 8 system roles, 14 maintenance templates
+- `006_storage.sql` — 6 storage buckets
+- `007_notifications.sql` — deadline notification table
+
+Edge Functions (deploy with `supabase functions deploy`):
+- `functions/generate-work-orders/` — daily cron, creates WOs from maintenance_schedules
+- `functions/notify-deadlines/` — 4-hourly: CEIG deadline, energy statement, PTW overrun
 
 Key tables:
-- `tenants`, `org_units` (hierarchy), `user_profiles`, `user_role_assignments`
-- `equipment` (asset master), `equipment_history` (Reg 2)
-- `shift_logs`, `shift_readings` (Reg 19 daily log sheet)
-- `ptw_requests` (Reg 9a/9b — 7-step PTW workflow)
-- `defects` (Reg 7), `work_orders`
+- `tenants`, `org_units` (ltree hierarchy), `user_profiles`, `user_role_assignments`
+- `equipment`, `equipment_history` (Reg 2)
+- `shift_logs`, `shift_readings` (Reg 19)
+- `ptw_requests` (Reg 9a/9b — 7-step workflow)
+- `defects`, `work_orders`, `maintenance_plans`, `maintenance_schedules`
 - `energy_readings` + `monthly_energy_balance` view (Reg 8)
 - `tripping_events` (Reg 10), `stoppages` (Reg 11)
-- `accident_reports` (CEA Reg 46)
+- `accident_reports` (CEA Reg 46), `notifications`
 - `audit_logs` (immutable — RLS blocks update/delete)
 
 Supabase config: `lib/core/supabase/supabase_config.dart`
@@ -156,7 +169,9 @@ lib/
     services/       Shared services (cache, sync)
     extensions/     Dart extensions
 supabase/
-  schema.sql        Full PostgreSQL schema — run once in Supabase
+  migrations/       001–007 SQL migrations — run in order in Supabase SQL Editor
+  functions/        Edge Functions (Deno/TypeScript)
+  config.toml       Supabase CLI local dev config
 docs/
   TECH_STACK.md
   ARCHITECTURE.md

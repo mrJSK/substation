@@ -1,0 +1,73 @@
+# Supabase CLI local development configuration
+# Run: supabase start   → spins up local Postgres + API + Studio on localhost
+# Run: supabase db push → applies migrations to linked remote project
+
+[api]
+enabled     = true
+port        = 54321
+schemas     = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows    = 1000
+
+[db]
+port        = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled     = true
+port        = 54323
+# Open http://localhost:54323 for local Supabase Studio
+
+[inbucket]
+enabled     = true
+port        = 54324
+# Local email testing at http://localhost:54324
+
+[storage]
+enabled     = true
+
+[auth]
+enabled        = true
+site_url       = "http://localhost:3000"
+# Flutter deep-link redirect — update when deploying
+additional_redirect_urls = [
+  "io.supabase.substation://login-callback/",
+  "http://localhost:3000/auth/callback"
+]
+jwt_expiry                = 3600   # 1 hour
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval  = 10
+enable_signup              = false  # Invite-only — admins create users
+enable_anonymous_sign_ins  = false
+minimum_password_length    = 8
+
+[auth.email]
+enable_signup     = false   # again — belt and braces
+enable_confirmations = true
+secure_password_change = true
+
+[auth.sms]
+# Not used in v1 — can enable for OTP in future
+enabled = false
+
+[edge_runtime]
+enabled  = true
+policy   = "oneshot"
+inspector_port = 8083
+
+# Edge Function: daily work order generation (1:00 AM)
+[functions.generate-work-orders]
+enabled  = true
+verify_jwt = true
+
+# Edge Function: deadline notifications (every 4 hours)
+[functions.notify-deadlines]
+enabled  = true
+verify_jwt = true
+
+[analytics]
+enabled = false   # keeps local dev lightweight
+
+[experimental]
+oriole_preview = false
