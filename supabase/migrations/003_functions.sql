@@ -3,6 +3,9 @@
 -- These compute KPIs server-side so the app never pulls raw rows.
 -- ============================================================
 
+-- Ensure total_consumers column exists (needed by compute_saidi_saifi)
+alter table org_units add column if not exists total_consumers integer default 0;
+
 -- ── Permission check ──────────────────────────────────────────────────────
 -- Returns the set of permission codes a user has at a given org unit.
 -- The app caches this result locally (8hr TTL).
@@ -47,15 +50,19 @@ create or replace function compute_availability(
     select
       extract(epoch from (p.period_end - p.period_start)) / 3600 as scheduled_hours,
       coalesce(sum(
-        extract(epoch from (
-          least(s.ended_at, p.period_end)
-          - greatest(s.started_at, p.period_start)
-        )) / 3600
-      ), 0) filter (where s.stoppage_type = 'TRIPPING' or s.stoppage_type = 'BREAKDOWN') as forced_outage_hours
+        case when s.stoppage_type in ('TRIPPING', 'BREAKDOWN')
+          then extract(epoch from (
+            least(s.ended_at, p.period_end)
+            - greatest(s.started_at, p.period_start)
+          )) / 3600
+          else 0
+        end
+      ), 0) as forced_outage_hours
     from params p
     left join stoppages s on s.substation_id = p_substation_id
       and s.started_at < p.period_end
       and (s.ended_at is null or s.ended_at > p.period_start)
+    group by p.period_start, p.period_end
   )
   select round(
     100.0 * (h.scheduled_hours - h.forced_outage_hours) / nullif(h.scheduled_hours, 0),
@@ -84,9 +91,7 @@ create or replace function compute_saidi_saifi(
   ),
   totals as (
     select
-      -- total consumers served by this substation (stored in org_units.technical_params)
-      (select (technical_params->>'total_consumers')::int
-       from org_units where id = p_substation_id) as total_consumers,
+      (select total_consumers from org_units where id = p_substation_id) as total_consumers,
       coalesce(sum(s.consumers_affected * extract(epoch from (s.ended_at - s.started_at)) / 3600), 0) as sum_ri_ui,
       coalesce(sum(s.consumers_affected), 0) as sum_lambda_ni
     from params p, stoppages s

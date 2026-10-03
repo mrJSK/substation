@@ -3,6 +3,9 @@
 -- Default roles, role→permission assignments, maintenance plan templates
 -- These are GLOBAL (no tenant_id) system defaults.
 -- Each new tenant gets a copy of system roles on signup (via Edge Function).
+
+-- Allow null tenant_id on roles for system-wide roles
+alter table roles alter column tenant_id drop not null;
 -- ============================================================
 
 -- ── System role definitions ───────────────────────────────────────────────
@@ -129,6 +132,9 @@ where r.name = 'TENANT_ADMIN';
 
 drop table _system_roles;
 drop table _perm_ids;
+
+-- Allow null tenant_id on maintenance_plans for global templates
+alter table maintenance_plans alter column tenant_id drop not null;
 
 -- ── Maintenance Plan Templates ────────────────────────────────────────────
 -- These are global templates (tenant_id=NULL).

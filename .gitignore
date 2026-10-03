@@ -60,3 +60,4 @@ lib/core/supabase/supabase_secrets.dart
 # Reference assets that aren't needed in repo
 ea.xlsx
 sample_ea.jpeg
+supabase/.temp/

@@ -56,7 +56,9 @@
       "Bash(cp -r /c/temp/suberp_preserve/reports /e/substation/)",
       "Bash(cp -r /c/temp/suberp_preserve/research_notes /e/substation/)",
       "Bash(cp -r /c/temp/suberp_preserve/assets /e/substation/)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "PowerShell(winget install Supabase.CLI 2>&1)",
+      "PowerShell(tail -5)"
     ]
   }
 }

@@ -167,7 +167,7 @@ alter table equipment enable row level security;
 create policy equipment_select on equipment for select
   using (tenant_id = current_tenant_id());
 
-create policy equipment_write on equipment for insert or update
+create policy equipment_write on equipment for all
   using (tenant_id = current_tenant_id())
   with check (
     tenant_id = current_tenant_id()
@@ -181,7 +181,7 @@ alter table shift_readings enable row level security;
 create policy shift_logs_select on shift_logs for select
   using (tenant_id = current_tenant_id());
 
-create policy shift_logs_write on shift_logs for insert or update
+create policy shift_logs_write on shift_logs for all
   using (tenant_id = current_tenant_id())
   with check (user_has_permission('LOGSHEET_WRITE', substation_id));
 
@@ -193,7 +193,7 @@ create policy shift_readings_select on shift_readings for select
       and sl.tenant_id = current_tenant_id()
   ));
 
-create policy shift_readings_write on shift_readings for insert or update
+create policy shift_readings_write on shift_readings for all
   using (exists (
     select 1 from shift_logs sl
     where sl.id = shift_readings.shift_log_id
@@ -220,13 +220,9 @@ create policy ptw_insert on ptw_requests for insert
 create policy ptw_update on ptw_requests for update
   using (tenant_id = current_tenant_id())
   with check (
-    -- Issuing: needs PTW_ISSUE
-    (new.status = 'ISSUED' and user_has_permission('PTW_ISSUE', substation_id))
-    -- SLDC approval: needs PTW_APPROVE_SLDC
-    or (new.status = 'SLDC_APPROVED' and user_has_permission('PTW_APPROVE_SLDC', substation_id))
-    -- Cancellation: needs PTW_CANCEL
-    or (new.status = 'CANCELLED' and user_has_permission('PTW_CANCEL', substation_id))
-    -- All other updates (isolation, return, close): PTW_ISSUE is sufficient
+    (status = 'ISSUED' and user_has_permission('PTW_ISSUE', substation_id))
+    or (status = 'SLDC_APPROVED' and user_has_permission('PTW_APPROVE_SLDC', substation_id))
+    or (status = 'CANCELLED' and user_has_permission('PTW_CANCEL', substation_id))
     or user_has_permission('PTW_ISSUE', substation_id)
   );
 
@@ -275,7 +271,7 @@ alter table energy_readings enable row level security;
 create policy energy_select on energy_readings for select
   using (tenant_id = current_tenant_id());
 
-create policy energy_write on energy_readings for insert or update
+create policy energy_write on energy_readings for all
   using (tenant_id = current_tenant_id())
   with check (user_has_permission('ENERGY_WRITE', substation_id));
 
@@ -286,14 +282,14 @@ alter table stoppages enable row level security;
 create policy tripping_select on tripping_events for select
   using (tenant_id = current_tenant_id());
 
-create policy tripping_write on tripping_events for insert or update
+create policy tripping_write on tripping_events for all
   using (tenant_id = current_tenant_id())
   with check (user_has_permission('TRIPPING_WRITE', substation_id));
 
 create policy stoppages_select on stoppages for select
   using (tenant_id = current_tenant_id());
 
-create policy stoppages_write on stoppages for insert or update
+create policy stoppages_write on stoppages for all
   using (tenant_id = current_tenant_id())
   with check (user_has_permission('STOPPAGE_WRITE', substation_id));
 
@@ -317,7 +313,7 @@ alter table accident_reports enable row level security;
 create policy accident_select on accident_reports for select
   using (tenant_id = current_tenant_id());
 
-create policy accident_write on accident_reports for insert or update
+create policy accident_write on accident_reports for all
   using (tenant_id = current_tenant_id())
   with check (user_has_permission('ACCIDENT_REPORT', substation_id));
 

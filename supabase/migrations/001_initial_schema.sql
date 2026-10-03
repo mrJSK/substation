@@ -4,8 +4,9 @@
 -- Run in Supabase SQL Editor (or via supabase db push)
 -- ============================================================
 
--- Enable UUID generation
+-- Enable required extensions
 create extension if not exists "pgcrypto";
+create extension if not exists "ltree";
 
 -- ============================================================
 -- TENANTS (utility companies — top of every hierarchy)
@@ -31,11 +32,12 @@ create table org_units (
   name        text not null,
   code        text not null,            -- short code for SLDC reporting
   level       smallint not null check (level between 1 and 6),
-  voltage_kv  numeric,                  -- for substations (132, 220, 400 kV)
-  latitude    numeric,
-  longitude   numeric,
-  created_at  timestamptz default now(),
-  is_active   boolean default true,
+  voltage_kv       numeric,             -- for substations (132, 220, 400 kV)
+  total_consumers  integer default 0,   -- consumers served (used for SAIDI/SAIFI)
+  latitude         numeric,
+  longitude        numeric,
+  created_at       timestamptz default now(),
+  is_active        boolean default true,
   unique (tenant_id, code)
 );
 
@@ -77,10 +79,10 @@ create table user_certificates (
 -- ============================================================
 create table roles (
   id          uuid primary key default gen_random_uuid(),
-  tenant_id   uuid not null references tenants(id),
-  name        text not null,            -- 'SHIFT_ENGINEER', 'JE_MAINTENANCE', etc.
+  tenant_id   uuid references tenants(id),  -- null = system-wide role
+  name        text not null,
   description text,
-  is_system   boolean default false,    -- true = cannot be deleted
+  is_system   boolean default false,
   unique (tenant_id, name)
 );
 
