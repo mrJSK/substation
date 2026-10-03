@@ -12,7 +12,7 @@ max_rows    = 1000
 [db]
 port        = 54322
 shadow_port = 54320
-major_version = 15
+major_version = 17
 
 [studio]
 enabled     = true
@@ -56,14 +56,17 @@ enabled  = true
 policy   = "oneshot"
 inspector_port = 8083
 
-# Edge Function: daily work order generation (1:00 AM)
+# Edge Functions. Scheduled jobs reject anything but a service-role JWT.
 [functions.generate-work-orders]
-enabled  = true
+enabled    = true
 verify_jwt = true
 
-# Edge Function: deadline notifications (every 4 hours)
 [functions.notify-deadlines]
-enabled  = true
+enabled    = true
+verify_jwt = true
+
+[functions.iam-admin-users]
+enabled    = true
 verify_jwt = true
 
 [analytics]

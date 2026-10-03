@@ -1,98 +1,61 @@
-/**
- * Edge Function: generate-work-orders
- * Runs daily via Supabase cron (set in Dashboard → Edge Functions → Schedule).
- * Cron expression: 0 1 * * *  (1:00 AM IST every day)
- *
- * Checks all maintenance_schedules where next_due_at <= today + 3 days
- * and no open WO already exists, then creates WOs automatically.
- */
+// Edge Function: generate-work-orders  (owner: Maintenance team)
+// Daily job (pg_cron, 01:00 IST). Creates PREVENTIVE work orders for every
+// active maintenance schedule due within the next 3 days, unless an open
+// work order already exists for that schedule. Service-role calls only.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { adminClient } from '../_shared/clients.ts'
+import { corsHeaders, error, isServiceRoleCall, json } from '../_shared/http.ts'
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!  // service role — bypasses RLS
-)
+const LOOKAHEAD_DAYS = 3
+const OPEN_STATUSES = ['PLANNED', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_PTW']
 
 Deno.serve(async (req) => {
-  // Allow cron trigger (POST with no body) and manual invocation
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (!isServiceRoleCall(req)) return error('Scheduled job: service role only', 403)
 
-  const today = new Date()
-  const windowDate = new Date(today)
-  windowDate.setDate(windowDate.getDate() + 3)  // 3-day lookahead
+  const db = adminClient()
+  const horizon = new Date(Date.now() + LOOKAHEAD_DAYS * 86_400_000).toISOString().slice(0, 10)
 
-  // Fetch overdue/upcoming maintenance schedules
-  const { data: schedules, error: schedErr } = await supabase
+  const { data: schedules, error: schedErr } = await db
     .from('maintenance_schedules')
-    .select(`
-      id,
-      equipment_id,
-      plan_id,
-      next_due_at,
-      equipment:equipment_id (
-        id, name, tenant_id, org_unit_id
-      ),
-      plan:plan_id (
-        id, title, frequency_type, task_checklist
-      )
-    `)
-    .lte('next_due_at', windowDate.toISOString().split('T')[0])
+    .select('id, tenant_id, equipment_id, next_due_on, equipment:equipment_id(org_unit_id, name, is_active), plan:plan_id(title, task_checklist, is_active)')
+    .eq('is_active', true)
+    .lte('next_due_on', horizon)
 
-  if (schedErr) {
-    console.error('Error fetching schedules:', schedErr)
-    return new Response(JSON.stringify({ error: schedErr.message }), { status: 500 })
-  }
-
-  if (!schedules || schedules.length === 0) {
-    return new Response(JSON.stringify({ created: 0, message: 'No schedules due' }), { status: 200 })
-  }
+  if (schedErr) return error(schedErr.message, 500)
 
   let created = 0
-  const errors: string[] = []
+  const failures: string[] = []
 
-  for (const schedule of schedules) {
-    const eq = schedule.equipment as any
-    const plan = schedule.plan as any
+  for (const s of schedules ?? []) {
+    // deno-lint-ignore no-explicit-any
+    const eq = s.equipment as any
+    // deno-lint-ignore no-explicit-any
+    const plan = s.plan as any
+    if (!eq?.is_active || !plan?.is_active) continue
 
-    // Check if an open WO already exists for this equipment + plan
-    const { count } = await supabase
+    const { count } = await db
       .from('work_orders')
       .select('id', { count: 'exact', head: true })
-      .eq('equipment_id', schedule.equipment_id)
-      .in('status', ['PLANNED', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_PTW'])
-      .gte('scheduled_date', new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0])
+      .eq('schedule_id', s.id)
+      .in('status', OPEN_STATUSES)
+    if ((count ?? 0) > 0) continue
 
-    if ((count ?? 0) > 0) continue  // WO already open, skip
-
-    // Create the work order
-    const { error: woErr } = await supabase
-      .from('work_orders')
-      .insert({
-        tenant_id:      eq.tenant_id,
-        substation_id:  eq.org_unit_id,
-        equipment_id:   schedule.equipment_id,
-        type:           'PREVENTIVE',
-        status:         'PLANNED',
-        title:          plan.title,
-        description:    `Auto-generated: ${plan.title} due ${schedule.next_due_at}`,
-        scheduled_date: schedule.next_due_at,
-        test_results:   { checklist: plan.task_checklist, status: 'pending' },
-      })
-
-    if (woErr) {
-      errors.push(`${eq.name}: ${woErr.message}`)
-    } else {
-      created++
-    }
+    const { error: insErr } = await db.from('work_orders').insert({
+      tenant_id: s.tenant_id,
+      org_unit_id: eq.org_unit_id,
+      equipment_id: s.equipment_id,
+      schedule_id: s.id,
+      type: 'PREVENTIVE',
+      status: 'PLANNED',
+      title: plan.title,
+      description: `Preventive maintenance due ${s.next_due_on}`,
+      scheduled_date: s.next_due_on,
+      checklist: plan.task_checklist ?? [],
+    })
+    if (insErr) failures.push(`${eq.name}: ${insErr.message}`)
+    else created++
   }
 
-  console.log(`Generated ${created} work orders. Errors: ${errors.length}`)
-
-  return new Response(
-    JSON.stringify({ created, errors: errors.length > 0 ? errors : undefined }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
-  )
+  return json({ created, failures })
 })

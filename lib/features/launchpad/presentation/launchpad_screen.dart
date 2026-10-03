@@ -1,179 +1,178 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../../../core/auth/session_notifier.dart';
-import '../../../core/router/app_router.dart';
-import '../../../core/theme/app_theme.dart';
 
+import '../../../core/navigation/routes.dart';
+import '../../../shared/widgets/app_icons.dart';
+import '../../../shared/widgets/async_value_view.dart';
+import '../../../shared/widgets/feedback.dart';
+import '../../auth/application/session_controller.dart';
+import '../application/launchpad_providers.dart';
+import '../domain/micro_app.dart';
+
+/// Home: the user's micro-apps grouped by module, plus a T-code command box.
 class LaunchpadScreen extends ConsumerWidget {
   const LaunchpadScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(sessionNotifierProvider);
+    final profile = ref.watch(accessProfileProvider);
+    final apps = ref.watch(myAppsProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('GridERP'),
+        title: Text(profile?.tenantName ?? 'GridERP'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
-            onPressed: () async {
-              await ref.read(sessionNotifierProvider.notifier).signOut();
-              if (context.mounted) context.go(AppRoutes.login);
+          const SizedBox(width: 140, child: TCodeField()),
+          PopupMenuButton<String>(
+            tooltip: 'Account',
+            icon: const Icon(Icons.account_circle_outlined),
+            onSelected: (value) async {
+              if (value == 'reload') await ref.read(sessionProvider.notifier).reload();
+              if (value == 'signout') await ref.read(sessionProvider.notifier).signOut();
             },
+            itemBuilder: (_) => [
+              PopupMenuItem(enabled: false, child: Text(profile?.fullName ?? '')),
+              const PopupMenuItem(value: 'reload', child: Text('Refresh my access')),
+              const PopupMenuItem(value: 'signout', child: Text('Sign out')),
+            ],
           ),
         ],
       ),
-      body: session.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (profile) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // User + substation header
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (profile?.fromCache ?? false)
             Container(
-              width: double.infinity,
-              color: AppColors.primary,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    profile?.fullName ?? 'User',
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                  ),
-                  Text(
-                    '${profile?.designation ?? ''} — ${profile?.orgUnitName ?? ''}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
-              ),
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: const Text('Offline: showing your saved access.', style: TextStyle(fontSize: 12)),
             ),
+          Expanded(
+            child: AsyncValueView(
+              value: apps,
+              onRetry: () => ref.invalidate(myAppsProvider),
+              data: (list) => list.isEmpty
+                  ? const EmptyState('No apps are assigned to you yet. Ask your administrator for a role.')
+                  : _AppGroups(apps: list),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-            // Micro-app grid
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SectionLabel('Operations'),
-                    _AppGrid(tiles: [
-                      _AppTile(Icons.book_outlined,      'Shift Logsheet',   AppRoutes.logsheet,  _has(profile, 'LOGSHEET_WRITE')),
-                      _AppTile(Icons.flash_on_outlined,  'Tripping Register', AppRoutes.tripping,  _has(profile, 'TRIPPING_WRITE')),
-                      _AppTile(Icons.pause_circle_outline,'Stoppages',        AppRoutes.stoppage,  _has(profile, 'STOPPAGE_WRITE')),
-                    ]),
-                    _SectionLabel('Permit to Work'),
-                    _AppGrid(tiles: [
-                      _AppTile(Icons.assignment_outlined, 'PTW',             AppRoutes.ptwList,   _has(profile, 'PTW_REQUEST')),
-                    ]),
-                    _SectionLabel('Maintenance'),
-                    _AppGrid(tiles: [
-                      _AppTile(Icons.build_outlined,     'Work Orders',      AppRoutes.workOrders, _has(profile, 'WO_CREATE')),
-                      _AppTile(Icons.report_outlined,    'Defects',          AppRoutes.defects,   _has(profile, 'DEFECT_CREATE')),
-                      _AppTile(Icons.devices_outlined,   'Assets',           AppRoutes.assetList, true),
-                    ]),
-                    _SectionLabel('Energy'),
-                    _AppGrid(tiles: [
-                      _AppTile(Icons.bolt_outlined,      'Energy Account',   AppRoutes.energyAccount, _has(profile, 'ENERGY_WRITE')),
-                    ]),
-                    if (_has(profile, 'USER_ADMIN') || _has(profile, 'ROLE_ADMIN')) ...[
-                      _SectionLabel('Administration'),
-                      _AppGrid(tiles: [
-                        _AppTile(Icons.people_outline,   'Users',            AppRoutes.users,     _has(profile, 'USER_ADMIN')),
-                        _AppTile(Icons.shield_outlined,  'Roles & Permissions', AppRoutes.roles,  _has(profile, 'ROLE_ADMIN')),
-                      ]),
-                    ],
-                    _SectionLabel('Reports'),
-                    _AppGrid(tiles: [
-                      _AppTile(Icons.dashboard_outlined, 'Dashboard',        AppRoutes.dashboard, true),
-                    ]),
-                  ],
-                ),
-              ),
+class _AppGroups extends StatelessWidget {
+  const _AppGroups({required this.apps});
+  final List<MicroApp> apps;
+
+  @override
+  Widget build(BuildContext context) {
+    final byModule = <String, List<MicroApp>>{};
+    for (final app in apps) {
+      byModule.putIfAbsent(app.module, () => []).add(app);
+    }
+    final columns = MediaQuery.sizeOf(context).width >= 900 ? 6 : (MediaQuery.sizeOf(context).width >= 600 ? 4 : 3);
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        for (final entry in byModule.entries) ...[
+          SectionLabel(entry.key),
+          GridView.count(
+            crossAxisCount: columns,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1.1,
+            children: [for (final app in entry.value) _AppTile(app: app)],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AppTile extends StatelessWidget {
+  const _AppTile({required this.app});
+  final MicroApp app;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: app.description ?? app.name,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => openMicroApp(context, app.code),
+        child: Ink(
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.dividerColor),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(appIcon(app.icon), color: theme.colorScheme.primary),
+                const SizedBox(height: 6),
+                Text(app.name, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500)),
+                Text(app.code, style: theme.textTheme.labelSmall),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
-
-  bool _has(profile, String code) =>
-      profile?.permissions.contains(code) ?? false;
 }
 
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel(this.text);
+/// SAP-style command field: type a T-code and press Enter.
+class TCodeField extends ConsumerStatefulWidget {
+  const TCodeField({super.key});
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 16, bottom: 8),
-    child: Text(text,
-      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-          color: Color(0xFF6B7280), letterSpacing: 0.8)),
-  );
+  ConsumerState<TCodeField> createState() => _TCodeFieldState();
 }
 
-class _AppGrid extends StatelessWidget {
-  final List<_AppTile> tiles;
-  const _AppGrid({required this.tiles});
+class _TCodeFieldState extends ConsumerState<TCodeField> {
+  final _controller = TextEditingController();
 
   @override
-  Widget build(BuildContext context) {
-    final visible = tiles.where((t) => t.allowed).toList();
-    if (visible.isEmpty) return const SizedBox.shrink();
-
-    return GridView.count(
-      crossAxisCount: MediaQuery.sizeOf(context).width > 600 ? 4 : 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      children: visible.map((t) => _TileWidget(t)).toList(),
-    );
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
-}
 
-class _AppTile {
-  final IconData icon;
-  final String label;
-  final String route;
-  final bool allowed;
-  const _AppTile(this.icon, this.label, this.route, this.allowed);
-}
-
-class _TileWidget extends StatelessWidget {
-  final _AppTile tile;
-  const _TileWidget(this.tile);
+  void _open(String value) {
+    final code = value.trim().toUpperCase();
+    if (code.isEmpty) return;
+    if (ref.read(myAppByCodeProvider(code)) == null) {
+      showMessage(context, 'No app $code, or you do not have access to it.');
+      return;
+    }
+    _controller.clear();
+    openMicroApp(context, code);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => context.go(tile.route),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-          borderRadius: BorderRadius.circular(8),
-          color: Colors.white,
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(tile.icon, color: AppColors.primary, size: 28),
-            const SizedBox(height: 8),
-            Text(
-              tile.label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF374151)),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: TextField(
+        controller: _controller,
+        textCapitalization: TextCapitalization.characters,
+        textInputAction: TextInputAction.go,
+        onSubmitted: _open,
+        decoration: const InputDecoration(
+          isDense: true,
+          hintText: 'T-code',
+          prefixIcon: Icon(Icons.keyboard_command_key, size: 16),
+          prefixIconConstraints: BoxConstraints(minWidth: 32),
         ),
       ),
     );

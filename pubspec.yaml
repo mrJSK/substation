@@ -1,5 +1,5 @@
 name: suberp
-description: "SubERP — Power Utility Operations & Maintenance ERP"
+description: "GridERP — operations and maintenance ERP for power utilities"
 publish_to: 'none'
 version: 0.1.0+1
 
@@ -13,16 +13,11 @@ dependencies:
   # ── Backend ──────────────────────────────────────────────────────────────
   supabase_flutter: ^2.9.0         # Auth, Database, Realtime, Storage
 
-  # ── State Management ─────────────────────────────────────────────────────
-  flutter_riverpod: ^2.6.1         # Best-in-class reactive state management
-  riverpod_annotation: ^2.6.1
+  # ── State Management (no code generation — hand-written providers) ───────
+  flutter_riverpod: ^3.0.0
 
   # ── Navigation ───────────────────────────────────────────────────────────
   go_router: ^14.8.1               # Declarative routing with shell routes (launchpad)
-
-  # ── Data & Serialization ─────────────────────────────────────────────────
-  freezed_annotation: ^3.0.0       # Immutable models with copyWith
-  json_annotation: ^4.9.0
 
   # ── UI ───────────────────────────────────────────────────────────────────
   google_fonts: ^6.2.1
@@ -40,12 +35,9 @@ dependencies:
   # ── Connectivity / Offline ───────────────────────────────────────────────
   connectivity_plus: ^6.1.4        # Detect network state (offline mode)
 
-  # ── Offline / Local Storage ──────────────────────────────────────────────
-  hive_ce: ^2.10.1                 # Fast key-value store — cache equipment, org units per shift
+  # ── Offline / Local Storage (Hive CE, Map storage — no adapters/codegen) ──
+  hive_ce: ^2.10.1                 # Read cache (org units, equipment) + offline write queue
   hive_ce_flutter: ^2.4.0          # Flutter init helper
-  drift: ^2.26.1                   # SQLite ORM — queue pending logsheet writes offline
-  drift_flutter: ^0.2.4
-  sqlite3_flutter_libs: ^0.5.31
   shared_preferences: ^2.3.5       # Light preferences (theme, last substation)
 
   # ── PDF / Reports ────────────────────────────────────────────────────────
@@ -67,30 +59,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
 
-  # Code generation
-  build_runner: ^2.4.14
-  freezed: ^3.0.0
-  json_serializable: ^6.9.3
-  riverpod_generator: ^2.6.1
-  custom_lint: ^0.7.5
-  riverpod_lint: ^2.6.1
-  drift_dev: ^2.26.1
-  hive_ce_generator: ^1.7.0
-
 flutter:
   uses-material-design: true
 
   assets:
     - assets/images/
     - assets/icons/
-
-  fonts:
-    - family: Inter
-      fonts:
-        - asset: assets/fonts/Inter-Regular.ttf
-        - asset: assets/fonts/Inter-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Inter-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Inter-Bold.ttf
-          weight: 700

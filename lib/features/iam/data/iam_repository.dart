@@ -1,101 +1,127 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// IAM data layer — owned by the IAM team.
-/// All Supabase calls for users, roles, and permission assignments live here.
-/// No Riverpod here — pure data access. Notifiers in presentation/ wire it up.
+import '../../../core/json.dart';
+import '../../../core/supabase/supabase_providers.dart';
+import '../domain/iam_models.dart';
+
+/// All IAM data access. RLS and the database guards enforce every rule;
+/// this class only shapes requests and responses.
 class IamRepository {
   IamRepository(this._client);
   final SupabaseClient _client;
 
-  // ── Users ────────────────────────────────────────────────────────────────
+  static const _userColumns = 'id, full_name, email, employee_id, designation, phone, home_org_unit_id, is_active, valid_to';
 
-  Future<List<Map<String, dynamic>>> listUsers() async {
-    final data = await _client
-        .from('user_profiles')
-        .select('id, full_name, employee_id, designation, phone, org_unit_id, org_units(name, level)')
-        .order('full_name');
-    return List<Map<String, dynamic>>.from(data as List);
+  // ── Users ───────────────────────────────────────────────────────────────
+  Future<List<AppUser>> users() async {
+    final rows = await _client.from('user_profiles').select(_userColumns).order('full_name', ascending: true);
+    return rows.map(AppUser.fromJson).toList();
   }
 
-  Future<Map<String, dynamic>> getUser(String userId) async {
-    return await _client
-        .from('user_profiles')
-        .select('id, full_name, employee_id, designation, phone, org_unit_id, org_units(name)')
-        .eq('id', userId)
-        .single() as Map<String, dynamic>;
+  Future<AppUser> user(String id) async =>
+      AppUser.fromJson(await _client.from('user_profiles').select(_userColumns).eq('id', id).single());
+
+  /// Creates the sign-in account and profile server-side (Edge Function).
+  Future<String> createUser({
+    required String email,
+    required String temporaryPassword,
+    required String fullName,
+    required String homeOrgUnitId,
+    String? employeeId,
+    String? designation,
+    String? phone,
+    String? roleId,
+  }) async {
+    final res = await _client.functions.invoke('iam-admin-users', body: {
+      'email': email,
+      'password': temporaryPassword,
+      'full_name': fullName,
+      'home_org_unit_id': homeOrgUnitId,
+      'employee_id': employeeId,
+      'designation': designation,
+      'phone': phone,
+      'role_id': roleId,
+    });
+    final data = (res.data as Map).cast<String, dynamic>();
+    return data['user_id'] as String;
   }
 
-  Future<void> updateUser(String userId, Map<String, dynamic> fields) async {
-    await _client.from('user_profiles').update(fields).eq('id', userId);
+  Future<void> updateUser(String id, {String? fullName, String? employeeId, String? designation, String? phone,
+      String? homeOrgUnitId, bool? isActive}) async {
+    await _client.from('user_profiles').update({
+      'full_name': ?fullName,
+      'employee_id': ?employeeId,
+      'designation': ?designation,
+      'phone': ?phone,
+      'home_org_unit_id': ?homeOrgUnitId,
+      'is_active': ?isActive,
+    }).eq('id', id);
   }
 
-  // ── Roles ────────────────────────────────────────────────────────────────
-
-  Future<List<Map<String, dynamic>>> listRoles() async {
-    final data = await _client
-        .from('roles')
-        .select('id, name, description, is_system')
-        .order('name');
-    return List<Map<String, dynamic>>.from(data as List);
+  // ── Roles and permissions ───────────────────────────────────────────────
+  Future<List<Role>> roles() async {
+    final rows = await _client.from('roles').select('id, tenant_id, code, name, description').order('name', ascending: true);
+    return rows.map(Role.fromJson).toList();
   }
 
-  // ── Role assignments ──────────────────────────────────────────────────────
+  Future<List<Permission>> permissions() async {
+    final rows = await _client.from('permissions').select('code, module, description').order('sort_order', ascending: true);
+    return rows.map(Permission.fromJson).toList();
+  }
 
-  Future<List<Map<String, dynamic>>> getUserRoleAssignments(String userId) async {
-    final data = await _client
+  Future<Set<String>> rolePermissionCodes(String roleId) async {
+    final rows = await _client.from('role_permissions').select('permission_code').eq('role_id', roleId);
+    return rows.map((r) => r['permission_code'] as String).toSet();
+  }
+
+  Future<void> setRolePermission(String roleId, String code, {required bool granted}) async {
+    if (granted) {
+      await _client.from('role_permissions').insert({'role_id': roleId, 'permission_code': code});
+    } else {
+      await _client.from('role_permissions').delete().eq('role_id', roleId).eq('permission_code', code);
+    }
+  }
+
+  Future<void> createRole({required String tenantId, required String code, required String name, String? description}) =>
+      _client.from('roles').insert({'tenant_id': tenantId, 'code': code, 'name': name, 'description': description});
+
+  Future<String> cloneRole({required String sourceRoleId, required String code, required String name}) async =>
+      await _client.rpc('clone_role', params: {'p_source_role_id': sourceRoleId, 'p_code': code, 'p_name': name}) as String;
+
+  Future<void> deleteRole(String id) => _client.from('roles').delete().eq('id', id);
+
+  // ── Assignments (WHERE) ─────────────────────────────────────────────────
+  Future<List<RoleAssignment>> assignmentsOfUser(String userId) async {
+    final rows = await _client
         .from('user_role_assignments')
-        .select('id, role_id, org_unit_id, valid_from, valid_to, roles(name, description), org_units(name, level)')
+        .select('id, user_id, role_id, org_unit_id, include_descendants, valid_from, valid_to, roles(name)')
         .eq('user_id', userId)
-        .order('valid_from');
-    return List<Map<String, dynamic>>.from(data as List);
+        .order('valid_from', ascending: false);
+    return rows.map(RoleAssignment.fromJson).toList();
   }
 
   Future<void> assignRole({
+    required String tenantId,
     required String userId,
     required String roleId,
     required String orgUnitId,
-    DateTime? validFrom,
+    required bool includeDescendants,
+    required DateTime validFrom,
     DateTime? validTo,
   }) async {
     await _client.from('user_role_assignments').insert({
-      'user_id':    userId,
-      'role_id':    roleId,
+      'tenant_id': tenantId,
+      'user_id': userId,
+      'role_id': roleId,
       'org_unit_id': orgUnitId,
-      'valid_from': (validFrom ?? DateTime.now()).toIso8601String().split('T')[0],
-      if (validTo != null) 'valid_to': validTo.toIso8601String().split('T')[0],
+      'include_descendants': includeDescendants,
+      'valid_from': isoDate(validFrom),
+      'valid_to': validTo == null ? null : isoDate(validTo),
     });
   }
 
-  Future<void> revokeRoleAssignment(String assignmentId) async {
-    await _client.from('user_role_assignments').delete().eq('id', assignmentId);
-  }
-
-  // ── Permissions ───────────────────────────────────────────────────────────
-
-  Future<List<Map<String, dynamic>>> listPermissions() async {
-    final data = await _client
-        .from('permissions')
-        .select('id, code, description, module')
-        .order('module, code');
-    return List<Map<String, dynamic>>.from(data as List);
-  }
-
-  Future<List<Map<String, dynamic>>> getRolePermissions(String roleId) async {
-    final data = await _client
-        .from('role_permissions')
-        .select('id, permission_id, permissions(code, description, module)')
-        .eq('role_id', roleId);
-    return List<Map<String, dynamic>>.from(data as List);
-  }
-
-  // ── Org units (for scope pickers) ─────────────────────────────────────────
-
-  Future<List<Map<String, dynamic>>> listOrgUnits() async {
-    final data = await _client
-        .from('org_units')
-        .select('id, name, code, level, parent_id')
-        .eq('is_active', true)
-        .order('level, name');
-    return List<Map<String, dynamic>>.from(data as List);
-  }
+  Future<void> revokeAssignment(String id) => _client.from('user_role_assignments').delete().eq('id', id);
 }
+
+final iamRepositoryProvider = Provider<IamRepository>((ref) => IamRepository(ref.watch(supabaseClientProvider)));

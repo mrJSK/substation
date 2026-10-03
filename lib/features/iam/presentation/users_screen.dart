@@ -1,252 +1,87 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../shared/widgets/async_value_view.dart';
+import '../../../shared/widgets/feedback.dart';
+import '../../auth/application/session_controller.dart';
+import '../../org/application/org_providers.dart';
+import '../../org/presentation/org_unit_picker.dart';
+import '../application/iam_providers.dart';
 import '../data/iam_repository.dart';
+import 'user_detail_screen.dart';
 
-part 'users_screen.g.dart';
-
-@riverpod
-IamRepository iamRepository(Ref ref) =>
-    IamRepository(Supabase.instance.client);
-
-@riverpod
-Future<List<Map<String, dynamic>>> userList(Ref ref) =>
-    ref.watch(iamRepositoryProvider).listUsers();
-
-class UsersScreen extends ConsumerWidget {
+/// SU01 — User Maintenance.
+class UsersScreen extends ConsumerStatefulWidget {
   const UsersScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final users = ref.watch(userListProvider);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('User Management'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(userListProvider),
-          ),
-        ],
-      ),
-      body: users.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (list) => list.isEmpty
-            ? const Center(child: Text('No users found.'))
-            : ListView.separated(
-                itemCount: list.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, i) {
-                  final u = list[i];
-                  final orgUnit = u['org_units'] as Map<String, dynamic>?;
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                      child: Text(
-                        (u['full_name'] as String? ?? '?').characters.first.toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    title: Text(u['full_name'] as String? ?? '—'),
-                    subtitle: Text(
-                      '${u['designation'] ?? ''} — ${orgUnit?['name'] ?? ''}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: Text(
-                      u['employee_id'] as String? ?? '',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-                    ),
-                    onTap: () => _showUserDetail(context, ref, u['id'] as String),
-                  );
-                },
-              ),
-      ),
-    );
-  }
-
-  void _showUserDetail(BuildContext context, WidgetRef ref, String userId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => UserDetailScreen(userId: userId)),
-    );
-  }
+  ConsumerState<UsersScreen> createState() => _UsersScreenState();
 }
 
-class UserDetailScreen extends ConsumerWidget {
-  const UserDetailScreen({super.key, required this.userId});
-  final String userId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.watch(iamRepositoryProvider);
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('User Detail')),
-      body: FutureBuilder(
-        future: Future.wait<dynamic>([
-          repo.getUser(userId),
-          repo.getUserRoleAssignments(userId),
-        ]),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError) return Center(child: Text('${snapshot.error}'));
-
-          final user   = snapshot.data![0] as Map<String, dynamic>;
-          final roles  = snapshot.data![1] as List<Map<String, dynamic>>;
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              // User info card
-              _InfoRow('Name',        user['full_name'] as String? ?? '—'),
-              _InfoRow('Employee ID', user['employee_id'] as String? ?? '—'),
-              _InfoRow('Designation', user['designation'] as String? ?? '—'),
-              _InfoRow('Phone',       user['phone'] as String? ?? '—'),
-              _InfoRow('Org Unit',    (user['org_units'] as Map?)?.get('name') ?? '—'),
-
-              const Divider(height: 32),
-
-              // Role assignments — Where × What
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Role Assignments',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  TextButton.icon(
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add'),
-                    onPressed: () => _addRole(context, ref),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              if (roles.isEmpty)
-                const Text('No roles assigned.', style: TextStyle(color: Color(0xFF6B7280)))
-              else
-                ...roles.map((r) {
-                  final role    = r['roles']    as Map<String, dynamic>?;
-                  final orgUnit = r['org_units'] as Map<String, dynamic>?;
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(role?['name'] as String? ?? '—'),
-                    subtitle: Text(
-                      'Scope: ${orgUnit?['name'] ?? '—'}'
-                      '${r['valid_to'] != null ? '  Until: ${r['valid_to']}' : ''}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
-                      onPressed: () async {
-                        await repo.revokeRoleAssignment(r['id'] as String);
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                    ),
-                  );
-                }),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  void _addRole(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _AssignRoleSheet(userId: userId, ref: ref),
-    );
-  }
-}
-
-class _AssignRoleSheet extends ConsumerStatefulWidget {
-  const _AssignRoleSheet({required this.userId, required this.ref});
-  final String userId;
-  final WidgetRef ref;
-
-  @override
-  ConsumerState<_AssignRoleSheet> createState() => _AssignRoleSheetState();
-}
-
-class _AssignRoleSheetState extends ConsumerState<_AssignRoleSheet> {
-  String? _selectedRole;
-  String? _selectedOrgUnit;
-  bool _saving = false;
+class _UsersScreenState extends ConsumerState<UsersScreen> {
+  String _query = '';
+  bool _showInactive = false;
 
   @override
   Widget build(BuildContext context) {
-    final repo = widget.ref.watch(iamRepositoryProvider);
+    final users = ref.watch(usersProvider);
+    final canCreate = ref.watch(accessProfileProvider)?.canAnywhere('USER_ADMIN') ?? false;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, 16, 16,
-          MediaQuery.viewInsetsOf(context).bottom + 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Users'),
+        actions: [
+          if (canCreate) TextButton(onPressed: () => showSheet(context, const _CreateUserForm()), child: const Text('New user')),
+        ],
+      ),
+      body: Column(
         children: [
-          const Text('Assign Role', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 16),
-
-          // WHO: Role picker
-          FutureBuilder(
-            future: repo.listRoles(),
-            builder: (context, snap) {
-              if (!snap.hasData) return const LinearProgressIndicator();
-              final roles = snap.data!;
-              return DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Role (What)'),
-                value: _selectedRole,
-                items: roles.map((r) => DropdownMenuItem<String>(
-                  value: r['id'] as String,
-                  child: Text(r['name'] as String),
-                )).toList(),
-                onChanged: (v) => setState(() => _selectedRole = v),
-              );
-            },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: const InputDecoration(isDense: true, hintText: 'Search name, ID, email', prefixIcon: Icon(Icons.search)),
+                    onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _showInactive = !_showInactive),
+                  child: Text(_showInactive ? 'Hide inactive' : 'Show inactive'),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-
-          // WHERE: Org unit picker
-          FutureBuilder(
-            future: repo.listOrgUnits(),
-            builder: (context, snap) {
-              if (!snap.hasData) return const LinearProgressIndicator();
-              final units = snap.data!;
-              return DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Scope (Where)'),
-                value: _selectedOrgUnit,
-                isExpanded: true,
-                items: units.map((u) => DropdownMenuItem<String>(
-                  value: u['id'] as String,
-                  child: Text('${u['name']} (L${u['level']})', overflow: TextOverflow.ellipsis),
-                )).toList(),
-                onChanged: (v) => setState(() => _selectedOrgUnit = v),
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-
-          ElevatedButton(
-            onPressed: (_selectedRole == null || _selectedOrgUnit == null || _saving)
-                ? null
-                : () async {
-                    setState(() => _saving = true);
-                    await repo.assignRole(
-                      userId:    widget.userId,
-                      roleId:    _selectedRole!,
-                      orgUnitId: _selectedOrgUnit!,
+          Expanded(
+            child: AsyncValueView(
+              value: users,
+              onRetry: () => ref.invalidate(usersProvider),
+              data: (list) {
+                final visible = list.where((u) {
+                  if (!_showInactive && !u.isActive) return false;
+                  if (_query.isEmpty) return true;
+                  return [u.fullName, u.employeeId, u.email, u.designation]
+                      .any((f) => f?.toLowerCase().contains(_query) ?? false);
+                }).toList();
+                if (visible.isEmpty) return const EmptyState('No users found.');
+                return ListView.separated(
+                  itemCount: visible.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final u = visible[i];
+                    final home = u.homeOrgUnitId == null ? null : ref.watch(orgUnitByIdProvider(u.homeOrgUnitId!));
+                    return ListTile(
+                      dense: true,
+                      title: Text(u.fullName),
+                      subtitle: Text([u.designation, home?.name, if (!u.isActive) 'Inactive'].whereType<String>().join(' · ')),
+                      trailing: Text(u.employeeId ?? '', style: Theme.of(context).textTheme.bodySmall),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => UserDetailScreen(userId: u.id))),
                     );
-                    if (mounted) Navigator.pop(context);
                   },
-            child: _saving
-                ? const SizedBox(height: 18, width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Assign'),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -254,25 +89,124 @@ class _AssignRoleSheetState extends ConsumerState<_AssignRoleSheet> {
   }
 }
 
-// ── Shared helpers ─────────────────────────────────────────────────────────
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow(this.label, this.value);
-  final String label, value;
+class _CreateUserForm extends ConsumerStatefulWidget {
+  const _CreateUserForm();
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      children: [
-        SizedBox(width: 100, child: Text(label,
-          style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12))),
-        Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
-      ],
-    ),
-  );
+  ConsumerState<_CreateUserForm> createState() => _CreateUserFormState();
 }
 
-extension on Map {
-  dynamic get(String key) => this[key];
+class _CreateUserFormState extends ConsumerState<_CreateUserForm> {
+  final _form = GlobalKey<FormState>();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _name = TextEditingController();
+  final _employeeId = TextEditingController();
+  final _designation = TextEditingController();
+  final _phone = TextEditingController();
+  String? _homeUnitId;
+  String? _roleId;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    for (final c in [_email, _password, _name, _employeeId, _designation, _phone]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  String? _opt(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    if (_homeUnitId == null) {
+      showMessage(context, 'Choose the home unit.');
+      return;
+    }
+    setState(() => _saving = true);
+    final ok = await runWithFeedback(
+      context,
+      () => ref.read(iamRepositoryProvider).createUser(
+            email: _email.text.trim(),
+            temporaryPassword: _password.text,
+            fullName: _name.text.trim(),
+            homeOrgUnitId: _homeUnitId!,
+            employeeId: _opt(_employeeId),
+            designation: _opt(_designation),
+            phone: _opt(_phone),
+            roleId: _roleId,
+          ),
+      success: 'User created. Share the temporary password securely.',
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) {
+      ref.invalidate(usersProvider);
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final roles = ref.watch(rolesProvider).value ?? const [];
+    return Form(
+      key: _form,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('New user', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Full name', isDense: true),
+            validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'Email (sign-in ID)', isDense: true),
+            validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _password,
+            decoration: const InputDecoration(labelText: 'Temporary password', isDense: true),
+            validator: (v) => (v == null || v.length < 8) ? 'At least 8 characters' : null,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: TextFormField(controller: _employeeId, decoration: const InputDecoration(labelText: 'Employee ID', isDense: true))),
+              const SizedBox(width: 8),
+              Expanded(child: TextFormField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone', isDense: true))),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextFormField(controller: _designation, decoration: const InputDecoration(labelText: 'Designation', isDense: true)),
+          const SizedBox(height: 8),
+          OrgUnitSelector(label: 'Home unit (posting)', value: _homeUnitId, onChanged: (u) => setState(() => _homeUnitId = u.id)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String?>(
+            initialValue: _roleId,
+            decoration: const InputDecoration(labelText: 'First role at home unit (optional)', isDense: true),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('None')),
+              for (final r in roles) DropdownMenuItem<String?>(value: r.id, child: Text(r.name)),
+            ],
+            onChanged: (v) => setState(() => _roleId = v),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(onPressed: _saving ? null : _save, child: Text(_saving ? 'Creating…' : 'Create')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
